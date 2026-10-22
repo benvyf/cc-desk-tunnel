@@ -1,0 +1,37 @@
+# Include these locations inside the chosen HTTPS server {} only.
+# Domain, TLS and existing routing must be checked before installation.
+
+location ^~ /cc-updates/admin/ {
+    client_max_body_size 1g;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+    # Do not add Authorization, request body or cookies to access logs.
+}
+
+location ~ ^/cc-updates/v1/channels/(pilot|stable)/win32-x64\.json$ {
+    limit_except GET HEAD { deny all; }
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_cache off;
+    proxy_buffering off;
+}
+
+location ~ ^/cc-updates/v1/artifacts/([1-9][0-9]*)/win32-x64/(CC-Desk-Tunnel-Setup-[0-9]+\.[0-9]+\.[0-9]+-x64\.exe)$ {
+    limit_except GET HEAD { deny all; }
+    alias /srv/cc-update-service/public/artifacts/$1/win32-x64/$2;
+    disable_symlinks on;
+    autoindex off;
+    sendfile on;
+    max_ranges 1;
+    default_type application/octet-stream;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+
+location /cc-updates/ { return 404; }

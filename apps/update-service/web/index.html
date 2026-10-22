@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CC 定制更新管理</title>
+  <link rel="stylesheet" href="/cc-updates/admin/style.css">
+  <script type="module" src="/cc-updates/admin/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header><div><p class="eyebrow">CC DESK TUNNEL</p><h1>定制更新管理</h1></div><button id="logout" class="quiet" hidden>退出登录</button></header>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>管理你的发布通道</h2><p class="muted">查看版本、上传安装包，并发布到试点或正式通道。</p><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit">登录管理</button></form></section>
+    <main id="dashboard" hidden>
+      <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>
+      <div id="channels" class="channels"></div>
+      <section class="card upload-panel"><div><p class="eyebrow">NEW CANDIDATE</p><h2>准备一次发布</h2><p class="muted">先选择管理员签名的索引，再为候选上传安装包。续期或撤回使用新的签名索引。</p></div><form id="create"><label for="index-file">签名索引（JSON）</label><input id="index-file" type="file" accept=".json,application/json" required><button type="submit">添加候选</button></form></section>
+      <div class="section-heading"><div><p class="eyebrow">READY TO REVIEW</p><h2>候选发布</h2></div><span id="candidate-count" class="muted"></span></div>
+      <div id="candidates" class="candidate-list"></div>
+      <section class="card audit-panel"><div class="section-heading"><div><p class="eyebrow">HISTORY</p><h2>操作记录</h2></div></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>通道</th><th>Build / Revision</th></tr></thead><tbody id="audit"></tbody></table></div></section>
+    </main>
+    <footer>CC Desk Tunnel · 定制发布通道</footer>
+  </div>
+</body>
+</html>
