@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
+import { createServer } from 'node:http';
 import type { TestContext } from 'node:test';
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION, serverMessageSchema } from '@cc-desk-tunnel/protocol';
@@ -979,7 +980,57 @@ test('a service that follows no releases says so and reports its version at sign
   );
 });
 
-test('the newest client installer is announced on sign-in and downloads only with the token', async (t) => {
+test('legacy update options cannot start tracking or authorize a client to install a server', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'cc-managed-update-'));
+  let requests = 0;
+  let restarts = 0;
+  const api = createServer((_request, response) => {
+    requests++;
+    response.writeHead(404).end();
+  });
+  await new Promise<void>((resolve) => api.listen(0, '127.0.0.1', resolve));
+  const address = api.address();
+  assert.ok(address && typeof address !== 'string');
+  const server = createProxyServer({
+    token,
+    dataDir: directory,
+    updates: {
+      repository: 'sun168567/cc-desk-tunnel',
+      api: `http://127.0.0.1:${address.port}`,
+      restart: () => restarts++,
+    },
+  });
+  const url = await server.listen(0);
+  const client = new Client(url);
+  t.after(async () => {
+    client.socket.terminate();
+    await server.close();
+    api.closeAllConnections();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+    rmSync(directory, { recursive: true, force: true });
+  });
+  const ready = await client.open();
+  assert.ok(ready.type === 'ready');
+  assert.equal(ready.update, undefined);
+  for (const command of [
+    { type: 'service.update.check' },
+    { type: 'service.update.install', version: '99.0.0' },
+  ]) {
+    const response = await client.request(command);
+    assert.ok(
+      response.type === 'response' && !response.ok && response.code === 'updates_unavailable',
+    );
+  }
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(requests, 0);
+  assert.equal(restarts, 0);
+  assert.equal(
+    client.messages.some((message) => message.type === 'service.update'),
+    false,
+  );
+});
+
+test('cached client installers are neither announced nor served by the managed service', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'cc-desk-tunnel-test-'));
   mkdirSync(join(directory, 'client'));
   writeFileSync(join(directory, 'client', 'CC-Desk-Tunnel-Setup-0.9.0-x64.exe'), 'old');
@@ -997,9 +1048,8 @@ test('the newest client installer is announced on sign-in and downloads only wit
     rmSync(directory, { recursive: true, force: true });
   });
   const ready = await client.open();
-  assert.ok(ready.type === 'ready' && ready.client);
-  assert.equal(ready.client.version, '0.10.1');
-  assert.equal(ready.client.sha256, createHash('sha256').update('installer bytes').digest('hex'));
+  assert.ok(ready.type === 'ready');
+  assert.equal(ready.client, undefined);
   assert.equal((await fetch(`${url}/client/installer`)).status, 401);
   assert.equal(
     (await fetch(`${url}/client/installer`, { headers: { Authorization: 'Bearer wrong' } })).status,
@@ -1008,8 +1058,18 @@ test('the newest client installer is announced on sign-in and downloads only wit
   const download = await fetch(`${url}/client/installer`, {
     headers: { Authorization: `Bearer ${token}` },
   });
-  assert.equal(download.status, 200);
-  assert.equal(await download.text(), 'installer bytes');
+  assert.equal(download.status, 404);
+  assert.equal(
+    readFileSync(join(directory, 'client', 'CC-Desk-Tunnel-Setup-0.10.1-x64.exe'), 'utf8'),
+    'installer bytes',
+  );
+  const mismatch = new Client(url);
+  t.after(() => mismatch.socket.terminate());
+  const refused = await mismatch.open(token, PROTOCOL_VERSION - 1);
+  assert.ok(refused.type === 'connection.error');
+  assert.equal(refused.client, undefined);
+  assert.equal(refused.preparing, undefined);
+  assert.match(refused.message, /管理员/);
 });
 
 test('a project moves to another folder of its computer with all its sessions, and every window hears of each', async (t) => {

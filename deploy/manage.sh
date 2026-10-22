@@ -14,9 +14,9 @@ Usage:
     [--cert FULLCHAIN --key PRIVATE_KEY] [--url wss://DOMAIN/ws] [--token SECRET]
   manage.sh build|up|status|logs|stop|restart|uninstall|connection|summary
   manage.sh upgrade [--from SERVER_ARCHIVE]   rebuild the image and replace the container in place
-  manage.sh client INSTALLER_EXE              offer a Windows installer to connected clients
+  manage.sh client INSTALLER_EXE              disabled; distribute custom installers manually
   manage.sh token [SECRET]                    replace the service token (random when omitted) and restart
-  manage.sh release-token [FILE]              save a read-only GitHub token for following releases (none: remove)
+  manage.sh release-token [FILE]              disabled; no online release tracking
   manage.sh backup ABSOLUTE_ARCHIVE_PATH
   manage.sh restore ABSOLUTE_ARCHIVE_PATH
   manage.sh certificate FULLCHAIN PRIVATE_KEY
@@ -125,6 +125,7 @@ command="${1:-help}"
 shift || true
 case "$command" in
   help|--help|-h) usage; exit ;;
+  client|release-token) fail "Online updates are disabled. Administrators deploy matched custom builds manually." ;;
   setup)
     if [[ -f "$CONFIG" ]]; then
       echo "已有部署配置（$CONFIG），跳过问答，直接构建并启动。"
@@ -262,14 +263,6 @@ case "$command" in
     if grep -q '^FRPS_PORT=' "$CONFIG"; then sed -i '/^FRPS_PORT=/d' "$CONFIG"; fi
     build_image; dc up -d; wait_healthy; summary ;;
   summary) summary ;;
-  client)
-    [[ $# = 1 && -f "$1" && "$(basename -- "$1")" =~ ^CC-Desk-Tunnel-Setup-[0-9]+\.[0-9]+\.[0-9]+-x64\.exe$ ]] \
-      || fail "Specify the installer as built: CC-Desk-Tunnel-Setup-X.Y.Z-x64.exe"
-    mkdir -p "$DATA_DIR/state/client"
-    install -m 644 "$1" "$DATA_DIR/state/client/"
-    [[ "$(id -u)" != 0 ]] || chown -R 1000:1000 "$DATA_DIR/state/client"
-    echo "Installer published. Clients see the upgrade the next time they connect."
-    ;;
   token)
     # Every saved client login stops working; the summary prints the new token.
     [[ $# -le 1 ]] || fail "Specify at most one token."
@@ -282,26 +275,6 @@ case "$command" in
     mv -- "$temp" "$DATA_DIR/config/service.env"
     if running; then dc restart; wait_healthy; fi
     summary ;;
-  release-token)
-    # Read-only access to the releases of a private repository; without an argument the token is removed.
-    [[ $# -le 1 ]] || fail "Specify at most one token file."
-    RELEASE_TOKEN=""
-    if [[ $# = 1 ]]; then
-      [[ -f "$1" ]] || fail "Specify the file holding the token."
-      RELEASE_TOKEN="$(tr -d '[:space:]' < "$1")"
-      [[ "$RELEASE_TOKEN" =~ ^[A-Za-z0-9_]{20,255}$ ]] || fail "That file does not hold a GitHub token."
-    fi
-    temp="$(mktemp "$DATA_DIR/config/service.env.XXXXXX")"
-    {
-      grep -v '^PROXY_RELEASE_TOKEN=' "$DATA_DIR/config/service.env" || true
-      [[ -z "$RELEASE_TOKEN" ]] || write_var PROXY_RELEASE_TOKEN "$RELEASE_TOKEN"
-    } > "$temp"
-    chmod 600 "$temp"
-    [[ "$(id -u)" != 0 ]] || chown 1000:1000 "$temp"
-    mv -- "$temp" "$DATA_DIR/config/service.env"
-    if running; then dc restart; wait_healthy; fi
-    echo "Release token $([[ -n "$RELEASE_TOKEN" ]] && echo saved || echo removed)."
-    ;;
   uninstall) dc down --remove-orphans; echo "Removed containers/network. Data and config retained: $DATA_DIR" ;;
   connection)
     echo "URL: $CONNECTION_URL"

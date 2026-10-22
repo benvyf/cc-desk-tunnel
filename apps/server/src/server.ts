@@ -1,5 +1,5 @@
 import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
-import { createReadStream, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
@@ -44,7 +44,6 @@ import type {
 } from '@cc-desk-tunnel/protocol';
 import { runClaude, nativeDirectory, prepareNativeDirectory, readNativeStatus } from './claude.ts';
 import type { ClaudeOptions } from './claude.ts';
-import { ClientReleases } from './client-release.ts';
 import { DomainError } from './errors.ts';
 import type { NativeLogin } from './native-account.ts';
 import { NativeInput } from './native-input.ts';
@@ -58,7 +57,7 @@ import { SessionStore } from './store.ts';
 import { Throttle } from './throttle.ts';
 import { Door, Tunnel, sessionSsh, sessionSshPath } from './tunnel.ts';
 import type { TunnelOptions } from './tunnel.ts';
-import { ServiceUpdates, serviceVersion } from './updates.ts';
+import { serviceVersion } from './updates.ts';
 import type { UpdateOptions } from './updates.ts';
 import { UsageLog, createUsageReceiver, telemetryEnvironment } from './usage.ts';
 import { WebAccess } from './web-access.ts';
@@ -130,12 +129,12 @@ export type ServerOptions = {
   tls?: { cert: Buffer; key: Buffer };
   reverseProxy?: boolean;
   host?: string;
-  // Where an administrator puts the Windows installer offered to clients; defaults to <dataDir>/client.
+  // Legacy option retained for callers; managed builds do not serve cached installers.
   clientDir?: string;
   // How many native runs and terminals may be going at once, over all connections; by default what the
   // memory of this machine holds.
   maxRuns?: number;
-  // Following the published releases; absent, the service neither looks for nor installs newer versions.
+  // Legacy option retained for callers; managed builds always ignore release tracking.
   updates?: Omit<UpdateOptions, 'clientDir'>;
   // How long the runs of a computer go on after its last connection broke, for it to come back to. By default
   // five minutes with the real CLI and none in simulation.
@@ -191,16 +190,7 @@ export function createProxyServer(options: ServerOptions) {
   const expectedToken = createHash('sha256').update(options.token).digest();
   const authorized = (token: string) =>
     timingSafeEqual(expectedToken, createHash('sha256').update(token).digest());
-  const clientDir = options.clientDir ?? join(options.dataDir, 'client');
-  const releases = new ClientReleases(clientDir);
   const version = serviceVersion();
-  const updates = options.updates
-    ? new ServiceUpdates(
-        // The next client of another version is offered the installer the moment it is here.
-        { ...options.updates, clientDir, installed: () => void releases.refresh() },
-        (state) => broadcast({ type: 'service.update', ...state }),
-      )
-    : undefined;
   const throttle = new Throttle();
   const web = new WebAccess({
     database: store.database,
@@ -233,24 +223,14 @@ export function createProxyServer(options: ServerOptions) {
       response.end(JSON.stringify({ status: 'ok', protocolVersion: PROTOCOL_VERSION, adapter }));
     } else if (request.method === 'GET' && request.url === '/client/installer') {
       // The same secret as the WebSocket: only a signed-in client can fetch the installer.
-      const release = releases.current;
       const address = addressOf(request);
       if (throttle.blocked(address)) {
         response.writeHead(429, { 'Retry-After': throttle.blocked(address) }).end();
       } else if (!authorized(request.headers.authorization?.replace(/^Bearer /, '') ?? '')) {
         refuse(address);
         response.writeHead(401).end();
-      } else if (!release) {
-        response.writeHead(404).end();
       } else {
-        response.writeHead(200, {
-          'Content-Type': 'application/octet-stream',
-          'Content-Length': release.size,
-          'Cache-Control': 'no-store',
-        });
-        createReadStream(release.path)
-          .on('error', () => response.destroy())
-          .pipe(response);
+        response.writeHead(404).end();
       }
     } else {
       void web
@@ -1057,20 +1037,8 @@ export function createProxyServer(options: ServerOptions) {
         });
         return undefined;
       case 'service.update.check':
-        if (!updates) throw new DomainError('updates_unavailable', '此服务未启用版本跟踪。');
-        await updates.check();
-        return undefined;
       case 'service.update.install':
-        if (!updates) throw new DomainError('updates_unavailable', '此服务未启用版本跟踪。');
-        // The restart at the end would cut these off.
-        if (terminals.size || runs.size || mutations.size || login)
-          throw new DomainError('native_busy', '请先结束运行、终端或登录流程，再升级服务端。');
-        try {
-          updates.install(command.version);
-        } catch (error) {
-          throw new DomainError('update_unavailable', (error as Error).message);
-        }
-        return undefined;
+        throw new DomainError('updates_unavailable', '定制版更新由管理员统一部署。');
       case 'usage.query': {
         const titles = new Map(store.list().map((session) => [session.id, session.title]));
         send(peer, {
@@ -1151,11 +1119,6 @@ export function createProxyServer(options: ServerOptions) {
     }
     if (terminals.has(command.sessionId))
       throw new DomainError('native_busy', '这个会话的原生终端开着，请先关闭终端再操作它。');
-    if (
-      updates?.installing &&
-      (command.type === 'message.send' || command.type === 'session.compact')
-    )
-      throw new DomainError('service_upgrading', '服务端正在升级，重启完成后再发送。');
     switch (command.type) {
       case 'session.configure':
         broadcast({
@@ -1189,10 +1152,6 @@ export function createProxyServer(options: ServerOptions) {
     return command.sessionId;
   }
 
-  const installer = () =>
-    releases.current
-      ? (({ version, size, sha256 }) => ({ version, size, sha256 }))(releases.current)
-      : undefined;
   // The first frame must authenticate; a desktop client also asks for its execution channel here.
   function authenticate(peer: Peer, value: unknown) {
     if (peer.browser) {
@@ -1238,21 +1197,13 @@ export function createProxyServer(options: ServerOptions) {
       peer.socket.close(4001, 'Unauthorized');
       return false;
     }
-    // A client of another version is told which version runs here and, if held, the installer to fetch.
+    // A mismatched client is directed to its administrator; no installer is advertised.
     if (auth.data.protocolVersion !== PROTOCOL_VERSION) {
-      // The installer of this version may still be on its way here, or its download may have failed: the
-      // client is told how far it is and the download is started again if it is not running.
-      const held = installer();
-      if (held?.version !== version) updates?.prepareInstaller();
       send(peer, {
         type: 'connection.error',
         code: 'version_mismatch',
-        message: `客户端与服务端（${version}）的版本不一致，需要升级其中一方。`,
+        message: `客户端与服务端（${version}）的版本不一致，请联系管理员安装匹配的定制版。`,
         service: version,
-        client: held,
-        ...(held?.version !== version && updates?.preparing
-          ? { preparing: updates.preparing }
-          : {}),
       });
       peer.socket.close(4002, 'Version mismatch');
       return false;
@@ -1266,8 +1217,6 @@ export function createProxyServer(options: ServerOptions) {
       adapter,
       model: options.claude?.model,
       version,
-      update: updates?.state,
-      client: installer(),
       sessions: store.list(),
     });
     send(peer, devices());
@@ -1496,7 +1445,6 @@ export function createProxyServer(options: ServerOptions) {
       address: string,
       context?: { browser?: string; origin: string; proxied?: boolean },
     ) => {
-      void releases.refresh();
       const peer: Peer = {
         socket,
         id: randomUUID(),
@@ -1672,8 +1620,6 @@ export function createProxyServer(options: ServerOptions) {
   return {
     store,
     async listen(port = 8787): Promise<string> {
-      await releases.refresh();
-      updates?.start();
       if (usageReceiver)
         options.claude!.environment = telemetryEnvironment(await usageReceiver.listen());
       await new Promise<void>((resolve, reject) => {
@@ -1690,7 +1636,6 @@ export function createProxyServer(options: ServerOptions) {
     async close() {
       closing = true;
       web.close();
-      updates?.stop();
       login?.process.cancel();
       const terminalCleanup = Promise.all(
         [...terminals.values()].map((terminal) => terminal.process?.close()),

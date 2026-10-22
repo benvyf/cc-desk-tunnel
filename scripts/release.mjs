@@ -34,7 +34,7 @@ const section = new RegExp(
   .exec(readFileSync(join(root, 'CHANGELOG.md'), 'utf8'))?.[1]
   .trim();
 if (!section) throw new Error(`CHANGELOG.md has no section "## ${version}".`);
-const repository = 'https://github.com/sun168567/cc-desk-tunnel';
+const repository = 'https://github.com/benvyf/cc-desk-tunnel';
 const [installer, server, ...others] = releaseFiles(version);
 // Every release reads the same way: what the project is, this version's section of the change log with its
 // headings one level up, then how to get and upgrade to it. A preview carries the same text, so that making
@@ -51,7 +51,7 @@ const notes = [
   '',
   '## 下载与升级',
   '',
-  '- **已在使用**：在客户端的“设置 → 关于与更新”里先升级服务端，再按提示升级客户端；两端需要同一版本。',
+  '- **已在使用**：在线升级已关闭，请联系管理员安装配套的定制服务端与客户端。',
   `- **Windows 客户端**：下载 \`${installer}\` 并安装。安装包没有代码签名，SmartScreen 与杀毒软件的提示见[说明](${repository}#杀毒软件与-smartscreen)。`,
   `- **服务端**：新部署按[快速开始](${repository}#快速开始)用一条命令安装；\`${server}\` 是它下载的程序包。`,
   `- **macOS 与 Linux 客户端（实验性）**：${others.map((name) => `\`${name}\``).join('、')}。没有签名，也不带应用内更新，升级时重新下载安装；安装与首次打开见 [macOS 说明](${repository}/blob/main/docs/macos.md)与 [Linux 说明](${repository}/blob/main/docs/linux.md)。`,

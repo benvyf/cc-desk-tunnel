@@ -2,11 +2,13 @@
 
 [简体中文](README.md) | **English**
 
+> **Managed custom fork**: online updates are disabled. Administrators deploy matching custom clients and servers. These changes have not been published as installation packages; release-based instructions below apply only after a verified custom release exists. Read the [maintenance policy](docs/MANAGED-UPDATES.md).
+
 Drive Claude Code in the cloud from a desktop client, and let it work on your Windows PC through a reverse tunnel.
 
 Claude Code (CC for short) runs on a Linux server; your code, compilers and tools stay on Windows. CC Desk Tunnel connects the two: a container on the server, a desktop client on Windows, and an encrypted reverse SSH channel through which Claude reads and writes files and runs commands on your computer.
 
-[Download](https://github.com/sun168567/cc-desk-tunnel/releases/latest) · [Quick start](#quick-start) · [Security](#security) · [Documentation](#documentation) · License: [Apache-2.0](LICENSE)
+[Download](https://github.com/benvyf/cc-desk-tunnel/releases) · [Quick start](#quick-start) · [Security](#security) · [Documentation](#documentation) · License: [Apache-2.0](LICENSE)
 
 > [!WARNING]
 > **This project is mostly written by AI**, maintained by one person, and has not had a professional security audit. It may contain undiscovered defects. It gives a server the ability to run commands on your computer: read [Security](#security) and [Your account](#your-account) first and judge the risk for yourself.
@@ -54,7 +56,7 @@ This repository publishes all of its own client, server, build and deployment so
 | **Account and usage** | Sign the server's Claude account in or out from the client; see quota, reset times and usage statistics |
 | **Scheduled tasks** | Send a prepared prompt to a session, or a new one, at a set time; Claude can set these up for you |
 | **Convenience** | Runs in the tray, remembers the sign-in, keeps unsent text per session |
-| **One-click upgrades** | The service follows the release page; upgrade service and client from the client, without logging in to the server |
+| **Managed maintenance** | Online updates are disabled; administrators deploy matching custom clients and servers |
 
 ## Quick start
 
@@ -67,7 +69,7 @@ You need a Linux server with a public IP or domain name (x86_64, or arm64 as exp
 On the server:
 
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/sun168567/cc-desk-tunnel/main/deploy/install.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/main/deploy/install.sh)"
 ```
 
 The script:
@@ -81,7 +83,7 @@ There is no prebuilt image yet: the image is built from source on your server, w
 
 ### 2. Install the Windows client
 
-Download `CC-Desk-Tunnel-Setup-<version>-x64.exe` from the [releases page](https://github.com/sun168567/cc-desk-tunnel/releases/latest) and install it. It bundles PowerShell 7 and OpenSSH; nothing else is needed. Start it, enter the three values from step 1 and connect.
+Download `CC-Desk-Tunnel-Setup-<version>-x64.exe` from the [releases page](https://github.com/benvyf/cc-desk-tunnel/releases) and install it. It bundles PowerShell 7 and OpenSSH; nothing else is needed. Start it, enter the three values from step 1 and connect.
 
 Expect a SmartScreen prompt on first run; see [Antivirus and SmartScreen](#antivirus-and-smartscreen).
 
@@ -132,7 +134,7 @@ That describes the structure. **It is not a guarantee about your account.** Keep
 ## Antivirus and SmartScreen
 
 - **frpc is no longer bundled.** Clients up to 0.2.9 shipped `frpc.exe` from the tunnelling tool frp, which Windows Defender and other antivirus products often quarantine as "hack tool / riskware". From 0.2.10 the client sets up the execution channel itself through the service address; neither the installer nor the server image contains frp, and the installer removes the old `frpc.exe` on upgrade.
-- **Verify before allowing a bundled component.** The client still bundles the official releases of OpenSSH and PowerShell 7, verifies their SHA256 when packaging, runs them only while connected and has them listen on this machine only. They are rarely blocked; if it happens, check that the installer comes from this repository's [releases page](https://github.com/sun168567/cc-desk-tunnel/releases/latest), verify it against `SHA256SUMS`, and identify the file that was blocked. After checking the source, make only the necessary exception for the verified component file; do not disable antivirus or exclude a whole drive. Restore quarantined files or reinstall only after verification.
+- **Verify before allowing a bundled component.** The client still bundles the official releases of OpenSSH and PowerShell 7, verifies their SHA256 when packaging, runs them only while connected and has them listen on this machine only. They are rarely blocked; if it happens, check that the installer comes from this repository's [releases page](https://github.com/benvyf/cc-desk-tunnel/releases), verify it against `SHA256SUMS`, and identify the file that was blocked. After checking the source, make only the necessary exception for the verified component file; do not disable antivirus or exclude a whole drive. Restore quarantined files or reinstall only after verification.
 - **SmartScreen.** The installer is not code-signed. On first run Windows shows "Windows protected your PC": choose "More info → Run anyway".
 - The project never changes the settings of any security software. If in doubt, build from source.
 

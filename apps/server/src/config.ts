@@ -65,18 +65,6 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
         }
       : undefined,
   };
-  // Releases are followed only by a real service; the entry script of the image says where programs and runtime are.
-  if (native && env.PROXY_RELEASE_REPO !== 'none')
-    options.updates = {
-      repository: env.PROXY_RELEASE_REPO ?? 'sun168567/cc-desk-tunnel',
-      token: env.PROXY_RELEASE_TOKEN || undefined,
-      programDir:
-        env.PROXY_PROGRAM_DIR && env.PROXY_RUNTIME_DIR ? env.PROXY_PROGRAM_DIR : undefined,
-      runtimeDir: env.PROXY_RUNTIME_DIR,
-      restart: () => {
-        process.kill(process.pid, 'SIGTERM');
-        setTimeout(() => process.exit(0), 20_000).unref();
-      },
-    };
+  // Custom builds are deployed by the administrator; legacy release settings are ignored.
   return { options, native, port: port(env.PROXY_PORT, 8787, 'PROXY_PORT') };
 }

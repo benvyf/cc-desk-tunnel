@@ -12,7 +12,6 @@ const {
   dialog,
   shell,
   clipboard,
-  net,
   nativeTheme,
 } = require('electron');
 const path = require('node:path');
@@ -27,18 +26,16 @@ const {
   writeFileSync,
   writeSync,
 } = require('node:fs');
-const { mkdtemp, stat, writeFile } = require('node:fs/promises');
+const { stat, writeFile } = require('node:fs/promises');
 const { gitBranch } = require('./git-branch.cjs');
 const { asOnDisk } = require('./disk-path.cjs');
 const { openLog } = require('./client-log.cjs');
-const { hostname, tmpdir } = require('node:os');
+const { hostname } = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
-// The last connection, kept for its installer download after a service refused this client's version.
-let lastBridge;
 let connectionGeneration = 0;
 const connections = require('./connections.cjs');
 // See connections.cjs. The profile is chosen before anything is read from it, the instance lock included:
@@ -331,25 +328,12 @@ handle('proxy:connect', async (event, config) => {
     await connection.close();
     throw new Error('Connection cancelled');
   }
-  bridge = lastBridge = connection;
+  bridge = connection;
   keepAwake(true);
   return { url: bridge.url };
 });
-// A service older than this client refuses it at sign-in; it is asked to upgrade over a connection of its own.
-handle('service:upgrade', async (event, config) => {
-  const { upgradeService } = await import(
-    pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
-  );
-  return upgradeService(config, {
-    resolveProxy: (url) => session.defaultSession.resolveProxy(url),
-    onUpdate: (update) => {
-      if (!event.sender.isDestroyed()) event.sender.send('service:upgrade-progress', update);
-    },
-  }).then(
-    (version) => ({ version }),
-    (error) => ({ error: error.message }),
-  );
-});
+// Update IPC is registered separately so every renderer path shares the same refusal.
+require('./managed-updates.cjs').registerManagedUpdates(handle);
 // The service token is kept only when the user asks, encrypted for the current account of the system (DPAPI on
 // Windows, the login keychain on macOS).
 handle('login:load', () => {
@@ -440,17 +424,6 @@ handle('schedules:save', (_event, text) => {
   replaceFile(schedulesPath(), schedules);
 });
 handle('app:version', () => app.getVersion());
-// The notes of a release as its page on GitHub has them, for a version newer than this program, whose notes
-// it cannot carry itself.
-handle('release:notes', async (_event, version) => {
-  if (!/^\d+\.\d+\.\d+$/.test(String(version))) throw new Error('Unexpected version');
-  const response = await net.fetch(
-    `https://api.github.com/repos/sun168567/cc-desk-tunnel/releases/tags/v${version}`,
-    { headers: { Accept: 'application/vnd.github+json' }, signal: AbortSignal.timeout(15000) },
-  );
-  if (!response.ok) throw new Error(`GitHub ${response.status}`);
-  return String((await response.json()).body ?? '').slice(0, 100_000);
-});
 // Which of the user's computers this is to the service: an ID made once and kept, under the computer's name.
 handle('device:get', () => ({
   id: readComputer().deviceId ?? writeComputer({ deviceId: randomUUID() }).deviceId,
@@ -624,47 +597,6 @@ handle('notify:show', (event, notice) => {
     window.flashFrame(true);
     window.once('focus', () => window.flashFrame(false));
   }
-});
-// Upgrades in place: the installer runs silently over the current install and starts the new version. It
-// comes from the connected service, or, when the user chooses so, straight from the release page: `version`
-// is then the one to fetch, which the service's refusal of this client named.
-handle('update:install', async (event, version) => {
-  if (!app.isPackaged) throw new Error('源码运行不支持自升级；请重新打包安装。');
-  // Only the Windows installer can be run over an installation. Elsewhere the user installs a new package.
-  if (process.platform !== 'win32')
-    throw new Error('这个系统上的客户端不能在应用内升级，请到发布页下载新版本。');
-  const directory = await mkdtemp(path.join(tmpdir(), 'cc-desk-tunnel-update-'));
-  let installer;
-  if (version === undefined) {
-    if (!lastBridge) throw new Error('请先连接服务。');
-    installer = await lastBridge.downloadInstaller(directory);
-  } else {
-    const { downloadRelease } = await import(
-      pathToFileURL(path.join(__dirname, 'release-download.mjs')).href
-    );
-    let told = 0;
-    // Chromium's network stack: the Windows proxy settings apply, as they do to the connection itself.
-    installer = await downloadRelease((url, init) => net.fetch(url, init), version, directory, {
-      announced: lastBridge?.release(),
-      progress(received, size) {
-        if (Date.now() - told < 500 && received < size) return;
-        told = Date.now();
-        if (!event.sender.isDestroyed()) event.sender.send('update:progress', { received, size });
-      },
-    });
-  }
-  // The installer replaces the program under every connection's window, so the others go first.
-  dismissOthers();
-  for (
-    let waited = 0;
-    others().some((entry) => connections.running(base, entry.id));
-    waited += 250
-  ) {
-    if (waited >= 15000) throw new Error('其他连接的窗口没有退出，请先退出它们再升级。');
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  spawn(installer, ['/S', '--force-run'], { detached: true, stdio: 'ignore' }).unref();
-  app.quit();
 });
 ipcMain.handle('proxy:disconnect', async () => {
   keepAwake(false);

@@ -17,6 +17,25 @@ const legacy = {
   FRPS_PORT: 'NaN',
   FRPS_PATH: '/missing/frps',
 };
+test('managed services ignore old release settings and never enable online updates', () => {
+  for (const repository of [
+    undefined,
+    'sun168567/cc-desk-tunnel',
+    'benvyf/cc-desk-tunnel',
+    'none',
+  ]) {
+    const { options } = environmentConfig(
+      {
+        ...native,
+        PROXY_RELEASE_REPO: repository,
+        PROXY_PROGRAM_DIR: '/data/program',
+        PROXY_RUNTIME_DIR: '/opt/runtime',
+      },
+      '/state',
+    );
+    assert.equal(options.updates, undefined);
+  }
+});
 test('reverse proxy mode leaves TLS to the proxy and defaults to loopback', () => {
   const { options, port } = environmentConfig(native, '/state');
   assert.equal(options.host, '127.0.0.1');

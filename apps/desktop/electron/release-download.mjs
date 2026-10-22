@@ -3,9 +3,9 @@ import { createReadStream } from 'node:fs';
 import { open, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 
-// Where this client's releases are published. The service normally hands out the installer; this is the other
-// way to get it, for when the service has not fetched it or cannot.
-export const releasePage = 'https://github.com/sun168567/cc-desk-tunnel/releases/download';
+// Reserved custom release location. Managed product IPC cannot invoke downloads; the transport helper
+// below requires an explicit page so fixture callers can still exercise resumable transfers.
+export const releasePage = 'https://github.com/benvyf/cc-desk-tunnel/releases/download';
 // A connection to the release host can start fast and then slow to a crawl, or stop without closing. The file
 // is fetched in stretches: each connection is used for `stretch` milliseconds at most and the next continues
 // where it ended; one that delivers nothing for `stall` is given up at once, and after `attempts` connections
@@ -20,8 +20,9 @@ export async function downloadRelease(
   fetch,
   version,
   directory,
-  { announced, progress = () => {}, pace = defaultPace, page = releasePage } = {},
+  { announced, progress = () => {}, pace = defaultPace, page } = {},
 ) {
+  if (!page) throw new Error('定制版更新由管理员统一部署，请联系管理员。');
   if (!/^\d+\.\d+\.\d+$/.test(String(version))) throw new Error('版本号不正确。');
   const name = `CC-Desk-Tunnel-Setup-${version}-x64.exe`;
   let manifest;

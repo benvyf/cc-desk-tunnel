@@ -419,9 +419,9 @@ export class ProxyClient {
           selectedId,
           error: null,
           adapter: message.adapter,
-          release: message.client?.version ?? null,
+          release: null,
           service: message.version,
-          update: message.update ?? null,
+          update: null,
           model: message.model ?? null,
         });
         if (selectedId) this.load(selectedId);
@@ -442,12 +442,8 @@ export class ProxyClient {
           this.update({
             mismatch: true,
             service: message.service ?? null,
-            release: message.client?.version ?? null,
-            preparing: message.preparing
-              ? message.preparing.size
-                ? message.preparing.received / message.preparing.size
-                : 0
-              : null,
+            release: null,
+            preparing: null,
           });
         if (
           [
@@ -479,12 +475,8 @@ export class ProxyClient {
       ) {
         if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
       } else if (message.type === 'service.update') {
-        const { type: _type, ...update } = message;
-        this.update(
-          update.state === 'restarting'
-            ? { update, error: `服务端已升级到 ${update.latest}，正在重启；请稍候重新连接。` }
-            : { update },
-        );
+        // Ignore release announcements from older or non-managed services.
+        return;
       } else if (message.type === 'account.state') {
         const { type: _type, ...account } = message;
         // A signed-out account must not keep showing the previous one's identity and quota.

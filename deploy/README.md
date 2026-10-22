@@ -1,5 +1,7 @@
 # Linux Docker 部署
 
+> 本 Fork 关闭在线更新。当前修改尚未发布为定制安装包，下述发布安装流程仅在配套定制构建发布后适用；现有生产环境迁移须先核对版本、备份并试点。详见[定制维护说明](../docs/MANAGED-UPDATES.md)。
+
 Ubuntu amd64 优先；arm64 为实验性支持：镜像构建、部署自测和服务端测试在 arm64 上自动运行通过，还没有人在 arm64 服务器上用真实账号跑过会话。官方 Claude Code、Agent SDK、PTY 同容器；不改 Claude 本体、不加入执行 MCP。容器有可写层和较完整工具环境，不是只读沙箱；以 uid 1000 普通用户运行，无宿主 Docker socket、特权模式或宿主项目挂载。
 
 ## 准备
@@ -7,7 +9,7 @@ Ubuntu amd64 优先；arm64 为实验性支持：镜像构建、部署自测和�
 最省事的方式是一条命令。脚本检查 Docker 等依赖（缺少时给出安装命令，不代为安装），从发布页下载最新的服务端程序包并校验，解压到 `/opt/cc-desk-tunnel`，随后进入下面的交互安装；已有部署时改为询问是否升级。程序目录可用环境变量 `CC_DESK_TUNNEL_DIR` 更改。
 
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/sun168567/cc-desk-tunnel/main/deploy/install.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/main/deploy/install.sh)"
 ```
 
 目前不提供现成镜像：镜像在你的服务器上从程序包构建，首次需要几分钟，期间联网下载系统包、Node.js、Claude Code 和 npm 依赖。
@@ -34,33 +36,17 @@ sudo bash deploy/install.sh
 ```sh
 # 原地升级：解包新的源码包覆盖程序目录，重建镜像并替换容器；数据、账号和配置不动
 sudo bash deploy/manage.sh upgrade --from /path/cc-desk-tunnel-server.tar.gz
-# 把 Windows 安装包交给服务端；已连接的旧客户端下次连接时在左下角连接菜单看到“升级到 x.y.z”
-sudo bash deploy/manage.sh client /path/CC-Desk-Tunnel-Setup-X.Y.Z-x64.exe
 # 更换服务凭据（留空则随机生成）并重启；已保存旧凭据的客户端需重新填写
 sudo bash deploy/manage.sh token
 # 随时重看汇总
 sudo bash deploy/manage.sh summary
 ```
 
-nginx 模式需按示例配置反代 `/client/installer`，客户端自升级才能下载。服务端只保留最近 3 个版本的安装包，更旧的自动删除。
+### 管理员统一更新
 
-### 从客户端升级
+客户端不提供更新按钮、在线下载或升级服务端操作；版本不匹配时请联系管理员安装配套定制版。`manage.sh client` 与 `manage.sh release-token` 已停用。服务端忽略旧的发布跟踪配置，不向客户端分发安装包，`/client/installer` 不提供下载。
 
-服务端每 6 小时查询一次项目的 GitHub 发布页，客户端连接菜单里的“检查更新”立即查询一次。有新版本时：
-
-- 菜单出现“升级服务端到 x.y.z”：确认后服务端下载程序包并按清单校验、安装依赖、取回同版本的客户端安装包，然后重启，全程几分钟；重启后重新连接，客户端按提示升级自己。运行中的任务、原生终端或账号登录未结束时不能开始升级。
-- 客户端比服务端新、登录页提示“此客户端较新”时：点登录页的“升级服务端”，服务端同样升级到最新的正式版并重启，然后照常连接。多个连接各连一台服务端时，从其中一台升级客户端后，其余服务端都这样升级。
-- 菜单显示“服务端 x.y.z 需在服务器上升级”：新版本需要更新的镜像（Node.js 或系统组件有变化），仍用上面的 `manage.sh upgrade --from`。
-
-升级后的程序放在数据目录的 `program/` 下，镜像不变。容器启动时比较两处的版本，运行较新的一个：重建或替换容器不会回到旧版本，用更新的程序包重建镜像后则以镜像为准。升级后的程序连续三次启动失败时退回镜像里的版本，日志里有一行说明。失败的升级不改动正在运行的程序，原因显示在客户端。
-
-改为跟踪自己的私有仓库（例如私有的 fork）时，服务端需要一个只读令牌才能读取发布页：在 GitHub 创建只授权该仓库、Contents 只读的细粒度令牌，存成 VPS 上的一个文件后执行下面的命令，随后删除该文件。令牌只保存在数据目录的 `config/service.env`（0600），不会传给客户端或 Claude Code。
-
-```sh
-sudo bash deploy/manage.sh release-token /path/token.txt   # 不带参数则移除
-```
-
-跟踪的仓库可在 `config/service.env` 里用 `PROXY_RELEASE_REPO='所有者/仓库'` 更改，设为 `none` 则不查询也不提供升级。容器没有宿主 Docker 的控制权，替换镜像始终要在宿主上执行。
+管理员从审核过的固定提交构建匹配的客户端与服务端，备份后试点，再用上面的 `manage.sh upgrade --from` 重建镜像。客户端安装包通过管理员渠道手工分发。容器始终运行镜像内 `/app`，不会执行数据目录 `program/` 的历史在线更新；这些旧文件会保留。回滚应使用已保存的定制镜像与配套客户端。
 
 同时进行的运行和终端有上限，默认按服务器内存估算（每个约占 300 MB，1 GB 内存的服务器是 2 个）。要改就在 `config/service.env` 里加 `PROXY_MAX_RUNS='数量'` 并重启服务。
 

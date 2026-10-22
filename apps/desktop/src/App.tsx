@@ -353,10 +353,9 @@ export function App({
     isNewer(state.service, version)
       ? state.service
       : null;
-  // A service of a newer version: what that version changed can be read here, whether or not this system's
-  // client upgrades itself.
+  // Managed builds do not fetch release notes or offer upgrades for a mismatched service.
   const ahead =
-    state.mismatch && version && state.service && isNewer(state.service, version)
+    selfUpdating && state.mismatch && version && state.service && isNewer(state.service, version)
       ? state.service
       : null;
   // How far an installer being fetched from the release page is, from 0 to 1.
@@ -383,53 +382,54 @@ export function App({
   useEffect(() => {
     if (update?.state === 'failed' && update.detail) setError(update.detail);
   }, [update]);
-  const serviceUpdate = !nativeMode
-    ? null
-    : update?.state === 'available'
-      ? {
-          label: `升级服务端到 ${update.latest}`,
-          icon: <Download />,
-          disabled: busy || state.sessions.some((item) => !!item.activeRun),
-          run: () => {
-            if (
-              window.confirm(
-                `服务端将升级到 ${update.latest} 并重启，需要几分钟，期间不能发送消息；重启后需重新连接。继续？`,
-              )
-            )
-              void act(async () => {
-                await client.request({ type: 'service.update.install', version: update.latest! });
-              });
-          },
-        }
-      : update?.state === 'manual'
+  const serviceUpdate =
+    !nativeMode || !selfUpdating
+      ? null
+      : update?.state === 'available'
         ? {
-            label: `服务端 ${update.latest} 需在服务器上升级`,
+            label: `升级服务端到 ${update.latest}`,
             icon: <Download />,
-            disabled: true,
-            run: () => undefined,
+            disabled: busy || state.sessions.some((item) => !!item.activeRun),
+            run: () => {
+              if (
+                window.confirm(
+                  `服务端将升级到 ${update.latest} 并重启，需要几分钟，期间不能发送消息；重启后需重新连接。继续？`,
+                )
+              )
+                void act(async () => {
+                  await client.request({ type: 'service.update.install', version: update.latest! });
+                });
+            },
           }
-        : update?.state === 'installing' || update?.state === 'restarting'
+        : update?.state === 'manual'
           ? {
-              label: `服务端升级中：${update.detail ?? '重启'}`,
-              icon: <RefreshCw />,
+              label: `服务端 ${update.latest} 需在服务器上升级`,
+              icon: <Download />,
               disabled: true,
               run: () => undefined,
             }
-          : {
-              label:
-                update?.state === 'checking'
-                  ? '正在检查更新…'
-                  : update?.state === 'idle' && update.checkedAt
-                    ? `已是最新 ${state.service} · 再次检查`
-                    : '检查更新',
-              icon: <RefreshCw />,
-              disabled: busy || update?.state === 'checking',
-              run: () => {
-                void act(async () => {
-                  await client.request({ type: 'service.update.check' });
-                });
-              },
-            };
+          : update?.state === 'installing' || update?.state === 'restarting'
+            ? {
+                label: `服务端升级中：${update.detail ?? '重启'}`,
+                icon: <RefreshCw />,
+                disabled: true,
+                run: () => undefined,
+              }
+            : {
+                label:
+                  update?.state === 'checking'
+                    ? '正在检查更新…'
+                    : update?.state === 'idle' && update.checkedAt
+                      ? `已是最新 ${state.service} · 再次检查`
+                      : '检查更新',
+                icon: <RefreshCw />,
+                disabled: busy || update?.state === 'checking',
+                run: () => {
+                  void act(async () => {
+                    await client.request({ type: 'service.update.check' });
+                  });
+                },
+              };
 
   // A saved sign-in fills the form once per launch and, when asked, connects without a click.
   const loaded = useRef(false);
@@ -1316,20 +1316,13 @@ export function App({
           form={form}
           change={changeForm}
           error={
-            currentError && state.mismatch && !upgrade && state.service && version
-              ? `${currentError}${
-                  isNewer(version, state.service)
-                    ? '此客户端较新，请先升级服务端。'
-                    : !selfUpdating
-                      ? '这个系统上的客户端需要手动升级：请到 GitHub 发布页下载与服务端同一版本的安装包。'
-                      : state.preparing !== null
-                        ? `服务端正在下载这一版的安装包（${Math.floor(state.preparing * 100)}%），稍后重新连接就能从服务端升级；也可以现在直接从 GitHub 发布页下载。`
-                        : '服务端还没有这一版的安装包，它会继续尝试下载；可以直接从 GitHub 发布页下载，或稍后重试。'
-                }`
+            currentError && state.mismatch
+              ? `${currentError}请联系管理员安装匹配的定制版。`
               : currentError
           }
           upgrade={state.mismatch && window.desktop ? upgrade : null}
           older={
+            selfUpdating &&
             form.mode === 'remote' &&
             state.mismatch &&
             state.service &&

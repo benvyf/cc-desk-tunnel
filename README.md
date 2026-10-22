@@ -2,11 +2,13 @@
 
 **简体中文** | [English](README.en.md)
 
+> **定制维护版**：在线更新已关闭，客户端与服务端由管理员统一部署。当前修改尚未发布为定制安装包；下方发布安装流程仅在管理员发布并核验配套定制构建后适用。请先阅读[定制维护说明](docs/MANAGED-UPDATES.md)。
+
 用桌面客户端驱动云端的 Claude Code，经反向隧道在你的 Windows 本机执行。
 
 Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、编译器和各种工具都留在 Windows 本机。CC Desk Tunnel 把两端接起来：服务器上是一个容器，Windows 上是一个桌面客户端，Claude 通过一条加密的反向 SSH 通道在你的电脑上读写文件、执行命令。
 
-[下载](https://github.com/sun168567/cc-desk-tunnel/releases/latest) · [快速开始](#快速开始) · [安全须知](#安全须知) · [文档](#文档) · 许可：[Apache-2.0](LICENSE)
+[下载](https://github.com/benvyf/cc-desk-tunnel/releases) · [快速开始](#快速开始) · [安全须知](#安全须知) · [文档](#文档) · 许可：[Apache-2.0](LICENSE)
 
 > [!WARNING]
 > **本项目主要由 AI 编写**，由个人维护，没有经过专业的安全审计，可能存在尚未发现的缺陷。它会让一台服务器获得在你电脑上执行命令的能力，使用前请读完[安全须知](#安全须知)和[账号须知](#账号须知)，并自行评估风险。
@@ -42,7 +44,7 @@ Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、�
 | **账号与用量** | 在客户端里登录 / 退出云端的 Claude 账号，查看额度、重置时间和调用统计 |
 | **定时任务** | 到点向指定会话或新会话发送预设提示词，也可以直接让 Claude 帮你设置 |
 | **省心** | 托盘后台、记住凭据与自动登录、未发送内容按会话保存 |
-| **一键升级** | 服务端跟踪发布页；在客户端里点一下即可升级服务端和客户端，不必登录服务器 |
+| **统一维护** | 关闭在线更新，由管理员部署匹配的定制客户端和服务端 |
 | **浏览器访问（可选）** | 与桌面共用工作台，操作在线设备的已有会话，或新建在服务端执行的普通会话；默认关闭，不增加端口或容器 |
 
 ## 快速开始
@@ -56,7 +58,7 @@ Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、�
 在服务器上执行：
 
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/sun168567/cc-desk-tunnel/main/deploy/install.sh)"
+sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/main/deploy/install.sh)"
 ```
 
 脚本会：
@@ -70,7 +72,7 @@ sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/sun168567/cc-desk-t
 
 ### 2. 安装 Windows 客户端
 
-从[发布页](https://github.com/sun168567/cc-desk-tunnel/releases/latest)下载 `CC-Desk-Tunnel-Setup-<版本>-x64.exe` 并安装。安装包自带 PowerShell 7 和 OpenSSH，不需要另装任何东西。启动后填入上一步的三项信息并连接。
+从[发布页](https://github.com/benvyf/cc-desk-tunnel/releases)下载 `CC-Desk-Tunnel-Setup-<版本>-x64.exe` 并安装。安装包自带 PowerShell 7 和 OpenSSH，不需要另装任何东西。启动后填入上一步的三项信息并连接。
 
 首次运行会遇到 SmartScreen 提示，处理方法见[杀毒软件与 SmartScreen](#杀毒软件与-smartscreen)。
 
@@ -123,7 +125,7 @@ macOS 与 Linux 的安装包在同一个发布页，安装方法见 [macOS 客�
 ## 杀毒软件与 SmartScreen
 
 - **不再带 frpc。** 0.2.9 及更早的客户端带有内网穿透工具 frp 的 `frpc.exe`，它经常被 Windows Defender 和其他杀毒软件当作“黑客工具 / 风险软件”隔离。0.2.10 起执行通道由客户端自己经服务地址建立，安装包和服务端镜像里都没有 frp 了；升级后旧的 `frpc.exe` 会被安装程序删除。
-- **内置组件被拦截时，先核对再放行。** 客户端仍带有官方发布的 OpenSSH 和 PowerShell 7，打包时校验 SHA256，只在连接期间运行，只监听本机。它们被拦截的情况少见；遇到时先确认安装包来自本仓库的[发布页](https://github.com/sun168567/cc-desk-tunnel/releases/latest)，对照 `SHA256SUMS` 校验，并查看具体被拦截的文件。确认来源后，仅对已核验的组件文件设置必要的例外，不建议关闭杀毒软件或排除整个磁盘。文件已被隔离时，可在核验后恢复或重新安装。
+- **内置组件被拦截时，先核对再放行。** 客户端仍带有官方发布的 OpenSSH 和 PowerShell 7，打包时校验 SHA256，只在连接期间运行，只监听本机。它们被拦截的情况少见；遇到时先确认安装包来自本仓库的[发布页](https://github.com/benvyf/cc-desk-tunnel/releases)，对照 `SHA256SUMS` 校验，并查看具体被拦截的文件。确认来源后，仅对已核验的组件文件设置必要的例外，不建议关闭杀毒软件或排除整个磁盘。文件已被隔离时，可在核验后恢复或重新安装。
 - **SmartScreen。** 安装包没有代码签名，首次运行会出现“Windows 已保护你的电脑”，点“更多信息 → 仍要运行”。
 - 项目不会修改任何安全软件的设置。不放心可以自己从源码构建。
 
