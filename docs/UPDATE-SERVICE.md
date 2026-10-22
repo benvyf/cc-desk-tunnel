@@ -2,7 +2,7 @@
 
 这是 [更新通道总设计](superpowers/specs/2026-10-23-vps-update-channel-design.md) 的交付 B，实现独立管理网页、签名候选上传、发布/撤回、审计与只读通道索引。它复用 [离线签名工具](UPDATE-SIGNING.md)，不保管签名私钥。Windows 客户端接入属于交付 C，现有安装包不会因部署本服务而自动获得升级能力。
 
-本轮交付为源码、测试及部署模板；没有部署生产服务，也没有修改 GhostAPI、六台 Ubuntu、现有客户端或 DNS。随后已完成[真实 Linux 隔离验收](UPDATE-SERVICE-LINUX-ACCEPTANCE.md)，包含临时 systemd、Nginx HTTPS/Range、鉴权及恢复；生产公网和正式服务身份的验收仍待上线阶段执行。
+源码交付后已完成[真实 Linux 隔离验收](UPDATE-SERVICE-LINUX-ACCEPTANCE.md)，随后完成[正式部署及公网验证](UPDATE-SERVICE-PRODUCTION.md)。管理页现位于 `https://api.ghostapi.org/cc-updates/admin/`，两个通道均为空，Windows 客户端接入尚未完成。GhostAPI 应用、六台 Ubuntu 及 DNS 未修改；现有 HTTPS 站点仅增加更新服务路由。
 
 ## 运行结构
 

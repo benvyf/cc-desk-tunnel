@@ -64,9 +64,9 @@ node scripts/sign-managed-update.mjs `
 
 工具检查 `--source` 是 Git 根目录、HEAD 等于 sourceCommit、无已跟踪修改或未跟踪文件，并从该提交读取桌面版本和协议常量。读取安装包前后检查文件状态，签名前后核对源码。工具将索引自验签成功后，以排他新建方式写出；已有文件和输出符号链接不会被覆盖。失败不会输出私钥、输入 JSON 或 Git 错误内容。
 
-此阶段核对的是管理员提供的源码身份与文件哈希，**尚不能证明任意 EXE 确实由该提交构建**。需由管理员核对原构建记录；后续打包交付将嵌入定制构建身份。工具不负责全局分配 build 或保存发布历史，管理员必须保证 build 全局递增、每个通道 revision 递增；[独立更新服务](UPDATE-SERVICE.md)负责持久校验和激活，其源码已实现，尚未部署生产。
+此阶段核对的是管理员提供的源码身份与文件哈希，**尚不能证明任意 EXE 确实由该提交构建**。需由管理员核对原构建记录；后续打包交付将嵌入定制构建身份。工具不负责全局分配 build 或保存发布历史，管理员必须保证 build 全局递增、每个通道 revision 递增；[独立更新服务](UPDATE-SERVICE.md)负责持久校验和激活，现已[部署生产](UPDATE-SERVICE-PRODUCTION.md)，目前仅发布两个签名空通道，没有安装包。
 
-既有 `managed-preview-fd6e213` 安装包没有新通道身份，不能将其追溯标为 build 1。本步测试仅使用临时测试密钥及非可执行的安装包 fixture，没有生产发布。
+既有 `managed-preview-fd6e213` 安装包没有新通道身份，不能将其追溯标为 build 1。工具测试仅使用临时测试密钥及非可执行的安装包 fixture；随后正式部署建立了生产签名身份和 revision 1 空通道，首次真实安装包应使用更高 revision。
 
 ## 续期、撤回和回滚
 
@@ -82,7 +82,7 @@ node scripts/sign-managed-update.mjs `
   --out C:/cc-release-output/pilot-revision-2.json
 ```
 
-输出仅为待发布签名文件，不会自行撤回线上版本。VPS 激活、更高 revision 防回放、客户端安装前再次获取索引将在后续交付接入。撤回不逆转已完成安装。回滚采用旧源码重新构建并使用更高 build，不给旧二进制仅更改清单 build。
+输出仅为待发布签名文件，不会自行撤回线上版本。VPS 已实现激活及更高 revision 防回放，客户端安装前再次获取索引仍属于后续客户端交付。撤回不逆转已完成安装。回滚采用旧源码重新构建并使用更高 build，不给旧二进制仅更改清单 build。
 
 pilot 验证后可以对同一制品生成 stable 签名索引；stable 使用自己的 revision 序列。不要改动已签名文件内容；签名覆盖 keyId 与 payload 原始 Base64 字符串。格式为：
 
