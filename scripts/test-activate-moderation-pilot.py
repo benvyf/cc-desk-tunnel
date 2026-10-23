@@ -16,6 +16,27 @@ module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 
 
+class CredentialPreflightTest(unittest.TestCase):
+    def test_node_check_forwards_script_to_container_stdin(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            received = state / 'received-node.json'
+            received.write_text(json.dumps(dict(endpoint=module.ENDPOINT, nodeId='ubuntu-cc', token='x' * 43)))
+
+            def run(*args, input=None):
+                self.assertEqual(args[:3], ('docker', 'run', '--rm'))
+                self.assertIn('-i', args[3:args.index(module.IMAGE)])
+                self.assertEqual(args[-2:], ('--input-type=module', '-'))
+                self.assertIn('NODE_AUTH_OK', input)
+                self.assertIn("body:'{}'", input)
+                return 'NODE_AUTH_OK'
+
+            with patch.object(module, 'STATE', state), patch.object(module, 'run', run), \
+                    patch.object(module.subprocess, 'run') as ssh:
+                self.assertEqual(module.receive_config(), received)
+                ssh.assert_not_called()
+
+
 class CutoverTest(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()

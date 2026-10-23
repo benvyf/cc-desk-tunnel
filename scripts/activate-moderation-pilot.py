@@ -98,7 +98,7 @@ try {
   console.log('NODE_AUTH_OK');
 } catch { console.error('Node endpoint/authentication unavailable; no model request sent.'); process.exitCode=1; }
 '''
-    assert run('docker', 'run', '--rm', '--network', 'container:' + CONTAINER, '--entrypoint', 'node',
+    assert run('docker', 'run', '--rm', '-i', '--network', 'container:' + CONTAINER, '--entrypoint', 'node',
                IMAGE, '--input-type=module', '-', input=script) == 'NODE_AUTH_OK'
     return received
 
