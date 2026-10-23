@@ -57,3 +57,23 @@ curl -fL 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2638731374c87e
 ```
 
 回传末尾 JSON、PASS 和 `ENROLLMENT_PUBLIC_KEY` 公钥行。私有状态在 `/var/lib/cc-moderation-pilot-2638731374c8`。不要回传里面的生产 inspect 或私钥。收到结果后再签发节点凭据，通过受限临时 SSH 领取；正式切换前重新确认空闲、断开旧客户端并准备一致性备份与回退，不能沿用早先的空闲确认。
+
+## Ubuntu 隔离准备已通过，等待空闲切换
+
+用户回传的 ubuntu-cc 准备结果全部通过，测试镜像 ID 为 `sha256:c132c31b978f47bcf5783cf374b841eddd86d6eef343cca751426691406d6e24`；受保护文件一致、正式容器未变、模型请求为 0。不能再重复构建或重新检查已验收旧代码。
+
+独立节点凭据现保存在 VPS `/root/.cc-update-admin/nodes/ubuntu-cc.json`，服务私有注册表只保存其哈希，已验证认证成功。用户回传的 SSH 公钥已获准临时读取**此文件**，带 `restrict`、强制命令和 UTC `2026-10-23T15:09:50Z` 到期时间（香港时间当日 23:09:50）。禁止 PTY、转发、agent 和任意其他命令；无 JEV 密钥或管理员令牌下发。若领取前授权已经过期，只续期这一条受限授权，不能更改管理密码、节点凭据或放开 SSH 权限。
+
+`scripts/activate-moderation-pilot.py --idle-confirmed` 的切换顺序：
+
+1. 核对已准备的固定镜像、正式容器与数据挂载；通过固定 VPS SSH 主机公钥领取此节点配置到节点 root 私有目录。
+2. 从与正式容器相同的网络命名空间发送一个空审核对象，预期认证后返回 400，确认凭据和连通性；空对象不会到达 JEV。
+3. 检查会话库没有 activeRun，停止此空闲节点并在本机保存一致性 `data.tar`、原 `service.env` 和 compose 环境文件。旧镜像单独打保留标签，无需再次导出整个镜像到另一台机器。
+4. 仅新增 `PROXY_MODERATION_CONFIG=/data/config/moderation-node.json`，配置属 uid 1000、权限 0600；切换到已经隔离验收的镜像，不构建、不拉取、不升级 CLI。
+5. 验证健康、TLS、控制认证，以及已有会话的 terminal.open 被拒绝；不发送 message.send、continue、compact 或账号命令。核对容器环境、路由与挂载、受保护账号/配置文件不变。
+
+脚本在 VPS Linux 临时目录使用模拟 Docker/SSH/健康检查的 4 个核心测试通过，覆盖配置保留/备份、启动验证失败后的自动回退、认证前检失败不停服，以及稍后回退保留新用户文件；测试未调用模型或真实 Docker。
+
+启用失败时自动恢复原镜像及两个环境文件，保留数据；因会话库代码与 schema 未改，不自动用旧数据覆盖用户历史。一致性数据档仅供必要时单独恢复。脚本保存为节点状态目录的 `activate.py`；手动回退命令为 `sudo python3 /var/lib/cc-moderation-pilot-2638731374c8/activate.py --rollback`。备份校验不通过会停止。
+
+**当前尚未执行正式切换。** 必须取得用户对当前“节点无任务且已断开此节点的客户端”的确认，才能给出带 `--idle-confirmed` 的执行命令。最终以节点回传的 `activation-result.json`、PASS 和客户端验收为准，不把公钥签发或本地模拟验收当作生产已启用。
