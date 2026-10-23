@@ -57,6 +57,19 @@ contextBridge.exposeInMainWorld('desktop', {
     webFrame.setZoomLevel(direction ? webFrame.getZoomLevel() + Math.sign(direction) * 0.5 : 0),
   quit: (all) => ipcRenderer.invoke('app:quit', all),
   version: () => ipcRenderer.invoke('app:version'),
+  managedUpdate: {
+    state: () => ipcRenderer.invoke('managed-update:state'),
+    check: () => ipcRenderer.invoke('managed-update:check'),
+    download: () => ipcRenderer.invoke('managed-update:download'),
+    install: () => ipcRenderer.invoke('managed-update:install'),
+    cancel: () => ipcRenderer.invoke('managed-update:cancel'),
+    activity: (value) => ipcRenderer.invoke('managed-update:activity', value),
+    subscribe: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('managed-update:changed', listener);
+      return () => ipcRenderer.removeListener('managed-update:changed', listener);
+    },
+  },
   releaseNotes: (version) => ipcRenderer.invoke('release:notes', version),
   device: () => ipcRenderer.invoke('device:get'),
   installUpdate: (version) => ipcRenderer.invoke('update:install', version),

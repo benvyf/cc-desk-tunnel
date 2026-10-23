@@ -27,6 +27,7 @@ import type { ListedConnection } from './shared.ts';
 import ShortcutSettings from './ShortcutSettings.tsx';
 import { IconButton, Switch } from './ui.tsx';
 import type { MenuItem } from './ui.tsx';
+import ManagedUpdatePanel from './ManagedUpdatePanel.tsx';
 
 export type Section =
   'account' | 'claude' | 'general' | 'notifications' | 'shortcuts' | 'help' | 'about';
@@ -705,7 +706,7 @@ function About({
           <Row title="客户端版本">
             <span className="setting-actions">
               <span className="setting-value">{version || '浏览器开发入口'}</span>
-              {version && (
+              {version && !window.desktop?.managedUpdate && (
                 <button type="button" className="button" onClick={() => showNotes(version)}>
                   这一版的更新内容
                 </button>
@@ -720,28 +721,32 @@ function About({
           </Row>
         </div>
         <h2 className="page-heading">更新</h2>
-        <div className="card">
-          <Row
-            title="客户端与服务端需要同一版本"
-            detail="服务端跟随发布页；客户端的安装包由所连接的服务端提供，也可以在登录页改从 GitHub 发布页下载，校验后覆盖升级"
-          >
-            <span className="setting-actions">
-              {updates.map((item) => (
-                <button
-                  type="button"
-                  className="button"
-                  key={item.label}
-                  disabled={item.disabled}
-                  onClick={item.run}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              ))}
-              {updates.length === 0 && <span className="setting-value">没有可用的更新操作</span>}
-            </span>
-          </Row>
-        </div>
+        {window.desktop?.managedUpdate ? (
+          <ManagedUpdatePanel />
+        ) : (
+          <div className="card">
+            <Row
+              title="客户端与服务端需要同一版本"
+              detail="服务端跟随发布页；客户端的安装包由所连接的服务端提供，也可以在登录页改从 GitHub 发布页下载，校验后覆盖升级"
+            >
+              <span className="setting-actions">
+                {updates.map((item) => (
+                  <button
+                    type="button"
+                    className="button"
+                    key={item.label}
+                    disabled={item.disabled}
+                    onClick={item.run}
+                  >
+                    {item.icon}
+                    {item.label}
+                  </button>
+                ))}
+                {updates.length === 0 && <span className="setting-value">没有可用的更新操作</span>}
+              </span>
+            </Row>
+          </div>
+        )}
         {window.desktop && (
           <>
             <h2 className="page-heading">排查</h2>
@@ -827,7 +832,7 @@ export default function SettingsPage({
   const term = search.trim().toLowerCase();
   const shown = sections.filter(
     (item) =>
-      (!back || item.group === '客户端') &&
+      (!back || item.group === '客户端' || item.id === 'about') &&
       (!browser || !['account', 'claude'].includes(item.id)) &&
       `${item.name} ${item.words}`.toLowerCase().includes(term),
   );

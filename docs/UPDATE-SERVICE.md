@@ -1,6 +1,6 @@
 # VPS 定制更新管理服务
 
-本文保留更新服务初次部署流程。2026-10-23 的监控上线准备已核对线上运行归档 `2638731374c87e767eca6ff1ec37b6a7352ab4d1`，其中包含内容审核和管理员密码登录；合并监控时完整保留这些模块与生产数据。后续实际部署结果见 [账号监控部署记录](ACCOUNT-MONITOR-DEPLOYMENT.md)。
+本文保留更新服务初次部署流程。最新监控、审核和密码登录部署见[账号监控部署记录](ACCOUNT-MONITOR-DEPLOYMENT.md)。生产发布方式见 [VPS 统一发布](VPS-RELEASE-CREDENTIALS.md)：生产私钥和令牌由 VPS root 私有目录集中保管，通过 SSH 运行发布工具；更新分发服务本身不读取签名私钥。Windows 定制客户端源码现已合并，当前发布以管理接口实际数据为准。
 
 这是 [更新通道总设计](superpowers/specs/2026-10-23-vps-update-channel-design.md) 的交付 B，实现独立管理网页、签名候选上传、发布/撤回、审计与只读通道索引。它复用 [签名工具](UPDATE-SIGNING.md)，分发服务不保管签名私钥。
 

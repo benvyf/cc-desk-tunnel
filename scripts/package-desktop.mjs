@@ -53,7 +53,11 @@ export const posixService = {
 // bridge with what it imports bundled into one file, and the main process's own modules as written.
 // `files` are the further files of apps/desktop/electron that this system's package needs; `dependencies`
 // are packages a separately started process of the program loads, which no bundle holds.
-export async function stageDesktop(root, app, { description, files = [], dependencies = [] }) {
+export async function stageDesktop(
+  root,
+  app,
+  { description, files = [], dependencies = [], managedIdentity = null },
+) {
   mkdirSync(app, { recursive: true });
   rmSync(join(app, 'node_modules'), { recursive: true, force: true });
   await viteBuild({
@@ -93,6 +97,27 @@ export async function stageDesktop(root, app, { description, files = [], depende
   );
   for (const file of [...commonjs, 'release-download.mjs', 'icon.png', ...files])
     cpSync(join(root, 'apps/desktop/electron', file), join(app, 'electron', file));
+  if (managedIdentity) {
+    await viteBuild({
+      configFile: false,
+      root,
+      build: {
+        ssr: true,
+        target: 'node24',
+        outDir: join(app, 'electron'),
+        emptyOutDir: false,
+        rolldownOptions: {
+          input: join(root, 'packages/managed-updates/src/index.ts'),
+          external: [...builtinModules, ...builtinModules.map((name) => `node:${name}`)],
+          output: { format: 'cjs', entryFileNames: 'managed-contract.cjs', codeSplitting: false },
+        },
+      },
+    });
+    writeFileSync(
+      join(app, 'electron/managed-build.json'),
+      JSON.stringify(managedIdentity, null, 2) + '\n',
+    );
+  }
   // A file the main process loads by path is only missed when its feature is used, so each is looked for here.
   for (const file of commonjs)
     for (const [, name] of readFileSync(join(app, 'electron', file), 'utf8').matchAll(
