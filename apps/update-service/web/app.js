@@ -39,9 +39,14 @@ async function request(path, options = {}) {
     headers: { authorization: `Bearer ${token}`, ...(options.headers ?? {}) },
   });
   if (!response.ok) {
-    if (response.status === 401) logout();
+    if (response.status === 401) {
+      logout();
+      throw new Error(
+        '管理员令牌不正确或已失效，请使用 VPS 保存的管理令牌，勿使用 CC 节点连接令牌。',
+      );
+    }
     const data = await response.json().catch(() => ({}));
-    throw new Error(data.error ?? '操作失败，请稍后重试。');
+    throw new Error(data.error ?? `操作失败（HTTP ${response.status}），请稍后重试。`);
   }
   return response.status === 204 ? null : response.json();
 }
@@ -198,7 +203,7 @@ async function refresh() {
 $('login').addEventListener('submit', (event) => {
   event.preventDefault();
   void action(async () => {
-    token = $('token').value;
+    token = $('token').value.trim();
     $('token').value = '';
     await refresh();
     $('login-panel').hidden = true;

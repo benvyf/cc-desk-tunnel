@@ -118,7 +118,12 @@ test(
     await writeFile(signed, index(1, false));
     await writeFile(artifact, bytes);
     await page.goto(origin + '/cc-updates/admin/');
-    await page.getByLabel('管理令牌', { exact: true }).fill(token);
+    await page.getByLabel('管理令牌', { exact: true }).fill('wrong_admin_token_fixture_1234567890');
+    await page.getByRole('button', { name: '登录管理' }).click();
+    await expect(page.locator('#notice')).toContainText('管理员令牌不正确或已失效');
+    await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
+    assert.equal(await page.getByLabel('管理令牌', { exact: true }).inputValue(), '');
+    await page.getByLabel('管理令牌', { exact: true }).fill(`  ${token}  `);
     await page.getByRole('button', { name: '登录管理' }).click();
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
     await page.getByLabel('签名索引（JSON）').setInputFiles(signed);
