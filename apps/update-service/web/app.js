@@ -1,4 +1,5 @@
 import { setupModeration } from './moderation.js';
+import { setupPasswordLogin } from './password-login.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
@@ -30,6 +31,7 @@ function logout() {
   $('login-panel').hidden = false;
   for (const id of ['channels', 'candidates', 'audit']) $(id).replaceChildren();
   moderation.clear();
+  passwordLogin.clear();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -41,9 +43,7 @@ async function request(path, options = {}) {
   if (!response.ok) {
     if (response.status === 401) {
       logout();
-      throw new Error(
-        '管理员令牌不正确或已失效，请使用 VPS 保存的管理令牌，勿使用 CC 节点连接令牌。',
-      );
+      throw new Error('登录已失效或管理令牌不正确，请重新登录。');
     }
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error ?? `操作失败（HTTP ${response.status}），请稍后重试。`);
@@ -200,16 +200,24 @@ async function refresh() {
     $('audit').append(tr);
   }
 }
+async function login(sessionToken) {
+  token = sessionToken;
+  await refresh();
+  $('login-panel').hidden = true;
+  $('dashboard').hidden = false;
+  $('logout').hidden = false;
+  notice('');
+}
 $('login').addEventListener('submit', (event) => {
   event.preventDefault();
   void action(async () => {
-    token = $('token').value.trim();
+    const value = $('token').value.trim();
     $('token').value = '';
-    await refresh();
-    $('login-panel').hidden = true;
-    $('dashboard').hidden = false;
-    $('logout').hidden = false;
-    notice('');
+    if (!/^[A-Za-z0-9_-]{32,128}$/.test(value))
+      throw new Error(
+        '管理令牌格式不正确：只能包含英文字母、数字、下划线或短横线。也可以直接使用密码登录。',
+      );
+    await login(value);
   });
 });
 $('create').addEventListener('submit', (event) => {
@@ -229,7 +237,15 @@ $('create').addEventListener('submit', (event) => {
 });
 $('refresh').addEventListener('click', () => action(refresh));
 $('logout').addEventListener('click', () => {
+  if (token)
+    void fetch(api + '/auth/logout', {
+      method: 'POST',
+      credentials: 'omit',
+      keepalive: true,
+      headers: { authorization: `Bearer ${token}` },
+    }).catch(() => {});
   logout();
   notice('已退出。');
 });
 const moderation = setupModeration({ request, action, notice, element, date });
+const passwordLogin = setupPasswordLogin({ action, notice, login });

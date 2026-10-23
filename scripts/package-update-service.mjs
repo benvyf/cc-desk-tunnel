@@ -13,16 +13,21 @@ export const runtimeFiles = [
   'apps/update-service/src/store.ts',
   'apps/update-service/src/jev.ts',
   'apps/update-service/src/moderation.ts',
+  'apps/update-service/src/password-auth.ts',
+  'scripts/create-admin-password-setup.mjs',
   'apps/update-service/web/index.html',
   'apps/update-service/web/app.js',
   'apps/update-service/web/moderation.js',
+  'apps/update-service/web/password-login.js',
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',
   'deploy/update-service/cc-update-service.service',
+  'deploy/update-service/cc-admin-password-setup',
   'deploy/update-service/nginx.conf.example',
   'deploy/update-service/config.example.json',
   'docs/UPDATE-SERVICE.md',
   'docs/JEV-SUB2API-REFERENCE.md',
+  'docs/ADMIN-PASSWORD-LOGIN.md',
 ];
 
 export async function packageUpdateService(root, output) {

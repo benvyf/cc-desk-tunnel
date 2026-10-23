@@ -13,6 +13,7 @@ import { signIndex } from '../../../packages/managed-updates/src/index.ts';
 import { validateConfig } from '../src/config.ts';
 import { createUpdateServer } from '../src/http.ts';
 import { UpdateStore } from '../src/store.ts';
+import { PasswordAuth } from '../src/password-auth.ts';
 
 test(
   'real browser manages updates and moderation with one login over test TLS',
@@ -117,14 +118,33 @@ test(
     const artifact = join(root, 'CC-Desk-Tunnel-Setup-0.3.6-x64.exe');
     await writeFile(signed, index(1, false));
     await writeFile(artifact, bytes);
-    await page.goto(origin + '/cc-updates/admin/');
+    const password = '我的管理密码_2026_secure';
+    const auth = new PasswordAuth(join(config.dataDir, 'private'));
+    const setup = await auth.issueSetup();
+    await page.goto(origin + '/cc-updates/admin/#setup=' + setup);
+    await expect(page.getByRole('heading', { name: '设置管理员密码' })).toBeVisible();
+    assert.equal(new URL(page.url()).hash, '');
+    await mkdir(new URL('../../../.local/', import.meta.url), { recursive: true });
+    await page.screenshot({
+      path: fileURLToPath(new URL('../../../.local/admin-password-setup.png', import.meta.url)),
+      fullPage: true,
+    });
+    await page.getByLabel('新管理员密码', { exact: true }).fill(password);
+    await page.getByLabel('确认管理员密码', { exact: true }).fill(password);
+    await page.getByRole('button', { name: '保存密码并登录' }).click();
+    await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
+    await page.getByRole('button', { name: '退出登录' }).click();
+    await page.getByText('使用旧管理令牌', { exact: true }).click();
+    await page.getByLabel('管理令牌', { exact: true }).fill('中文'.repeat(20));
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('管理令牌格式不正确');
     await page.getByLabel('管理令牌', { exact: true }).fill('wrong_admin_token_fixture_1234567890');
-    await page.getByRole('button', { name: '登录管理' }).click();
-    await expect(page.locator('#notice')).toContainText('管理员令牌不正确或已失效');
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('登录已失效或管理令牌不正确');
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
     assert.equal(await page.getByLabel('管理令牌', { exact: true }).inputValue(), '');
     await page.getByLabel('管理令牌', { exact: true }).fill(`  ${token}  `);
-    await page.getByRole('button', { name: '登录管理' }).click();
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
     await page.getByLabel('签名索引（JSON）').setInputFiles(signed);
     await page.getByRole('button', { name: '添加候选' }).click();
@@ -188,6 +208,13 @@ test(
     });
     await page.getByRole('button', { name: '退出登录' }).click();
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
+    await page.getByLabel('管理员密码', { exact: true }).fill('wrong_password_2026');
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('密码不正确');
+    await page.getByLabel('管理员密码', { exact: true }).fill(password);
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
+    await page.getByRole('button', { name: '退出登录' }).click();
     assert.equal(await page.locator('#moderation-events').textContent(), '');
     assert.equal(await page.getByLabel('待审文本', { exact: true }).inputValue(), '');
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);

@@ -8,6 +8,7 @@ import { signIndex } from '../../../packages/managed-updates/src/index.ts';
 import { UpdateStore } from '../src/store.ts';
 import { createUpdateServer } from '../src/http.ts';
 import { validateConfig } from '../src/config.ts';
+import { PasswordAuth } from '../src/password-auth.ts';
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'cc-update-http-'));
@@ -67,6 +68,57 @@ async function fixture(t: TestContext) {
   return { root, config, store, server, request, headers, bytes, signed };
 }
 const api = '/cc-updates/admin/api';
+
+test('password setup/login require same-origin requests, sessions authorize admin API and logout revokes them', async (t) => {
+  const f = await fixture(t);
+  const password = '管理员密码测试_2026_secure';
+  const auth = new PasswordAuth(join(f.root, 'private'));
+  const code = await auth.issueSetup();
+  const post = (path: string, data: unknown, origin = f.config.origin) =>
+    f.request(api + '/auth/' + path, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  assert.equal(
+    (await post('setup', { setupToken: code, password }, 'https://wrong.invalid')).status,
+    403,
+  );
+  assert.equal((await post('setup', { setupToken: code, password, extra: true })).status, 400);
+  const setup = await post('setup', { setupToken: code, password });
+  assert.equal(setup.status, 200);
+  const { sessionToken } = await setup.json();
+  const sessionHeaders = { authorization: `Bearer ${sessionToken}`, origin: f.config.origin };
+  assert.equal((await f.request(api + '/status', { headers: sessionHeaders })).status, 200);
+  assert.equal((await post('setup', { setupToken: code, password })).status, 401);
+  assert.equal((await post('login', { password: 'wrong_password_2026' })).status, 401);
+  const logged = await post('login', { password });
+  assert.equal(logged.status, 200);
+  assert.ok((await logged.json()).sessionToken);
+  assert.equal(
+    (await f.request(api + '/auth/logout', { method: 'POST', headers: sessionHeaders })).status,
+    204,
+  );
+  assert.equal((await f.request(api + '/status', { headers: sessionHeaders })).status, 401);
+  assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
+});
+
+test('password login attempts share rate limiting and bound JSON body size', async (t) => {
+  const f = await fixture(t);
+  const password = 'local_password_fixture_2026';
+  const auth = new PasswordAuth(join(f.root, 'private'));
+  await auth.setup(await auth.issueSetup(), password);
+  const login = (value: string) =>
+    f.request(api + '/auth/login', {
+      method: 'POST',
+      headers: { origin: f.config.origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ password: value }),
+    });
+  assert.equal((await login('x'.repeat(2049))).status, 413);
+  for (let attempt = 0; attempt < 30; attempt++) assert.equal((await login('short')).status, 401);
+  assert.equal((await login(password)).status, 429);
+  assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
+});
 
 test('moderation shares administrator auth, keeps credentials private and records fail-closed previews', async (t) => {
   const f = await fixture(t);
