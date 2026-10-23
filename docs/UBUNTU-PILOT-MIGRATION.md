@@ -12,7 +12,9 @@
 
 用户在风险核对后回报“cc已经链接上”，随后截图确认“定制构建 2 · pilot · 协议 20”，并明确“消息都能查看”。因此客户端连接、正式构建身份及历史消息读取记为用户确认通过；统计、普通工作区文件读取及原生终端显示/关闭尚待回报。
 
-截图同时显示旧 `DESKTOP-FG28DJA` 会话在“其他设备”下且离线。已核实当前 Windows hostname 仍为 `DESKTOP-FG28DJA`，但独立验收 user-data-dir 中的 `settings.json` 生成了与原 `%APPDATA%/CC Desk Tunnel/settings.json` 不同的 deviceId；客户端将身份保存在基础配置目录，并按该 ID 判断会话是否属于本机。因此恢复这台电脑的旧身份即可恢复本机归属显示，无需修改服务端会话或迁移项目。已准备只改验收配置 deviceId 的本地脚本，等待用户完全退出验收客户端后执行；其余配置保留。另一台 `DESKTOP-DCTMR82` 不应冒充本机或批量接管。
+截图同时显示旧 `DESKTOP-FG28DJA` 会话在“其他设备”下且离线。已核实当前 Windows hostname 仍为 `DESKTOP-FG28DJA`，但独立验收 user-data-dir 中的 `settings.json` 生成了与原 `%APPDATA%/CC Desk Tunnel/settings.json` 不同的 deviceId；客户端将身份保存在基础配置目录，并按该 ID 判断会话是否属于本机。用户确认完全退出后，已执行本地脚本，将验收配置的 deviceId 恢复为这台电脑的原 ID，并验证其他配置字段未变；旧验收 deviceId 已单独备份，原配置及服务端会话未修改。客户端未由开发工具重新启动，归属显示仍待用户重开确认。另一台 `DESKTOP-DCTMR82` 不应冒充本机或批量接管。
+
+用户随后询问仅连接 CC 是否会联系 Claude。源码确认：原生模式连接后自动发送 `account.status`，服务端调用官方 CLI 的 `auth status --json`；首次显示空闲会话并加载历史后还会自动刷新 `session.status`，可能启动无用户提示词的官方 CLI/SDK 状态初始化。因此连接和浏览历史不能视为完全不联系 Anthropic；登录、额度等辅助联网与提交聊天模型请求需要区分。此前脚本记录的 `modelRequests:0` 不代表 Anthropic 网络包为零，用户 GUI 操作期间未抓包。保持客户端关闭及模型测试暂停，先向用户说明这一行为。
 
 完整回滚备份在节点 `/var/lib/cc-desk-tunnel-pilot-4a39bc3/production-backup/`；这是同盘备份，离机副本仍待安排。回滚命令见后文。剩余客户端项目使用独立 user-data-dir 的真实 Windows build 2 核对，保持模型测试暂停。客户端验收通过前不扩展到其他五台或 stable 通道。
 
