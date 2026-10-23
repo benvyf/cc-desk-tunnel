@@ -16,4 +16,6 @@ VPS 服务正常。保存于 VPS 的管理员令牌与服务配置摘要一致�
 
 补丁应用前检查原文件 SHA-256，备份旧文件和 BUILD-INFO。更新后的部署清单记录文件摘要及 hotfix 来源，维护记录保存在 VPS `/root/.cc-update-admin/maintenance/` 下。更新后以公网资产摘要、错误令牌 401、VPS 保存凭据认证 200 验收，不在输出中显示令牌。
 
+已应用到线上基线 `50d8e8e4c294eac7b4a557183ed6a00764119163`；补丁源提交 `e6027e7`，线上 `app.js` SHA-256 为 `15f997d72e6b6e8dae77b4926300a4261d124d9a0dd6b279bac7dceb52a6ff30`。备份及结果位于 `maintenance/login-e6027e7/`。重启后管理接口认证返回 200，发布状态与补丁前完全一致；公网真实浏览器验证错误令牌显示明确提示并清空输入。
+
 管理员令牌仍保存在 VPS 的 `/root/.cc-update-admin/access/admin-token.txt`。用户需要登录时可在自己电脑的 PowerShell 中通过现有 SSH 密钥将其直接复制到剪贴板，再粘贴到登录框；无需将令牌发到聊天或写入项目目录。
