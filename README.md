@@ -60,17 +60,19 @@ Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、�
 在服务器上执行：
 
 ```sh
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/main/deploy/install.sh)"
+git clone --single-branch --branch codex/vps-update-channel https://github.com/benvyf/cc-desk-tunnel.git
+cd cc-desk-tunnel
+sudo bash deploy/install.sh
 ```
 
 脚本会：
 
 1. 检查 Docker、Docker Compose 等依赖。缺少时只告诉你安装命令，不会替你安装系统软件。
-2. 从本仓库的发布页下载最新的服务端程序包并校验，解压到 `/opt/cc-desk-tunnel`。
-3. 询问公网地址、证书方式、端口和数据目录（都有默认值，一路回车即可），然后构建镜像并启动。
+2. 使用当前源码构建镜像，安装固定官方 Claude Code **2.1.295**，校验对应架构的制品摘要。旧发布包不会自动变为此版本。
+3. 询问公网地址、证书方式、端口、数据目录，以及管理员为本节点提供的独立审核 JSON 路径（必填），只读接入受管策略后启动；缺少配置则拒绝启动。
 4. 打印客户端要填的**服务地址、证书指纹、服务凭据**，以及需要在防火墙放行的 TCP 端口（默认 8787，只有这一个）。
 
-目前不提供现成镜像，镜像在你的服务器上从源码构建，首次需要几分钟。脚本不会修改防火墙、nginx 或 SSH 配置。再次运行同一条命令可以升级已有部署。手动安装、三种证书方式、备份恢复等见[部署操作手册](deploy/README.md)；已有 nginx 和域名时见[用 nginx 反代](deploy/nginx.md)。
+目前不提供现成镜像，镜像在你的服务器上从源码构建，首次需要几分钟。脚本不会修改防火墙、nginx 或 SSH 配置。已有部署先按部署手册备份、停服并导入本节点既有审核配置，再升级；不会自动签发身份或迁移六台节点。手动安装、三种证书方式、备份恢复等见[部署操作手册](deploy/README.md)；已有 nginx 和域名时见[用 nginx 反代](deploy/nginx.md)。
 
 ### 2. 安装 Windows 客户端
 

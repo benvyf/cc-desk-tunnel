@@ -33,8 +33,8 @@ export function nativeTerminalPolicy() {
   };
 }
 
-// Called before opening a reviewed terminal; an opt-in setting alone must never remove the guard.
-export function assertNativeTerminalReview(executable: string) {
+// File and policy checks shared by startup and terminal opening; this function never runs Claude.
+export function assertNativeTerminalPolicy(executable: string) {
   const binary = executable === 'claude' ? '/opt/runtime/cli/bin/claude' : executable;
   const file = '/etc/claude-code/managed-settings.json';
   for (const path of [
@@ -45,7 +45,7 @@ export function assertNativeTerminalReview(executable: string) {
     binary,
   ]) {
     const owner = statSync(path);
-    if (owner.uid !== 0 || owner.mode & 0o022)
+    if (!owner.isFile() || owner.uid !== 0 || owner.mode & 0o022)
       throw new Error('Native review files must be administrator owned');
   }
   const policy = JSON.parse(readFileSync(file, 'utf8'));
@@ -61,6 +61,11 @@ export function assertNativeTerminalReview(executable: string) {
     )
   )
     throw new Error('Required native review policy is not installed');
+  return binary;
+}
+
+export function assertNativeTerminalReview(executable: string) {
+  const binary = assertNativeTerminalPolicy(executable);
   const version = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).trim();
   if (version !== '2.1.295 (Claude Code)')
     throw new Error('Native review requires the tested official CLI version');

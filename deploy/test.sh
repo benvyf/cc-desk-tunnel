@@ -6,7 +6,16 @@ IMAGE="${PROXY_TEST_IMAGE:-cc-desk-tunnel:local}"
 HOST=127.0.0.1
 TEMP="$(mktemp -d)"
 export PROXY_DEPLOY_CONFIG="$TEMP/deploy.env"
-manage() { bash "$ROOT/deploy/manage.sh" "$@"; }
+# Disposable, unregistered fixture; these lifecycle checks never submit model input.
+printf '%s\n' '{"endpoint":"https://127.0.0.1:18443/cc-updates/v1/moderation/check","nodeId":"deployment-fixture","token":"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}' > "$TEMP/node.json"
+manage() {
+  if [[ "${1:-}" = init ]]; then
+    shift
+    bash "$ROOT/deploy/manage.sh" init --moderation-config "$TEMP/node.json" "$@"
+  else
+    bash "$ROOT/deploy/manage.sh" "$@"
+  fi
+}
 cleanup() {
   for config in "$TEMP"/*.env; do
     [[ -f "$config" ]] || continue
@@ -25,12 +34,23 @@ manage init --host "$HOST" --data "$TEMP/data" --control-port 19871
 sed -i "s|cc-desk-tunnel:local|$IMAGE|" "$PROXY_DEPLOY_CONFIG"
 if manage init --host "$HOST" 2>/dev/null; then echo "Duplicate init was accepted." >&2; exit 1; fi
 if manage backup "$TEMP/data/backup.tar.gz" 2>/dev/null; then echo "Backup inside data was accepted." >&2; exit 1; fi
+if PROXY_DEPLOY_CONFIG="$TEMP/missing-node.env" bash "$ROOT/deploy/manage.sh" init --host "$HOST" --data "$TEMP/missing-node" 2>/dev/null; then
+  echo "Init without a node configuration was accepted." >&2; exit 1
+fi
+[[ ! -e "$TEMP/missing-node" && ! -e "$TEMP/missing-node.env" ]]
 manage up
 source "$PROXY_DEPLOY_CONFIG"
 compose=(docker compose --env-file "$PROXY_DEPLOY_CONFIG" -p "$PROJECT_NAME" -f "$ROOT/deploy/docker/compose.yaml")
 id="$("${compose[@]}" ps -q proxy)"
-docker exec "$id" bash -c 'test "$(id -u)" = 1000; test ! -w /app/apps/server/src/main.ts; test ! -w /opt/runtime/cli/bin/claude; printf native-memory > /data/home/deploy-marker; printf workspace-memory > /data/workspace/deploy-marker; node --version; claude --version; python3 --version; git --version; command -v ssh g++ make jq rg'
+docker exec "$id" bash -c 'test "$(id -u)" = 1000; test ! -w /app/apps/server/src/main.ts; test ! -w /opt/runtime/cli/bin/claude; test ! -w /etc/claude-code/managed-settings.json; test ! -w /etc/claude-code/moderation-node.json; test "$(stat -c %u /etc/claude-code/moderation-node.json)" = 0; printf native-memory > /data/home/deploy-marker; printf workspace-memory > /data/workspace/deploy-marker; node --version; claude --version; python3 --version; git --version; command -v ssh g++ make jq rg'
 curl --cacert "$TEMP/data/tls/control.crt" --resolve cc-desk-tunnel.local:19871:127.0.0.1 -fsS https://cc-desk-tunnel.local:19871/health
+if docker run --rm --network none -v "$DATA_DIR:/data" "$IMAGE" >/dev/null 2>&1; then
+  echo "Missing managed mount was accepted." >&2; exit 1
+fi
+if docker run --rm --network none -v "$DATA_DIR:/data" -v "$MANAGED_CONFIG_DIR:/etc/claude-code:rw" "$IMAGE" >/dev/null 2>&1; then
+  echo "Writable managed mount was accepted." >&2; exit 1
+fi
+
 manage renew
 manage backup "$TEMP/backup.tar.gz"
 [[ "$(stat -c %a "$TEMP/backup.tar.gz")" = 600 ]]

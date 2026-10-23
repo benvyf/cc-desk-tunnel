@@ -45,6 +45,7 @@ FROM base
 COPY --from=build --chown=root:root /home/ccdesktunnel/runtime /opt/runtime
 COPY --from=build --chown=root:root /app /app
 COPY --from=web-build --chown=root:root /app/apps/server/web /app/apps/server/web
+COPY --chown=root:root deploy/docker/managed-settings.json /etc/claude-code/managed-settings.json
 COPY deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 # What a release needs from this image; a program installed from the client must not ask for more.

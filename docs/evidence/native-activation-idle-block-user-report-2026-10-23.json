@@ -6,9 +6,7 @@
   "userRequestedMinimalClaudeInteraction": true,
   "result": {
     "backupExists": false,
-    "errors": [
-      "Node is busy or a client is still connected; no cutover performed"
-    ],
+    "errors": ["Node is busy or a client is still connected; no cutover performed"],
     "production": {
       "originalImage": true,
       "sameContainer": true,

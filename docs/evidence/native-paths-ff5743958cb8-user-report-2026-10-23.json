@@ -29,8 +29,6 @@
     "cutoverPerformed": false,
     "inputPathAcceptancePassed": true,
     "stateDirectory": "/var/lib/cc-native-terminal-paths-ff5743958cb8",
-    "restrictions": [
-      "direct-prompt-command-expansions-blocked"
-    ]
+    "restrictions": ["direct-prompt-command-expansions-blocked"]
   }
 }

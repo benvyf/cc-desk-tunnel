@@ -1,5 +1,7 @@
 # 单节点文本审核门禁
 
+> 新装流程已统一：固定官方 CLI 2.1.295，使用 `manage.sh init --moderation-config FILE` 或停服后的 `moderation-config FILE` 导入现有节点 JSON。新配置由 root 管理并只读挂载到 `/etc/claude-code`，生产入口同时启用聊天和原生终端审核。下文 `/data/config/moderation-node.json`、uid 1000/0600 及终端关闭等段落属于早期部署记录；当前默认流程见[部署手册](../deploy/README.md#固定-cli-与强制审核)，第一台已部署状态见[最新交接](开发交接与跨电脑续做指南-2026-10-23.md)。
+
 > 原生终端恢复评估：用户选择继续强制审核。官方故障阻断选项 `onFailure: "block"` 要求 CLI 2.1.295 及以上，当前固定 2.1.293 不能直接满足；未改生产、未升级 CLI、未发送模型请求，终端保持禁用。详见 [可行性与后续隔离验证条件](NATIVE-TERMINAL-MODERATION-ASSESSMENT.md)。
 
 > 当前状态（2026-10-23）：ubuntu-cc 已回传正式启用 PASS，客户端基础验收三项全部通过；真实消息的 JEV→Claude 完整链路尚未验收。切换脚本 `260224cbf2c7ba41db9e282fab94b2db5bf71d6f`；已验收镜像 `c132c31b978f47bcf5783cf374b841eddd86d6eef343cca751426691406d6e24`。本次切换未发送 Claude 模型请求，CLI/SDK、账号和路由一致。临时 SSH 领取授权已撤销，节点凭据保留；其余五台暂缓。下文准备与切换前状态是历史记录。

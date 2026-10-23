@@ -14,4 +14,4 @@ PROGRAM=/app
 echo "Starting program $(node -p "require('$PROGRAM/apps/desktop/package.json').version") from $PROGRAM"
 export PROXY_RUNTIME_DIR=/opt/runtime
 unset PROXY_PROGRAM_DIR
-exec node --env-file=/data/config/service.env "$PROGRAM/apps/server/src/main.ts"
+exec node --env-file=/data/config/service.env "$PROGRAM/apps/server/src/managed-main.ts"
