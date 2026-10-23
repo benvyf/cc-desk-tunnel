@@ -43,6 +43,7 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
     throw new Error('Direct mode requires PROXY_TLS_CERT and PROXY_TLS_KEY.');
   const options: ServerOptions = {
     token: env.PROXY_TOKEN ?? '',
+    nativeTerminalReview: env.PROXY_NATIVE_TERMINAL_REVIEW === '1',
     moderation: env.PROXY_MODERATION_CONFIG
       ? moderationConfig(JSON.parse(readFileSync(env.PROXY_MODERATION_CONFIG, 'utf8')))
       : undefined,
@@ -69,6 +70,8 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
         }
       : undefined,
   };
+  if (options.nativeTerminalReview && (!native || !options.moderation))
+    throw new Error('Native terminal review requires the native adapter and node moderation.');
   // Custom builds are deployed by the administrator; legacy release settings are ignored.
   return { options, native, port: port(env.PROXY_PORT, 8787, 'PROXY_PORT') };
 }

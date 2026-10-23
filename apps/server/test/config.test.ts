@@ -76,6 +76,7 @@ test('service settings are removed from the environment inherited by the native 
     ...native,
     FRPS_PORT: '7000',
     PROXY_DATA_DIR: '/state',
+    PROXY_NATIVE_TERMINAL_REVIEW: '1',
     CLAUDE_PATH: 'claude',
     CLAUDE_MODEL: 'opus',
     CLAUDE_SETTINGS_PATH: '/private/provider.json',
@@ -92,6 +93,17 @@ test('service settings are removed from the environment inherited by the native 
     CLAUDE_CODE_USE_BEDROCK: '1',
     ANTHROPIC_BASE_URL: 'https://api.example.com',
   });
+});
+test('native terminal review stays opt-in and requires the native adapter and node moderation', () => {
+  assert.equal(environmentConfig(native, '/state').options.nativeTerminalReview, false);
+  assert.throws(
+    () => environmentConfig({ ...native, PROXY_NATIVE_TERMINAL_REVIEW: '1' }, '/state'),
+    /node moderation/,
+  );
+  assert.throws(
+    () => environmentConfig({ PROXY_NATIVE_TERMINAL_REVIEW: '1' }, '/state'),
+    /native adapter/,
+  );
 });
 test('native server fails before opening history storage when transport config is incomplete', () => {
   assert.throws(

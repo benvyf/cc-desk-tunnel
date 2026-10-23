@@ -86,6 +86,8 @@ curl -fL 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2638731374c87e
 
 ## 正式切换及客户端基础验收通过
 
+原生终端的后续候选方案见 [官方 2.1.295 终端审核评估](NATIVE-TERMINAL-MODERATION-ASSESSMENT.md)。候选准备不改变本节生产状态；恢复终端仍有未完成的输入路径验证，不能直接启用。
+
 用户执行 `260224c` 版脚本回传 PASS：`moderationEnabled=true`、`terminalDisabledVerified=true`、`cutoverPerformed=true`、`rolledBack=false`、`modelRequests=0`；协议 20、TLS、控制认证通过，CLI/SDK、凭据和路由保持不变。节点一致性备份在 `/var/lib/cc-moderation-pilot-2638731374c8/activation-backup`，正式结果在同级 `activation-result.json`。
 
 已在 VPS 撤销仅对应此次领取公钥的一条 SSH 授权，保留其他管理员 SSH 授权、节点凭据和注册表。VPS 记录 `/root/.cc-update-admin/nodes/ubuntu-cc-activation-reported.json` 明确区分用户回传的节点证据与本机实际完成的授权撤销；当前电脑仍无 Ubuntu SSH 管理通道。

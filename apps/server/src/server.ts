@@ -63,6 +63,7 @@ import { UsageLog, createUsageReceiver, telemetryEnvironment } from './usage.ts'
 import { WebAccess } from './web-access.ts';
 import { browserActivity, browserCommands, isWebCommand } from './web-commands.ts';
 import { reviewInput, type ModerationOptions } from './moderation.ts';
+import { assertNativeTerminalReview } from './native-terminal-policy.ts';
 
 type Peer = {
   socket: WebSocket;
@@ -124,6 +125,7 @@ export type ServerOptions = {
   token: string;
   dataDir: string;
   moderation?: ModerationOptions;
+  nativeTerminalReview?: boolean;
   stepMs?: number;
   allowedOrigins?: string[];
   claude?: ClaudeOptions;
@@ -715,7 +717,7 @@ export function createProxyServer(options: ServerOptions) {
   }
   // The terminal occupies its session like a run does, so other connections see it as busy.
   async function openTerminal(peer: Peer, command: CommandOf<'terminal.open'>, session: Session) {
-    if (options.moderation)
+    if (options.moderation && !options.nativeTerminalReview)
       throw new DomainError(
         'moderation_terminal_disabled',
         '此节点已启用内容审核，请使用聊天输入；原生终端暂不可用。',
@@ -735,9 +737,14 @@ export function createProxyServer(options: ServerOptions) {
         await import('./native-terminal.ts');
       if (closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new Error('Connection closed');
+      let executable = options.claude.executable;
+      if (options.nativeTerminalReview) {
+        if (!options.moderation) throw new Error('Native terminal review requires node moderation');
+        executable = assertNativeTerminalReview(executable);
+      }
       completeOnboarding();
       current.process = new NativeTerminal(
-        options.claude.executable,
+        executable,
         terminalArguments(
           options.claude,
           session,
