@@ -77,6 +77,25 @@ p {
   border-radius: 14px;
   padding: 28px;
 }
+.download-card {
+  min-width: 0;
+}
+.download-link {
+  display: inline-block;
+  border-radius: 8px;
+  padding: 11px 16px;
+  background: #b8d8a0;
+  color: #142015;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.download-link:hover {
+  background: #cee8bb;
+}
+.download-card details {
+  margin-top: 16px;
+}
 .login {
   max-width: 540px;
   margin: 70px auto 100px;

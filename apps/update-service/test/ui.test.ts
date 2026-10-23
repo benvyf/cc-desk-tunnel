@@ -103,6 +103,15 @@ test(
       viewport: { width: 1440, height: 1100 },
     });
     const page = await context.newPage();
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: {
+          writeText: async (text: string) => {
+            (window as unknown as { copiedDownload: string }).copiedDownload = text;
+          },
+        },
+      });
+    });
     await page.clock.install();
     const scriptErrors: string[] = [];
     page.on('pageerror', (e) => scriptErrors.push(e.message));
@@ -212,6 +221,7 @@ test(
       ),
     );
     await page.locator('#show-updates').click();
+    await expect(page.locator('#downloads a')).toHaveCount(0);
     await expect(page).toHaveURL(origin + '/cc-updates/admin/updates');
     await expect(page.locator('#monitor-panel')).toBeHidden();
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
@@ -359,8 +369,24 @@ test(
     await expect(page.getByText('安装包校验通过，可以发布。')).toBeVisible();
     await page.getByRole('button', { name: '发布到通道' }).click();
     await expect(page.getByText('通道已更新。')).toBeVisible();
+    const download = page.locator('#downloads').getByRole('link', { name: '下载完整安装包' });
+    const downloadPath = '/cc-updates/v1/artifacts/1/win32-x64/CC-Desk-Tunnel-Setup-0.3.6-x64.exe';
+    await expect(download).toHaveAttribute('href', downloadPath);
+    await expect(page.locator('#downloads')).toContainText('v0.3.6 · Build 1');
+    await expect(page.locator('#downloads')).toContainText('协议 20');
+    await page.getByRole('button', { name: '复制下载链接', exact: true }).click();
+    assert.equal(
+      await page.evaluate(() => (window as unknown as { copiedDownload: string }).copiedDownload),
+      origin + downloadPath,
+    );
+    await page.clock.fastForward(2 * 86400000);
+    await expect(page.locator('#downloads a')).toHaveCount(0);
+    await expect(page.locator('#downloads')).toContainText('已过期');
+    await page.clock.setSystemTime(new Date());
+    await page.locator('#refresh').click();
+    await expect(download).toBeVisible();
     assert.equal(await page.locator('img').count(), 0);
-    assert.equal(await page.getByText(notes, { exact: true }).count(), 2);
+    assert.equal(await page.getByText(notes, { exact: true }).count(), 3);
     await mkdir(new URL('../../../.local/', import.meta.url), { recursive: true });
     await page.screenshot({
       path: fileURLToPath(new URL('../../../.local/update-service-desktop.png', import.meta.url)),
@@ -378,9 +404,11 @@ test(
     await expect(page.getByRole('button', { name: '确认撤回' })).toBeVisible();
     await page.getByRole('button', { name: '确认撤回' }).click();
     await expect(page.locator('#channels').getByText('已撤回发布')).toBeVisible();
+    await expect(page.locator('#downloads a')).toHaveCount(0);
     await page.getByRole('button', { name: '退出登录' }).click();
     await expect(page.getByLabel('Ubuntu 安装命令')).toHaveValue('');
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
+    await expect(page.locator('#downloads')).toBeEmpty();
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
     await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
     await page.locator('#show-accounts').click();

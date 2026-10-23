@@ -9,6 +9,7 @@ let controller = new AbortController();
 let pending = false;
 let pageRefreshQueued = false;
 let monitorData;
+let downloadExpiry;
 const monitorDrafts = new Map();
 function notice(text, error = false) {
   $('notice').textContent = text;
@@ -27,6 +28,7 @@ function channelName(value) {
   return value === 'pilot' ? '试点通道' : '正式通道';
 }
 function logout() {
+  clearTimeout(downloadExpiry);
   controller.abort();
   controller = new AbortController();
   token = '';
@@ -42,7 +44,8 @@ function logout() {
   $('logout').hidden = true;
   $('change-password').hidden = true;
   $('login-panel').hidden = false;
-  for (const id of ['channels', 'candidates', 'audit', 'monitor-nodes']) $(id).replaceChildren();
+  for (const id of ['channels', 'candidates', 'audit', 'monitor-nodes', 'downloads'])
+    $(id).replaceChildren();
   moderation.clear();
   passwordLogin.clear();
   enrollment.clear();
@@ -122,8 +125,85 @@ function releaseDetails(payload) {
   }
   return block;
 }
+function renderDownloads(channels) {
+  clearTimeout(downloadExpiry);
+  $('downloads').replaceChildren();
+  let nextExpiry = Infinity;
+  for (const name of ['stable', 'pilot']) {
+    const payload = channels.find((c) => c.channel === name)?.payload;
+    const card = element('section', undefined, 'card download-card');
+    card.append(element('span', name === 'stable' ? '正式版' : '试点版', `badge ${name}`));
+    const release = payload?.release;
+    const expires = Date.parse(payload?.expiresAt);
+    const valid =
+      payload?.state === 'published' &&
+      Number.isFinite(expires) &&
+      expires > Date.now() &&
+      Number.isSafeInteger(release?.build) &&
+      release.build > 0 &&
+      /^\d+\.\d+\.\d+$/.test(release.appVersion) &&
+      release.filename === `CC-Desk-Tunnel-Setup-${release.appVersion}-x64.exe`;
+    if (!valid) {
+      card.append(
+        element('h3', name === 'stable' ? '暂无正式版可下载' : '暂无试点版可下载'),
+        element(
+          'p',
+          release && expires <= Date.now()
+            ? '发布索引已过期，请由管理员续期后刷新。'
+            : '此通道尚未发布可用安装包。',
+          'muted',
+        ),
+      );
+    } else {
+      nextExpiry = Math.min(nextExpiry, expires);
+      card.append(
+        element('h3', `v${release.appVersion} · Build ${release.build}`),
+        element('p', `Windows x64 · 完整安装包 · ${(release.size / 1048576).toFixed(1)} MB`),
+        element('p', `需配套协议 ${release.protocol} 的 CC 服务端。`, 'muted'),
+        element('p', release.notes, 'notes'),
+      );
+      if (name === 'pilot') card.append(element('p', '试点版本，建议先在一台电脑验证。', 'muted'));
+      const path = `/cc-updates/v1/artifacts/${release.build}/win32-x64/${release.filename}`;
+      const link = element('a', '下载完整安装包', 'download-link');
+      link.href = path;
+      link.download = release.filename;
+      link.addEventListener('click', (event) => {
+        if (Date.now() >= expires) {
+          event.preventDefault();
+          renderDownloads(channels);
+          notice('发布索引已过期，请刷新当前发布。', true);
+        }
+      });
+      const copy = element('button', '复制下载链接', 'quiet');
+      copy.addEventListener('click', () =>
+        action(async () => {
+          if (Date.now() >= expires) throw new Error('发布索引已过期，请刷新当前发布。');
+          await navigator.clipboard.writeText(new URL(path, location.origin).href);
+          notice('下载链接已复制。');
+        }),
+      );
+      const controls = element('div', undefined, 'controls');
+      controls.append(link, copy);
+      const details = element('details');
+      details.append(
+        element('summary', '校验与构建信息'),
+        element('p', `SHA256 ${release.sha256}\n源码 ${release.sourceCommit}`, 'digest'),
+      );
+      card.append(controls, details);
+    }
+    $('downloads').append(card);
+  }
+  if (Number.isFinite(nextExpiry))
+    downloadExpiry = setTimeout(
+      () => renderDownloads(channels),
+      Math.min(2147483647, Math.max(1, nextExpiry - Date.now())),
+    );
+}
 async function refresh() {
+  clearTimeout(downloadExpiry);
+  $('downloads').replaceChildren();
   const data = await request('/status');
+  renderDownloads(data.channels);
   $('channels').replaceChildren();
   for (const name of ['pilot', 'stable']) {
     const card = element('section', undefined, 'card channel');
