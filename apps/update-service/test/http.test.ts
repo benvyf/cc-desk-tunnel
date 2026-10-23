@@ -120,6 +120,46 @@ test('password login attempts share rate limiting and bound JSON body size', asy
   assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
 });
 
+test('password change requires admin authentication, same origin and correct current password', async (t) => {
+  const f = await fixture(t);
+  const auth = new PasswordAuth(join(f.root, 'private'));
+  await auth.setup(await auth.issueSetup(), 'oldpwd12');
+  const login = await f.request(api + '/auth/login', {
+    method: 'POST',
+    headers: f.headers,
+    body: JSON.stringify({ password: 'oldpwd12' }),
+  });
+  const { sessionToken } = await login.json();
+  const headers = { ...f.headers, authorization: `Bearer ${sessionToken}` };
+  const change = (data: unknown, custom = headers) =>
+    f.request(api + '/auth/password', {
+      method: 'POST',
+      headers: custom,
+      body: JSON.stringify(data),
+    });
+  const input = { currentPassword: 'oldpwd12', newPassword: 'newpwd34' };
+  assert.equal((await change(input, { ...headers, authorization: '' })).status, 401);
+  assert.equal((await change(input, { ...headers, origin: 'https://wrong.invalid' })).status, 403);
+  assert.equal((await change({ ...input, newPassword: '1234567' })).status, 400);
+  const wrong = await change({ ...input, currentPassword: 'incorrect' });
+  assert.equal(wrong.status, 400);
+  assert.match((await wrong.json()).error, /当前密码不正确/);
+  assert.equal((await f.request(api + '/status', { headers })).status, 200);
+  const changed = await change(input);
+  assert.equal(changed.status, 200);
+  const replacement = (await changed.json()).sessionToken;
+  assert.equal((await f.request(api + '/status', { headers })).status, 401);
+  assert.equal(
+    (
+      await f.request(api + '/status', {
+        headers: { ...headers, authorization: `Bearer ${replacement}` },
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
+});
+
 test('moderation shares administrator auth, keeps credentials private and records fail-closed previews', async (t) => {
   const f = await fixture(t);
   const path = `${api}/moderation`;

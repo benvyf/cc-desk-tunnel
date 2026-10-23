@@ -21,7 +21,7 @@ test('one-use setup stores only salted password hash and supports Unicode passwo
   const first = await readFile(file, 'utf8');
   assert.ok(!first.includes(code));
   await assert.rejects(auth.setup('x'.repeat(43), password), /链接已过期或无效/);
-  await assert.rejects(auth.setup(code, 'short'), /12–128/);
+  await assert.rejects(auth.setup(code, '1234567'), /8–128/);
   const session = await auth.setup(code, password);
   assert.equal(auth.accepts(session), true);
   const stored = await readFile(file, 'utf8');
@@ -65,4 +65,23 @@ test('password derivation concurrency is bounded and does not consume setup toke
   const first = auth.setup(code, password);
   await assert.rejects(auth.setup(code, password), /繁忙/);
   assert.equal(auth.accepts(await first), true);
+});
+
+test('eight-character setup/change verifies current password and revokes old sessions and reset links', async (t) => {
+  const { auth } = await fixture(t);
+  const oldPassword = '旧密码12345';
+  const newPassword = '新密码67890';
+  assert.equal(oldPassword.length, 8);
+  const oldSession = await auth.setup(await auth.issueSetup(), oldPassword);
+  const pendingReset = await auth.issueSetup();
+  await assert.rejects(auth.changePassword(oldPassword, '1234567'), /8–128/);
+  assert.equal(await auth.changePassword('wrong_password', newPassword), undefined);
+  assert.equal(auth.accepts(oldSession), true);
+  assert.ok(await auth.login(oldPassword));
+  const newSession = await auth.changePassword(oldPassword, newPassword);
+  assert.ok(newSession && auth.accepts(newSession));
+  assert.equal(auth.accepts(oldSession), false);
+  assert.equal(await auth.login(oldPassword), undefined);
+  assert.ok(await auth.login(newPassword));
+  await assert.rejects(auth.setup(pendingReset, 'another_password'), /链接已过期或无效/);
 });

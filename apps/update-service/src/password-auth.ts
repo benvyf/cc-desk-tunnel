@@ -92,7 +92,7 @@ export class PasswordAuth {
       const current = await this.read();
       if (!current.password)
         throw new UpdateError(409, '尚未设置管理员密码，请先通过 SSH 打开密码设置页面。');
-      if (typeof password !== 'string' || password.length < 12 || password.length > 128)
+      if (typeof password !== 'string' || password.length < 8 || password.length > 128)
         return undefined;
       const actual = await derive(password, current.password.salt);
       const expected = Buffer.from(current.password.hash, 'hex');
@@ -101,8 +101,8 @@ export class PasswordAuth {
   }
   async setup(token: unknown, password: unknown): Promise<string> {
     return this.exclusive(async () => {
-      if (typeof password !== 'string' || password.length < 12 || password.length > 128)
-        throw new UpdateError(400, '密码需要 12–128 个字符，可包含中文；不要填写管理令牌。');
+      if (typeof password !== 'string' || password.length < 8 || password.length > 128)
+        throw new UpdateError(400, '密码需要 8–128 个字符，可包含中文；不要填写管理令牌。');
       const current = await this.read();
       const valid = (value: Credentials) =>
         typeof token === 'string' &&
@@ -117,6 +117,31 @@ export class PasswordAuth {
       if (!valid(await this.read()))
         throw new UpdateError(401, '设置链接已过期或已更换，请重新打开设置页面。');
       // Consume the one-use setup token in the same atomic replacement as the password.
+      await this.write({ password: { salt, hash } });
+      this.sessions.clear();
+      return this.session();
+    });
+  }
+  async changePassword(
+    currentPassword: unknown,
+    newPassword: unknown,
+  ): Promise<string | undefined> {
+    return this.exclusive(async () => {
+      if (typeof newPassword !== 'string' || newPassword.length < 8 || newPassword.length > 128)
+        throw new UpdateError(400, '新密码需要 8–128 个字符，可包含中文。');
+      const current = await this.read();
+      if (!current.password)
+        throw new UpdateError(409, '尚未设置管理员密码，请先通过 SSH 打开密码设置页面。');
+      if (
+        typeof currentPassword !== 'string' ||
+        currentPassword.length < 8 ||
+        currentPassword.length > 128
+      )
+        return undefined;
+      const actual = await derive(currentPassword, current.password.salt);
+      if (!timingSafeEqual(actual, Buffer.from(current.password.hash, 'hex'))) return undefined;
+      const salt = randomBytes(16).toString('hex');
+      const hash = (await derive(newPassword, salt)).toString('hex');
       await this.write({ password: { salt, hash } });
       this.sessions.clear();
       return this.session();

@@ -28,6 +28,7 @@ function logout() {
   $('token').value = '';
   $('dashboard').hidden = true;
   $('logout').hidden = true;
+  $('change-password').hidden = true;
   $('login-panel').hidden = false;
   for (const id of ['channels', 'candidates', 'audit']) $(id).replaceChildren();
   moderation.clear();
@@ -206,6 +207,7 @@ async function login(sessionToken) {
   $('login-panel').hidden = true;
   $('dashboard').hidden = false;
   $('logout').hidden = false;
+  $('change-password').hidden = false;
   notice('');
 }
 $('login').addEventListener('submit', (event) => {
@@ -248,4 +250,4 @@ $('logout').addEventListener('click', () => {
   notice('已退出。');
 });
 const moderation = setupModeration({ request, action, notice, element, date });
-const passwordLogin = setupPasswordLogin({ action, notice, login });
+const passwordLogin = setupPasswordLogin({ action, notice, login, request });

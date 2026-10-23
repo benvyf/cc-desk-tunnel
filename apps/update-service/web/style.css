@@ -27,9 +27,18 @@ header,
   gap: 20px;
 }
 header {
+  flex-wrap: wrap;
   border-bottom: 1px solid #2a303b;
   padding-bottom: 28px;
   margin-bottom: 18px;
+}
+.header-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.password-change {
+  margin: 24px 0;
 }
 h1 {
   margin: 8px 0 0;

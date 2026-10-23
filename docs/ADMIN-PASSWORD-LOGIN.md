@@ -10,7 +10,9 @@
 ssh -i "$env:USERPROFILE\.ssh\cc-hk-relay-ed25519" -o BatchMode=yes -o StrictHostKeyChecking=yes root@74.82.201.214 cc-admin-password-setup | ForEach-Object { Start-Process -FilePath $_ }
 ```
 
-命令通过 SSH 在 VPS 生成十分钟有效的一次性设置链接，并直接交给本机浏览器打开；不复制原管理令牌，也不在聊天中传递密码。网页输入两次自选密码（12–128 个字符，支持中文），保存后自动登录。以后直接访问 `https://api.ghostapi.org/cc-updates/admin/`，使用管理员密码登录。
+命令通过 SSH 在 VPS 生成十分钟有效的一次性设置链接，并直接交给本机浏览器打开；不复制原管理令牌，也不在聊天中传递密码。网页输入两次自选密码（8–128 个字符，支持中文），保存后自动登录。以后直接访问 `https://api.ghostapi.org/cc-updates/admin/`，使用管理员密码登录。
+
+登录后，可点击管理中心右上角“修改密码”，填写当前密码和两次新密码后保存。修改成功时当前页面保持登录，其他密码会话失效，旧密码和未使用的重设链接失效。
 
 忘记密码时重新运行同一命令。生成新设置链接会使旧链接无效，实际保存新密码后使原有密码会话失效。
 
@@ -35,3 +37,5 @@ VPS 入口 `/usr/local/sbin/cc-admin-password-setup` 调用 `/opt/cc-update-runt
 上线前备份所有修改文件和 BUILD-INFO，检查前置文件 SHA-256；重启管理服务后检查旧管理员令牌认证、发布状态一致、密码页面及 CLI 文件权限。用户密码由用户最后亲自在网页设置，开发验收不替用户设定生产密码。
 
 密码补丁已上线，源提交 `9a98ca2`，回滚文件和结果位于 VPS `/root/.cc-update-admin/maintenance/password-9a98ca2/`，共变更 7 个运行文件。公网旧令牌认证返回 200，发布状态与补丁前一致；SSH 设置命令生成的链接格式、凭据文件归属和 0600 权限验证通过。公网真实浏览器验证密码页面、设置页、清除 URL fragment、拒绝无效链接及尚未设置密码的提示。生产密码仍等待用户亲自在网页设置。
+
+本轮按用户要求把密码最小长度从 12 降为 8，首次设置、登录、修改密码的网页和服务端校验均已同步。新增 `POST /cc-updates/admin/api/auth/password`，要求管理员认证、正确 Origin 和当前密码；校验失败不退出当前会话。相关 14 项测试与类型检查通过，覆盖 7 位拒绝、8 位设置/登录/修改、错误当前密码、修改后新密码登录及旧会话失效。

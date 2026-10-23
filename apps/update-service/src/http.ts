@@ -173,6 +173,36 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         authenticated(request);
+        if (path === `${api}/auth/password` && request.method === 'POST') {
+          contentType(request, 'application/json');
+          if (failures >= 30) throw new UpdateError(429, '密码验证失败次数过多，请一分钟后重试。');
+          let input;
+          try {
+            input = JSON.parse((await body(request, 2048)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid password JSON.');
+          }
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            Object.keys(input).length !== 2 ||
+            !Object.hasOwn(input, 'currentPassword') ||
+            !Object.hasOwn(input, 'newPassword')
+          )
+            throw new UpdateError(400, 'Invalid password fields.');
+          const sessionToken = await passwordAuth.changePassword(
+            input.currentPassword,
+            input.newPassword,
+          );
+          if (!sessionToken) {
+            failures++;
+            throw new UpdateError(400, '当前密码不正确，请重新输入。');
+          }
+          respond(response, 200, { sessionToken, expiresInSeconds: 28800 });
+          return;
+        }
         if (path === `${api}/auth/logout` && request.method === 'POST') {
           passwordAuth.logout((request.headers.authorization ?? '').slice(7));
           respond(response, 204);
