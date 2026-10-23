@@ -68,6 +68,68 @@ async function fixture(t: TestContext) {
 }
 const api = '/cc-updates/admin/api';
 
+test('moderation shares administrator auth, keeps credentials private and records fail-closed previews', async (t) => {
+  const f = await fixture(t);
+  const path = `${api}/moderation`;
+  for (const suffix of ['/config', '/events'])
+    assert.equal((await f.request(path + suffix)).status, 401);
+  const read = async () => (await f.request(path + '/config', { headers: f.headers })).json();
+  const config = await read();
+  assert.equal(config.mode, 'keyword_and_api');
+  assert.equal(config.enforcement, 'not-connected');
+  assert.equal(config.apiKey, undefined);
+  const { apiKeyConfigured, enforcement, rulesVersion, ...editable } = config;
+  const input = { ...editable, keywords: ['block'], apiKey: 'http_fixture_secret_key' };
+  const put = (data: unknown, headers = f.headers) =>
+    f.request(path + '/config', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+  assert.equal((await put(input, { ...f.headers, origin: 'https://wrong.invalid' })).status, 403);
+  const saved = await put(input);
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).apiKeyConfigured, true);
+  assert.ok(!JSON.stringify(await read()).includes(input.apiKey));
+  assert.equal((await put(input)).status, 409);
+  const preview = await f.request(path + '/preview', {
+    method: 'POST',
+    headers: f.headers,
+    body: JSON.stringify({ text: 'BLOCK me' }),
+  });
+  assert.equal(preview.status, 200);
+  assert.equal((await preview.json()).action, 'keyword_block');
+  const {
+    apiKeyConfigured: configured,
+    enforcement: connected,
+    rulesVersion: rules,
+    ...latest
+  } = await read();
+  assert.equal((await put({ ...latest, apiKey: '' })).status, 200);
+  const failure = await f.request(path + '/preview', {
+    method: 'POST',
+    headers: f.headers,
+    body: JSON.stringify({ text: 'not matched' }),
+  });
+  const failed = await failure.json();
+  assert.equal(failed.allowed, false);
+  assert.equal(failed.error, 'jev_key_missing');
+  const events = await (await f.request(path + '/events', { headers: f.headers })).json();
+  assert.ok(events.some((event: { id: string }) => event.id === failed.id));
+  assert.ok(!JSON.stringify(events).includes(input.apiKey));
+  assert.ok(!JSON.stringify(events).includes('not matched'));
+  assert.equal(
+    (
+      await f.request(path + '/preview', {
+        method: 'POST',
+        headers: f.headers,
+        body: JSON.stringify({ text: 'ok', apiKey: 'bad' }),
+      })
+    ).status,
+    400,
+  );
+});
+
 test('HTTP provides authenticated create/upload/activate and exact public signed GET/HEAD', async (t) => {
   const f = await fixture(t);
   assert.equal((await f.request('/cc-updates/v1/channels/pilot/win32-x64.json')).status, 404);

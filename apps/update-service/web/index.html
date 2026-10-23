@@ -2,24 +2,49 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CC 定制更新管理</title>
+  <title>CC 管理中心</title>
   <link rel="stylesheet" href="/cc-updates/admin/style.css">
   <script type="module" src="/cc-updates/admin/app.js"></script>
 </head>
 <body>
   <div class="shell">
-    <header><div><p class="eyebrow">CC DESK TUNNEL</p><h1>定制更新管理</h1></div><button id="logout" class="quiet" hidden>退出登录</button></header>
+    <header><div><p class="eyebrow">CC DESK TUNNEL</p><h1>管理中心</h1></div><button id="logout" class="quiet" hidden>退出登录</button></header>
     <p id="notice" role="status" aria-live="polite"></p>
-    <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>管理你的发布通道</h2><p class="muted">查看版本、上传安装包，并发布到试点或正式通道。</p><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit">登录管理</button></form></section>
+    <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>管理发布与内容审核</h2><p class="muted">使用同一管理令牌，管理客户端更新、审核策略与 JEV 配置。</p><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit">登录管理</button></form></section>
     <main id="dashboard" hidden>
+      <nav aria-label="管理分区"><button id="show-updates" class="quiet" aria-pressed="true">客户端更新</button><button id="show-moderation" class="quiet" aria-pressed="false">内容审核</button></nav>
+      <section id="updates-panel">
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>
       <div id="channels" class="channels"></div>
       <section class="card upload-panel"><div><p class="eyebrow">NEW CANDIDATE</p><h2>准备一次发布</h2><p class="muted">先选择管理员签名的索引，再为候选上传安装包。续期或撤回使用新的签名索引。</p></div><form id="create"><label for="index-file">签名索引（JSON）</label><input id="index-file" type="file" accept=".json,application/json" required><button type="submit">添加候选</button></form></section>
       <div class="section-heading"><div><p class="eyebrow">READY TO REVIEW</p><h2>候选发布</h2></div><span id="candidate-count" class="muted"></span></div>
       <div id="candidates" class="candidate-list"></div>
       <section class="card audit-panel"><div class="section-heading"><div><p class="eyebrow">HISTORY</p><h2>操作记录</h2></div></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>通道</th><th>Build / Revision</th></tr></thead><tbody id="audit"></tbody></table></div></section>
+      </section>
+      <section id="moderation-panel" hidden>
+        <div class="section-heading"><div><p class="eyebrow">CONTENT REVIEW</p><h2>内容审核</h2></div><button id="moderation-refresh" class="quiet">刷新审核配置</button></div>
+        <p class="muted">当前提供策略管理与文本试算，CC 节点尚未接入强制检查。保存配置不会启用生产拦截。</p>
+        <form id="moderation-config">
+          <section class="card"><h2>审核策略</h2>
+            <label for="moderation-mode">处理方式</label><select id="moderation-mode"><option value="keyword_and_api">关键词直接拦截，其余交给 JEV</option><option value="keyword_triggered_jev">仅命中关键词时调用 JEV</option><option value="api_only">全部交给 JEV</option><option value="keyword_only">仅关键词拦截</option></select>
+            <label for="moderation-keywords">关键词（每行一个，忽略大小写、按子串匹配）</label><textarea id="moderation-keywords" rows="6" placeholder="输入需要拦截的关键词"></textarea>
+            <p class="muted">关键词会直接拦截包含它的文本，包括引用和代码；建议从明确的词条开始。</p>
+            <details><summary>分类阈值（分数达到阈值时拦截）</summary><p class="muted">初始阈值参考 sub2api，尚未用你的业务数据校准；分数不等同于违规概率。</p><div id="moderation-thresholds" class="thresholds"></div></details>
+          </section>
+          <section class="card"><h2>JEV 配置</h2><p class="muted">必须审核的请求遇到超时、缺少密钥或接口失败时，不会放行。仅审核提交的文本，不包含图片或工作区文件。</p>
+            <label for="jev-url">接口源地址</label><input id="jev-url" type="url" required placeholder="https://api.typesafe.ai">
+            <label for="jev-model">模型</label><input id="jev-model" required maxlength="128">
+            <p id="jev-key-status" class="muted"></p><label for="jev-key">新 API 密钥（留空保留原密钥）</label><input id="jev-key" type="password" autocomplete="off" maxlength="512">
+            <label class="check"><input id="jev-remove-key" type="checkbox">删除已保存的 API 密钥</label>
+            <label for="jev-timeout">单次超时（毫秒，1000–30000）</label><input id="jev-timeout" type="number" min="1000" max="30000" required>
+            <label for="moderation-retention">记录保留天数（1–90）</label><input id="moderation-retention" type="number" min="1" max="90" required>
+          </section><button type="submit">保存审核配置</button>
+        </form>
+        <section class="card audit-panel"><h2>文本试算</h2><p class="muted">按已保存策略检查。需要 JEV 时会发送文本到配置的服务，可能产生费用。记录只保留文本摘要哈希，不保存原文。</p><form id="moderation-preview"><label for="moderation-text">待审文本</label><textarea id="moderation-text" rows="4" required></textarea><button type="submit">按已保存策略试算</button></form><pre id="moderation-result" class="preview-result" role="status"></pre></section>
+        <section class="card audit-panel"><h2>审核记录</h2><p class="muted">显示最近 100 条配置操作和管理员试算；尚无生产节点记录。</p><div class="table-scroll"><table><thead><tr><th>时间</th><th>管理员 / 请求</th><th>类型 / 策略版本</th><th>结果与原因</th></tr></thead><tbody id="moderation-events"></tbody></table></div></section>
+      </section>
     </main>
-    <footer>CC Desk Tunnel · 定制发布通道</footer>
+    <footer>CC Desk Tunnel · 管理中心</footer>
   </div>
 </body>
 </html>

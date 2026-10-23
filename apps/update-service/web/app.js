@@ -1,3 +1,4 @@
+import { setupModeration } from './moderation.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
@@ -28,6 +29,7 @@ function logout() {
   $('logout').hidden = true;
   $('login-panel').hidden = false;
   for (const id of ['channels', 'candidates', 'audit']) $(id).replaceChildren();
+  moderation.clear();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -225,3 +227,4 @@ $('logout').addEventListener('click', () => {
   logout();
   notice('已退出。');
 });
+const moderation = setupModeration({ request, action, notice, element, date });

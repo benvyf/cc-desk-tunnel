@@ -15,7 +15,7 @@ import { createUpdateServer } from '../src/http.ts';
 import { UpdateStore } from '../src/store.ts';
 
 test(
-  'real browser logs in, uploads, publishes, withdraws and renders notes as text over test TLS',
+  'real browser manages updates and moderation with one login over test TLS',
   { skip: process.env.CC_UPDATE_UI_TEST !== '1', timeout: 60000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'cc-update-ui-'));
@@ -148,8 +148,43 @@ test(
     await expect(page.getByRole('button', { name: '确认撤回' })).toBeVisible();
     await page.getByRole('button', { name: '确认撤回' }).click();
     await expect(page.locator('#channels').getByText('已撤回发布')).toBeVisible();
+    await page.getByRole('button', { name: '内容审核', exact: true }).click();
+    await expect(page.getByLabel('处理方式')).toHaveValue('keyword_and_api');
+    await expect(page.getByText('尚未配置 API 密钥', { exact: true })).toBeVisible();
+    await page
+      .getByLabel('关键词（每行一个，忽略大小写、按子串匹配）')
+      .fill('BLOCK\n<img src=x onerror=alert(1)>');
+    await page.getByRole('button', { name: '保存审核配置', exact: true }).click();
+    await expect(
+      page.getByText('审核配置已保存；CC 节点尚未接入强制检查。', { exact: true }),
+    ).toBeVisible();
+    await page.getByLabel('待审文本', { exact: true }).fill('a BLOCK fixture');
+    await page.getByRole('button', { name: '按已保存策略试算', exact: true }).click();
+    await expect(page.locator('#moderation-result')).toContainText('关键词拦截');
+    // No key is configured: even a regression in keyword matching cannot call the real API.
+    await page.getByLabel('待审文本', { exact: true }).fill('ordinary text fixture');
+    await page.getByRole('button', { name: '按已保存策略试算', exact: true }).click();
+    await expect(page.locator('#moderation-result')).toContainText('jev_key_missing');
+    await expect(page.locator('#moderation-events')).toContainText('审核失败，未放行');
+    assert.equal(await page.locator('img').count(), 0);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await page.screenshot({
+      path: fileURLToPath(
+        new URL('../../../.local/moderation-service-mobile.png', import.meta.url),
+      ),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.screenshot({
+      path: fileURLToPath(
+        new URL('../../../.local/moderation-service-desktop.png', import.meta.url),
+      ),
+      fullPage: true,
+    });
     await page.getByRole('button', { name: '退出登录' }).click();
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
+    assert.equal(await page.locator('#moderation-events').textContent(), '');
+    assert.equal(await page.getByLabel('待审文本', { exact: true }).inputValue(), '');
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
     assert.deepEqual(scriptErrors, []);
   },

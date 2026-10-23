@@ -1,9 +1,10 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
+import { ModerationStore } from './moderation.ts';
 
 const base = '/cc-updates/admin';
 const api = base + '/api';
@@ -43,6 +44,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   for (const [file, type] of [
     ['index.html', 'text/html'],
     ['app.js', 'text/javascript'],
+    ['moderation.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -81,6 +83,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
       throw new UpdateError(415, 'Unsupported content type.');
   }
 
+  const moderation = await ModerationStore.open(config.dataDir);
   const server = createServer(
     { maxHeaderSize: 8192, requestTimeout: 600000, headersTimeout: 15000, keepAliveTimeout: 5000 },
     (request, response) => {
@@ -118,6 +121,45 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         }
         if (!path.startsWith(api + '/')) throw new UpdateError(404, 'Not found.');
         authenticated(request);
+        if (path === `${api}/moderation/config` && request.method === 'GET') {
+          respond(response, 200, moderation.config());
+          return;
+        }
+        if (path === `${api}/moderation/events` && request.method === 'GET') {
+          respond(response, 200, moderation.events());
+          return;
+        }
+        if (
+          (path === `${api}/moderation/config` && request.method === 'PUT') ||
+          (path === `${api}/moderation/preview` && request.method === 'POST')
+        ) {
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 128 * 1024)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid moderation JSON.');
+          }
+          if (request.method === 'PUT')
+            respond(response, 200, moderation.save(input, config.adminName));
+          else {
+            if (
+              !input ||
+              typeof input !== 'object' ||
+              Array.isArray(input) ||
+              Object.keys(input).length !== 1 ||
+              !Object.hasOwn(input, 'text')
+            )
+              throw new UpdateError(400, 'Expected text field only.');
+            respond(
+              response,
+              200,
+              await moderation.preview((input as { text: unknown }).text, config.adminName),
+            );
+          }
+          return;
+        }
         if (path === `${api}/status` && request.method === 'GET') {
           respond(response, 200, store.status());
           return;
@@ -167,14 +209,24 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         }
         throw new UpdateError(404, 'Not found.');
       })().catch((error: unknown) => {
+        const incidentId = error instanceof UpdateError ? undefined : randomUUID();
+        if (incidentId)
+          console.error('Management request failed.', {
+            incidentId,
+            // Omit exception messages: a provider or configuration error may contain secrets.
+            frames:
+              error instanceof Error ? error.stack?.split('\n').slice(1).join('\n') : undefined,
+          });
         if (!response.headersSent && !response.destroyed)
           respond(response, error instanceof UpdateError ? error.status : 500, {
             error: error instanceof UpdateError ? error.message : 'Internal service error.',
+            ...(incidentId ? { incidentId } : {}),
           });
         else response.destroy();
       });
     },
   );
   server.maxHeadersCount = 32;
+  server.once('close', () => moderation.close());
   return server;
 }

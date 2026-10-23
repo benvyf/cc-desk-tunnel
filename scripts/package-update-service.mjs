@@ -11,14 +11,18 @@ export const runtimeFiles = [
   'apps/update-service/src/http.ts',
   'apps/update-service/src/main.ts',
   'apps/update-service/src/store.ts',
+  'apps/update-service/src/jev.ts',
+  'apps/update-service/src/moderation.ts',
   'apps/update-service/web/index.html',
   'apps/update-service/web/app.js',
+  'apps/update-service/web/moderation.js',
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',
   'deploy/update-service/cc-update-service.service',
   'deploy/update-service/nginx.conf.example',
   'deploy/update-service/config.example.json',
   'docs/UPDATE-SERVICE.md',
+  'docs/JEV-SUB2API-REFERENCE.md',
 ];
 
 export async function packageUpdateService(root, output) {
