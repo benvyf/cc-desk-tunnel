@@ -82,16 +82,31 @@ test('native interactive reply and permission failure are reviewed before contin
   batch.tool_calls = [
     { tool_name: 'Read', tool_use_id: 'read-id', tool_response: 'normal file output' },
   ];
-  assert.equal(nativeReviewText(batch, transcript), undefined);
+  assert.match(nativeReviewText(batch, transcript)!.text, /Previous user message/);
+  assert.doesNotMatch(nativeReviewText(batch, transcript)!.text, /normal file output/);
+  const amendment =
+    transcript +
+    '\n' +
+    JSON.stringify({
+      type: 'user',
+      message: {
+        content: [{ type: 'text', text: 'BLOCK_AMENDMENT_FIXTURE' }],
+      },
+    });
+  batch.tool_calls = [
+    { tool_name: 'Bash', tool_use_id: 'bash-id', tool_response: 'ordinary successful result' },
+  ];
+  assert.match(nativeReviewText(batch, amendment)!.text, /BLOCK_AMENDMENT_FIXTURE/);
 });
 
-test('native command and compaction instructions are included; invalid or oversized history refuses', () => {
-  assert.match(
-    nativeReviewText(
-      { ...input, hook_event_name: 'UserPromptExpansion', prompt: '/fixture argument' },
-      transcript,
-    )!.text,
-    /\/fixture argument/,
+test('native prompt expansion stays restricted; compaction is reviewed and invalid or oversized history refuses', () => {
+  assert.throws(
+    () =>
+      nativeReviewText(
+        { ...input, hook_event_name: 'UserPromptExpansion', prompt: '/fixture argument' },
+        transcript,
+      ),
+    /expansion is not supported/,
   );
   assert.match(
     nativeReviewText(

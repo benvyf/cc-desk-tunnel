@@ -39,6 +39,10 @@ function text(value: string | Block[] | undefined): string {
 
 export function nativeReviewText(input: HookInput, transcript: string) {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.session_id)) throw new Error('Invalid native session');
+  // The official event exposes the typed command, not the expanded skill body.
+  // Keep direct prompt expansions closed until that body can be reviewed before transmission.
+  if (input.hook_event_name === 'UserPromptExpansion')
+    throw new Error('Native prompt expansion is not supported by input review');
   const kinds: Record<string, string> = {
     UserPromptSubmit: 'message.send',
     UserPromptExpansion: 'message.send',
@@ -79,7 +83,9 @@ export function nativeReviewText(input: HookInput, transcript: string) {
     const replies = input.tool_calls.filter(
       (call) => interactive.has(call.tool_name) || failures.has(call.tool_use_id),
     );
-    if (!replies.length) return undefined; // Ordinary file/tool output remains outside this text-input gate.
+    // Permission-dialog amendments can add a new user message after a successful tool result,
+    // without UserPromptSubmit or an error/interactive tool. Review user history at every batch.
+    // Ordinary file/tool output itself remains outside this text-input gate.
     for (const reply of replies) parts.push(text(reply.tool_response));
   }
   if (['UserPromptSubmit', 'UserPromptExpansion'].includes(input.hook_event_name)) {

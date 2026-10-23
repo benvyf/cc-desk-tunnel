@@ -22,7 +22,7 @@ const review = createHttpsServer(
     response.writeHead(200, { 'content-type': 'application/json' }).end(
       JSON.stringify({
         id: '11111111-1111-4111-8111-111111111111',
-        allowed: !input.text.includes(marker),
+        allowed: scenario === 'resume-seed' || !input.text.includes(marker),
       }),
     );
   },
@@ -30,7 +30,7 @@ const review = createHttpsServer(
 const model = createServer(async (request, response) => {
   let body = '';
   for await (const chunk of request) body += chunk;
-  if (!request.url.startsWith('/v1/messages')) {
+  if (request.url.split('?')[0] !== '/v1/messages') {
     response.writeHead(404).end('{}');
     return;
   }
@@ -40,7 +40,35 @@ const model = createServer(async (request, response) => {
     scenario === 'question' &&
     !asked &&
     input.tools?.some((tool) => tool.name === 'AskUserQuestion');
-  if (question) asked = true;
+  const permission =
+    scenario.startsWith('permission') &&
+    !asked &&
+    input.tools?.some((tool) => tool.name === 'Bash');
+  if (question || permission) asked = true;
+  const toolName = question ? 'AskUserQuestion' : 'Bash';
+  const toolId = question ? 'toolu_offline_question' : 'toolu_offline_permission';
+  const toolInput = question
+    ? {
+        questions: [
+          {
+            question: 'Which offline fixture color?',
+            header: 'Color',
+            options: [
+              { label: 'Blue', description: 'Fixture blue' },
+              { label: 'Green', description: 'Fixture green' },
+            ],
+            multiSelect: false,
+          },
+        ],
+      }
+    : {
+        command: 'printf OFFLINE_PERMISSION_FIXTURE > /tmp/offline-permission-fixture.txt',
+        description: 'Offline permission fixture',
+      };
+  if (scenario === 'queue' && input.tools?.length) await delay(2000);
+  const stubText = input.output_config?.format?.schema?.properties?.title
+    ? '{"title":"Offline fixture"}'
+    : 'OFFLINE_STUB_OK';
   const events = [
     {
       type: 'message_start',
@@ -58,36 +86,26 @@ const model = createServer(async (request, response) => {
     {
       type: 'content_block_start',
       index: 0,
-      content_block: question
-        ? { type: 'tool_use', id: 'toolu_offline_question', name: 'AskUserQuestion', input: {} }
-        : { type: 'text', text: '' },
+      content_block:
+        question || permission
+          ? { type: 'tool_use', id: toolId, name: toolName, input: {} }
+          : { type: 'text', text: '' },
     },
     {
       type: 'content_block_delta',
       index: 0,
-      delta: question
-        ? {
-            type: 'input_json_delta',
-            partial_json: JSON.stringify({
-              questions: [
-                {
-                  question: 'Which offline fixture color?',
-                  header: 'Color',
-                  options: [
-                    { label: 'Blue', description: 'Fixture blue' },
-                    { label: 'Green', description: 'Fixture green' },
-                  ],
-                  multiSelect: false,
-                },
-              ],
-            }),
-          }
-        : { type: 'text_delta', text: 'OFFLINE_STUB_OK' },
+      delta:
+        question || permission
+          ? {
+              type: 'input_json_delta',
+              partial_json: JSON.stringify(toolInput),
+            }
+          : { type: 'text_delta', text: stubText },
     },
     { type: 'content_block_stop', index: 0 },
     {
       type: 'message_delta',
-      delta: { stop_reason: question ? 'tool_use' : 'end_turn', stop_sequence: null },
+      delta: { stop_reason: question || permission ? 'tool_use' : 'end_turn', stop_sequence: null },
       usage: { output_tokens: 1 },
     },
     { type: 'message_stop' },
@@ -109,16 +127,36 @@ async function wait(predicate, label) {
     if (predicate()) return;
     await delay(50);
   }
-  throw new Error('Offline PTY timeout: ' + label + '\n' + output.slice(-2000));
+  throw new Error(
+    'Offline PTY timeout: ' +
+      label +
+      '\n' +
+      JSON.stringify({
+        reviews,
+        requests: requests.map((value) => ({
+          model: value.model,
+          hasMarker: JSON.stringify(value.messages).includes(marker),
+        })),
+      }) +
+      '\n' +
+      output.slice(-5000),
+  );
 }
-async function start(name) {
+async function start(name, { homeName = name, extraArgs = '' } = {}) {
   scenario = name;
   asked = false;
   output = '';
   reviews.length = 0;
   requests.length = 0;
-  const home = '/tmp/pty-' + name;
+  const home = '/tmp/pty-' + homeName;
   await mkdir(`${home}/.claude`, { recursive: true });
+  if (name === 'skill') {
+    await mkdir(`${home}/.claude/commands`, { recursive: true });
+    await writeFile(
+      `${home}/.claude/commands/audit-fixture.md`,
+      `---\ndescription: Offline fixture command\n---\nExpanded offline fixture ${marker}. Arguments: $ARGUMENTS`,
+    );
+  }
   const fixture = {
     hasCompletedOnboarding: true,
     theme: 'dark',
@@ -133,7 +171,7 @@ async function start(name) {
       '-q',
       '-e',
       '-c',
-      `stty cols 100 rows 35; exec ${cli} --model offline-fixture --permission-mode manual`,
+      `stty cols 100 rows 35; exec ${cli} --model offline-fixture --permission-mode manual ${extraArgs}`,
       '/dev/null',
     ],
     {
@@ -170,9 +208,98 @@ async function stop() {
   child = undefined;
 }
 
+async function extendedPaths() {
+  const selected = process.env.LAB_PATH;
+  const result = {};
+  const noMarker = () =>
+    assert.ok(
+      !requests.some((value) => JSON.stringify(value.messages).includes(marker)),
+      'Rejected extended input reached simulated model',
+    );
+  if (!selected || selected === 'queue') {
+    await start('queue');
+    child.stdin.write('Ordinary offline fixture\r');
+    await wait(
+      () => requests.some((value) => value.tools?.length),
+      'initial queued scenario request',
+    );
+    child.stdin.write(marker + '\r');
+    await wait(
+      () => reviews.some((value) => value.text.includes(marker)),
+      'queued prompt reviewed',
+    );
+    await wait(() => output.includes('操作失败，请稍后再试。'), 'queued prompt rejected');
+    await wait(
+      () => output.includes('OFFLINE_STUB_OK'),
+      'initial response completed after queue refusal',
+    );
+    noMarker();
+    result.queuedPromptReviewed = true;
+    await stop();
+  }
+  if (!selected || selected === 'skill') {
+    await start('skill');
+    child.stdin.write('Ordinary offline fixture\r');
+    await wait(() => output.includes('OFFLINE_STUB_OK'), 'skill seed response');
+    const before = requests.length;
+    child.stdin.write('/audit-fixture ordinary-argument\r');
+    await wait(
+      () => output.includes('UserPromptExpansion operation blocked by hook'),
+      'unsupported command expansion refused',
+    );
+    assert.equal(requests.length, before, 'Unsupported command expansion reached simulated model');
+    noMarker();
+    result.unsupportedCommandExpansionBlocked = true;
+    await stop();
+  }
+  if (!selected || selected === 'resume') {
+    await start('resume-seed');
+    child.stdin.write('Ordinary fixture with ' + marker + '\r');
+    await wait(() => output.includes('OFFLINE_STUB_OK'), 'seed transcript saved');
+    await stop();
+    await start('resume', { homeName: 'resume-seed', extraArgs: '--continue' });
+    child.stdin.write('Continue ordinary offline fixture\r');
+    await wait(
+      () => reviews.some((value) => value.text.includes(marker)),
+      'resumed history reviewed',
+    );
+    await wait(
+      () => output.includes('UserPromptSubmit operation blocked by hook'),
+      'resumed history rejected',
+    );
+    assert.equal(requests.length, 0, 'Rejected resumed history reached simulated model');
+    result.resumedHistoryReviewed = true;
+    await stop();
+  }
+  for (const mode of ['permission', 'permission-amend']) {
+    if (selected && selected !== mode) continue;
+    await start(mode);
+    child.stdin.write('Ordinary offline fixture\r');
+    await wait(
+      () => output.includes('Bash command') && output.includes('Esc to cancel'),
+      'permission dialog',
+    );
+    child.stdin.write(mode === 'permission' ? '4' : '\t');
+    await delay(500);
+    child.stdin.write(marker + '\r');
+    await wait(
+      () => reviews.some((value) => value.text.includes(marker)),
+      'permission feedback reviewed',
+    );
+    await wait(() => output.includes('操作失败，请稍后再试。'), 'permission feedback blocked');
+    noMarker();
+    result[
+      mode === 'permission' ? 'permissionDenialFeedbackReviewed' : 'permissionAmendFeedbackReviewed'
+    ] = true;
+    await stop();
+  }
+  return result;
+}
+
 try {
   let answerResult = {};
-  if (!process.env.LAB_SDK_ONLY) {
+  if (process.env.LAB_EXTENDED_ONLY) answerResult = await extendedPaths();
+  if (!process.env.LAB_SDK_ONLY && !process.env.LAB_EXTENDED_ONLY) {
     await start('submit');
     child.stdin.write(marker + '\r');
     await wait(
@@ -281,6 +408,7 @@ try {
     assert.equal(requests.length, 1, 'SDK fixture must use exactly one simulated model request');
     sdkCompatible = true;
   }
+  if (process.env.LAB_EXTENDED) answerResult = { ...answerResult, ...(await extendedPaths()) };
   console.log(
     'NATIVE_PTY_LAB_RESULT ' +
       JSON.stringify({

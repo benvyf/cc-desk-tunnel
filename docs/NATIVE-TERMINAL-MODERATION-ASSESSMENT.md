@@ -2,7 +2,21 @@
 
 评估日期：2026-10-23（香港时间）。用户选择保留强制审核，先评估官方支持方式，确认可行后才恢复。
 
-结论：官方 **2.1.295** 的受管 command hook 已完成部分真实 CLI/PTY 隔离验证，候选实现和 Ubuntu 离线准备脚本已完成。生产仍是 **2.1.293**，原生终端继续关闭；权限反馈、排队输入、技能及恢复路径尚未完成实际验证，**目前不能切换生产或宣称全面覆盖**。本轮真实 Claude/JEV 请求均为 0，模拟请求仅到达无网络容器内的 loopback stub。
+结论：官方 **2.1.295** 的受管 command hook 已完成本文所列真实 CLI/PTY 隔离验证，修正版采用每个工具批次审核用户文本、阻断直接提示命令展开的限制。生产仍是 **2.1.293**，原生终端继续关闭；修正版尚待 Ubuntu 目标节点补测，**目前不能切换生产或宣称全面覆盖**。本轮真实 Claude/JEV 请求均为 0，模拟请求仅到达无网络容器内的 loopback stub。
+
+后续进度：用户已在 `ubuntu-cc` 完成 `85876c41ffce` 准备脚本，候选镜像为 `sha256:7154d370f8e551098a41db4a6ed58fb6d127a0852cb0fd474c6860b4f10122eb`。实际普通输入、问答、压缩及 SDK 测试通过，正式服务未变，`activationReady=false`。下述补测发现权限弹窗修改要求的缺口，已修改候选源码；旧候选不能直接激活，需执行补测脚本生成修正版并通过目标节点验收。
+
+## 补测与限制调整
+
+真实 PTY 已验证排队输入和恢复历史会触发 `UserPromptSubmit`，权限弹窗选择 No 后填写下一条说明也走普通提交审核。但 Tab 修改要求会将新用户文本放入会话后继续工具批次，不触发 `UserPromptSubmit`，也不一定产生错误工具结果。旧候选只在交互或错误工具后审核批次，已经在模拟接口复现漏审。
+
+修正版在**每个工具批次结束后**审核用户文本历史，包括该次修改要求；仍不把普通文件/工具输出全部送审。修复后 Tab 修改要求已在真实 PTY 中被拒绝，未到达模拟模型。这样会增加 JEV 次数和延迟，不能再声称普通工具批次不增加 JEV 用量；不会由审核钩子额外调用 Claude。
+
+最终合并测试已通过：`nativePromptReviewed`、`nativeQuestionAnswerReviewed`、`compactInstructionsReviewed`、`queuedPromptReviewed`、`resumedHistoryReviewed`、`permissionDenialFeedbackReviewed`、`permissionAmendFeedbackReviewed`、`unsupportedCommandExpansionBlocked`、`sdkCompatible` 均为 true；三项初始拒绝到达模拟模型标志均为 false，扩展路径也逐项检查被拒文本未到达模拟模型。实验结果保存于 VPS `/var/lib/cc-native-hook-lab-2.1.295/sdk-lab.log`。类型检查及本轮四项 hook 核心测试通过。
+
+另一个官方限制是 `UserPromptExpansion` 提供原始命令行而非展开后的完整技能正文。因此修正版明确阻断直接调用的自定义提示命令/技能展开；`/compact` 等独立处理的内置操作依其对应钩子审核，不能据此说所有斜杠操作都被禁用。工作区文件、技能描述等外部上下文本就不属于本次文本输入门禁的全面隔离范围。
+
+`scripts/verify-native-terminal-paths.py --source <完整 SHA>` 复用节点已验收的官方 CLI/SDK，只 overlay 修正后的 hook，校验其他受保护文件和运行配置不变。脚本在无网络、无生产数据/账号挂载的容器执行普通输入、交互回答、压缩、排队、No/Tab 反馈、自定义命令限制及历史恢复测试。通过后输出 `inputPathAcceptancePassed=true`，仍是 `cutoverPerformed=false`；不启用生产终端、不修改凭据/出口/阈值。原版本的故障阻断测试已通过，未更改的官方二进制、受管策略无需再次研究。
 
 ## 官方支持与当前版本差异
 
@@ -35,7 +49,7 @@ VPS 实验目录为 `/var/lib/cc-native-hook-lab-2.1.295`。测试容器使用 `
 
 ## 候选实现与 Ubuntu 准备
 
-`apps/server/src/native-moderation-hook.ts` 将四个官方事件转换为现有节点 API：普通提交/命令展开对应 `message.send`，交互回答对应 `approval.reply`，压缩对应 `session.compact`。调用使用 command hook，不使用额外调用 Claude 的 prompt/agent hook；7.5 秒审核超时，无重试。仅明确允许才继续，其他情况返回通用阻断。
+`apps/server/src/native-moderation-hook.ts` 将官方事件转换为现有节点 API：普通提交对应 `message.send`，工具批次后的用户文本审核对应 `approval.reply`，压缩对应 `session.compact`。命令展开事件直接阻断。调用使用 command hook，不使用额外调用 Claude 的 prompt/agent hook；7.5 秒审核超时，无重试。仅明确允许才继续，其他情况返回通用阻断。
 
 策略通过 `/etc/claude-code/managed-settings.json` 安装，每个事件包含 `onFailure: "block"`。实际 hook 从 `/etc/claude-code/moderation-node.json` 读取节点配置；未来激活时必须由管理员复制既有凭据后只读挂载到此路径，不能使用工作区可写文件作为终端的审核配置，也不重新领取或轮换凭据。管理员令牌和 JEV 密钥不进入镜像、命令行或新 CLI 环境变量。
 
@@ -52,12 +66,12 @@ VPS 实验目录为 `/var/lib/cc-native-hook-lab-2.1.295`。测试容器使用 `
 
 ## 使用边界与尚待验证的路径
 
-- 受管 hook 同时作用于 SDK 聊天，可能与现有聊天门禁重复审核，增加 JEV 延迟和用量；当前未做去重，也没有通过可伪造环境变量跳过受管审核。
+- 受管 hook 同时作用于 SDK 聊天，可能与现有聊天门禁重复审核；修正版还在每个工具批次审核用户文本，增加 JEV 延迟和用量。当前未做去重，也没有通过可伪造环境变量跳过受管审核。
 - 原生审核会收集用户文本历史、交互回答及错误工具反馈；不把普通文件/工具输出全部送给 JEV。图片、文件上下文、管理员/直接 SSH、任意外部脚本不属于全面隔离范围。
 - 官方可能保留已拒绝文本。再次审核全历史时，该文本可能继续导致拒绝；用户需新建会话或使用官方清理操作，不能通过偷偷修改官方 transcript 绕过审核。
 - `PostToolBatch` 的通用拒绝提示可能保留在会话上下文，不能承诺 hook 完全不影响上下文；不发送 JEV 审核详情或策略解释给 Claude。
 - 审核输入超过 64 KiB 或 transcript 超过 16 MiB 会拒绝，不静默截断。
-- 真实权限反馈、排队追问、技能/命令展开及恢复路径尚未全部验证；仍须逐项验证或限制后才可评估激活。JEV→真实 Claude 的完整链路也未验收，不会自动发送真实测试。
+- 权限反馈、排队追问、历史恢复需以修正版合并测试结果和 Ubuntu 补测结果为准；技能/命令展开采用明确阻断的限制。修正版尚未在目标节点验收前不能激活。JEV→真实 Claude 的完整链路也未验收，不会自动发送真实测试。
 
 没有更改账号、代理、出口、OAuth、遥测或模型重试配置。使用官方接口并不能推断账号风控概率为零，也无法给出升级前后概率的保证。
 
