@@ -1,5 +1,7 @@
 # 账号监控生产部署记录
 
+> 本文保留各阶段历史。最新状态：第一台 Ubuntu 已由用户控制台完成安装并通过本地健康检查；首次自然上报状态见文末。
+
 2026-10-23（Asia/Hong_Kong）。VPS 已部署并完成正式 HTTPS 验收，导航版本为下文记录的 `f610908`；最新接入入口见文末；六台 Ubuntu 尚未接入，不是账号采集全链路上线。
 
 线上原运行归档来源为 `2638731374c87e767eca6ff1ec37b6a7352ab4d1`，包含审核、节点审核接口和密码登录。已逐文件校验其 BUILD-INFO SHA256 并取回无配置运行源码，与账号监控 `e99d10b` 合并；审核和密码模块按原字节保留，HTTP 和页面作兼容合并。
@@ -100,3 +102,12 @@ VPS 已部署运行提交 `1bf5b4ba65e292c413c5ac5aedb61fc7a734802d`，归档 `a
 用户第一台 Ubuntu 实测 Docker29.9.1 / API1.56，旧安装器在下载前报 HTTP500；只读诊断确认容器 running/paused=false，`docker top ... -eo comm` 返回 `Couldn't find PID field in ps output`。旧安装器的 `-eo args` 同样漏掉 Docker 所需的 PID 列。
 
 修正安装前、冻结后及人工回滚三处查询为 `-eo pid,args`。模拟该守护进程约束后旧实现失败，新实现通过 Python5项（含成功/失败子场景）；PID列不影响 Claude/SDK 忙碌检测。管理服务28项（含真实浏览器）通过；隔离 Docker 环境的运行中及暂停后 PID+args 查询通过，独立复查无阻塞。没有升级 Docker、改动业务容器或新增 Claude/JEV 请求。正式 Ubuntu 需使用更新后页面重新生成的命令重试；旧命令绑定旧安装器摘要，不能继续使用。
+
+
+### 第一台 Ubuntu 安装完成（2026-10-24 00:47 HKT）
+
+用户回传更新后命令的完整执行结果：离线模拟验证、冷备份、容器配置保留及本地健康检查均通过，输出 `Passive monitor installed; local health check passed`。这属于用户控制台确认，不是远程 SSH 对 Ubuntu 的独立检查。其余五台未安装。
+
+Ubuntu 本地备份：`/var/lib/cc-monitor-install/backup-20261023T164726Z`。需要人工回滚时，先结束所有任务并退出 CC 客户端，再运行 `sudo python3 /var/lib/cc-monitor-install/backup-20261023T164726Z/rollback.py --rollback /var/lib/cc-monitor-install/backup-20261023T164726Z`，不恢复旧数据覆盖新业务记录。
+
+随后在 VPS 只读监控缓存核对，仍为6个配置节点、0个已上报节点、0个账号。安装器成功与首次上报是两个阶段；下一步正常打开并使用 CC，待原有身份/额度事件产生后自动同步。不要为填充页面增加 Claude 查询、发送测试消息或手动反复刷新额度。
