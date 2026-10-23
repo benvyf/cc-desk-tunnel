@@ -1,6 +1,14 @@
 # ubuntu-cc 协议 20 单节点迁移
 
-2026-10-23，香港时间。用户已授权开始单节点试点；隔离验证已通过，正在核对生产部署及准备备份，尚未切换生产服务。后续状态必须按实际验收结果更新。
+2026-10-23，香港时间。`ubuntu-cc` 已完成备份及生产协议 20 切换，本地认证和独立公网健康检查通过，Windows 客户端验收待完成；其他五台未迁移。模型调用仍为 0。
+
+## 当前生产结果
+
+用户执行固定版本 `7856fea23357ce310822f5864d1b3ff60ef922b2` 的切换脚本并回传 PASS：`cutoverPerformed:true`、`rolledBack:false`、`backupVerified:true`。实际运行镜像为 `sha256:e3275f6f27d5a39b1468123573930285d68cbbcada741b76eefbc7692ab5a553`；服务端协议 20、WebSocket 认证成功，证书指纹和三项流量开关未变，关键服务配置、provider 和证书/私钥文件校验未变。
+
+2026-10-23 11:41:42（香港时间），当前开发电脑独立检查公网 `74.82.201.214:8443`：在发送 HTTP 前验证固定证书 SHA256，随后 `/health` 返回 `status:ok`、`protocolVersion:20`、`adapter:claude-code`。公网检查不携带令牌，未调用模型。本地证据为 `artifacts/server-pilot-4a39bc3/public-post-cutover.json`；用户回传切换结果另存该目录 `production-cutover-reported.json`。本地基线文件保留原协议 19 记录。
+
+完整回滚备份在节点 `/var/lib/cc-desk-tunnel-pilot-4a39bc3/production-backup/`；这是同盘备份，离机副本仍待安排。回滚命令见后文。剩余验收：用独立 user-data-dir 的真实 Windows build 2 连接此节点，核对既有历史和统计、工作区文件读取及终端通道，保持模型测试暂停。客户端验收通过前不扩展到其他五台或 stable 通道。
 
 ## 已确认基线
 
@@ -19,7 +27,7 @@ VPS 仅约 1 GB 内存，运行七个既有业务容器，不在其上构建 CC 
 - VPS 私有副本：`/root/.cc-update-admin/release-input/`，包含归档、hash 和制品证据。
 - 归档包含预构建 Web UI、服务端及 Docker 生命周期文件，源码清洁、协议 20；路径检查未发现本机凭据和开发依赖。源包构建成功不代表 Linux 镜像或生产迁移已通过。
 
-## 当前操作：隔离验证
+## 已完成：隔离验证过程
 
 执行仓库的 `scripts/prepare-ubuntu-pilot.sh`，该脚本只支持 root 在 `ubuntu-cc` 上运行。下载后先核对该次交付的脚本 SHA256，再执行。它从 GitHub 获取固定源码提交，不覆盖 `/opt/cc-desk-tunnel`。
 
@@ -38,7 +46,7 @@ VPS 仅约 1 GB 内存，运行七个既有业务容器，不在其上构建 CC 
 
 首次交付的验证请求编号误用了命令名，已修正为协议要求的 UUID，并使用实际 authSchema/commandSchema 校验消息格式。实际首次构建在读取 `/tmp/install-linux.sh` 时失败：准备脚本的 umask 077 使 root 克隆的源码只有 root 可读，Docker COPY 保留该权限后普通构建用户读不到。修正版仅对独立的公开源码 checkout 增加读取/目录遍历权限；私有 STATE 目录不改变。
 
-修正版支持 `--resume`：核对原生产快照及固定源码后，从 Docker 缓存继续未完成的构建；若镜像已完成则复用镜像。尚未初始化时创建隔离配置，已初始化则复用隔离数据继续验证，不重新克隆。缺少原始快照或固定源码时拒绝恢复。下载并校验修正版后再使用此参数，勿修改旧脚本的 hash 来跳过校验。当前生产服务仍未切换。
+修正版支持 `--resume`：核对原生产快照及固定源码后，从 Docker 缓存继续未完成的构建；若镜像已完成则复用镜像。尚未初始化时创建隔离配置，已初始化则复用隔离数据继续验证，不重新克隆。缺少原始快照或固定源码时拒绝恢复。下载并校验修正版后再使用此参数，勿修改旧脚本的 hash 来跳过校验。当时生产服务未切换，后续已完成生产切换，见当前生产结果。
 
 ## 实际隔离验收结果
 
@@ -46,7 +54,7 @@ VPS 仅约 1 GB 内存，运行七个既有业务容器，不在其上构建 CC 
 
 下一步执行只读脚本 `scripts/inspect-ubuntu-pilot.py`，只输出镜像 ID、Compose 路径及项目、挂载、端口、版本、三项流量开关和 OTEL 变量名、磁盘用量。它不会输出完整环境变量、配置内容、令牌或证书私钥，不会停止服务。脱敏报告保存为私有状态目录下 `preflight-sanitized.json`，可回传；其余 inspect、配置及备份仍不可回传。任务是否空闲需要操作者确认，健康状态不代表没有运行任务。
 
-## 生产盘点及待执行切换
+## 已完成：生产盘点及切换准备
 
 2026-10-23 11:32 香港时间的脱敏盘点已回传：
 
@@ -55,7 +63,7 @@ VPS 仅约 1 GB 内存，运行七个既有业务容器，不在其上构建 CC 
 - 原 Compose 项目 `cc-desk-tunnel-ba938975`；配置 `/opt/cc-desk-tunnel/.local/docker.env`；Compose 文件 `/opt/cc-desk-tunnel/deploy/docker/compose.yaml`。
 - 唯一挂载 `/srv/cc-desk-tunnel:/data`，端口 `0.0.0.0:8787`。数据占用 255819776 字节，旧镜像 1902422321 字节，可用空间 8824700928 字节。
 - 三项独立流量开关均为 1，未发现总禁用开关或 service/container 层的 OTEL 变量；这不表示运行时没有内部 OTEL 采集。
-- 用户已确认“此节点无任务，旧客户端已断开”。当前尚未回传生产切换结果。
+- 用户在切换前已确认“此节点无任务，旧客户端已断开”。随后回传切换 PASS，见当前生产结果。
 
 切换脚本为 `scripts/cutover-ubuntu-pilot.py --idle-confirmed`，只适用上述固定节点和镜像。先保存旧镜像及完整源码/配置，再停止单个服务并完整归档数据，核验归档可读性、SHA256 和关键配置；随后更新原 docker.env 中的镜像设置，以原 Compose 项目、配置和挂载启动已验收镜像，禁止构建或拉取。检查本地 TLS 固定指纹、协议 20、WebSocket 认证及三项开关，未调用模型。生产中的历史、统计、文件和终端仍需 Windows 客户端验收。
 
