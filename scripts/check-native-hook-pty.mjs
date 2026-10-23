@@ -139,7 +139,7 @@ async function wait(predicate, label) {
         })),
       }) +
       '\n' +
-      output.slice(-5000),
+      JSON.stringify(output.slice(-5000)),
   );
 }
 async function start(name, { homeName = name, extraArgs = '' } = {}) {

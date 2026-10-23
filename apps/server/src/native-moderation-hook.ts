@@ -2,6 +2,7 @@
 import { readFile, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
+import { setTimeout as delay } from 'node:timers/promises';
 import { moderationConfig, reviewInput, type ModerationOptions } from './moderation.ts';
 
 const failure = '操作失败，请稍后再试。';
@@ -24,6 +25,8 @@ type HookInput = {
   tool_calls?: { tool_name: string; tool_use_id: string; tool_response: string | Block[] }[];
 };
 type Row = { type?: string; message?: { content?: string | Block[] } };
+
+class PendingNativeBatch extends Error {}
 
 function text(value: string | Block[] | undefined): string {
   if (typeof value === 'string') return value;
@@ -58,6 +61,7 @@ export function nativeReviewText(input: HookInput, transcript: string) {
   const tools = new Map<string, string>();
   const parts: string[] = [];
   const failures = new Set<string>();
+  const results = new Set<string>();
   for (const row of rows) {
     const blocks = row.message?.content;
     if (row.type === 'assistant' && Array.isArray(blocks)) {
@@ -72,6 +76,7 @@ export function nativeReviewText(input: HookInput, transcript: string) {
     for (const block of blocks) {
       if (block.type === 'text') parts.push(text([block]));
       else if (block.type === 'tool_result' && block.tool_use_id) {
+        results.add(block.tool_use_id);
         if (block.is_error) failures.add(block.tool_use_id);
         if (block.is_error || interactive.has(tools.get(block.tool_use_id) ?? ''))
           parts.push(text(block.content));
@@ -79,7 +84,12 @@ export function nativeReviewText(input: HookInput, transcript: string) {
     }
   }
   if (input.hook_event_name === 'PostToolBatch') {
-    if (!Array.isArray(input.tool_calls)) throw new Error('Missing native tool batch');
+    if (!Array.isArray(input.tool_calls) || !input.tool_calls.length)
+      throw new Error('Missing native tool batch');
+    // The CLI persists permission amendments with the tool-result row asynchronously.
+    // An older transcript can look valid while omitting the just-submitted amendment.
+    if (input.tool_calls.some((call) => !call.tool_use_id || !results.has(call.tool_use_id)))
+      throw new PendingNativeBatch('Native tool batch has not been persisted');
     const replies = input.tool_calls.filter(
       (call) => interactive.has(call.tool_name) || failures.has(call.tool_use_id),
     );
@@ -118,6 +128,34 @@ export async function reviewNativeHook(
   return {};
 }
 
+export async function readNativeTranscript(input: HookInput) {
+  const deadline = Date.now() + 1000;
+  for (;;) {
+    let transcript = '';
+    try {
+      if ((await stat(input.transcript_path)).size > 16 * 1024 * 1024)
+        throw new Error('Native transcript limit');
+      transcript = await readFile(input.transcript_path, 'utf8');
+      if (Buffer.byteLength(transcript) > 16 * 1024 * 1024)
+        throw new Error('Native transcript limit');
+    } catch (error) {
+      if (
+        (error as NodeJS.ErrnoException).code !== 'ENOENT' ||
+        input.hook_event_name !== 'UserPromptSubmit'
+      )
+        throw error;
+    }
+    try {
+      nativeReviewText(input, transcript);
+      return transcript;
+    } catch (error) {
+      if (!(error instanceof PendingNativeBatch) || Date.now() >= deadline) throw error;
+      // Retry only local persistence, never moderation or model requests.
+      await delay(50);
+    }
+  }
+}
+
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let event: string | undefined;
   try {
@@ -130,17 +168,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
     const input: HookInput = JSON.parse(Buffer.concat(chunks).toString('utf8'));
     event = input.hook_event_name;
-    let transcript = '';
-    try {
-      if ((await stat(input.transcript_path)).size > 16 * 1024 * 1024)
-        throw new Error('Native transcript limit');
-      transcript = await readFile(input.transcript_path, 'utf8');
-      if (Buffer.byteLength(transcript) > 16 * 1024 * 1024)
-        throw new Error('Native transcript limit');
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT' || event !== 'UserPromptSubmit')
-        throw error;
-    }
+    const transcript = await readNativeTranscript(input);
     // The managed hook reads an administrator-controlled, read-only mount, never workspace-writable config.
     const moderation = moderationConfig(
       JSON.parse(

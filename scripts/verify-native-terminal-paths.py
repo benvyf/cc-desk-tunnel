@@ -122,5 +122,6 @@ if __name__ == '__main__':
         details = traceback.format_exc()
         if isinstance(error, subprocess.CalledProcessError) and error.output:
             details += '\n' + error.output
-        (state / 'prepare-error.log').write_text(details)
+        # PTY output contains cursor queries/control sequences. Never replay it on `tail`.
+        (state / 'prepare-error.log').write_text(json.dumps({'error': details}, ensure_ascii=True) + '\n')
         raise SystemExit('Native path verification stopped; production unchanged. Private diagnostics: ' + str(state))
