@@ -39,6 +39,18 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 ## 后续边界
 
+### 当前 Windows 正式安装验收
+
+用户已授权开始正式安装和更新流程验收。2026-10-23 12:14（香港时间）安装前检查确认：系统注册的已安装版本仍为 0.3.5，程序在 `D:/cc-desk-tunnel/CC Desk Tunnel/`；当前运行的 build 2 来自独立 win-unpacked 目录。正式安装包大小 201074700 字节，完整 SHA256 与本记录一致；实时 HTTPS pilot 索引使用固定新公钥验签通过，revision 3、build 2、源码、大小及 hash 相符，公开安装包 HEAD 大小匹配。以 build 2 身份调用更新契约返回 `current`，这是签名及候选判断检查，尚非已安装客户端的界面验收。
+
+原 `%APPDATA%/CC Desk Tunnel` 和独立验收配置中的设备 ID 一致，保存的地址、指纹、模式和自动登录设置一致；令牌密文未输出或改写。两个配置的定时任务数均为 0。安装前记录了原 settings、草稿及任务文件的 hash，未修改这些文件。安装器使用交互 NSIS，安装结束不自动运行，配置位于安装目录之外，卸载配置为不删除用户数据。
+
+下一操作：用户从托盘完全退出验收客户端，运行 `artifacts/managed-build-2-4a39bc3/CC-Desk-Tunnel-Setup-0.3.6-x64.exe`，将正式版安装到原 `D:/cc-desk-tunnel/CC Desk Tunnel/`。先不要启动；开发工具随后读取实际安装的 app.asar 核对 build、版本、协议、公钥和源码，并比较原配置。再由用户启动正式安装版，检查连接及“关于与更新”。当前没有启动安装器、替换程序、启动正式客户端、续期或推广 stable。
+
+本地检查脚本 `.local/windows-build2-install-acceptance.mjs` 提供 `preflight` 与 `verify-installed` 两个阶段，证据在 `artifacts/windows-build2-install-acceptance/`，均不进入 Git；脚本只读取安装文件/本机配置并查询 VPS 公开更新入口，不启动 Claude。
+
+### 保持范围
+
 `ubuntu-cc` 已备份并切换到协议 20，服务端认证和独立公网健康检查通过；真实 Windows build 2 的连接及历史读取已确认。独立验收配置已恢复本机原设备 ID，交付剩余验收步骤后用户回报“暂时没问题”，各项未逐一确认，模型测试仍暂停；见 [单节点迁移记录](UBUNTU-PILOT-MIGRATION.md)。其余五台仍为协议 19，继续使用旧客户端。旧 build 1 不信任新密钥，需人工使用新引导包。
 
 索引到期前需要通过 VPS 续期；目前没有自动续期任务。用户已明确不需要将 ubuntu-cc 回滚备份保存到另一台机器，并要求其余五台因暂时没有 Claude 账号可用而暂不处理；当前工作集中于 ubuntu-cc 和 Windows 客户端。stable 推广、关键词/JEV 审核和统一登录不在此次发布中。VPS 外的加密灾难恢复备份尚未创建。
