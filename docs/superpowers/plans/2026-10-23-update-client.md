@@ -25,7 +25,8 @@
 - [x] 自动化与真实 Electron 验证。
 - [x] 独立测试产品的真实 NSIS build 1 → 2 安装、目标启动确认与篡改失败验证。
 - [x] 隔离测试产品的原生交互安装取消、旧版恢复与重新安装验收。
-- [ ] 正式候选包构建及管理员签名发布。
+- [x] 提交并推送源码，从清洁提交构建正式 build 1 引导包并核对。
+- [ ] 管理员生成生产签名索引及发布 pilot。
 
 ## 完成证据与剩余边界
 
@@ -35,4 +36,5 @@
 - 最终隔离安装验收退出码 0、`installation: true`：`.local/managed-client-acceptance/2026-10-23T02-20-47-842Z/evidence.json`，日志 `.local/managed-client-acceptance.log`。同目录 `about-build-2.png` 为验收后从同一 build 2 打包程序补拍的关于页面（解包运行仅补充 UI 截图，不作为安装证明）；原 `upgraded.png` 捕获到了尚未刷新的旧画面。原生截图现等待窗口显示后再捕获。
 - 原生交互取消与重试验收通过：`.local/managed-client-acceptance/2026-10-23T02-29-44-261Z/evidence.json` 同时记录 `cancellation: true` 与 `installation: true`，日志为 `.local/managed-client-interactive-cancel.log`。使用 `--interactive-cancel`，首次安装保持原助手交互行为，由用户实际点击取消；脚本确认安装器非零退出、磁盘及重启客户端仍为 build 1、pending 为 unconfirmed、无 last-install 成功记录并且可重试，然后真实重新安装到 build 2 并完成目标启动确认。取消后状态保存在同目录 `after-cancel.json`，失败诊断归档为缓存中的 `pending.json.cancelled.failure.txt`。
 - 测试安装使用临时密钥和 loopback HTTPS；只有自动安装及交互取消后的重试阶段对测试助手加入 `/S`。当前会话没有 computer-use 所要求的 `node_repl` 工具，原生按钮由用户手动点击，检查和重试由脚本执行；测试结束卸载独立测试产品。
-- 尚未提交或生成生产引导包、签名发布、改动 VPS 或迁移六台 Ubuntu；协议 19 → 20 仍需管理员人工配套引导。
+- 源码提交 `640588de87f73acffbec2e3e50b8d757412f24a6` 已推送至 benvyf 仓库；正式 build 1 引导包已从独立清洁 worktree 构建，打包脚本退出码 0、实际打包启动测试 1/1 通过，生产身份、生产公钥、交互助手及制品 hash 核对通过。大小、SHA256 和本机证据目录见 [构建记录](../../UPDATE-CLIENT-BOOTSTRAP.md)。
+- 尚未生成生产签名索引或上传安装包，未改动 VPS 或迁移六台 Ubuntu；协议 19 → 20 仍需管理员人工配套引导。

@@ -4,7 +4,7 @@
 
 ## 打包与身份
 
-公开构建配置是 [managed-client.json](../deploy/managed-client.json)。它预留首个引导包的 pilot/build 1，不代表已经发布。Windows 打包器从清洁 Git 工作树读取完整提交、应用三段版本和协议，校验公钥及源地址后写入应用资源。源码变化后必须重新构建；不能修改旧 EXE 的索引冒充新 build。
+公开构建配置是 [managed-client.json](../deploy/managed-client.json)。首个 pilot/build 1 引导包已从清洁提交构建并核对，尚未发布；见 [构建记录](UPDATE-CLIENT-BOOTSTRAP.md)。Windows 打包器从清洁 Git 工作树读取完整提交、应用三段版本和协议，校验公钥及源地址后写入应用资源。源码变化后必须重新构建；不能修改旧 EXE 的索引冒充新 build。
 
 生产构建前提交并整理源码，在 Node 24 环境准备项目依赖、Electron、OpenSSH 和 PowerShell，按现有流程运行 `npm run package:windows`。工作树不洁、配置缺失或公钥非法时失败。普通开发运行及非 Windows x64 平台不启用安装。更新身份不从运行环境或 renderer 读取。
 
@@ -61,4 +61,4 @@ node scripts/verify-managed-client.mjs --interactive-cancel
 
 2026-10-23 验证通过：既有更新核心 35 项；全套 374 项中 327 通过、47 跳过、0 失败，前端构建及 typecheck 通过。真实 Electron 与 NSIS 安装验收包含共享缓存、崩溃忙碌窗口阻断、签名撤回、build 1 → 2 安装及目标启动确认。新增交互验收也已通过：用户实际点击取消，脚本确认旧版能启动且未误报成功，并真实重试升级到 build 2；记录见 [实施计划](superpowers/plans/2026-10-23-update-client.md)。
 
-脚本结果和截图保存在该次独立目录；测试包不能上传生产通道。正式发布还需要最终清洁提交、正式候选包构建与核对和管理员签名。协议 19 → 20 人工引导、服务端迁移及六台扩展另行执行。
+脚本结果和截图保存在该次独立目录；测试包不能上传生产通道。正式 build 1 引导包已从提交 `640588de87f73acffbec2e3e50b8d757412f24a6` 构建并核对，下一步由管理员生成生产签名索引并发布 pilot。协议 19 → 20 人工引导、服务端迁移及六台扩展另行执行。
