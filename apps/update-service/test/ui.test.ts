@@ -194,7 +194,7 @@ test(
       .fill('BLOCK\n<img src=x onerror=alert(1)>');
     await page.getByRole('button', { name: '保存审核配置', exact: true }).click();
     await expect(
-      page.getByText('审核配置已保存；CC 节点尚未接入强制检查。', { exact: true }),
+      page.getByText('审核配置已保存；仅对已部署门禁的节点生效。', { exact: true }),
     ).toBeVisible();
     await page.getByLabel('待审文本', { exact: true }).fill('a BLOCK fixture');
     await page.getByRole('button', { name: '按已保存策略试算', exact: true }).click();

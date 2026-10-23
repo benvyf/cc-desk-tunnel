@@ -25,7 +25,7 @@
       </section>
       <section id="moderation-panel" hidden>
         <div class="section-heading"><div><p class="eyebrow">CONTENT REVIEW</p><h2>内容审核</h2></div><button id="moderation-refresh" class="quiet">刷新审核配置</button></div>
-        <p class="muted">当前提供策略管理与文本试算，CC 节点尚未接入强制检查。保存配置不会启用生产拦截。</p>
+        <p class="muted">节点审核接口已就绪，仅对已单独部署门禁的 CC 节点生效。节点审核记录表示该次文本已检查，不代表所有节点或文件内容均已覆盖。</p>
         <section class="card"><h2>JEV 用量</h2><p id="jev-usage" aria-live="polite">读取用量中…</p><p class="muted">仅累计本管理服务从统计起始时间收到的用量，不含此前或其他应用的调用；失败或未返回用量的请求也可能计费。输入 Token 为服务商报告的计费输入，输出价格以服务商账单为准。</p><p>剩余额度：官方公开 API 暂不提供余额查询。请在 <a href="https://console.typesafe.ai/" target="_blank" rel="noreferrer noopener">TypeSafe 官方控制台</a> 查看真实余额和账单。</p></section>
         <form id="moderation-config">
           <section class="card"><h2>审核策略</h2>

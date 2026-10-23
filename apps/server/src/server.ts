@@ -62,6 +62,7 @@ import type { UpdateOptions } from './updates.ts';
 import { UsageLog, createUsageReceiver, telemetryEnvironment } from './usage.ts';
 import { WebAccess } from './web-access.ts';
 import { browserActivity, browserCommands, isWebCommand } from './web-commands.ts';
+import { reviewInput, type ModerationOptions } from './moderation.ts';
 
 type Peer = {
   socket: WebSocket;
@@ -122,6 +123,7 @@ type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
 export type ServerOptions = {
   token: string;
   dataDir: string;
+  moderation?: ModerationOptions;
   stepMs?: number;
   allowedOrigins?: string[];
   claude?: ClaudeOptions;
@@ -168,6 +170,49 @@ export function createProxyServer(options: ServerOptions) {
   // account change — waits until none is going.
   const runs = new Map<string, Run>();
   const mutations = new Set<string>();
+  const reviewing = new Set<string>();
+  const inputQueues = new Map<string, Promise<unknown>>();
+  const reviewDeadlines = new WeakMap<object, number>();
+
+  async function review(
+    peer: Peer,
+    command: { requestId: string; type: string },
+    sessionId: string,
+    text: string,
+  ) {
+    if (!options.moderation) return;
+    if (closing || peer.left || peer.socket.readyState !== WebSocket.OPEN)
+      throw new DomainError('connection_closed', '连接已关闭，本次未发送。');
+    const run = runs.get(sessionId);
+    reviewing.add(sessionId);
+    try {
+      const remaining = Math.min(
+        7500,
+        (reviewDeadlines.get(command) ?? Date.now() + 7500) - Date.now(),
+      );
+      await reviewInput(
+        options.moderation,
+        {
+          requestId: command.requestId,
+          sessionId,
+          deviceId: peer.device?.id ?? serverDevice.id,
+          kind: command.type,
+          text,
+        },
+        remaining,
+      );
+      if (
+        Date.now() > (reviewDeadlines.get(command) ?? Infinity) ||
+        closing ||
+        peer.left ||
+        peer.socket.readyState !== WebSocket.OPEN ||
+        runs.get(sessionId) !== run
+      )
+        throw new DomainError('review_state_changed', '审核期间连接或运行状态已变化，请重新提交。');
+    } finally {
+      reviewing.delete(sessionId);
+    }
+  }
   const terminals = new Map<string, Terminal>();
   const seats = new Map<string, Seat>();
   const graceMs = options.graceMs ?? (options.claude ? 300_000 : 0);
@@ -670,6 +715,11 @@ export function createProxyServer(options: ServerOptions) {
   }
   // The terminal occupies its session like a run does, so other connections see it as busy.
   async function openTerminal(peer: Peer, command: CommandOf<'terminal.open'>, session: Session) {
+    if (options.moderation)
+      throw new DomainError(
+        'moderation_terminal_disabled',
+        '此节点已启用内容审核，请使用聊天输入；原生终端暂不可用。',
+      );
     if (!options.claude) throw new DomainError('native_unavailable', '离线模拟不启动原生终端。');
     if (terminals.has(command.sessionId) || runs.has(command.sessionId) || mutations.size)
       throw new DomainError('native_busy', '请先结束这个会话的运行或会话管理，再打开终端。');
@@ -838,7 +888,7 @@ export function createProxyServer(options: ServerOptions) {
   }
   // A message starts a run on the computer the session is on, or joins the native run going there. Compacting
   // is the native /compact command sent as a message.
-  function submit(
+  async function submit(
     peer: Peer,
     command: CommandOf<'message.send' | 'session.compact' | 'run.continue'>,
     session: Session,
@@ -858,6 +908,21 @@ export function createProxyServer(options: ServerOptions) {
       if (existing.payload.text !== text || existing.payload.scenario !== scenario)
         throw new DomainError('request_conflict', '请求 ID 已被其他内容使用。');
       return;
+    }
+    if (options.moderation) {
+      // Continue/compact reuse old input. Review all recorded user turns without truncating them.
+      const history =
+        command.type === 'message.send'
+          ? ''
+          : store
+              .get(session.id)
+              .events.filter((event) => event.payload.type === 'message.user')
+              .map((event) => (event.payload.type === 'message.user' ? event.payload.text : ''))
+              .join('\n\n');
+      await review(peer, command, session.id, history ? `${history}\n\n${text}` : text);
+      session = store.get(session.id).session;
+      if (mutations.has(session.id) || terminals.has(session.id))
+        throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
     }
     if (session.activeRun) {
       const active = runs.get(command.sessionId);
@@ -918,7 +983,7 @@ export function createProxyServer(options: ServerOptions) {
   }
   // Any window of any of the user's computers may stop a run or answer it. Two may do so at once: stopping
   // what has already stopped is nothing, and of two answers the first counts.
-  function controlRun(
+  async function controlRun(
     peer: Peer,
     command: CommandOf<'run.cancel' | 'run.task.stop' | 'approval.reply'>,
   ) {
@@ -947,6 +1012,14 @@ export function createProxyServer(options: ServerOptions) {
     if (options.claude) {
       const decide = run.approvals.get(command.approvalId);
       if (!decide) throw new DomainError('approval_inactive', '审批已失效。');
+      if (command.allowed && command.answers && Object.keys(command.answers).length) {
+        await review(peer, command, command.sessionId, JSON.stringify(command.answers));
+        if (
+          run.approvals.get(command.approvalId) !== decide ||
+          run.answered.has(command.approvalId)
+        )
+          throw new DomainError('approval_inactive', '审批已失效。');
+      }
       run.approvals.delete(command.approvalId);
       run.answered.add(command.approvalId);
       decide(command.allowed, command.answers);
@@ -957,6 +1030,11 @@ export function createProxyServer(options: ServerOptions) {
     if (!run.decide || run.approvalId !== command.approvalId)
       throw new DomainError('approval_inactive', '审批已失效。');
     const decide = run.decide;
+    if (command.allowed && command.answers && Object.keys(command.answers).length) {
+      await review(peer, command, command.sessionId, JSON.stringify(command.answers));
+      if (run.decide !== decide || run.answered.has(command.approvalId))
+        throw new DomainError('approval_inactive', '审批已失效。');
+    }
     run.decide = undefined;
     run.answered.add(command.approvalId);
     decide(command.allowed, command.answers);
@@ -964,6 +1042,17 @@ export function createProxyServer(options: ServerOptions) {
 
   // Resolves to the session ID carried in the response frame; account and usage commands have none.
   async function execute(peer: Peer, command: Command): Promise<string | undefined> {
+    if (
+      reviewing.size &&
+      [
+        'account.login',
+        'account.code',
+        'account.logout',
+        'settings.update',
+        'instructions.update',
+      ].includes(command.type)
+    )
+      throw new DomainError('session_busy', '内容正在审核，请稍后修改账号或设置。');
     if (isWebCommand(command)) {
       send(
         peer,
@@ -1013,6 +1102,8 @@ export function createProxyServer(options: ServerOptions) {
       case 'instructions.update': {
         if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有全局说明。');
         try {
+          if (command.type === 'instructions.update' && command.text.trim())
+            await review(peer, command, 'global-instructions', command.text);
           const state =
             command.type === 'instructions.get'
               ? readInstructions()
@@ -1053,7 +1144,11 @@ export function createProxyServer(options: ServerOptions) {
         if (
           store
             .list()
-            .some((session) => mutations.has(session.id) && pathKey(session.projectPath) === from)
+            .some(
+              (session) =>
+                (mutations.has(session.id) || reviewing.has(session.id)) &&
+                pathKey(session.projectPath) === from,
+            )
         )
           throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
         for (const session of store.moveProject(command.from, command.to, deviceOf(peer)))
@@ -1074,6 +1169,17 @@ export function createProxyServer(options: ServerOptions) {
       }
     }
     const { session } = store.get(command.sessionId);
+    if (
+      reviewing.has(command.sessionId) &&
+      ![
+        'run.cancel',
+        'run.task.stop',
+        'session.subscribe',
+        'session.history',
+        'session.status',
+      ].includes(command.type)
+    )
+      throw new DomainError('session_busy', '内容正在审核，请稍后操作。');
     if (mutations.has(command.sessionId))
       throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
     switch (command.type) {
@@ -1114,7 +1220,7 @@ export function createProxyServer(options: ServerOptions) {
       case 'run.cancel':
       case 'run.task.stop':
       case 'approval.reply':
-        controlRun(peer, command);
+        await controlRun(peer, command);
         return command.sessionId;
     }
     if (terminals.has(command.sessionId))
@@ -1146,7 +1252,7 @@ export function createProxyServer(options: ServerOptions) {
       case 'message.send':
       case 'session.compact':
       case 'run.continue':
-        submit(peer, command, session);
+        await submit(peer, command, session);
         break;
     }
     return command.sessionId;
@@ -1306,6 +1412,7 @@ export function createProxyServer(options: ServerOptions) {
   }
   // Keystrokes, resizes and flow-control acknowledgments carry no request ID and get no response.
   function controlTerminal(peer: Peer, control: TerminalControl) {
+    if (options.moderation && control.type === 'terminal.input') return;
     const current = terminals.get(control.sessionId);
     if (!current || current.owner !== peer || current.id !== control.terminalId) {
       send(peer, {
@@ -1345,7 +1452,32 @@ export function createProxyServer(options: ServerOptions) {
         });
       return;
     }
-    const response = execute(peer, command).then(
+    // Serialize model inputs across connections; keep cancellation responsive during network review.
+    const queued =
+      options.moderation &&
+      [
+        'message.send',
+        'session.compact',
+        'run.continue',
+        'approval.reply',
+        'instructions.update',
+      ].includes(command.type);
+    const queueId = 'sessionId' in command ? command.sessionId : 'global-instructions';
+    if (queued) reviewDeadlines.set(command, Date.now() + 8000);
+    const task = queued
+      ? (inputQueues.get(queueId) ?? Promise.resolve())
+          .catch(() => {})
+          .then(() => execute(peer, command))
+      : execute(peer, command);
+    if (queued) {
+      inputQueues.set(queueId, task);
+      void task
+        .finally(() => {
+          if (inputQueues.get(queueId) === task) inputQueues.delete(queueId);
+        })
+        .catch(() => {});
+    }
+    const response = task.then(
       (sessionId): ServerMessage => ({
         type: 'response',
         requestId: command.requestId,

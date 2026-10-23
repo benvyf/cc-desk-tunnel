@@ -13,6 +13,8 @@ export const runtimeFiles = [
   'apps/update-service/src/store.ts',
   'apps/update-service/src/jev.ts',
   'apps/update-service/src/moderation.ts',
+  'apps/update-service/src/moderation-nodes.ts',
+  'scripts/create-moderation-node.mjs',
   'apps/update-service/src/password-auth.ts',
   'scripts/create-admin-password-setup.mjs',
   'apps/update-service/web/index.html',
@@ -28,6 +30,7 @@ export const runtimeFiles = [
   'docs/UPDATE-SERVICE.md',
   'docs/JEV-SUB2API-REFERENCE.md',
   'docs/ADMIN-PASSWORD-LOGIN.md',
+  'docs/MODERATION-NODE-GATE.md',
 ];
 
 export async function packageUpdateService(root, output) {

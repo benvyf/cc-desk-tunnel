@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -258,7 +259,7 @@ test('missing keys, HTTP errors, invalid or oversized results and timeout never 
 test('private settings persist, secrets stay masked, stale saves conflict and records omit raw prompts', async (t) => {
   const f = await fixture(t);
   assert.equal(f.store.config().mode, 'keyword_and_api');
-  assert.equal(f.store.config().enforcement, 'not-connected');
+  assert.equal(f.store.config().enforcement, 'node-api-ready');
   const initial = editable(f.store);
   const saved = f.store.save({ ...initial, apiKey: key, keywords: ['block'] }, 'admin');
   assert.equal(saved.apiKeyConfigured, true);
@@ -309,4 +310,34 @@ test('configuration validates contract fields and rejects unsafe URLs, invalid s
   await assert.rejects(store.preview('', 'admin'), /Expected non-empty/);
   await assert.rejects(store.preview('x'.repeat(65537), 'admin'), /Expected non-empty/);
   assert.equal(store.config().revision, 0);
+});
+
+test('node reviews share JEV accounting and retain correlation metadata without input text', async (t) => {
+  const f = await fixture(t);
+  f.store.save({ ...editable(f.store), apiKey: key }, 'test');
+  let calls = 0;
+  const fetcher: typeof fetch = async () => {
+    calls++;
+    return Response.json(answer());
+  };
+  const result = await f.store.review(
+    'ordinary node fixture text',
+    'ubuntu-test',
+    'node.review',
+    {
+      requestId: 'node-request',
+      sessionId: 'node-session',
+      deviceId: 'node-device',
+      inputKind: 'message.send',
+    },
+    fetcher,
+  );
+  assert.equal(result.allowed, true);
+  assert.equal(calls, 1);
+  const event = f.store.events()[0]!;
+  assert.equal(event.kind, 'node.review');
+  assert.equal(event.detail.requestId, 'node-request');
+  assert.ok(!JSON.stringify(event).includes('ordinary node fixture text'));
+  assert.equal(f.store.usage().requests, 1);
+  assert.equal(f.store.usage().totalTokens, 138);
 });

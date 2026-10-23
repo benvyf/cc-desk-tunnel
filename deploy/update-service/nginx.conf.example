@@ -34,4 +34,14 @@ location ~ ^/cc-updates/v1/artifacts/([1-9][0-9]*)/win32-x64/(CC-Desk-Tunnel-Set
     add_header Cache-Control "public, max-age=31536000, immutable";
 }
 
+location = /cc-updates/v1/moderation/check {
+    limit_except POST { deny all; }
+    client_max_body_size 400k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_read_timeout 40s;
+    proxy_cache off;
+}
+
 location /cc-updates/ { return 404; }

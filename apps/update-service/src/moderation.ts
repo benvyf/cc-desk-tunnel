@@ -206,7 +206,7 @@ export class ModerationStore {
     return {
       ...policy,
       apiKeyConfigured: Boolean(apiKey),
-      enforcement: 'not-connected' as const,
+      enforcement: 'node-api-ready' as const,
       rulesVersion,
     };
   }
@@ -274,6 +274,15 @@ export class ModerationStore {
     };
   }
   async preview(text: unknown, actor: string, fetcher: typeof fetch = fetch) {
+    return this.review(text, actor, 'admin.preview', {}, fetcher);
+  }
+  async review(
+    text: unknown,
+    actor: string,
+    kind: 'admin.preview' | 'node.review',
+    context: Record<string, string>,
+    fetcher: typeof fetch = fetch,
+  ) {
     if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 65536)
       throw new UpdateError(400, 'Expected non-empty text up to 64 KiB.');
     if (this.active >= 2) throw new UpdateError(429, 'Moderation preview busy; retry later.');
@@ -297,7 +306,8 @@ export class ModerationStore {
               result.usage?.inputTokens ?? 0,
               result.usage?.outputTokens ?? 0,
             );
-        id = this.record(actor, 'admin.preview', policy.revision, {
+        id = this.record(actor, kind, policy.revision, {
+          ...context,
           ...result,
           latencyMs: Date.now() - start,
           textBytes: Buffer.byteLength(text),

@@ -72,8 +72,8 @@ export function setupModeration({ request, action, notice, element, date }) {
       for (const value of [
         date(event.at),
         `${event.actor}\n${event.id}`,
-        `${event.kind === 'admin.preview' ? '文本试算' : event.kind === 'config.migrated' ? '规则升级' : '配置更新'} / ${event.revision}`,
-        event.kind === 'admin.preview'
+        `${event.kind === 'node.review' ? '节点审核' : event.kind === 'admin.preview' ? '文本试算' : event.kind === 'config.migrated' ? '规则升级' : '配置更新'} / ${event.revision}`,
+        event.kind === 'admin.preview' || event.kind === 'node.review'
           ? `${labels[detail.action] ?? detail.action}${detail.error ? ` · ${detail.error}` : ''}${detail.matchedKeyword ? ` · ${detail.matchedKeyword}` : ''}${detail.categories?.length ? ` · ${detail.categories.join(', ')}` : ''}`
           : event.kind === 'config.migrated'
             ? `规则：${detail.rulesVersion}`
@@ -142,7 +142,7 @@ export function setupModeration({ request, action, notice, element, date }) {
       );
       await refreshEvents();
       await refreshUsage();
-      notice('审核配置已保存；CC 节点尚未接入强制检查。');
+      notice('审核配置已保存；仅对已部署门禁的节点生效。');
     });
   });
   $('moderation-preview').addEventListener('submit', (event) => {

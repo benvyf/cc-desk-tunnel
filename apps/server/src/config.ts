@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ServerOptions } from './server.ts';
+import { moderationConfig } from './moderation.ts';
 
 function port(value: string | undefined, fallback: number, name: string) {
   const number = Number(value ?? fallback);
@@ -42,6 +43,9 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
     throw new Error('Direct mode requires PROXY_TLS_CERT and PROXY_TLS_KEY.');
   const options: ServerOptions = {
     token: env.PROXY_TOKEN ?? '',
+    moderation: env.PROXY_MODERATION_CONFIG
+      ? moderationConfig(JSON.parse(readFileSync(env.PROXY_MODERATION_CONFIG, 'utf8')))
+      : undefined,
     dataDir: resolve(env.PROXY_DATA_DIR ?? defaultDataDir),
     host: env.PROXY_HOST ?? (native && !reverseProxy ? '0.0.0.0' : '127.0.0.1'),
     reverseProxy,

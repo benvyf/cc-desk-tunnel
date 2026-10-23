@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -68,6 +68,67 @@ async function fixture(t: TestContext) {
   return { root, config, store, server, request, headers, bytes, signed };
 }
 const api = '/cc-updates/admin/api';
+
+test('node review credentials are isolated, revocable, deduplicated and logged without text', async (t) => {
+  const f = await fixture(t);
+  const path = '/cc-updates/v1/moderation/check';
+  const token = 'n'.repeat(43);
+  const registry = join(f.root, 'private/moderation-nodes.json');
+  await writeFile(
+    registry,
+    JSON.stringify({ 'ubuntu-test': createHash('sha256').update(token).digest('hex') }),
+  );
+  const config = await (await f.request(api + '/moderation/config', { headers: f.headers })).json();
+  const { apiKeyConfigured, enforcement, rulesVersion, ...editable } = config;
+  assert.equal(
+    (
+      await f.request(api + '/moderation/config', {
+        method: 'PUT',
+        headers: f.headers,
+        body: JSON.stringify({ ...editable, keywords: ['blocked-fixture'], apiKey: null }),
+      })
+    ).status,
+    200,
+  );
+  const value = {
+    nodeId: 'ubuntu-test',
+    requestId: 'request-1',
+    sessionId: 'session-1',
+    deviceId: 'device-1',
+    kind: 'message.send',
+    text: 'blocked-fixture private text',
+  };
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const check = (data = value, custom = headers) =>
+    f.request(path, { method: 'POST', headers: custom, body: JSON.stringify(data) });
+  assert.equal((await check(value, f.headers)).status, 401);
+  assert.equal((await f.request(api + '/status', { headers })).status, 401);
+  assert.equal((await check({ ...value, nodeId: 'other-node' })).status, 400);
+  const first = await check();
+  assert.equal(first.status, 200);
+  const decision = await first.json();
+  assert.deepEqual(Object.keys(decision).sort(), ['allowed', 'id']);
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(await (await check()).json(), decision);
+  assert.equal((await check({ ...value, text: 'different' })).status, 409);
+  const failed = await check({
+    ...value,
+    requestId: 'request-2',
+    text: 'missing key fails closed',
+  });
+  assert.equal((await failed.json()).allowed, false);
+  const events = await (await f.request(api + '/moderation/events', { headers: f.headers })).json();
+  assert.equal(events.filter((event: { kind: string }) => event.kind === 'node.review').length, 2);
+  assert.ok(
+    events.some(
+      (event: { actor: string; detail: { requestId: string } }) =>
+        event.actor === 'ubuntu-test' && event.detail.requestId === value.requestId,
+    ),
+  );
+  assert.ok(!JSON.stringify(events).includes(value.text));
+  await writeFile(registry, '{}');
+  assert.equal((await check()).status, 401);
+});
 
 test('password setup/login require same-origin requests, sessions authorize admin API and logout revokes them', async (t) => {
   const f = await fixture(t);
@@ -168,7 +229,7 @@ test('moderation shares administrator auth, keeps credentials private and record
   const read = async () => (await f.request(path + '/config', { headers: f.headers })).json();
   const config = await read();
   assert.equal(config.mode, 'keyword_and_api');
-  assert.equal(config.enforcement, 'not-connected');
+  assert.equal(config.enforcement, 'node-api-ready');
   assert.equal(config.apiKey, undefined);
   const usage = await (await f.request(path + '/usage', { headers: f.headers })).json();
   assert.equal(usage.requests, 0);

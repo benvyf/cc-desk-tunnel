@@ -7,6 +7,7 @@ import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
+import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
 
 const base = '/cc-updates/admin';
 const api = base + '/api';
@@ -95,6 +96,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   }
 
   const moderation = await ModerationStore.open(config.dataDir);
+  const nodeReviews = new NodeReviews();
   const server = createServer(
     { maxHeaderSize: 8192, requestTimeout: 600000, headersTimeout: 15000, keepAliveTimeout: 5000 },
     (request, response) => {
@@ -128,6 +130,20 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
             'content-length': bytes.length,
           });
           response.end(request.method === 'HEAD' ? undefined : bytes);
+          return;
+        }
+        if (path === moderationPath) {
+          if (request.method !== 'POST') throw new UpdateError(405, 'Method not allowed.');
+          const node = await authenticateNode(config.dataDir, request.headers.authorization);
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 400 * 1024)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid review JSON.');
+          }
+          respond(response, 200, await nodeReviews.check(node, input, moderation));
           return;
         }
         if (!path.startsWith(api + '/')) throw new UpdateError(404, 'Not found.');
