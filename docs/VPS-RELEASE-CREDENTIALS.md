@@ -2,7 +2,7 @@
 
 2026-10-23 起，生产发布身份由 VPS 集中保管。旧电脑身份 `managed-2026-10-23` 退役，新身份为 `managed-vps-2026-10-23`；旧 build 1 没有发布，保留作历史制品，新公钥从 build 2 开始固定。
 
-build 2 已发布并于 2026-10-23 单次续期至 pilot revision 4，有效期至 2026-10-26 14:07:20（香港时间），stable 保持 revision 2 空通道；制品、有效期和验收证据见 [正式发布记录](UPDATE-CLIENT-BUILD-2.md)。尚未配置自动续期。
+build 2 已发布并于 2026-10-23 自动续期部署验收中升至 pilot revision 5，当时有效期至 2026-10-26 14:11:43（香港时间），后续 revision 和有效期由 VPS 自动更新；stable 保持 revision 2 空通道。制品和验收证据见 [正式发布记录](UPDATE-CLIENT-BUILD-2.md)，定时规则、日志及暂停/恢复见 [自动续期](UPDATE-AUTO-RENEWAL.md)。
 
 ## 去哪里找
 
@@ -53,7 +53,7 @@ cd /root/.cc-update-admin/source-build-N
 
 激活后候选记录仍会保留；确认发布完成后可在管理页删除该候选，公开索引和已发布制品不受影响，避免八个候选名额用尽。
 
-签名空索引使用 `state: empty`、`release: null` 模板，只传 `--input` 和 `--out`。它会改变指定通道，必须属于当次明确发布/撤回安排。续期遵守原来的最多七天规则，工具默认三天；没有配置自动续期任务。
+签名空索引使用 `state: empty`、`release: null` 模板，只传 `--input` 和 `--out`。它会改变指定通道，必须属于当次明确发布/撤回安排。续期遵守原来的最多七天规则，工具默认三天；pilot 已配置 VPS systemd 自动续期，手动发布前先暂停 timer 并等待正在运行的服务结束，完成后更新自动续期登记再恢复。stable 尚未启用自动续期。
 
 ## 备份与边界
 

@@ -8,9 +8,9 @@
 | sourceCommit | `4a39bc35008707366949496f9219e9b68c8d0856` |
 | 应用版本 / build | `0.3.6` / `2` |
 | 协议 / 平台 | `20` / Windows x64 |
-| 通道 / revision | `pilot` / `4`（续期后） |
+| 通道 / revision | `pilot` / `5`（自动续期验收时，后续递增） |
 | 签名身份 | `managed-vps-2026-10-23` |
-| 索引有效期 | 2026-10-26 14:07:20（香港时间） |
+| 索引有效期 | 验收时为 2026-10-26 14:11:43（香港时间）；现由 VPS 自动续期 |
 | 文件名 | `CC-Desk-Tunnel-Setup-0.3.6-x64.exe` |
 | 大小 | `201074700` 字节 |
 | SHA256 | `64adfa3702777cae467aa1325e79ad7ce091f7eb304e1b906a0d0b7bcf096c6f` |
@@ -47,6 +47,8 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 ## 后续边界
 
+用户随后授权配置自动续期。VPS 已部署并启用 `cc-update-renew.timer`，每六小时检查一次；pilot 剩余有效期不足两天时为已登记 build 2 续签三天。真实服务部署验收已续签到 revision 5，随后普通检查返回 not-due；固定公钥签名和公开安装包校验通过，release 及 stable 未变，候选数为 0。无需开发电脑常开；维护命令及未来版本登记见 [自动续期记录](UPDATE-AUTO-RENEWAL.md)。
+
 ### 当前 Windows 正式安装验收
 
 用户已授权开始正式安装和更新流程验收。2026-10-23 12:14（香港时间）安装前检查确认：系统注册的已安装版本仍为 0.3.5，程序在 `D:/cc-desk-tunnel/CC Desk Tunnel/`；当前运行的 build 2 来自独立 win-unpacked 目录。正式安装包大小 201074700 字节，完整 SHA256 与本记录一致；实时 HTTPS pilot 索引使用固定新公钥验签通过，revision 3、build 2、源码、大小及 hash 相符，公开安装包 HEAD 大小匹配。以 build 2 身份调用更新契约返回 `current`，这是签名及候选判断检查，尚非已安装客户端的界面验收。
@@ -65,4 +67,4 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 `ubuntu-cc` 已备份并切换到协议 20，服务端认证和独立公网健康检查通过；真实 Windows build 2 的连接及历史读取已确认。独立验收配置已恢复本机原设备 ID，交付剩余验收步骤后用户回报“暂时没问题”，各项未逐一确认，模型测试仍暂停；见 [单节点迁移记录](UBUNTU-PILOT-MIGRATION.md)。其余五台仍为协议 19，继续使用旧客户端。旧 build 1 不信任新密钥，需人工使用新引导包。
 
-当前 pilot 索引已单次续期至 2026-10-26 14:07:20（香港时间），之后到期前仍需续期；目前没有自动续期任务。用户已明确不需要将 ubuntu-cc 回滚备份保存到另一台机器，并要求其余五台因暂时没有 Claude 账号可用而暂不处理；当前工作集中于 ubuntu-cc 和 Windows 客户端。stable 推广、关键词/JEV 审核和统一登录不在此次发布中。VPS 外的加密灾难恢复备份尚未创建。
+当前 pilot 已由 VPS 自动续期；若撤回则保持撤回，若更换制品则需管理员更新续期登记。用户已明确不需要将 ubuntu-cc 回滚备份保存到另一台机器，并要求其余五台因暂时没有 Claude 账号可用而暂不处理；当前工作集中于 ubuntu-cc 和 Windows 客户端。stable 推广、关键词/JEV 审核和统一登录不在此次发布中。VPS 外的加密灾难恢复备份尚未创建。
