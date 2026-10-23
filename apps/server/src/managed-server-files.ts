@@ -6,6 +6,7 @@ import {
   fstatSync,
   lstatSync,
   mkdirSync,
+  mkdtempSync,
   openSync,
   readFileSync,
   readdirSync,
@@ -219,9 +220,10 @@ export function extractRelease(
   const d = descriptor(files.get('SERVER-RELEASE.json')!, release);
   verifyFiles(files, d);
   requireValue(!existsSync(destination), 'Stage directory already exists');
-  assertSafeDirectory(destination, true);
+  assertSafeDirectory(dirname(destination), true);
+  const staging = mkdtempSync(join(dirname(destination), '.staging-'));
   for (const [path, content] of files) {
-    const target = join(destination, path);
+    const target = join(staging, path);
     assertSafeDirectory(dirname(target), true);
     const fd = openSync(
       target,
@@ -238,14 +240,17 @@ export function extractRelease(
   // Sync nested directories before the durable journal may refer to this release.
   const dirs = new Set<string>();
   for (const path of files.keys()) {
-    let directory = dirname(join(destination, path));
-    while (directory !== destination) {
+    let directory = dirname(join(staging, path));
+    while (directory !== staging) {
       dirs.add(directory);
       directory = dirname(directory);
     }
   }
   for (const dir of [...dirs].sort((a, b) => b.length - a.length)) syncDirectory(dir);
-  syncDirectory(destination);
+  syncDirectory(staging);
+  verifyReleaseDirectory(staging, release);
+  // A killed writer leaves only an unreferenced staging directory, never a partial final release.
+  renameSync(staging, destination);
   syncDirectory(dirname(destination));
   return d;
 }

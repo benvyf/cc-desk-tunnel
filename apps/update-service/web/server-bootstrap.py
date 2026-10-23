@@ -340,7 +340,7 @@ def validate_target(program, release):
         if hashlib.sha256(content).hexdigest() != release['compatibility'][p]:
             raise InstallError('Compatibility inventory mismatch.')
     identity = json.loads((program / 'deploy/managed-server.json').read_text())
-    if identity.get('keys') != KEYS or identity.get('origin') != ORIGIN or identity.get('build') != 1:
+    if identity.get('keys') != KEYS or identity.get('origin') != ORIGIN or identity.get('build') != release['build']:
         raise InstallError('Unknown immutable server trust identity.')
     if (program / 'deploy/docker/runtime-level').read_text().strip() != '1':
         raise InstallError('Unknown runtime level.')
@@ -449,7 +449,12 @@ def replace(engine, original, work, release):
         image = engine.request('GET', '/images/' + urllib.parse.quote(final, safe='') + '/json')['Id']
         offline_preflight(image, work, release, log)
         engine.request('POST', '/containers/' + original['Id'] + '/rename?name=' + CONTAINER + '-managed-backup-' + stamp.lower())
-        replacement = engine.request('POST', '/containers/create?name=' + CONTAINER, clone_config(original, image))['Id']
+        intent = {'image': image, 'nonce': os.urandom(16).hex(), 'originalId': original['Id']}
+        durable_json(backup / 'replacement-intent.json', intent)
+        config = clone_config(original, image)
+        config['Labels'] = {**(config.get('Labels') or {}), 'org.cc-desk-tunnel.bootstrap': intent['nonce']}
+        replacement = engine.request('POST', '/containers/create?name=' + CONTAINER, config)['Id']
+        durable_json(backup / 'replacement-record.json', {'id': replacement})
         (backup / 'replacement-id').write_text(replacement)
         engine.request('POST', '/containers/' + replacement + '/start')
         wait_healthy(engine, replacement)
@@ -459,6 +464,8 @@ def replace(engine, original, work, release):
     except BaseException:
         if paused: engine.request('POST', '/containers/' + original['Id'] + '/unpause')
         if changed:
+            if replacement is None:
+                replacement, _ = recovery_container(engine, backup, original)
             restore(engine, original, replacement)
             print('Original container restored. Current business data retained.')
         raise
@@ -467,12 +474,21 @@ def replace(engine, original, work, release):
     print('Manual offline rollback: sudo python3 ' + str(backup / 'rollback.py') + ' --rollback ' + str(backup))
 
 
-def rollback(engine, backup):
-    backup = pathlib.Path(backup).resolve()
-    if backup.parent != ROOT or not backup.name.startswith('backup-') or backup.is_symlink():
-        raise InstallError('Unexpected rollback directory.')
-    original = json.loads((backup / 'original.json').read_text())
-    replacement = (backup / 'replacement-id').read_text().strip() if (backup / 'replacement-id').exists() else None
+def durable_json(path, value):
+    temporary = path.with_suffix('.tmp')
+    with open(temporary, 'w') as stream:
+        json.dump(value, stream); stream.flush(); os.fsync(stream.fileno())
+    temporary.replace(path)
+    if os.name == 'posix':
+        fd = os.open(path.parent, os.O_RDONLY)
+        try: os.fsync(fd)
+        finally: os.close(fd)
+
+
+def recovery_container(engine, backup, original):
+    record = backup / 'replacement-record.json'
+    legacy = backup / 'replacement-id'
+    replacement = json.loads(record.read_text())['id'] if record.exists() else legacy.read_text().strip() if legacy.exists() else None
     try:
         current = engine.request('GET', '/containers/' + CONTAINER + '/json')
     except EngineError as error:
@@ -481,7 +497,24 @@ def rollback(engine, backup):
     # An interrupted install may have stopped/renamed the old container but not created a new one.
     # No unknown container may be deleted, even if it occupies the service name.
     if current and current['Id'] not in (replacement, original['Id']):
-        raise InstallError('Current container has changed; automatic rollback refused.')
+        intent_path = backup / 'replacement-intent.json'
+        intent = json.loads(intent_path.read_text()) if intent_path.exists() else None
+        if not (intent and intent.get('originalId') == original['Id'] and
+                current.get('Image') == intent.get('image') and
+                re.fullmatch(r'[a-f0-9]{32}', intent.get('nonce', '')) and
+                current.get('Config', {}).get('Labels', {}).get('org.cc-desk-tunnel.bootstrap') == intent['nonce']):
+            raise InstallError('Current container has changed; automatic rollback refused.')
+        replacement = current['Id']
+        durable_json(record, {'id': replacement})
+    return replacement if current and current['Id'] == replacement else None, current
+
+
+def rollback(engine, backup):
+    backup = pathlib.Path(backup).resolve()
+    if backup.parent != ROOT or not backup.name.startswith('backup-') or backup.is_symlink():
+        raise InstallError('Unexpected rollback directory.')
+    original = json.loads((backup / 'original.json').read_text())
+    replacement, current = recovery_container(engine, backup, original)
     if current and current['State'].get('Running'):
         active = current['Id']
         paused = current['State'].get('Paused')

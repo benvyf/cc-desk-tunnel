@@ -196,7 +196,7 @@ export function createManagedServerClient({
           '确认的发布目标已变化。',
         );
         confirmation = undefined;
-        tracking = exact;
+        tracking = { ...exact, observed: false };
         activeUntil = now() + 8 * 60000;
         const result = await send(
           config,
@@ -218,6 +218,7 @@ export function createManagedServerClient({
             result.sha256 === input.sha256,
           '服务端接受的目标与确认不一致。',
         );
+        tracking.observed = true;
         return result;
       });
     },
@@ -261,6 +262,16 @@ export function createManagedServerClient({
               result.current.appVersion === exact.release.appVersion,
             '升级完成状态与确认目标不一致。',
           );
+        if (['failed', 'rolled-back'].includes(result.phase))
+          requireValue(
+            exact.observed,
+            '服务管理网络请求失败；尚不能确认这是本次升级结果，正在等待可验证状态。',
+          );
+        if (
+          ['staging', 'stopping', 'backup', 'switching', 'probing'].includes(result.phase) &&
+          result.target !== null
+        )
+          exact.observed = true;
         if (['committed', 'rolled-back', 'failed'].includes(result.phase)) activeUntil = 0;
         return result;
       });

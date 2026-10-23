@@ -124,6 +124,30 @@ test('renderer inputs reject extra fields, insecure addresses, short tokens and 
     await assert.rejects(f.client.check(input));
   assert.equal(f.calls.length, 0);
 });
+
+test('a lost install response cannot accept an earlier failed or rolled-back result', async () => {
+  const f = await fixture();
+  const found = await f.client.check(config);
+  f.set(() => {
+    throw new Error('connection lost');
+  });
+  await assert.rejects(
+    f.client.install({ ...config, confirmed: true, build: 2, sha256: found.candidate.sha256 }),
+    /网络请求失败/,
+  );
+  for (const phase of ['failed', 'rolled-back']) {
+    for (const target of [null, found.candidate]) {
+      f.set({ schema: 1, phase, current, target });
+      await assert.rejects(f.client.status(config), /网络请求失败/);
+      assert.equal(f.client.busy(), true);
+    }
+  }
+  f.set({ schema: 1, phase: 'staging', current, target: found.candidate });
+  assert.equal((await f.client.status(config)).phase, 'staging');
+  f.set({ schema: 1, phase: 'rolled-back', current, target: null });
+  assert.equal((await f.client.status(config)).phase, 'rolled-back');
+  assert.equal(f.client.busy(), false);
+});
 test('tampering, expired indexes, replay, incompatible and changed credentials cannot authorize installation', async () => {
   const f = await fixture();
   const signed = check();

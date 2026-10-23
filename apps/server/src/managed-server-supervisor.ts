@@ -7,6 +7,7 @@ import {
   openSync,
   closeSync,
   fsyncSync,
+  renameSync,
 } from 'node:fs';
 import { join, resolve, relative, isAbsolute, parse, sep } from 'node:path';
 import {
@@ -351,6 +352,9 @@ export class ManagedServerSupervisor {
       this.options.prepareTimeoutMs ?? PREPARE_TIMEOUT_MS,
     );
     try {
+      // Publish preparation before any asynchronous index lookup can expose an older terminal result.
+      this.journal.target = null;
+      this.phase('staging');
       const index = await this.index(controller.signal),
         r = index.payload.release;
       checkOwner();
@@ -375,8 +379,17 @@ export class ManagedServerSupervisor {
       );
       checkOwner();
       const directory = this.directory(index.envelope);
-      if (existsSync(directory)) verifyReleaseDirectory(directory, r);
-      else extractRelease(bytes, directory, r);
+      if (existsSync(directory)) {
+        assertSafeDirectory(directory);
+        try {
+          verifyReleaseDirectory(directory, r);
+        } catch {
+          // Preserve incomplete legacy caches for inspection; never recursively delete unknown contents.
+          renameSync(directory, `${directory}.incomplete-${randomBytes(8).toString('hex')}`);
+          syncDirectory(join(this.options.stateRoot, 'releases'));
+        }
+      }
+      if (!existsSync(directory)) extractRelease(bytes, directory, r);
       checkOwner();
       this.verifyInstalled(index.envelope);
       checkOwner();

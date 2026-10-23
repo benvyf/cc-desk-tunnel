@@ -61,9 +61,17 @@ class BootstrapTests(unittest.TestCase):
             for path in closure + ['package-lock.json', 'deploy/managed-server.json', 'deploy/docker/runtime-level']:
                 target = program / path; target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(subprocess.check_output(['git', 'show', 'HEAD:' + path], cwd=root))
-            release = {'packageLockSha256': hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest(),
+            release = {'build': json.loads((program / 'deploy/managed-server.json').read_text())['build'],
+                       'packageLockSha256': hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest(),
                        'compatibility': {path: compatibility((program / path).read_bytes(), path) for path in closure}}
             b.validate_target(program, release)
+            identity = json.loads((program / 'deploy/managed-server.json').read_text())
+            identity['build'] = 2
+            (program / 'deploy/managed-server.json').write_text(json.dumps(identity))
+            release['build'] = 2
+            b.validate_target(program, release)
+            with self.assertRaises(b.InstallError):
+                b.validate_target(program, {**release, 'build': 3})
             with patch.object(b, 'command') as docker:
                 for path in pinned:
                     with self.subTest(path=path):
@@ -236,6 +244,36 @@ class BootstrapTests(unittest.TestCase):
                 status.assert_called_once_with(b.CONTAINER,release,allow_newer=True)
                 download.assert_not_called()
 
+    def test_rollback_recovers_create_response_loss_only_with_durable_matching_intent(self):
+        for mismatch in (None, 'nonce', 'image', 'originalId'):
+            with self.subTest(mismatch=mismatch), tempfile.TemporaryDirectory() as folder:
+                root = pathlib.Path(folder); backup = root / 'backup-interrupted'; backup.mkdir()
+                original = self.original()
+                (backup / 'original.json').write_text(json.dumps(original))
+                intent = {'image': 'sha256:' + 'b' * 64, 'nonce': 'c' * 32, 'originalId': original['Id']}
+                replacement = {**original, 'Id': 'new', 'Image': intent['image'], 'State': {'Running': False},
+                               'Config': {**original['Config'], 'Labels': {'org.cc-desk-tunnel.bootstrap': intent['nonce']}}}
+                if mismatch: intent[mismatch] = 'unknown'
+                (backup / 'replacement-intent.json').write_text(json.dumps(intent))
+                class Engine:
+                    def __init__(self): self.calls = []
+                    def request(self, method, path, data=None):
+                        self.calls.append((method, path, data))
+                        if path == '/containers/' + b.CONTAINER + '/json': return replacement
+                        if path == '/containers/old/json':
+                            return {**original, 'Name': '/backup', 'State': {'Running': False}, 'NetworkSettings': {'Networks': {}}}
+                        return {}
+                engine = Engine()
+                with patch.object(b, 'ROOT', root):
+                    if mismatch is None:
+                        b.rollback(engine, str(backup))
+                        self.assertIn(('DELETE', '/containers/new?force=true', None), engine.calls)
+                        self.assertEqual(engine.calls[-1][1], '/containers/old/start')
+                    else:
+                        with self.assertRaisesRegex(b.InstallError, 'changed|unknown|Unknown'):
+                            b.rollback(engine, str(backup))
+                        self.assertFalse(any(c[0] != 'GET' for c in engine.calls))
+
     def test_live_status_retry_accepts_only_healthy_settled_programs_and_original_descriptor(self):
         node = os.environ.get('CC_TEST_NODE', 'node')
         real_run = subprocess.run
@@ -287,7 +325,7 @@ class BootstrapTests(unittest.TestCase):
                 with self.assertRaises(b.InstallError): b.live_status('fixture', release, allow_newer=True)
 
     def test_transaction_preserves_config_snapshot_and_cold_data_and_rolls_back_failures(self):
-        for failure in (None, 'create', 'start', 'health', 'frozen'):
+        for failure in (None, 'create', 'create-response', 'start', 'health', 'frozen'):
             with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
                 root = pathlib.Path(folder); work = root / 'work'; work.mkdir()
                 data = root / 'data'; data.mkdir(); (data / 'message').write_text('original')
@@ -296,6 +334,8 @@ class BootstrapTests(unittest.TestCase):
                     def __init__(self): self.calls = []; self.old = copy.deepcopy(original)
                     def request(self, method, path, payload=None):
                         self.calls.append((method, path, payload))
+                        if path == '/containers/' + b.CONTAINER + '/json' and failure == 'create-response':
+                            return {**original, 'Id': 'replacement', 'Image': 'final-image', 'Config': self.created, 'State': {'Running': False}}
                         if path.endswith('/json') and path.startswith('/containers/'): return copy.deepcopy(self.old)
                         if '/top?' in path:
                             assert path.endswith('/top?ps_args=-eo%20pid,args')
@@ -304,7 +344,9 @@ class BootstrapTests(unittest.TestCase):
                         if path.startswith('/images/') and path.endswith('/json'): return {'Id': 'final-image'}
                         if path.startswith('/containers/create'):
                             if failure == 'create': raise b.InstallError('create failed')
-                            self.created = payload; return {'Id': 'replacement'}
+                            self.created = payload
+                            if failure == 'create-response': raise b.EngineError(500)
+                            return {'Id': 'replacement'}
                         if path.endswith('/pause'): self.old['State']['Paused'] = True
                         if path.endswith('/kill?signal=SIGKILL'): self.old['State']['Running'] = False; self.old['State']['Paused'] = False
                         if path == '/containers/replacement/start':
@@ -327,8 +369,11 @@ class BootstrapTests(unittest.TestCase):
                 release = {'build': 1, 'sha256': 'a' * 64, 'descriptorSha256': 'b' * 64}
                 with patch.object(b, 'ROOT', root), patch.object(b, 'DATA', data), patch.object(b, 'frozen_idle', side_effect=idle), patch.object(b, 'command'), patch.object(b, 'offline_preflight'), patch.object(b, 'checked_sources'), patch.object(b, 'wait_healthy', side_effect=health), patch.object(b, 'live_status'), patch.object(b.tarfile, 'open', side_effect=cold_archive):
                     if failure:
-                        with self.assertRaises(b.InstallError): b.replace(engine, original, work, release)
+                        with self.assertRaises((b.InstallError, b.EngineError)): b.replace(engine, original, work, release)
                         self.assertTrue(any(c[1] == '/containers/old/start' for c in engine.calls) if failure != 'frozen' else any(c[1] == '/containers/old/unpause' for c in engine.calls))
+                        if failure == 'create-response':
+                            self.assertIn(('DELETE', '/containers/replacement?force=true', None), engine.calls)
+                            self.assertTrue((next(root.glob('backup-*')) / 'replacement-record.json').exists())
                     else:
                         b.replace(engine, original, work, release)
                         self.assertEqual(engine.created['Env'], original['Config']['Env'])

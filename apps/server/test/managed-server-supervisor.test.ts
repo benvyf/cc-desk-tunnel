@@ -105,6 +105,60 @@ function setup(t: { after(fn: () => void): void }, failCandidate = false) {
   };
   return { ...fixture, data, payload, envelope, options, events, keys, crash: () => crash() };
 }
+
+test('an interrupted release cache is quarantined and the confirmed release can be retried', async (t) => {
+  const f = setup(t),
+    supervisor = new ManagedServerSupervisor(f.options);
+  await supervisor.start();
+  t.after(() => supervisor.stop());
+  const interrupted = join(f.options.stateRoot, 'releases', f.payload.release.sha256);
+  mkdirSync(interrupted);
+  writeFileSync(join(interrupted, 'package.json'), 'partial extraction');
+  await supervisor.prepare({
+    clientProtocol: 42,
+    confirmed: true,
+    build: 2,
+    sha256: f.payload.release.sha256,
+  });
+  await supervisor.activate();
+  assert.equal((await supervisor.status()).phase, 'committed');
+  assert.equal((await supervisor.status()).current.build, 2);
+});
+
+test('a new preparation clears the previous terminal phase before waiting for its index', async (t) => {
+  const f = setup(t);
+  const supervisor = new ManagedServerSupervisor(f.options);
+  await supervisor.start();
+  t.after(() => supervisor.stop());
+  await assert.rejects(
+    supervisor.prepare({ clientProtocol: 42, confirmed: true, build: 2, sha256: '0'.repeat(64) }),
+  );
+  assert.equal((await supervisor.status()).phase, 'failed');
+  const original = f.options.download;
+  let finish!: (bytes: Buffer) => void;
+  // Constructor copies options, so hold the next request through a fresh instance.
+  await supervisor.stop();
+  const next = new ManagedServerSupervisor({
+    ...f.options,
+    download: () =>
+      new Promise<Buffer>((r) => {
+        finish = r;
+      }),
+  });
+  await next.start();
+  t.after(() => next.stop());
+  const pending = next.prepare({
+    clientProtocol: 42,
+    confirmed: true,
+    build: 2,
+    sha256: f.payload.release.sha256,
+  });
+  const result = assert.rejects(pending);
+  assert.equal((await next.status()).phase, 'staging');
+  finish(await original('index'));
+  await next.stop();
+  await result;
+});
 test('upgrade cold backs up after exit, commits authenticated readiness and re-verifies installed release on restart', async (t) => {
   const f = setup(t),
     supervisor = new ManagedServerSupervisor(f.options);

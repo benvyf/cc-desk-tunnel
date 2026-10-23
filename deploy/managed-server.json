@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "product": "cc-desk-tunnel-managed-server",
-  "build": 1,
+  "build": 2,
   "channel": "pilot",
   "origin": "https://api.ghostapi.org",
   "runtimeLevel": "node24-cli2.1.295-v1",

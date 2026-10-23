@@ -1,6 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, symlinkSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  readFileSync,
+  symlinkSync,
+  rmSync,
+  existsSync,
+} from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -113,4 +122,44 @@ test('state roots never follow symlinks', (t) => {
   const link = join(f.root, 'linked');
   symlinkSync(target, link, process.platform === 'win32' ? 'junction' : 'dir');
   assert.throws(() => assertSafeDirectory(join(link, 'child'), true), /symlink/i);
+});
+
+test('process death during extraction never publishes a partial final directory', (t) => {
+  const f = releaseFixture(t),
+    archive = tar(f.files);
+  const release = {
+    ...f.descriptor,
+    size: archive.length,
+    sha256: sha256(archive),
+    descriptorSha256: sha256(f.descriptorBytes),
+  };
+  const destination = join(f.root, 'atomic-release');
+  const moduleUrl = new URL('../src/managed-server-files.ts', import.meta.url).href;
+  const killed = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      `
+    import fs from 'node:fs';
+    import {syncBuiltinESMExports} from 'node:module';
+    const {extractRelease} = await import(${JSON.stringify(moduleUrl)});
+    const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+    const write = fs.writeFileSync;
+    fs.writeFileSync = (...args) => { write(...args); process.exit(93); };
+    syncBuiltinESMExports();
+    extractRelease(Buffer.from(input.archive,'base64'), input.destination, input.release);
+  `,
+    ],
+    {
+      input: JSON.stringify({ archive: archive.toString('base64'), destination, release }),
+      encoding: 'utf8',
+      timeout: 10000,
+      windowsHide: true,
+    },
+  );
+  assert.equal(killed.status, 93, killed.stderr);
+  assert.equal(existsSync(destination), false);
+  extractRelease(archive, destination, release);
+  verifyReleaseDirectory(destination, release);
 });

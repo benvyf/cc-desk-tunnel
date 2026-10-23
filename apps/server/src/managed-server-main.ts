@@ -14,7 +14,8 @@ const root = fileURLToPath(new URL('../../../', import.meta.url));
 const identity = JSON.parse(readFileSync(join(root, 'deploy/managed-server.json'), 'utf8'));
 requireValue(
   identity.product === 'cc-desk-tunnel-managed-server' &&
-    identity.build === 1 &&
+    Number.isSafeInteger(identity.build) &&
+    identity.build > 0 &&
     identity.channel === 'pilot' &&
     identity.origin === 'https://api.ghostapi.org',
   'Invalid immutable managed server identity',
@@ -52,7 +53,7 @@ supervisor = new ManagedServerSupervisor({
   },
   keys: identity.keys,
   baselineCurrent: {
-    build: 1,
+    build: identity.build,
     protocol: PROTOCOL_VERSION,
     appVersion: serviceVersion(),
     sha256: null,
