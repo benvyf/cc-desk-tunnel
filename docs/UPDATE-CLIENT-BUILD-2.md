@@ -8,9 +8,9 @@
 | sourceCommit | `4a39bc35008707366949496f9219e9b68c8d0856` |
 | 应用版本 / build | `0.3.6` / `2` |
 | 协议 / 平台 | `20` / Windows x64 |
-| 通道 / revision | `pilot` / `3` |
+| 通道 / revision | `pilot` / `4`（续期后） |
 | 签名身份 | `managed-vps-2026-10-23` |
-| 索引有效期 | 2026-10-26 11:02:19（香港时间） |
+| 索引有效期 | 2026-10-26 14:07:20（香港时间） |
 | 文件名 | `CC-Desk-Tunnel-Setup-0.3.6-x64.exe` |
 | 大小 | `201074700` 字节 |
 | SHA256 | `64adfa3702777cae467aa1325e79ad7ce091f7eb304e1b906a0d0b7bcf096c6f` |
@@ -37,6 +37,14 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 发布完成后通过管理 API 删除已完成候选，确认公开索引未变化、候选数为 0；最终状态另存 VPS `CURRENT-RELEASE.json` 和 `release-output/pilot-build-2-final-state.json`，后者也已复制到本机制品目录。
 
+## 2026-10-23 单次续期
+
+用户授权执行 VPS 更新索引续期。14:07（香港时间）通过 VPS 上现有干净 `source-build-2` 和发布工具为原 build 2 重新签名并激活 pilot revision 4，签发时间为 `2026-10-23T06:07:20.250Z`，有效期三天至 `2026-10-26T06:07:20.250Z`。release 的全部字段与 revision 3 相同，安装包、hash、源码、协议和发布说明均不变；stable revision 2 空通道字节未变。
+
+发布工具完成公开索引逐字节匹配和完整安装包下载/hash 校验；本机独立通过固定公钥验证实时公开签名，确认旧 revision 3 ledger 可接受 revision 4，build 2 更新判断仍为 `current`。清理本次已激活候选后再次核对公开索引未变，候选数为 0。没有操作 Claude 或其他 Ubuntu 节点。
+
+签名及证据在 VPS `/root/.cc-update-admin/release-output/pilot-build-2-renewal-20261023.json`、`.evidence.json`、`.before.json` 和 `.final-state.json`；`CURRENT-RELEASE.json` 已更新，之前快照保存在 `.before.json`。本机仅保存公开索引和脱敏证据至 `artifacts/managed-build-2-4a39bc3/`，独立检查为 `renewal-20261023-public-verification.json`。本次为单次续期，未配置自动续期。
+
 ## 后续边界
 
 ### 当前 Windows 正式安装验收
@@ -57,4 +65,4 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 `ubuntu-cc` 已备份并切换到协议 20，服务端认证和独立公网健康检查通过；真实 Windows build 2 的连接及历史读取已确认。独立验收配置已恢复本机原设备 ID，交付剩余验收步骤后用户回报“暂时没问题”，各项未逐一确认，模型测试仍暂停；见 [单节点迁移记录](UBUNTU-PILOT-MIGRATION.md)。其余五台仍为协议 19，继续使用旧客户端。旧 build 1 不信任新密钥，需人工使用新引导包。
 
-索引到期前需要通过 VPS 续期；目前没有自动续期任务。用户已明确不需要将 ubuntu-cc 回滚备份保存到另一台机器，并要求其余五台因暂时没有 Claude 账号可用而暂不处理；当前工作集中于 ubuntu-cc 和 Windows 客户端。stable 推广、关键词/JEV 审核和统一登录不在此次发布中。VPS 外的加密灾难恢复备份尚未创建。
+当前 pilot 索引已单次续期至 2026-10-26 14:07:20（香港时间），之后到期前仍需续期；目前没有自动续期任务。用户已明确不需要将 ubuntu-cc 回滚备份保存到另一台机器，并要求其余五台因暂时没有 Claude 账号可用而暂不处理；当前工作集中于 ubuntu-cc 和 Windows 客户端。stable 推广、关键词/JEV 审核和统一登录不在此次发布中。VPS 外的加密灾难恢复备份尚未创建。

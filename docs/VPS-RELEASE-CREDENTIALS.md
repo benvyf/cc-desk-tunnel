@@ -2,7 +2,7 @@
 
 2026-10-23 起，生产发布身份由 VPS 集中保管。旧电脑身份 `managed-2026-10-23` 退役，新身份为 `managed-vps-2026-10-23`；旧 build 1 没有发布，保留作历史制品，新公钥从 build 2 开始固定。
 
-build 2 已发布至 pilot revision 3，stable 保持 revision 2 空通道；制品、有效期和验收证据见 [正式发布记录](UPDATE-CLIENT-BUILD-2.md)。
+build 2 已发布并于 2026-10-23 单次续期至 pilot revision 4，有效期至 2026-10-26 14:07:20（香港时间），stable 保持 revision 2 空通道；制品、有效期和验收证据见 [正式发布记录](UPDATE-CLIENT-BUILD-2.md)。尚未配置自动续期。
 
 ## 去哪里找
 
