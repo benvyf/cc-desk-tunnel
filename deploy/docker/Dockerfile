@@ -28,6 +28,11 @@ RUN install() { npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace
     && npm cache clean --force
 COPY --chown=ccdesktunnel:ccdesktunnel apps/server/src apps/server/src
 COPY --chown=ccdesktunnel:ccdesktunnel packages/protocol/src packages/protocol/src
+COPY --chown=ccdesktunnel:ccdesktunnel packages/managed-server/src packages/managed-server/src
+COPY --chown=ccdesktunnel:ccdesktunnel deploy/managed-server.json deploy/managed-server.json
+# Keep the complete curated package inventory, including optional SERVER-RELEASE.json. This is a build
+# context copy filtered by .dockerignore; it contains no node_modules or administrator data.
+COPY --chown=ccdesktunnel:ccdesktunnel . /tmp/managed-source-context
 
 # A source checkout builds the shared UI; a release archive already contains it, and its build is used even with
 # older sources beside it (manage.sh drops it when the checkout has moved on).
@@ -44,6 +49,7 @@ RUN if [ ! -s apps/server/web/index.html ] && [ -f apps/desktop/src/main.tsx ]; 
 FROM base
 COPY --from=build --chown=root:root /home/ccdesktunnel/runtime /opt/runtime
 COPY --from=build --chown=root:root /app /app
+COPY --from=build --chown=root:root /tmp/managed-source-context /app
 COPY --from=web-build --chown=root:root /app/apps/server/web /app/apps/server/web
 COPY --chown=root:root deploy/docker/managed-settings.json /etc/claude-code/managed-settings.json
 COPY deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
@@ -52,6 +58,7 @@ COPY deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY deploy/docker/runtime-level /opt/runtime/level
 # The working directory is made here with its owner: a builder without BuildKit makes the one WORKDIR names as root.
 RUN chmod 755 /usr/local/bin/proxy-entrypoint && mkdir -p /data/workspace \
+    && chmod -R go-w /app /opt/runtime /etc/claude-code \
     && chown -R ccdesktunnel:ccdesktunnel /data
 ENV PATH=/opt/runtime/node/bin:/opt/runtime/cli/bin:$PATH \
     HOME=/data/home

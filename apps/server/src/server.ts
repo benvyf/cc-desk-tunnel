@@ -65,6 +65,7 @@ import { browserActivity, browserCommands, isWebCommand } from './web-commands.t
 import { AccountMonitor, type AccountMonitorOptions } from './account-monitor.ts';
 import { reviewInput, type ModerationOptions } from './moderation.ts';
 import { assertNativeTerminalReview } from './native-terminal-policy.ts';
+import { managedServerHandler, type ManagedBackend } from './managed-server-http.ts';
 
 type Peer = {
   socket: WebSocket;
@@ -123,6 +124,12 @@ type Seat = {
 type Login = { process: NativeLogin; owner: Peer; url?: string };
 type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
 export type ServerOptions = {
+  managed?: {
+    backend: ManagedBackend;
+    initialMaintenance?: boolean;
+    readiness?: () => unknown;
+    nonce?: string;
+  };
   accountMonitor?: AccountMonitorOptions;
   token: string;
   dataDir: string;
@@ -232,6 +239,36 @@ export function createProxyServer(options: ServerOptions) {
   const tasks = new Set<Promise<unknown>>();
   const tunnelTasks = new Set<Promise<unknown>>();
   let closing = false;
+  let maintenance = options.managed?.initialMaintenance ?? false;
+  let webRequests = 0;
+  const managedMaintenance = {
+    enter() {
+      if (maintenance || closing) return false;
+      maintenance = true;
+      if (
+        runs.size ||
+        terminals.size ||
+        login ||
+        mutations.size ||
+        reviewing.size ||
+        inputQueues.size ||
+        tasks.size ||
+        tunnelTasks.size ||
+        webRequests ||
+        [...peers].some((peer) => peer.authenticated || peer.registering)
+      ) {
+        maintenance = false;
+        return false;
+      }
+      return true;
+    },
+    leave() {
+      maintenance = false;
+    },
+    release() {
+      maintenance = false;
+    },
+  };
   const adapter = options.claude ? 'claude-code' : 'simulation';
   const origins = options.allowedOrigins ?? [
     'http://127.0.0.1:5173',
@@ -269,7 +306,22 @@ export function createProxyServer(options: ServerOptions) {
     );
   }
 
+  const managedHandler = options.managed
+    ? managedServerHandler({
+        token: options.token,
+        backend: options.managed.backend,
+        admission: managedMaintenance,
+        address: addressOf,
+        readiness: options.managed.readiness,
+        nonce: options.managed.nonce,
+      })
+    : undefined;
   const handler: RequestListener = (request, response) => {
+    if (managedHandler?.(request, response)) return;
+    if (maintenance && !(request.method === 'GET' && request.url === '/health')) {
+      response.writeHead(503, { 'Retry-After': '5', 'Cache-Control': 'no-store' }).end();
+      return;
+    }
     if (request.method === 'GET' && request.url === '/health') {
       response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
       response.end(JSON.stringify({ status: 'ok', protocolVersion: PROTOCOL_VERSION, adapter }));
@@ -285,6 +337,7 @@ export function createProxyServer(options: ServerOptions) {
         response.writeHead(404).end();
       }
     } else {
+      webRequests++;
       void web
         .handle(request, response)
         .then((handled) => {
@@ -293,6 +346,9 @@ export function createProxyServer(options: ServerOptions) {
         .catch(() => {
           if (response.headersSent) response.destroy();
           else response.writeHead(500).end();
+        })
+        .finally(() => {
+          webRequests--;
         });
     }
   };
@@ -307,6 +363,10 @@ export function createProxyServer(options: ServerOptions) {
     : createServer(handler);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
   server.on('upgrade', (request, socket, head) => {
+    if (maintenance) {
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      return;
+    }
     if (!closing && web.matchesUpgrade(request)) {
       const address = web.address(request);
       const session = web.authenticate(request);
@@ -1641,6 +1701,10 @@ export function createProxyServer(options: ServerOptions) {
       }, 15000);
       socket.on('error', () => socket.terminate());
       socket.on('message', (data, isBinary) => {
+        if (maintenance) {
+          socket.close(1013, 'Server maintenance');
+          return;
+        }
         let value: unknown;
         try {
           if (isBinary) throw new Error('Binary frame');
@@ -1769,6 +1833,7 @@ export function createProxyServer(options: ServerOptions) {
   );
   return {
     store,
+    managedMaintenance: options.managed ? managedMaintenance : undefined,
     async listen(port = 8787): Promise<string> {
       if (usageReceiver)
         options.claude!.environment = telemetryEnvironment(await usageReceiver.listen());

@@ -10,18 +10,18 @@
 
 ### Task 0: Integrate the updated GitHub branch
 
-- [ ] Merge origin/codex/vps-update-channel (9f783b2) into current dedicated codex/account-monitor-production branch.
-- [ ] Resolve server/config conflicts keeping passive monitor hooks and the latest native terminal policy/deployment validation.
-- [ ] Keep all existing navigation, monitor enrollment and Build 3 download behavior; combine new test coverage and renewal deployment assets.
-- [ ] Run Node 24 tests and TypeScript checks; independently review spec compliance and code quality, then commit the integration.
+- [x] Merge origin/codex/vps-update-channel (9f783b2) into current dedicated codex/account-monitor-production branch.
+- [x] Resolve server/config conflicts keeping passive monitor hooks and the latest native terminal policy/deployment validation.
+- [x] Keep all existing navigation, monitor enrollment and Build 3 download behavior; combine new test coverage and renewal deployment assets.
+- [x] Run Node 24 tests and TypeScript checks; independently review spec compliance and code quality, then commit the integration (3ff4c5c; 445 tests, 0 failures; isolated Linux Python checks 38 passed).
 
 ### Task 1: Signed server contract and supervised upgrade
 
-- [ ] Add strict separate Linux server manifest contract and fixed trusted identity without weakening the Windows contract.
-- [ ] Add authenticated management check/install/status endpoints with idle and maintenance guards independent of protocol mismatch.
-- [ ] Add staged verification, dependency compatibility, backup, restart health check and rollback supervisor with crash recovery.
-- [ ] Write failure-first tests for authentication, busy state, hash/signature tampering, traversal, failed health and preservation of new data.
-- [ ] Review and commit after focused tests.
+- [x] Add strict separate Linux server manifest contract and fixed trusted identity without weakening the Windows contract.
+- [x] Add authenticated management check/install/status endpoints with idle and maintenance guards independent of protocol mismatch.
+- [x] Add staged verification, dependency compatibility, backup, restart health check and rollback supervisor with crash recovery.
+- [x] Write failure-first tests for authentication, busy state, hash/signature tampering, traversal, failed health and preservation of new data.
+- [x] Spec and quality reviews approved. Node 24 regression: 473 tests, 442 passed, 31 skipped, 0 failures. Focused package checks: 29 passed. Isolated Linux: 27 passed; supervisor startup/readiness/shutdown passed with network disabled, synthetic policy, no account mounts and zero CLI invocations. Commit after these checks.
 
 ### Task 2: Desktop mismatch upgrade flow
 
