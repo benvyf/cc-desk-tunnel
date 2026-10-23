@@ -55,6 +55,9 @@ test(
       adminTokenSha256: createHash('sha256').update(token).digest('hex'),
       trustedKeys: { test: keys.publicKey.export({ type: 'spki', format: 'pem' }) },
       monitorNodes: {
+        'ubuntu-pending': createHash('sha256')
+          .update('test_pending_browser_12345678901234567890')
+          .digest('hex'),
         'ubuntu-test': createHash('sha256')
           .update('test_node_browser_12345678901234567890')
           .digest('hex'),
@@ -132,10 +135,19 @@ test(
           'content-type': 'application/json',
         },
         body: JSON.stringify({
-          schema: 1,
+          schema: 2,
           nodeId: 'ubuntu-test',
           observedAt: new Date().toISOString(),
-          account: { id: 'a'.repeat(64), subscriptionType: 'max' },
+          account: {
+            id: createHash('sha256').update('owner@example.invalid').digest('hex'),
+            email: 'owner@example.invalid',
+            organization: '工作组甲',
+            authMethod: 'oauth_token',
+            apiProvider: 'firstParty',
+            subscriptionType: 'max',
+          },
+          identity: { state: 'identified', measuredAt: sampledAt },
+          quotaStatus: { state: 'error', measuredAt: sampledAt },
           rateLimits: {
             available: true,
             measuredAt: sampledAt,
@@ -158,18 +170,95 @@ test(
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
     await expect(
+      page.getByRole('heading', { name: 'owner@example.invalid', exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('#monitor-node-status')).toContainText(
+      'ubuntu-pending：等待首次上报',
+    );
+    await expect(page.locator('#monitor-nodes')).toContainText('工作组甲');
+    await expect(page.locator('#monitor-nodes')).toContainText('最近额度读取失败');
+    await expect(
       page.locator('#monitor-nodes').getByText('ubuntu-test', { exact: true }),
     ).toBeVisible();
     await expect(
-      page.locator('#monitor-nodes').getByText('5 小时额度：82%', { exact: true }),
+      page
+        .locator('#monitor-nodes')
+        .getByText('5 小时额度：已用 82% · 剩余约 18%', { exact: true }),
     ).toBeVisible();
     await expect(
       page.locator('#monitor-nodes').getByText('数据已过期', { exact: true }),
     ).toBeVisible();
     await page.getByRole('button', { name: '刷新账号数据' }).click();
     await expect(
-      page.locator('#monitor-nodes').getByText('5 小时额度：82%', { exact: true }),
+      page
+        .locator('#monitor-nodes')
+        .getByText('5 小时额度：已用 82% · 剩余约 18%', { exact: true }),
     ).toBeVisible();
+    const accountNote = '主力账号 <img src=x onerror=alert(1)>';
+    await page.getByLabel('账号备注').fill(accountNote);
+    await page.getByRole('button', { name: '刷新账号数据' }).click();
+    await expect(page.getByLabel('账号备注')).toHaveValue(accountNote);
+    let releaseNote!: () => void;
+    const holdNote = new Promise<void>((resolve) => {
+      releaseNote = resolve;
+    });
+    await page.route('**/monitor/accounts/*/note', async (route) => {
+      await holdNote;
+      await route.continue();
+    });
+    await page.getByRole('button', { name: '保存备注' }).click();
+    await page.getByLabel('账号备注').fill(accountNote + '（未保存的新修改）');
+    releaseNote();
+    await expect(page.getByText('账号备注已保存。', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('账号备注')).toHaveValue(accountNote + '（未保存的新修改）');
+    await page.unroute('**/monitor/accounts/*/note');
+    await page.getByLabel('账号备注').fill(accountNote);
+    await page.getByLabel('搜索账号').fill('no-matching-account');
+    await expect(page.locator('#monitor-nodes')).toContainText('没有匹配的账号');
+    await page.getByLabel('搜索账号').fill('主力账号');
+    await expect(
+      page.getByRole('heading', { name: 'owner@example.invalid', exact: true }),
+    ).toBeVisible();
+    await page.getByLabel('搜索账号').fill('');
+    const ownerCard = page
+      .locator('#monitor-nodes article')
+      .filter({ has: page.getByRole('heading', { name: 'owner@example.invalid', exact: true }) });
+    const changedAt = new Date(Date.now() + 10).toISOString();
+    const changed = await fetch(
+      `http://127.0.0.1:${backendPort}/cc-updates/admin/api/monitor/report`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer test_node_browser_12345678901234567890',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          schema: 2,
+          nodeId: 'ubuntu-test',
+          observedAt: changedAt,
+          account: {
+            id: createHash('sha256').update('second@example.invalid').digest('hex'),
+            email: 'second@example.invalid',
+            subscriptionType: 'pro',
+            organization: null,
+            authMethod: null,
+            apiProvider: null,
+          },
+          identity: { state: 'identified', measuredAt: changedAt },
+          quotaStatus: { state: 'unknown', measuredAt: null },
+          rateLimits: null,
+          usage: null,
+        }),
+      },
+    );
+    assert.equal(changed.status, 204);
+    await page.getByRole('button', { name: '刷新账号数据' }).click();
+    await expect(
+      page.getByRole('heading', { name: 'second@example.invalid', exact: true }),
+    ).toBeVisible();
+    await expect(ownerCard).toContainText('历史绑定');
+    await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
+    await expect(page.locator('#monitor-count')).toContainText('已记录 2 个账号');
     await page.getByLabel('签名索引（JSON）').setInputFiles(signed);
     await page.getByRole('button', { name: '添加候选' }).click();
     await expect(page.getByText('签名索引已验证，候选已添加。')).toBeVisible();
@@ -199,6 +288,10 @@ test(
     await expect(page.locator('#channels').getByText('已撤回发布')).toBeVisible();
     await page.getByRole('button', { name: '退出登录' }).click();
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
+    await page.getByLabel('管理令牌', { exact: true }).fill(token);
+    await page.getByRole('button', { name: '登录管理' }).click();
+    await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
+    await page.getByRole('button', { name: '退出登录' }).click();
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
     assert.deepEqual(scriptErrors, []);
   },

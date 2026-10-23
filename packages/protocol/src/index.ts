@@ -297,6 +297,8 @@ export const eventPayloadSchema = z.discriminatedUnion('type', [
     context: contextUsageSchema.nullable(),
     usage: nativeUsageSchema.nullable(),
     rateLimits: rateLimitsSchema.nullable(),
+    // Timestamp of the existing quota attempt, retained by context-only refreshes (including failures).
+    quotaAttemptAt: timestamp.optional(),
     errors: z.object({ context: z.string().optional(), usage: z.string().optional() }).optional(),
   }),
   z.object({ type: z.literal('native.title'), title: z.string().min(1).max(120) }),

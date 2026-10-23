@@ -86,7 +86,8 @@ label {
   display: grid;
   gap: 10px;
 }
-input {
+input,
+textarea {
   width: 100%;
   min-width: 0;
   padding: 12px;
@@ -124,6 +125,7 @@ button:disabled {
 }
 button:focus-visible,
 input:focus-visible,
+textarea:focus-visible,
 summary:focus-visible {
   outline: 2px solid #b8d8a0;
   outline-offset: 3px;
@@ -143,6 +145,23 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 20px;
+}
+#monitor-nodes .card {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+#monitor-nodes textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+#monitor-nodes .monitor-sample {
+  border-top: 1px solid #303847;
+  margin-top: 20px;
+  padding-top: 8px;
+}
+#monitor-node-status p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
 }
 .badge {
   display: inline-block;

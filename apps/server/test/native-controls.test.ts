@@ -110,11 +110,14 @@ test('unavailable native telemetry stays unavailable rather than fabricating quo
     },
   } as unknown as Query;
   const metrics = await nativeMetrics(query);
+  assert.ok(metrics.type === 'native.metrics');
+  assert.ok(metrics.quotaAttemptAt);
   assert.deepEqual(metrics, {
     type: 'native.metrics',
     context: null,
     usage: null,
     rateLimits: null,
+    quotaAttemptAt: metrics.quotaAttemptAt,
     errors: { context: '原生接口读取失败', usage: '原生接口读取失败' },
   });
   assert.equal(resultUsage({} as SDKResultMessage), null);
@@ -207,6 +210,8 @@ test('a mid-turn refresh updates only context and keeps the last native quota re
   const refreshed = await nativeContextRefresh(query, first);
   assert.equal(refreshed?.context?.usedTokens, 4000);
   assert.deepEqual(refreshed?.rateLimits, first.rateLimits);
+  assert.ok(first.quotaAttemptAt);
+  assert.equal(refreshed?.quotaAttemptAt, first.quotaAttemptAt);
   assert.equal(usageReads, 1);
   const failing = {
     async getContextUsage() {

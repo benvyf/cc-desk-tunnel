@@ -72,7 +72,7 @@ const identity = {
   login: null,
 } as const;
 
-test('monitor mirrors existing readings, removes identity/content/secrets and ignores context-only repeats', async (t) => {
+test('monitor mirrors authorized identity, removes content/secrets and ignores context-only repeats', async (t) => {
   const f = await fixture(t);
   await delay(30);
   assert.equal(f.reports.length, 0);
@@ -96,7 +96,141 @@ test('monitor mirrors existing readings, removes identity/content/secrets and ig
   const report = f.reports[1];
   assert.match(report.account.id, /^[a-f0-9]{64}$/);
   assert.equal(report.rateLimits.windows[0].utilization, 20);
-  assert.equal(/Owner@|secret|context|login/.test(JSON.stringify(report)), false);
+  assert.equal(report.account.email, identity.email);
+  assert.equal(/secret|context|login/.test(JSON.stringify(report)), false);
+});
+
+test('existing identity metadata and safe quota failures are distinguishable without new readings', async (t) => {
+  const f = await fixture(t);
+  f.monitor.observe({ ...identity, organization: '我的工作组', authMethod: 'oauth_token' });
+  await f.wait(1);
+  f.identify();
+  f.monitor.observe(metrics(), 'session-1');
+  await f.wait(2);
+  assert.equal(f.reports[1].schema, 2);
+  assert.equal(f.reports[1].account.organization, '我的工作组');
+  assert.equal(f.reports[1].account.authMethod, 'oauth_token');
+  assert.equal(f.reports[1].identity.state, 'identified');
+  const withUsage = metrics(new Date().toISOString());
+  withUsage.usage = {
+    measuredAt: new Date().toISOString(),
+    costUsd: 0.2,
+    inputTokens: 1,
+    outputTokens: 2,
+    cacheReadTokens: 3,
+    cacheWriteTokens: 4,
+  };
+  f.monitor.observe(withUsage, 'session-1');
+  await f.wait(3);
+  assert.equal(f.reports[2].usage.runId, 'session-1');
+  f.monitor.observe(
+    {
+      type: 'native.metrics',
+      context: null,
+      usage: null,
+      rateLimits: null,
+      errors: { usage: 'arbitrary private error' },
+    },
+    'session-1',
+  );
+  await f.wait(4);
+  assert.equal(f.reports[3].quotaStatus.state, 'error');
+  assert.equal(f.reports[3].rateLimits.windows[0].utilization, 20);
+  assert.equal(JSON.stringify(f.reports[3]).includes('arbitrary private error'), false);
+  f.monitor.observe({ type: 'account.state', loggedIn: false, login: null });
+  await f.wait(5);
+  assert.equal(f.reports[4].identity.state, 'signed_out');
+  f.monitor.beginSource('unknown-run');
+  f.monitor.observe(
+    { type: 'native.capabilities', account: {}, models: [], commands: [] },
+    'session-2',
+    'unknown-run',
+  );
+  await f.wait(6);
+  assert.equal(f.reports[5].identity.state, 'unknown');
+});
+
+test('changing organization invalidates readings from the previous process context', async (t) => {
+  const f = await fixture(t);
+  f.monitor.observe({ ...identity, organization: 'Old org' });
+  f.identify();
+  f.monitor.observe(metrics(), 'session-1');
+  await f.wait(1);
+  f.monitor.beginSource('pending-old-org');
+  f.monitor.observe({ ...identity, organization: 'New org' });
+  await f.wait(2);
+  assert.equal(f.reports[1].rateLimits, null);
+  f.monitor.observe(metrics(), 'session-1');
+  f.monitor.observe(
+    {
+      type: 'native.capabilities',
+      account: { email: identity.email, organization: 'Old org' },
+      models: [],
+      commands: [],
+    },
+    'session-2',
+    'pending-old-org',
+  );
+  await delay(60);
+  assert.equal(f.reports.length, 2);
+});
+
+test('an old failed attempt replayed by context updates cannot hide a newer successful read', async (t) => {
+  const f = await fixture(t);
+  f.identify('session-a');
+  f.identify('session-b');
+  const at = Date.now() - 1000;
+  const failure = {
+    type: 'native.metrics',
+    context: null,
+    usage: null,
+    rateLimits: null,
+    quotaAttemptAt: new Date(at).toISOString(),
+    errors: { usage: 'read failed' },
+  } as const;
+  f.monitor.observe(failure, 'session-a');
+  await f.wait(1);
+  f.monitor.observe(metrics(new Date(at + 100).toISOString()), 'session-b');
+  await f.wait(2);
+  assert.equal(f.reports[1].quotaStatus.state, 'ok');
+  f.monitor.observe(failure, 'session-a');
+  await delay(60);
+  assert.equal(f.reports.length, 2);
+});
+
+test('concurrent runs begun before first identity can bind the same complete account context', async (t) => {
+  const f = await fixture(t);
+  f.monitor.beginSource('run-a');
+  f.monitor.beginSource('run-b');
+  const capabilities = {
+    type: 'native.capabilities',
+    account: {
+      email: identity.email,
+      subscriptionType: 'max',
+      organization: 'Org A',
+      apiProvider: 'firstParty',
+    },
+    models: [],
+    commands: [],
+  } as const;
+  f.monitor.observe(capabilities as never, 'session-a', 'run-a');
+  await f.wait(1);
+  f.monitor.observe(capabilities as never, 'session-b', 'run-b');
+  f.monitor.observe(metrics(new Date().toISOString(), 73), 'session-b', 'run-b');
+  await f.wait(2);
+  assert.equal(f.reports[1].rateLimits.windows[0].utilization, 73);
+});
+
+test('rapid account switching retains the latest pending observation for each account', async (t) => {
+  const f = await fixture(t);
+  f.monitor.observe(identity);
+  f.monitor.observe({ ...identity, email: 'second@example.invalid' });
+  f.monitor.observe({ ...identity, email: 'third@example.invalid' });
+  await f.wait(3);
+  assert.deepEqual(
+    f.reports.map((r) => r.account.email),
+    [identity.email, 'second@example.invalid', 'third@example.invalid'],
+  );
 });
 
 test('logout and account switches clear the previous account quota', async (t) => {

@@ -131,6 +131,7 @@ export async function nativeContextRefresh(
     context,
     usage: previous.usage,
     rateLimits: previous.rateLimits,
+    ...(previous.quotaAttemptAt ? { quotaAttemptAt: previous.quotaAttemptAt } : {}),
     ...(previous.errors?.usage ? { errors: { usage: previous.errors.usage } } : {}),
   };
 }
@@ -180,6 +181,7 @@ export async function nativeMetrics(
     context: contextSummary(context),
     usage: totals ? resultUsage(totals) : null,
     rateLimits: usage ? { available: usage.rate_limits_available, windows, measuredAt } : null,
+    quotaAttemptAt: measuredAt,
     ...(contextStatus.error || usageStatus.error
       ? {
           errors: { context: contextStatus.error, usage: usageStatus.error },

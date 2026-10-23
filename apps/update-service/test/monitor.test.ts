@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -8,6 +9,7 @@ import { validateConfig } from '../src/config.ts';
 import { createUpdateServer } from '../src/http.ts';
 import { UpdateStore } from '../src/store.ts';
 import { AccountMonitor } from '../../server/src/account-monitor.ts';
+import { MonitorStore } from '../src/monitor.ts';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const admin = 'test_admin_123456789012345678901234';
@@ -73,6 +75,16 @@ async function fixture(t: TestContext) {
     post,
     get,
     url: () => url,
+    note: (id: string, note: unknown, token = admin) =>
+      fetch(url + api + '/accounts/' + id + '/note', {
+        method: 'PUT',
+        headers: {
+          authorization: `Bearer ${token}`,
+          origin: config.origin,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ note }),
+      }),
     restart: async () => {
       await close();
       await open();
@@ -97,6 +109,208 @@ test('node writes are scoped, admin reads are private and snapshots persist with
   await f.restart();
   data = await (await f.get()).json();
   assert.equal(data.nodes[0].nodeId, 'node-1');
+});
+
+test('account registry preserves switches, node associations and administrator notes across restarts', async (t) => {
+  const f = await fixture(t);
+  const at = Date.now() - 10000;
+  const a = report(at, 30);
+  assert.equal((await f.post(a)).status, 204);
+  assert.equal((await f.note(a.account.id, '主账号 <img src=x>')).status, 204);
+  const b = {
+    ...report(at + 1, 70),
+    account: { id: hash('second-account'), subscriptionType: 'pro' },
+  };
+  assert.equal((await f.post(b)).status, 204);
+  assert.equal(
+    (
+      await f.post(
+        { ...report(at + 2, 40), nodeId: 'node-2' },
+        'other_node_1234567890123456789012345',
+      )
+    ).status,
+    204,
+  );
+  let data = await (await f.get()).json();
+  assert.deepEqual(data.configuredNodes, ['node-1', 'node-2']);
+  assert.equal(data.accounts.length, 2);
+  const account = data.accounts.find((row: any) => row.id === a.account.id);
+  assert.equal(account.note, '主账号 <img src=x>');
+  assert.equal(account.snapshots.length, 2);
+  assert.deepEqual(
+    account.snapshots.map((s: any) => s.rateLimits.windows[0].utilization).sort(),
+    [30, 40],
+  );
+  assert.equal(data.nodes[0].account.id, b.account.id);
+  assert.equal((await f.note(a.account.id, 'forbidden', nodeToken)).status, 401);
+  assert.equal((await f.note(a.account.id, 'x'.repeat(2001))).status, 400);
+  assert.equal((await f.note(hash('missing'), '')).status, 404);
+  await f.restart();
+  data = await (await f.get()).json();
+  assert.equal(data.accounts.find((row: any) => row.id === a.account.id).note, account.note);
+  assert.equal(data.accounts.length, 2);
+});
+
+test('configured nodes are visible before their first report', async (t) => {
+  const f = await fixture(t);
+  const data = await (await f.get()).json();
+  assert.deepEqual(data.configuredNodes, ['node-1', 'node-2']);
+  assert.deepEqual(data.accounts, []);
+  assert.deepEqual(data.nodes, []);
+});
+
+test('same-account identity-only reports retain the last sampled quota and its original age', async (t) => {
+  const f = await fixture(t);
+  const at = Date.now() - 10000;
+  const a = report(at, 60);
+  assert.equal((await f.post(a)).status, 204);
+  assert.equal((await f.post({ ...report(at + 1), rateLimits: null })).status, 204);
+  const data = await (await f.get()).json();
+  assert.equal(data.nodes[0].rateLimits.windows[0].utilization, 60);
+  assert.equal(data.nodes[0].rateLimits.measuredAt, a.rateLimits.measuredAt);
+});
+
+function detailedReport(at: number, email = 'owner@example.invalid', organization = 'Org A') {
+  return {
+    ...report(at),
+    schema: 2,
+    account: {
+      id: hash(email.toLowerCase()),
+      email,
+      organization,
+      subscriptionType: 'max',
+      authMethod: 'oauth_token',
+      apiProvider: 'firstParty',
+    },
+    identity: { state: 'identified', measuredAt: new Date(at).toISOString() },
+    quotaStatus: { state: 'ok', measuredAt: new Date(at).toISOString() },
+  };
+}
+
+test('legacy reports cannot corrupt richer identity metadata and organization changes clear old quota', async (t) => {
+  const f = await fixture(t);
+  const at = Date.now() - 10000;
+  const a = detailedReport(at);
+  assert.equal((await f.post(a)).status, 204);
+  assert.equal(
+    (await f.post({ ...report(at + 1), account: { id: a.account.id, subscriptionType: 'max' } }))
+      .status,
+    204,
+  );
+  let result = await f.get();
+  assert.equal(result.status, 200);
+  let data = await result.json();
+  assert.equal(data.nodes[0].account.email, a.account.email);
+  const changed = {
+    ...detailedReport(at + 2, a.account.email, 'Org B'),
+    rateLimits: null,
+    quotaStatus: { state: 'unknown', measuredAt: null },
+  };
+  assert.equal((await f.post(changed)).status, 204);
+  data = await (await f.get()).json();
+  assert.equal(data.nodes[0].rateLimits, null);
+  assert.equal(data.accounts.length, 1);
+});
+
+test('a schema 2 restart preserves known metadata and legacy quota without inventing usage provenance', async (t) => {
+  const f = await fixture(t);
+  const at = Date.now() - 10000;
+  const a = detailedReport(at);
+  const usage = {
+    sessionId: 'legacy-session',
+    measuredAt: new Date(at).toISOString(),
+    costUsd: 0.1,
+    inputTokens: 1,
+    outputTokens: 2,
+    cacheReadTokens: 3,
+    cacheWriteTokens: 4,
+  };
+  assert.equal(
+    (await f.post({ ...report(at), account: { id: a.account.id, subscriptionType: 'max' }, usage }))
+      .status,
+    204,
+  );
+  assert.equal(
+    (
+      await f.post({
+        ...a,
+        observedAt: new Date(at + 1).toISOString(),
+        rateLimits: null,
+        quotaStatus: { state: 'unknown', measuredAt: null },
+      })
+    ).status,
+    204,
+  );
+  const restart = {
+    ...detailedReport(at + 2),
+    rateLimits: null,
+    quotaStatus: { state: 'unknown', measuredAt: null },
+    account: {
+      ...a.account,
+      subscriptionType: null,
+      organization: null,
+      apiProvider: null,
+      authMethod: null,
+    },
+  };
+  assert.equal((await f.post(restart)).status, 204);
+  const data = await (await f.get()).json();
+  assert.equal(data.nodes[0].account.organization, 'Org A');
+  assert.equal(data.nodes[0].account.subscriptionType, 'max');
+  assert.equal(data.nodes[0].account.authMethod, 'oauth_token');
+  assert.equal(data.nodes[0].account.apiProvider, 'firstParty');
+  assert.equal(data.nodes[0].usage, null);
+  assert.equal(data.nodes[0].rateLimits.measuredAt, new Date(at).toISOString());
+});
+
+test('schema 2 rejects mismatched identity hashes, unknown metadata and inconsistent state', async (t) => {
+  const f = await fixture(t);
+  const a = detailedReport(Date.now());
+  const invalid = [
+    { ...a, account: { ...a.account, id: hash('wrong') } },
+    { ...a, account: { ...a.account, tokenSource: 'not-allowed' } },
+    { ...a, account: { ...a.account, email: 'invalid email' } },
+    { ...a, identity: { ...a.identity, state: 'signed_out' } },
+  ];
+  for (const item of invalid) assert.equal((await f.post(item)).status, 400);
+});
+
+test('legacy SQLite snapshots migrate idempotently and removing a node keeps its account archive', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-monitor-migration-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  await mkdir(join(root, 'private'));
+  const at = new Date(Date.now() - 60000).toISOString();
+  const old = report(Date.parse(at));
+  const db = new DatabaseSync(join(root, 'private/monitor.sqlite'));
+  db.exec(
+    'CREATE TABLE snapshots (node_id TEXT PRIMARY KEY, observed_at TEXT NOT NULL, report TEXT NOT NULL, received_at TEXT NOT NULL)',
+  );
+  const later = new Date(Date.parse(at) + 1000).toISOString();
+  db.prepare('INSERT INTO snapshots VALUES (?,?,?,?)').run(
+    'node-2',
+    old.observedAt,
+    JSON.stringify({ ...old, nodeId: 'node-2' }),
+    later,
+  );
+  db.prepare('INSERT INTO snapshots VALUES (?,?,?,?)').run(
+    old.nodeId,
+    old.observedAt,
+    JSON.stringify(old),
+    at,
+  );
+  db.close();
+  const first = new MonitorStore(root, ['node-1']);
+  assert.equal(first.status().accounts[0]!.firstSeenAt, at);
+  assert.equal(first.status().accounts[0]!.lastSeenAt, later);
+  assert.equal(first.note(old.account.id, '保留备注'), true);
+  first.close();
+  const removed = new MonitorStore(root, []);
+  const data = removed.status();
+  assert.deepEqual(data.nodes, []);
+  assert.equal(data.accounts.length, 1);
+  assert.equal(data.accounts[0]!.snapshots.length, 2);
+  assert.equal(data.accounts[0]!.note, '保留备注');
+  removed.close();
 });
 
 test('producer observations reach the real receiver and multiple node quotas remain separate', async (t) => {
@@ -139,7 +353,11 @@ test('producer observations reach the real receiver and multiple node quotas rem
     await new Promise((resolve) => setTimeout(resolve, 5));
   }
   assert.equal(nodes[0]?.rateLimits?.windows[0]?.utilization, 43);
-  const other = { ...report(), nodeId: 'node-2', account: nodes[0].account };
+  const other = {
+    ...report(),
+    nodeId: 'node-2',
+    account: { id: nodes[0].account.id, subscriptionType: 'max' },
+  };
   assert.equal((await f.post(other, 'other_node_1234567890123456789012345')).status, 204);
   nodes = (await (await f.get()).json()).nodes;
   assert.equal(nodes.length, 2);

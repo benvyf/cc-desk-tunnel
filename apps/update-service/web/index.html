@@ -14,7 +14,10 @@
     <main id="dashboard" hidden>
       <section aria-labelledby="monitor-heading">
         <div class="section-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 id="monitor-heading">账号监控</h2></div><button id="monitor-refresh" class="quiet">刷新账号数据</button></div>
-        <p class="muted">显示节点最近上报的数据，使用期间更新。同一账号的额度不累加；超过 15 分钟未采集会标为过期。</p>
+        <p class="muted">正常使用时被动更新，刷新只读取 VPS。换号后保留历史账号；同账号各节点额度分别显示。超过 15 分钟未采集标为过期，不代表离线或封禁。</p>
+        <div id="monitor-node-status" class="muted" aria-live="polite"></div>
+        <label for="monitor-search">搜索账号<input id="monitor-search" type="search" placeholder="邮箱、备注、节点、套餐或组织" maxlength="254"></label>
+        <p id="monitor-count" class="muted"></p>
         <div id="monitor-nodes" class="channels"></div>
       </section>
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>

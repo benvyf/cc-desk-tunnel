@@ -3,6 +3,8 @@ const $ = (id) => document.getElementById(id);
 let token = '';
 let controller = new AbortController();
 let pending = false;
+let monitorData;
+const monitorDrafts = new Map();
 function notice(text, error = false) {
   $('notice').textContent = text;
   $('notice').className = error ? 'error' : '';
@@ -23,6 +25,11 @@ function logout() {
   controller.abort();
   controller = new AbortController();
   token = '';
+  monitorData = undefined;
+  monitorDrafts.clear();
+  $('monitor-search').value = '';
+  $('monitor-count').textContent = '';
+  $('monitor-node-status').replaceChildren();
   $('token').value = '';
   $('dashboard').hidden = true;
   $('logout').hidden = true;
@@ -195,33 +202,144 @@ async function refresh() {
   await refreshMonitor();
 }
 async function refreshMonitor() {
-  const data = await request('/monitor');
+  monitorData = await request('/monitor');
+  renderMonitor();
+}
+function renderMonitor() {
+  const data = monitorData;
+  if (!data) return;
   const container = $('monitor-nodes');
   container.replaceChildren();
-  if (!data.nodes.length) container.append(element('p', '暂无节点上报数据。', 'empty'));
+  const nodes = new Map(data.nodes.map((row) => [row.nodeId, row]));
+  $('monitor-node-status').replaceChildren();
+  for (const nodeId of data.configuredNodes) {
+    const row = nodes.get(nodeId);
+    const state = !row
+      ? '等待首次上报'
+      : row.account
+        ? `最近账号 ${row.account.email ?? row.account.id.slice(0, 12)}`
+        : row.identity?.state === 'signed_out'
+          ? '最近确认已退出登录'
+          : '最近身份未知（不能据此认定未登录）';
+    $('monitor-node-status').append(
+      element('p', `${nodeId}：${state}${row ? ` · 最近接收 ${date(row.receivedAt)}` : ''}`),
+    );
+  }
+  if (!data.configuredNodes.length)
+    $('monitor-node-status').append(element('p', '未配置上报节点。'));
+  const query = $('monitor-search').value.trim().toLowerCase();
+  const accounts = data.accounts.filter((account) =>
+    JSON.stringify([
+      account.id,
+      account.note,
+      account.snapshots.map((row) => [row.nodeId, row.account]),
+    ])
+      .toLowerCase()
+      .includes(query),
+  );
+  $('monitor-count').textContent =
+    `已记录 ${data.accounts.length} 个账号 · 显示 ${accounts.length} 个 · 已配置 ${data.configuredNodes.length} 个节点`;
+  if (!accounts.length)
+    container.append(
+      element('p', query ? '没有匹配的账号。' : '暂无已识别账号；等待正常使用时上报。', 'empty'),
+    );
   const quotaNames = {
     five_hour: '5 小时额度',
     seven_day: '每周额度',
     seven_day_opus: 'Opus 每周额度',
     seven_day_sonnet: 'Sonnet 每周额度',
   };
-  for (const row of data.nodes) {
+  for (const account of accounts) {
     const card = element('article', undefined, 'card');
-    card.append(element('h3', row.nodeId));
-    if (!row.account) card.append(element('p', '未登录或账号未知', 'muted'));
-    else {
-      card.append(
+    const latest = [...account.snapshots].sort((a, b) => b.observedAt.localeCompare(a.observedAt));
+    const identity = latest.find((row) => row.account?.email)?.account ?? latest[0]?.account;
+    card.append(
+      element('h3', identity?.email ?? `历史账号 ${account.id.slice(0, 12)}（等待邮箱上报）`),
+    );
+    card.append(
+      element(
+        'p',
+        `首次收到 ${date(account.firstSeenAt)} · 最近收到 ${date(account.lastSeenAt)}`,
+        'muted',
+      ),
+    );
+    const editor = element('form');
+    const label = element('label', '账号备注');
+    const input = element('textarea');
+    input.maxLength = 2000;
+    input.value = monitorDrafts.get(account.id) ?? account.note;
+    input.addEventListener('input', () => monitorDrafts.set(account.id, input.value));
+    label.append(input);
+    const save = element('button', '保存备注', 'quiet');
+    save.type = 'submit';
+    editor.append(label, save);
+    editor.addEventListener('submit', (event) => {
+      event.preventDefault();
+      void action(async () => {
+        const submitted = input.value;
+        await request(`/monitor/accounts/${account.id}/note`, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ note: submitted }),
+        });
+        if (monitorDrafts.get(account.id) === submitted) monitorDrafts.delete(account.id);
+        await refreshMonitor();
+        notice('账号备注已保存。');
+      });
+    });
+    card.append(editor);
+    for (const row of latest) {
+      const sample = element('section', undefined, 'monitor-sample');
+      const current = nodes.get(row.nodeId)?.account?.id === account.id;
+      const configured = data.configuredNodes.includes(row.nodeId);
+      sample.append(element('h4', row.nodeId));
+      sample.append(
         element(
-          'p',
-          `账号 ${row.account.id.slice(0, 12)} · ${row.account.subscriptionType ?? '未知订阅'}`,
+          'span',
+          current ? '最近绑定（非在线状态）' : configured ? '历史绑定' : '历史绑定 · 节点已移除',
+          'badge',
         ),
       );
-      const sampledAt = row.rateLimits?.measuredAt ?? row.observedAt;
-      const stale = Date.now() - Date.parse(sampledAt) > 15 * 60000;
-      card.append(
-        element('span', stale ? '数据已过期' : '最近快照', `badge${stale ? ' error' : ''}`),
+      const profile = row.account;
+      const plan =
+        profile.subscriptionType === 'max'
+          ? 'Max（倍率未知）'
+          : (profile.subscriptionType ?? '未知');
+      sample.append(element('p', `套餐：${plan} · 组织：${profile.organization ?? '未知'}`));
+      sample.append(
+        element(
+          'p',
+          `登录方式：${profile.authMethod ?? '未知'} · API 提供方：${profile.apiProvider ?? '未知'}`,
+          'muted',
+        ),
       );
-      if (!row.rateLimits?.available) card.append(element('p', '暂无可用额度数据', 'muted'));
+      if (row.identity)
+        sample.append(element('p', `身份记录：${date(row.identity.measuredAt)}`, 'muted'));
+      const status = row.quotaStatus;
+      if (status && status.state !== 'ok') {
+        const descriptions = {
+          error: '最近额度读取失败，保留最后有效快照',
+          unavailable: '最近读取未提供额度，保留最后有效快照',
+          unknown: '本次尚未采集额度，以下可能为历史快照',
+        };
+        sample.append(
+          element(
+            'p',
+            `${descriptions[status.state]}${status.measuredAt ? `（${date(status.measuredAt)}）` : ''}`,
+            status.state === 'error' ? 'error' : 'muted',
+          ),
+        );
+      }
+      const sampledAt = row.rateLimits?.measuredAt;
+      const stale = !sampledAt || Date.now() - Date.parse(sampledAt) > 15 * 60000;
+      sample.append(
+        element(
+          'span',
+          !row.rateLimits?.available ? '暂无可用额度' : stale ? '数据已过期' : '最近额度快照',
+          `badge${stale ? ' error' : ''}`,
+        ),
+      );
+      if (!row.rateLimits?.available) sample.append(element('p', '暂无可用额度数据', 'muted'));
       else
         for (const window of row.rateLimits.windows) {
           const label =
@@ -229,15 +347,15 @@ async function refreshMonitor() {
             (window.name.startsWith('seven_day:')
               ? `${window.name.slice(10)} 每周额度`
               : window.name);
-          card.append(
+          sample.append(
             element(
               'p',
-              `${label}：${window.utilization === null ? '未知' : `${window.utilization}%`}`,
-              window.utilization >= 90 ? 'error' : '',
+              `${label}：${window.utilization === null ? '未知' : `已用 ${window.utilization}% · 剩余约 ${Math.round((100 - window.utilization) * 10) / 10}%`}`,
+              window.utilization !== null && window.utilization >= 90 ? 'error' : '',
             ),
           );
           if (window.resetsAt)
-            card.append(
+            sample.append(
               element(
                 'p',
                 Date.parse(window.resetsAt) <= Date.now()
@@ -248,25 +366,39 @@ async function refreshMonitor() {
             );
         }
       if (row.rateLimits?.available && !row.rateLimits.windows.length)
-        card.append(element('p', '本次未返回额度窗口', 'muted'));
+        sample.append(element('p', '本次未返回额度窗口', 'muted'));
       if (row.usage) {
         const u = row.usage;
-        card.append(
+        sample.append(
           element(
             'p',
-            `最近上报会话累计：输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()} tokens`,
+            `最近会话累计：输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()} tokens；缓存读取 ${u.cacheReadTokens.toLocaleString()} / 写入 ${u.cacheWriteTokens.toLocaleString()}`,
             'muted',
           ),
         );
+        sample.append(element('p', '会话累计可能跨账号，不作为账号总用量。', 'muted'));
         if (u.costUsd !== null)
-          card.append(element('p', `API 价格估算 $${u.costUsd.toFixed(4)}（非订阅账单）`, 'muted'));
-        card.append(element('p', `用量采集：${date(u.measuredAt)}`, 'muted'));
+          sample.append(
+            element('p', `API 价格估算 $${u.costUsd.toFixed(4)}（非订阅账单）`, 'muted'),
+          );
+        sample.append(
+          element(
+            'p',
+            `用量采集：${date(u.measuredAt)} · 会话 ${u.sessionId}${u.runId ? ` · 运行 ${u.runId}` : ''}`,
+            'digest',
+          ),
+        );
       }
-      card.append(element('p', `数据采集：${date(sampledAt)}`, 'muted'));
+      if (sampledAt) sample.append(element('p', `额度采集：${date(sampledAt)}`, 'muted'));
+      sample.append(
+        element(
+          'p',
+          `节点观察：${date(row.observedAt)} · VPS 接收：${date(row.receivedAt)}`,
+          'muted',
+        ),
+      );
+      card.append(sample);
     }
-    card.append(
-      element('p', `节点观察：${date(row.observedAt)}\nVPS 接收：${date(row.receivedAt)}`, 'muted'),
-    );
     container.append(card);
   }
 }
@@ -299,8 +431,16 @@ $('create').addEventListener('submit', (event) => {
 });
 $('refresh').addEventListener('click', () => action(refresh));
 $('monitor-refresh').addEventListener('click', () => action(refreshMonitor));
+$('monitor-search').addEventListener('input', renderMonitor);
 setInterval(() => {
-  if (token && !pending && !document.hidden) void action(refreshMonitor);
+  if (
+    token &&
+    !pending &&
+    !document.hidden &&
+    !monitorDrafts.size &&
+    !document.activeElement?.closest('#monitor-nodes form')
+  )
+    void action(refreshMonitor);
 }, 30000);
 $('logout').addEventListener('click', () => {
   logout();

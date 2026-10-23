@@ -154,7 +154,16 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           )
             throw new UpdateError(401, 'Node authentication required.');
           try {
-            monitor.put(validateMonitorReport(input));
+            const report = validateMonitorReport(input);
+            if (
+              report.schema === 2 &&
+              report.account &&
+              createHash('sha256')
+                .update(report.account.email!.trim().toLowerCase())
+                .digest('hex') !== report.account.id
+            )
+              throw new Error('Identity mismatch');
+            monitor.put(report);
           } catch {
             throw new UpdateError(400, 'Invalid report.');
           }
@@ -163,7 +172,40 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         }
         authenticated(request);
         if (path === `${api}/monitor` && request.method === 'GET') {
-          respond(response, 200, monitor?.status() ?? { nodes: [] });
+          respond(
+            response,
+            200,
+            monitor?.status() ?? { nodes: [], configuredNodes: [], accounts: [] },
+          );
+          return;
+        }
+        const accountNote = new RegExp(`^${api}/monitor/accounts/([a-f0-9]{64})/note$`).exec(path);
+        if (accountNote && request.method === 'PUT') {
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 8192)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid account note.');
+          }
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            Object.keys(input).length !== 1 ||
+            !Object.hasOwn(input, 'note')
+          )
+            throw new UpdateError(400, 'Invalid account note.');
+          const note = (input as { note: unknown }).note;
+          if (
+            typeof note !== 'string' ||
+            note.length > 2000 ||
+            /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(note)
+          )
+            throw new UpdateError(400, 'Account note must contain at most 2000 characters.');
+          if (!monitor?.note(accountNote[1]!, note)) throw new UpdateError(404, 'Unknown account.');
+          respond(response, 204);
           return;
         }
         if (path === `${api}/status` && request.method === 'GET') {

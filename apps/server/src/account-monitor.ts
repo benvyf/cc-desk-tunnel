@@ -7,6 +7,7 @@ import {
 
 export type AccountMonitorOptions = { url: string; nodeId: string; token: string };
 type Event = EventPayload | ({ type: 'account.state' } & AccountState);
+type Source = { id: string | null; generation: number; errorAt?: string };
 
 // Observes existing readings only. It has no CLI/SDK dependency and never refreshes Claude.
 export class AccountMonitor {
@@ -15,9 +16,16 @@ export class AccountMonitor {
   private account: MonitorReport['account'] = null;
   private rateLimits: MonitorReport['rateLimits'] = null;
   private usage: MonitorReport['usage'] = null;
-  private latest?: MonitorReport;
+  private identity: NonNullable<MonitorReport['identity']> = {
+    state: 'unknown',
+    measuredAt: new Date().toISOString(),
+  };
+  private quotaStatus: NonNullable<MonitorReport['quotaStatus']> = {
+    state: 'unknown',
+    measuredAt: null,
+  };
+  private pending = new Map<string, MonitorReport>();
   private signature = '';
-  private sentSignature = '';
   private timer?: NodeJS.Timeout;
   private request?: AbortController;
   private closed = false;
@@ -25,7 +33,7 @@ export class AccountMonitor {
   private failures = 0;
   private observedAt = 0;
   private generation = 0;
-  private sources = new Map<string, { id: string | null; generation: number }>();
+  private sources = new Map<string, Source>();
 
   constructor(
     options: AccountMonitorOptions,
@@ -42,35 +50,75 @@ export class AccountMonitor {
       rateLimits: this.rateLimits,
       usage: this.usage,
       generation: this.generation,
+      identity: this.identity,
+      quotaStatus: this.quotaStatus,
     };
-    let binding: { id: string; generation: number } | undefined;
+    let binding: Source | undefined;
     try {
       if (event.type === 'account.state' || event.type === 'native.capabilities') {
         const identity =
           event.type === 'account.state' ? (event.loggedIn ? event : null) : event.account;
-        const account = identity?.email
+        const email = identity?.email?.trim();
+        const id = email ? createHash('sha256').update(email.toLowerCase()).digest('hex') : null;
+        const before = id === this.account?.id ? this.account : null;
+        const account = email
           ? {
-              id: createHash('sha256').update(identity.email.trim().toLowerCase()).digest('hex'),
-              subscriptionType: identity.subscriptionType ?? null,
+              id: id!,
+              email,
+              subscriptionType: identity?.subscriptionType ?? before?.subscriptionType ?? null,
+              organization: identity?.organization ?? before?.organization ?? null,
+              authMethod:
+                event.type === 'account.state'
+                  ? (event.authMethod ?? before?.authMethod ?? null)
+                  : (before?.authMethod ?? null),
+              apiProvider:
+                event.type === 'native.capabilities'
+                  ? (event.account.apiProvider ?? before?.apiProvider ?? null)
+                  : (before?.apiProvider ?? null),
             }
           : null;
         if (event.type === 'native.capabilities') {
           // Capability identity belongs to this CLI process, not merely its reusable session.
           if (!sourceId) return;
           const known = this.sources.get(sourceId);
-          if (
-            known &&
-            known.generation !== this.generation &&
-            (!account || known.id !== null || account.id !== this.account?.id)
-          )
-            return;
+          if (known && known.generation !== this.generation) {
+            // Concurrent initial runs may learn the same account after another run identifies it.
+            // An old bound process, different account, or missing/conflicting known context cannot rebind.
+            const matches =
+              account?.id === this.account?.id &&
+              ['organization', 'apiProvider'].every((key) => {
+                const current = this.account?.[key as 'organization' | 'apiProvider'];
+                return !current || event.account[key as 'organization' | 'apiProvider'] === current;
+              });
+            if (known.id !== null || !account || !matches) return;
+          }
         }
-        if (account?.id !== this.account?.id) {
+        if (
+          account?.id !== this.account?.id ||
+          (account?.organization &&
+            this.account?.organization &&
+            account.organization !== this.account.organization) ||
+          (account?.apiProvider &&
+            this.account?.apiProvider &&
+            account.apiProvider !== this.account.apiProvider)
+        ) {
           this.generation++;
           this.rateLimits = null;
           this.usage = null;
+          this.quotaStatus = { state: 'unknown', measuredAt: null };
         }
         this.account = account;
+        const state = account
+          ? 'identified'
+          : event.type === 'account.state' && !event.loggedIn
+            ? 'signed_out'
+            : 'unknown';
+        if (
+          state !== this.identity.state ||
+          account?.id !== previous.account?.id ||
+          JSON.stringify(account) !== JSON.stringify(previous.account)
+        )
+          this.identity = { state, measuredAt: new Date().toISOString() };
         if (event.type === 'native.capabilities' && account)
           binding = { id: account.id, generation: this.generation };
       } else if (event.type === 'native.metrics') {
@@ -81,19 +129,32 @@ export class AccountMonitor {
         const limits = event.rateLimits;
         if (
           limits?.measuredAt &&
-          (!this.rateLimits || limits.measuredAt > this.rateLimits.measuredAt)
-        )
-          this.rateLimits = {
-            available: limits.available,
+          (!this.quotaStatus.measuredAt || limits.measuredAt > this.quotaStatus.measuredAt)
+        ) {
+          binding = { ...source, errorAt: undefined };
+          this.quotaStatus = {
+            state: limits.available ? 'ok' : 'unavailable',
             measuredAt: limits.measuredAt,
-            windows: limits.available
-              ? limits.windows.map((w) => ({
-                  name: w.name,
-                  utilization: w.utilization,
-                  resetsAt: w.resetsAt === null ? null : new Date(w.resetsAt).toISOString(),
-                }))
-              : [],
           };
+          if (limits.available || !this.rateLimits?.available)
+            this.rateLimits = {
+              available: limits.available,
+              measuredAt: limits.measuredAt,
+              windows: limits.available
+                ? limits.windows.map((w) => ({
+                    name: w.name,
+                    utilization: w.utilization,
+                    resetsAt: w.resetsAt === null ? null : new Date(w.resetsAt).toISOString(),
+                  }))
+                : [],
+            };
+        }
+        if (!limits && event.errors?.usage) {
+          const errorAt = event.quotaAttemptAt ?? source.errorAt ?? new Date().toISOString();
+          binding = { ...source, errorAt };
+          if (!this.quotaStatus.measuredAt || errorAt > this.quotaStatus.measuredAt)
+            this.quotaStatus = { state: 'error', measuredAt: errorAt };
+        }
         if (
           event.usage &&
           sessionId &&
@@ -102,6 +163,7 @@ export class AccountMonitor {
           const u = event.usage;
           this.usage = {
             sessionId,
+            runId: sourceId!,
             measuredAt: u.measuredAt,
             costUsd: u.costUsd,
             inputTokens: u.inputTokens,
@@ -111,30 +173,46 @@ export class AccountMonitor {
           };
         }
       } else return;
-      const signature = JSON.stringify([this.account, this.rateLimits, this.usage]);
+      const signature = JSON.stringify([
+        this.account,
+        this.identity,
+        this.rateLimits,
+        this.quotaStatus,
+        this.usage,
+      ]);
       if (signature === this.signature) {
         if (binding && sourceId) this.sources.set(sourceId, binding);
         return;
       }
       const at = Math.max(Date.now(), this.observedAt + 1);
       const report = validateMonitorReport({
-        schema: 1,
+        schema: 2,
         nodeId: this.options.nodeId,
         observedAt: new Date(at).toISOString(),
         account: this.account,
         rateLimits: this.rateLimits,
         usage: this.usage,
+        identity: this.identity,
+        quotaStatus: this.quotaStatus,
       });
       this.observedAt = at;
       if (binding && sourceId) this.sources.set(sourceId, binding);
       this.signature = signature;
-      this.latest = report;
+      this.pending.set(report.account?.id ?? `@${report.identity!.state}`, report);
+      if (this.pending.size > 64) {
+        const oldest = [...this.pending.entries()].sort((a, b) =>
+          a[1].observedAt.localeCompare(b[1].observedAt),
+        )[0]!;
+        this.pending.delete(oldest[0]);
+      }
       this.schedule();
     } catch {
       this.account = previous.account;
       this.rateLimits = previous.rateLimits;
       this.usage = previous.usage;
       this.generation = previous.generation;
+      this.identity = previous.identity;
+      this.quotaStatus = previous.quotaStatus;
       // Malformed/incompatible native data must never break a run or expose raw data in logs.
     }
   }
@@ -148,14 +226,7 @@ export class AccountMonitor {
   }
 
   private schedule(): void {
-    if (
-      this.closed ||
-      this.timer ||
-      this.request ||
-      !this.latest ||
-      this.signature === this.sentSignature
-    )
-      return;
+    if (this.closed || this.timer || this.request || !this.pending.size) return;
     this.timer = setTimeout(
       () => {
         this.timer = undefined;
@@ -167,8 +238,10 @@ export class AccountMonitor {
   }
 
   private async send(): Promise<void> {
-    if (this.closed || !this.latest) return;
-    const signature = this.signature;
+    if (this.closed || !this.pending.size) return;
+    const [key, report] = [...this.pending.entries()].sort((a, b) =>
+      a[1].observedAt.localeCompare(b[1].observedAt),
+    )[0]!;
     const controller = new AbortController();
     this.request = controller;
     const timeout = setTimeout(() => controller.abort(), this.timing.timeoutMs);
@@ -183,11 +256,11 @@ export class AccountMonitor {
           'content-type': 'application/json',
           authorization: `Bearer ${this.options.token}`,
         },
-        body: JSON.stringify(this.latest),
+        body: JSON.stringify(report),
       });
       await response.body?.cancel();
       if (!response.ok) throw new Error('Report rejected');
-      this.sentSignature = signature;
+      if (this.pending.get(key) === report) this.pending.delete(key);
       this.failures = 0;
       this.nextAt = Date.now() + this.timing.intervalMs;
     } catch {
@@ -205,7 +278,7 @@ export class AccountMonitor {
     this.closed = true;
     clearTimeout(this.timer);
     this.request?.abort();
-    this.latest = undefined;
+    this.pending.clear();
     this.sources.clear();
   }
 }
