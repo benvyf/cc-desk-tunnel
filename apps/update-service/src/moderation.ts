@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { chmod } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { defaultThresholds, evaluateJev, JevError, rulesVersion } from './jev.ts';
+import { defaultThresholds, evaluateJev, JevError, rulesVersion, type JevUsage } from './jev.ts';
 import { UpdateError } from './store.ts';
 
 const modes = ['keyword_triggered_jev', 'keyword_and_api', 'api_only', 'keyword_only'] as const;
@@ -26,6 +26,8 @@ export type ModerationDecision = {
   model?: string;
   error?: string;
   rulesVersion: string;
+  jevAttempted?: boolean;
+  usage?: JevUsage;
 };
 
 export async function checkText(
@@ -51,6 +53,7 @@ export async function checkText(
     return {
       ...base,
       ...result,
+      jevAttempted: true,
       categories,
       allowed: !categories.length,
       action: categories.length ? 'jev_block' : 'allow',
@@ -61,6 +64,8 @@ export async function checkText(
       allowed: false,
       action: 'error',
       error: error instanceof JevError ? error.message : 'jev_unavailable',
+      jevAttempted: error instanceof JevError ? error.attempted : true,
+      ...(error instanceof JevError && error.usage ? { usage: error.usage } : {}),
     };
   }
 }
@@ -140,7 +145,13 @@ export class ModerationStore {
       db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
         CREATE TABLE IF NOT EXISTS policy (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS events (id TEXT PRIMARY KEY, at INTEGER NOT NULL, actor TEXT NOT NULL, kind TEXT NOT NULL, revision INTEGER NOT NULL, detail TEXT NOT NULL);
-        CREATE INDEX IF NOT EXISTS events_at ON events(at);`);
+        CREATE INDEX IF NOT EXISTS events_at ON events(at);
+        CREATE TABLE IF NOT EXISTS usage_totals (id INTEGER PRIMARY KEY CHECK(id=1), started_at TEXT NOT NULL,
+          requests INTEGER NOT NULL, errors INTEGER NOT NULL, reported INTEGER NOT NULL,
+          input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL);`);
+      db.prepare('INSERT OR IGNORE INTO usage_totals VALUES (1,?,0,0,0,0,0)').run(
+        new Date().toISOString(),
+      );
       db.prepare('INSERT OR IGNORE INTO policy (id,value) VALUES (1,?)').run(
         JSON.stringify({
           revision: 0,
@@ -155,6 +166,26 @@ export class ModerationStore {
         }),
       );
       const store = new ModerationStore(db);
+      const policy = store.policy();
+      const added = Object.keys(defaultThresholds).filter(
+        (name) => !Object.hasOwn(policy.thresholds, name),
+      );
+      if (added.length) {
+        policy.thresholds = { ...defaultThresholds, ...policy.thresholds };
+        policy.revision++;
+        db.exec('BEGIN IMMEDIATE');
+        try {
+          db.prepare('UPDATE policy SET value=? WHERE id=1').run(JSON.stringify(policy));
+          store.record('system', 'config.migrated', policy.revision, {
+            rulesVersion,
+            addedCategories: added,
+          });
+          db.exec('COMMIT');
+        } catch (error) {
+          db.exec('ROLLBACK');
+          throw error;
+        }
+      }
       store.prune();
       return store;
     } catch (error) {
@@ -226,6 +257,22 @@ export class ModerationStore {
         detail: JSON.parse(row.detail as string),
       }));
   }
+  usage() {
+    const row = this.db.prepare('SELECT * FROM usage_totals WHERE id=1').get()!;
+    return {
+      startedAt: row.started_at as string,
+      requests: Number(row.requests),
+      errorRequests: Number(row.errors),
+      reportedRequests: Number(row.reported),
+      unreportedRequests: Number(row.requests) - Number(row.reported),
+      inputTokens: Number(row.input_tokens),
+      outputTokens: Number(row.output_tokens),
+      totalTokens: Number(row.input_tokens) + Number(row.output_tokens),
+      remainingTokens: null,
+      remainingBalance: null,
+      providerConsoleUrl: 'https://console.typesafe.ai/',
+    };
+  }
   async preview(text: unknown, actor: string, fetcher: typeof fetch = fetch) {
     if (typeof text !== 'string' || !text.trim() || Buffer.byteLength(text) > 65536)
       throw new UpdateError(400, 'Expected non-empty text up to 64 KiB.');
@@ -235,12 +282,32 @@ export class ModerationStore {
     const start = Date.now();
     try {
       const result = await checkText(policy, text, fetcher);
-      const id = this.record(actor, 'admin.preview', policy.revision, {
-        ...result,
-        latencyMs: Date.now() - start,
-        textBytes: Buffer.byteLength(text),
-        textSha256: createHash('sha256').update(text).digest('hex'),
-      });
+      let id: string;
+      this.db.exec('BEGIN IMMEDIATE');
+      try {
+        if (result.jevAttempted)
+          this.db
+            .prepare(
+              `UPDATE usage_totals SET requests=requests+1, errors=errors+?,
+            reported=reported+?, input_tokens=input_tokens+?, output_tokens=output_tokens+? WHERE id=1`,
+            )
+            .run(
+              Number(result.action === 'error'),
+              Number(Boolean(result.usage)),
+              result.usage?.inputTokens ?? 0,
+              result.usage?.outputTokens ?? 0,
+            );
+        id = this.record(actor, 'admin.preview', policy.revision, {
+          ...result,
+          latencyMs: Date.now() - start,
+          textBytes: Buffer.byteLength(text),
+          textSha256: createHash('sha256').update(text).digest('hex'),
+        });
+        this.db.exec('COMMIT');
+      } catch (error) {
+        this.db.exec('ROLLBACK');
+        throw error;
+      }
       this.prune();
       return { id, revision: policy.revision, ...result };
     } finally {

@@ -1,6 +1,6 @@
 // TypeSafe native wire contract: https://api.typesafe.ai/openapi.json
 // The questions below are CC's text policy, independent of the API contract.
-export const rulesVersion = 'cc-text-13-v1';
+export const rulesVersion = 'cc-text-18-v2';
 const rules: Record<string, [number, string]> = {
   harassment: [0.98, '是否针对他人进行辱骂、贬低或持续骚扰？'],
   'harassment/threatening': [0.9, '是否针对他人作出可信的严重伤害威胁？'],
@@ -9,12 +9,35 @@ const rules: Record<string, [number, string]> = {
   illicit: [0.95, '是否请求或给出违法行为的具体执行帮助？合法授权的安全测试不计入。'],
   'illicit/violent': [0.95, '是否请求或给出暴力犯罪的具体执行帮助？'],
   'self-harm': [0.65, '是否鼓励或美化自杀、自残或进食障碍？'],
-  'self-harm/intent': [0.85, '说话者是否表达当前自杀或自残的意图？'],
+  'self-harm/intent': [
+    0.85,
+    '是否表达当前自杀或自残的意图并请求促成实施？寻求安慰、危机干预、医疗或心理支持不算。',
+  ],
   'self-harm/instructions': [0.65, '是否寻求或提供实施自杀、自残的具体方法？'],
   sexual: [0.65, '是否为了性刺激而请求或提供露骨的色情内容？医学及性教育不计入。'],
   'sexual/minors': [0.65, '是否请求或提供涉及未成年人的性化或色情内容？仅提及儿童不计入。'],
   violence: [0.95, '是否描述、鼓励或威胁对人造成暴力伤害？'],
   'violence/graphic': [0.95, '是否请求或提供血腥、肢解或严重伤害的露骨细节？'],
+  'policy/political-harm': [
+    0.5,
+    '是否寻求或提供煽动现实政治暴力、泄露非公开国家机密，或针对重大公共事件蓄意编造和传播制造恐慌的虚假信息的帮助？政治观点、意识形态、中立新闻、敏感历史学习和合法批评本身不算。',
+  ],
+  'policy/violence-extremism': [
+    0.5,
+    '是否宣扬、招募或协助恐怖主义、宗教极端主义和暴力极端主义，鼓励凶杀或自残，或寻求武器制造、袭击和其他可能严重伤害人的危险行为的具体帮助？',
+  ],
+  'policy/sexual-vulgar': [
+    0.5,
+    '是否为了性刺激、色情招揽或低俗性诱导而请求或提供色情、性暗示或性化内容？医学、性教育、性骚扰举报和其他非色情用途不算，不因价值观不同而判定违规。',
+  ],
+  'policy/crime': [
+    0.5,
+    '是否寻求、提供或推广毒品制造和走私、网络诈骗、未经授权的黑客攻击、非法赌博或其他违法犯罪的实施、招揽、获利或逃避追查帮助？合法授权安全测试不算。',
+  ],
+  'policy/abuse-privacy': [
+    0.5,
+    '是否请求、提供或鼓励网络欺凌、恶意操纵或诱导他人受害、未经同意曝光或获取他人敏感个人信息、跟踪骚扰、隐私侵犯或其他直接侵害他人的帮助？公开联系信息和保护隐私的建议不算。',
+  ],
 };
 export const defaultThresholds: Record<string, number> = Object.fromEntries(
   Object.entries(rules).map(([name, [threshold]]) => [name, threshold]),
@@ -32,21 +55,32 @@ export const questions = Object.fromEntries(
 );
 
 export class JevError extends Error {
-  constructor(code: string) {
+  usage?: JevUsage;
+  attempted: boolean;
+  constructor(code: string, usage?: JevUsage, attempted = true) {
     super(code);
     this.name = 'JevError';
+    this.usage = usage;
+    this.attempted = attempted;
   }
 }
 
 export type JevConfig = { baseUrl: string; model: string; apiKey: string; timeoutMs: number };
+export type JevUsage = { inputTokens: number; outputTokens: number };
 
 export async function evaluateJev(
   config: JevConfig,
   text: string,
   fetcher: typeof fetch = fetch,
-): Promise<{ model: string; scores: Record<string, number>; rulesVersion: string }> {
-  if (!config.apiKey) throw new JevError('jev_key_missing');
-  if (!text.trim() || Buffer.byteLength(text) > 65536) throw new JevError('jev_input_invalid');
+): Promise<{
+  model: string;
+  scores: Record<string, number>;
+  rulesVersion: string;
+  usage?: JevUsage;
+}> {
+  if (!config.apiKey) throw new JevError('jev_key_missing', undefined, false);
+  if (!text.trim() || Buffer.byteLength(text) > 65536)
+    throw new JevError('jev_input_invalid', undefined, false);
   const signal = AbortSignal.timeout(config.timeoutMs);
   try {
     const response = await fetcher(config.baseUrl + '/v1/systemone', {
@@ -81,8 +115,15 @@ export async function evaluateJev(
     } catch {
       throw new JevError('jev_response_invalid');
     }
+    const usage =
+      Number.isSafeInteger(result?.usage?.input_tokens) &&
+      result.usage.input_tokens >= 0 &&
+      Number.isSafeInteger(result?.usage?.output_tokens) &&
+      result.usage.output_tokens >= 0
+        ? { inputTokens: result.usage.input_tokens, outputTokens: result.usage.output_tokens }
+        : undefined;
     if (typeof result?.model !== 'string' || !result.model.trim() || result.model.length > 128)
-      throw new JevError('jev_response_invalid');
+      throw new JevError('jev_response_invalid', usage);
     const scores: Record<string, number> = {};
     for (const category of Object.keys(questions)) {
       const answer = result.answers?.[category];
@@ -93,10 +134,10 @@ export async function evaluateJev(
         answer.noul < 0 ||
         answer.noul > 1
       )
-        throw new JevError('jev_response_invalid');
+        throw new JevError('jev_response_invalid', usage);
       scores[category] = answer.noul;
     }
-    return { model: result.model, scores, rulesVersion };
+    return { model: result.model, scores, rulesVersion, ...(usage ? { usage } : {}) };
   } catch (error) {
     if (signal.aborted) throw new JevError('jev_timeout');
     if (error instanceof JevError) throw error;

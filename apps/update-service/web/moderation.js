@@ -1,6 +1,26 @@
 const $ = (id) => document.getElementById(id);
 export function setupModeration({ request, action, notice, element, date }) {
   let config;
+  const categoryLabels = {
+    harassment: '辱骂与骚扰',
+    'harassment/threatening': '人身威胁',
+    hate: '群体仇恨',
+    'hate/threatening': '群体暴力威胁',
+    illicit: '违法执行帮助',
+    'illicit/violent': '暴力犯罪帮助',
+    'self-harm': '鼓励自残',
+    'self-harm/intent': '自残意图',
+    'self-harm/instructions': '自残方法',
+    sexual: '露骨色情',
+    'sexual/minors': '未成年人性化',
+    violence: '暴力伤害',
+    'violence/graphic': '血腥细节',
+    'policy/political-harm': '政治与公共安全危害',
+    'policy/violence-extremism': '恐怖、极端与危险行为',
+    'policy/sexual-vulgar': '色情与低俗诱导',
+    'policy/crime': '违法犯罪、诈骗与赌博',
+    'policy/abuse-privacy': '欺凌、恶劣诱导与隐私侵犯',
+  };
   const labels = {
     allow: '通过',
     keyword_block: '关键词拦截',
@@ -28,7 +48,7 @@ export function setupModeration({ request, action, notice, element, date }) {
       : '尚未配置 API 密钥';
     $('moderation-thresholds').replaceChildren();
     for (const [category, score] of Object.entries(value.thresholds)) {
-      const label = element('label', category);
+      const label = element('label', `${categoryLabels[category] ?? category} (${category})`);
       const input = element('input');
       input.type = 'number';
       input.min = '0';
@@ -50,10 +70,12 @@ export function setupModeration({ request, action, notice, element, date }) {
       for (const value of [
         date(event.at),
         `${event.actor}\n${event.id}`,
-        `${event.kind === 'admin.preview' ? '文本试算' : '配置更新'} / ${event.revision}`,
+        `${event.kind === 'admin.preview' ? '文本试算' : event.kind === 'config.migrated' ? '规则升级' : '配置更新'} / ${event.revision}`,
         event.kind === 'admin.preview'
           ? `${labels[detail.action] ?? detail.action}${detail.error ? ` · ${detail.error}` : ''}${detail.matchedKeyword ? ` · ${detail.matchedKeyword}` : ''}${detail.categories?.length ? ` · ${detail.categories.join(', ')}` : ''}`
-          : `策略：${detail.mode}${detail.keyChanged ? ' · 密钥变更' : ''}`,
+          : event.kind === 'config.migrated'
+            ? `规则：${detail.rulesVersion}`
+            : `策略：${detail.mode}${detail.keyChanged ? ' · 密钥变更' : ''}`,
       ])
         row.append(element('td', value));
       const details = element('details');
@@ -65,9 +87,16 @@ export function setupModeration({ request, action, notice, element, date }) {
       $('moderation-events').append(row);
     }
   }
+  async function refreshUsage() {
+    const usage = await request('/moderation/usage');
+    const n = (value) => Number(value).toLocaleString('zh-CN');
+    $('jev-usage').textContent =
+      `统计起始：${date(usage.startedAt)}。已请求 ${n(usage.requests)} 次，失败 ${n(usage.errorRequests)} 次；已报告输入 ${n(usage.inputTokens)} Token，输出 ${n(usage.outputTokens)} Token，合计 ${n(usage.totalTokens)} Token。未取得用量 ${n(usage.unreportedRequests)} 次。`;
+  }
   async function refresh() {
     renderConfig(await request('/moderation/config'));
     await refreshEvents();
+    await refreshUsage();
   }
   $('show-updates').addEventListener('click', () => show(false));
   $('show-moderation').addEventListener('click', () =>
@@ -110,6 +139,7 @@ export function setupModeration({ request, action, notice, element, date }) {
         }),
       );
       await refreshEvents();
+      await refreshUsage();
       notice('审核配置已保存；CC 节点尚未接入强制检查。');
     });
   });
@@ -125,6 +155,7 @@ export function setupModeration({ request, action, notice, element, date }) {
       $('moderation-result').textContent =
         `${labels[result.action]}\n${JSON.stringify(result, null, 2)}`;
       await refreshEvents();
+      await refreshUsage();
     });
   });
   return {
@@ -138,6 +169,7 @@ export function setupModeration({ request, action, notice, element, date }) {
         'moderation-result',
         'moderation-thresholds',
         'jev-key-status',
+        'jev-usage',
       ])
         $(id).replaceChildren();
     },

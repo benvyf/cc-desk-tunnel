@@ -163,13 +163,18 @@ test('password change requires admin authentication, same origin and correct cur
 test('moderation shares administrator auth, keeps credentials private and records fail-closed previews', async (t) => {
   const f = await fixture(t);
   const path = `${api}/moderation`;
-  for (const suffix of ['/config', '/events'])
+  for (const suffix of ['/config', '/events', '/usage'])
     assert.equal((await f.request(path + suffix)).status, 401);
   const read = async () => (await f.request(path + '/config', { headers: f.headers })).json();
   const config = await read();
   assert.equal(config.mode, 'keyword_and_api');
   assert.equal(config.enforcement, 'not-connected');
   assert.equal(config.apiKey, undefined);
+  const usage = await (await f.request(path + '/usage', { headers: f.headers })).json();
+  assert.equal(usage.requests, 0);
+  assert.equal(usage.totalTokens, 0);
+  assert.equal(usage.remainingTokens, null);
+  assert.equal(usage.remainingBalance, null);
   const { apiKeyConfigured, enforcement, rulesVersion, ...editable } = config;
   const input = { ...editable, keywords: ['block'], apiKey: 'http_fixture_secret_key' };
   const put = (data: unknown, headers = f.headers) =>

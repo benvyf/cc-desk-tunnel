@@ -175,6 +175,13 @@ test(
     await expect(page.locator('#channels').getByText('已撤回发布')).toBeVisible();
     await page.getByRole('button', { name: '内容审核', exact: true }).click();
     await expect(page.getByLabel('处理方式')).toHaveValue('keyword_and_api');
+    await expect(page.getByRole('heading', { name: 'JEV 用量', exact: true })).toBeVisible();
+    await expect(page.locator('#jev-usage')).toContainText('已请求 0 次');
+    await expect(page.getByRole('link', { name: 'TypeSafe 官方控制台' })).toHaveAttribute(
+      'href',
+      'https://console.typesafe.ai/',
+    );
+    assert.equal(await page.locator('#moderation-thresholds input').count(), 18);
     await expect(page.getByText('尚未配置 API 密钥', { exact: true })).toBeVisible();
     await page
       .getByLabel('关键词（每行一个，忽略大小写、按子串匹配）')

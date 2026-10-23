@@ -26,12 +26,13 @@
       <section id="moderation-panel" hidden>
         <div class="section-heading"><div><p class="eyebrow">CONTENT REVIEW</p><h2>内容审核</h2></div><button id="moderation-refresh" class="quiet">刷新审核配置</button></div>
         <p class="muted">当前提供策略管理与文本试算，CC 节点尚未接入强制检查。保存配置不会启用生产拦截。</p>
+        <section class="card"><h2>JEV 用量</h2><p id="jev-usage" aria-live="polite">读取用量中…</p><p class="muted">仅累计本管理服务从统计起始时间收到的用量，不含此前或其他应用的调用；失败或未返回用量的请求也可能计费。输入 Token 为服务商报告的计费输入，输出价格以服务商账单为准。</p><p>剩余额度：官方公开 API 暂不提供余额查询。请在 <a href="https://console.typesafe.ai/" target="_blank" rel="noreferrer noopener">TypeSafe 官方控制台</a> 查看真实余额和账单。</p></section>
         <form id="moderation-config">
           <section class="card"><h2>审核策略</h2>
             <label for="moderation-mode">处理方式</label><select id="moderation-mode"><option value="keyword_and_api">关键词直接拦截，其余交给 JEV</option><option value="keyword_triggered_jev">仅命中关键词时调用 JEV</option><option value="api_only">全部交给 JEV</option><option value="keyword_only">仅关键词拦截</option></select>
             <label for="moderation-keywords">关键词（每行一个，忽略大小写、按子串匹配）</label><textarea id="moderation-keywords" rows="6" placeholder="输入需要拦截的关键词"></textarea>
             <p class="muted">关键词会直接拦截包含它的文本，包括引用和代码；建议从明确的词条开始。</p>
-            <details><summary>分类阈值（分数达到阈值时拦截）</summary><p class="muted">初始阈值参考 sub2api，尚未用你的业务数据校准；分数不等同于违规概率。</p><div id="moderation-thresholds" class="thresholds"></div></details>
+            <details><summary>分类阈值（分数达到阈值时拦截）</summary><p class="muted">已补充政治危害、暴力极端、色情低俗、违法犯罪和欺凌隐私规则；中立新闻、学习、科普与求助不因提及主题而拦截。分数衡量是否符合对应规则，不保证识别准确；阈值越低越容易拦截，也更容易误判。</p><div id="moderation-thresholds" class="thresholds"></div></details>
           </section>
           <section class="card"><h2>JEV 配置</h2><p class="muted">必须审核的请求遇到超时、缺少密钥或接口失败时，不会放行。仅审核提交的文本，不包含图片或工作区文件。</p>
             <label for="jev-url">接口源地址</label><input id="jev-url" type="url" required placeholder="https://api.typesafe.ai">

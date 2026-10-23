@@ -4,6 +4,7 @@ import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { defaultThresholds, evaluateJev, questions } from '../src/jev.ts';
 import { checkText, ModerationStore } from '../src/moderation.ts';
 
@@ -23,6 +24,7 @@ const policy = {
 function answer(score = 0.01) {
   return {
     model: 'jev-fixture-1',
+    usage: { input_tokens: 120, output_tokens: 18 },
     answers: Object.fromEntries(
       Object.keys(questions).map((name) => [name, { type: 'noul', noul: score }]),
     ),
@@ -37,6 +39,7 @@ async function fixture(t: TestContext) {
     await rm(root, { recursive: true, force: true });
   });
   return {
+    root,
     get store() {
       return store;
     },
@@ -84,6 +87,72 @@ test('native JEV HTTP contract and threshold boundary use every category and act
   assert.equal(result.model, 'jev-fixture-1');
   assert.deepEqual(result.categories, ['sexual']);
   assert.equal(calls, 1);
+});
+
+test('usage totals count reported tokens and unknown failures, survive pruning and never count keyword or missing-key paths', async (t) => {
+  const f = await fixture(t);
+  const settings = { ...editable(f.store), apiKey: key, keywords: ['BLOCK'] };
+  f.store.save(settings, 'admin');
+  await f.store.preview('BLOCK', 'admin', async () => {
+    throw new Error('must not call');
+  });
+  assert.equal(f.store.usage().requests, 0);
+  const good = await f.store.preview(text, 'admin', async () => Response.json(answer()));
+  assert.deepEqual(good.usage, { inputTokens: 120, outputTokens: 18 });
+  const missingUsage = { ...answer(), usage: undefined };
+  await f.store.preview(text, 'admin', async () => Response.json(missingUsage));
+  await f.store.preview(
+    text,
+    'admin',
+    async () => new Response('do not log provider body', { status: 429 }),
+  );
+  const invalid = { ...answer(), answers: {} };
+  const failed = await f.store.preview(text, 'admin', async () => Response.json(invalid));
+  assert.equal(failed.allowed, false);
+  assert.deepEqual(failed.usage, { inputTokens: 120, outputTokens: 18 });
+  const totals = f.store.usage();
+  assert.equal(totals.requests, 4);
+  assert.equal(totals.errorRequests, 2);
+  assert.equal(totals.reportedRequests, 2);
+  assert.equal(totals.unreportedRequests, 2);
+  assert.equal(totals.inputTokens, 240);
+  assert.equal(totals.outputTokens, 36);
+  assert.equal(totals.totalTokens, 276);
+  assert.equal(totals.remainingBalance, null);
+  assert.equal(totals.remainingTokens, null);
+  const db = new DatabaseSync(join(f.root, 'private/moderation.sqlite'));
+  db.prepare('UPDATE events SET at=0').run();
+  db.close();
+  assert.deepEqual(f.store.events(), []);
+  await f.reopen();
+  assert.deepEqual(f.store.usage(), totals);
+  f.store.save({ ...editable(f.store), apiKey: '' }, 'admin');
+  await f.store.preview(text, 'admin');
+  assert.deepEqual(f.store.usage(), totals);
+});
+
+test('rule upgrade adds missing policy categories once, preserves credentials and existing thresholds, and conflicts stale edits', async (t) => {
+  const f = await fixture(t);
+  f.store.save({ ...editable(f.store), apiKey: key }, 'admin');
+  const db = new DatabaseSync(join(f.root, 'private/moderation.sqlite'));
+  const old = JSON.parse(db.prepare('SELECT value FROM policy WHERE id=1').get()!.value as string);
+  for (const name of Object.keys(old.thresholds))
+    if (name.startsWith('policy/')) delete old.thresholds[name];
+  old.thresholds.sexual = 0.42;
+  db.prepare('UPDATE policy SET value=? WHERE id=1').run(JSON.stringify(old));
+  db.close();
+  await f.reopen();
+  const migrated = f.store.config();
+  assert.equal(migrated.apiKeyConfigured, true);
+  assert.equal(migrated.revision, old.revision + 1);
+  assert.equal(migrated.thresholds.sexual, 0.42);
+  assert.equal(Object.keys(migrated.thresholds).length, 18);
+  const stale = { ...editable(f.store), revision: old.revision };
+  assert.throws(() => f.store.save(stale, 'admin'), /changed/);
+  assert.equal(f.store.events().filter((event) => event.kind === 'config.migrated').length, 1);
+  await f.reopen();
+  assert.equal(f.store.config().revision, migrated.revision);
+  assert.equal(f.store.events().filter((event) => event.kind === 'config.migrated').length, 1);
 });
 
 test('selected policy blocks keywords without a model call and sends non-hits to JEV', async () => {

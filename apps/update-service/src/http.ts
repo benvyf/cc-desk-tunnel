@@ -216,6 +216,10 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           respond(response, 200, moderation.events());
           return;
         }
+        if (path === `${api}/moderation/usage` && request.method === 'GET') {
+          respond(response, 200, moderation.usage());
+          return;
+        }
         if (
           (path === `${api}/moderation/config` && request.method === 'PUT') ||
           (path === `${api}/moderation/preview` && request.method === 'POST')
