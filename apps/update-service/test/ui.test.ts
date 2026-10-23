@@ -13,6 +13,7 @@ import { signIndex } from '../../../packages/managed-updates/src/index.ts';
 import { validateConfig } from '../src/config.ts';
 import { createUpdateServer } from '../src/http.ts';
 import { UpdateStore } from '../src/store.ts';
+import { PasswordAuth } from '../src/password-auth.ts';
 
 test(
   'real browser logs in, uploads, publishes, withdraws and renders notes as text over test TLS',
@@ -165,8 +166,9 @@ test(
     );
     assert.equal(reportResponse.status, 204);
     await page.goto(origin + '/cc-updates/admin/');
+    await page.getByText('使用旧管理令牌', { exact: true }).click();
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
-    await page.getByRole('button', { name: '登录管理' }).click();
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
     await expect(
@@ -289,7 +291,22 @@ test(
     await page.getByRole('button', { name: '退出登录' }).click();
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
-    await page.getByRole('button', { name: '登录管理' }).click();
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
+    await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
+    await page.getByRole('button', { name: '退出登录' }).click();
+    const setupToken = await new PasswordAuth(join(root, 'data/private')).issueSetup();
+    await page.goto('about:blank');
+    await page.goto(origin + '/cc-updates/admin/#setup=' + setupToken);
+    await page.getByLabel('新管理员密码', { exact: true }).fill('synthetic browser password');
+    await page.getByLabel('确认管理员密码', { exact: true }).fill('synthetic browser password');
+    await page.getByRole('button', { name: '保存密码并登录', exact: true }).click();
+    await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
+    await page.locator('#show-moderation').click();
+    await expect(page.locator('#moderation-mode')).toBeVisible();
+    await expect(page.locator('#jev-usage')).not.toContainText('读取用量中');
+    await page.getByRole('button', { name: '退出登录' }).click();
+    await page.getByLabel('管理员密码', { exact: true }).fill('synthetic browser password');
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.getByRole('button', { name: '退出登录' }).click();
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);

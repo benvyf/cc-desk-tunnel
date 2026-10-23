@@ -1,11 +1,15 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { join } from 'node:path';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
 import { MonitorStore } from './monitor.ts';
 import { validateMonitorReport } from '../../../packages/protocol/src/account-monitor.ts';
+import { ModerationStore } from './moderation.ts';
+import { PasswordAuth } from './password-auth.ts';
+import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
 
 const base = '/cc-updates/admin';
 const api = base + '/api';
@@ -45,6 +49,8 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   for (const [file, type] of [
     ['index.html', 'text/html'],
     ['app.js', 'text/javascript'],
+    ['moderation.js', 'text/javascript'],
+    ['password-login.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -56,24 +62,16 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   const monitor = config.monitorNodes
     ? new MonitorStore(config.dataDir, Object.keys(config.monitorNodes))
     : undefined;
+  const passwordAuth = new PasswordAuth(join(config.dataDir, 'private'));
   let failures = 0;
   let windowStart = Date.now();
-  function authenticated(request: IncomingMessage): void {
+  function resetFailureWindow() {
     if (Date.now() - windowStart > 60000) {
       failures = 0;
       windowStart = Date.now();
     }
-    const authorization = request.headers.authorization ?? '';
-    const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
-    if (
-      !/^[A-Za-z0-9_-]{32,128}$/.test(token) ||
-      !timingSafeEqual(createHash('sha256').update(token).digest(), expectedTokenHash)
-    ) {
-      if (failures >= 30)
-        throw new UpdateError(429, 'Too many failed authentication attempts; retry later.');
-      failures++;
-      throw new UpdateError(401, 'Administrator authentication required.');
-    }
+  }
+  function checkOrigin(request: IncomingMessage) {
     const origin = request.headers.origin;
     if (
       (request.method !== 'GET' && origin !== config.origin) ||
@@ -81,11 +79,29 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     )
       throw new UpdateError(403, 'Invalid request origin.');
   }
+  function authenticated(request: IncomingMessage): void {
+    resetFailureWindow();
+    const authorization = request.headers.authorization ?? '';
+    const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+    if (
+      !/^[A-Za-z0-9_-]{32,128}$/.test(token) ||
+      (!timingSafeEqual(createHash('sha256').update(token).digest(), expectedTokenHash) &&
+        !passwordAuth.accepts(token))
+    ) {
+      if (failures >= 30)
+        throw new UpdateError(429, 'Too many failed authentication attempts; retry later.');
+      failures++;
+      throw new UpdateError(401, 'Administrator authentication required.');
+    }
+    checkOrigin(request);
+  }
   function contentType(request: IncomingMessage, type: string): void {
     if (request.headers['content-type']?.split(';')[0]?.trim().toLowerCase() !== type)
       throw new UpdateError(415, 'Unsupported content type.');
   }
 
+  const moderation = await ModerationStore.open(config.dataDir);
+  const nodeReviews = new NodeReviews();
   const server = createServer(
     { maxHeaderSize: 8192, requestTimeout: 600000, headersTimeout: 15000, keepAliveTimeout: 5000 },
     (request, response) => {
@@ -119,6 +135,20 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
             'content-length': bytes.length,
           });
           response.end(request.method === 'HEAD' ? undefined : bytes);
+          return;
+        }
+        if (path === moderationPath) {
+          if (request.method !== 'POST') throw new UpdateError(405, 'Method not allowed.');
+          const node = await authenticateNode(config.dataDir, request.headers.authorization);
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 400 * 1024)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid review JSON.');
+          }
+          respond(response, 200, await nodeReviews.check(node, input, moderation));
           return;
         }
         if (!path.startsWith(api + '/')) throw new UpdateError(404, 'Not found.');
@@ -170,6 +200,48 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           respond(response, 204);
           return;
         }
+
+        if (
+          (path === `${api}/auth/login` || path === `${api}/auth/setup`) &&
+          request.method === 'POST'
+        ) {
+          checkOrigin(request);
+          contentType(request, 'application/json');
+          resetFailureWindow();
+          if (failures >= 30) throw new UpdateError(429, '登录失败次数过多，请一分钟后重试。');
+          let input;
+          try {
+            input = JSON.parse((await body(request, 2048)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid login JSON.');
+          }
+          const setup = path.endsWith('/setup');
+          const fields = setup ? ['setupToken', 'password'] : ['password'];
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            Object.keys(input).length !== fields.length ||
+            !fields.every((field) => Object.hasOwn(input, field))
+          )
+            throw new UpdateError(400, 'Invalid login fields.');
+          let sessionToken;
+          try {
+            sessionToken = setup
+              ? await passwordAuth.setup(input.setupToken, input.password)
+              : await passwordAuth.login(input.password);
+          } catch (error) {
+            if (error instanceof UpdateError && error.status === 401) failures++;
+            throw error;
+          }
+          if (!sessionToken) {
+            failures++;
+            throw new UpdateError(401, '密码不正确，请重新输入。');
+          }
+          respond(response, 200, { sessionToken, expiresInSeconds: 28800 });
+          return;
+        }
         authenticated(request);
         if (path === `${api}/monitor` && request.method === 'GET') {
           respond(
@@ -206,6 +278,85 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
             throw new UpdateError(400, 'Account note must contain at most 2000 characters.');
           if (!monitor?.note(accountNote[1]!, note)) throw new UpdateError(404, 'Unknown account.');
           respond(response, 204);
+          return;
+        }
+
+        if (path === `${api}/auth/password` && request.method === 'POST') {
+          contentType(request, 'application/json');
+          if (failures >= 30) throw new UpdateError(429, '密码验证失败次数过多，请一分钟后重试。');
+          let input;
+          try {
+            input = JSON.parse((await body(request, 2048)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid password JSON.');
+          }
+          if (
+            !input ||
+            typeof input !== 'object' ||
+            Array.isArray(input) ||
+            Object.keys(input).length !== 2 ||
+            !Object.hasOwn(input, 'currentPassword') ||
+            !Object.hasOwn(input, 'newPassword')
+          )
+            throw new UpdateError(400, 'Invalid password fields.');
+          const sessionToken = await passwordAuth.changePassword(
+            input.currentPassword,
+            input.newPassword,
+          );
+          if (!sessionToken) {
+            failures++;
+            throw new UpdateError(400, '当前密码不正确，请重新输入。');
+          }
+          respond(response, 200, { sessionToken, expiresInSeconds: 28800 });
+          return;
+        }
+        if (path === `${api}/auth/logout` && request.method === 'POST') {
+          passwordAuth.logout((request.headers.authorization ?? '').slice(7));
+          respond(response, 204);
+          return;
+        }
+        if (path === `${api}/moderation/config` && request.method === 'GET') {
+          respond(response, 200, moderation.config());
+          return;
+        }
+        if (path === `${api}/moderation/events` && request.method === 'GET') {
+          respond(response, 200, moderation.events());
+          return;
+        }
+        if (path === `${api}/moderation/usage` && request.method === 'GET') {
+          respond(response, 200, moderation.usage());
+          return;
+        }
+        if (
+          (path === `${api}/moderation/config` && request.method === 'PUT') ||
+          (path === `${api}/moderation/preview` && request.method === 'POST')
+        ) {
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 128 * 1024)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid moderation JSON.');
+          }
+          if (request.method === 'PUT')
+            respond(response, 200, moderation.save(input, config.adminName));
+          else {
+            if (
+              !input ||
+              typeof input !== 'object' ||
+              Array.isArray(input) ||
+              Object.keys(input).length !== 1 ||
+              !Object.hasOwn(input, 'text')
+            )
+              throw new UpdateError(400, 'Expected text field only.');
+            respond(
+              response,
+              200,
+              await moderation.preview((input as { text: unknown }).text, config.adminName),
+            );
+          }
           return;
         }
         if (path === `${api}/status` && request.method === 'GET') {
@@ -257,9 +408,18 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         }
         throw new UpdateError(404, 'Not found.');
       })().catch((error: unknown) => {
+        const incidentId = error instanceof UpdateError ? undefined : randomUUID();
+        if (incidentId)
+          console.error('Management request failed.', {
+            incidentId,
+            // Omit exception messages: a provider or configuration error may contain secrets.
+            frames:
+              error instanceof Error ? error.stack?.split('\n').slice(1).join('\n') : undefined,
+          });
         if (!response.headersSent && !response.destroyed)
           respond(response, error instanceof UpdateError ? error.status : 500, {
             error: error instanceof UpdateError ? error.message : 'Internal service error.',
+            ...(incidentId ? { incidentId } : {}),
           });
         else response.destroy();
       });
@@ -267,5 +427,6 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   );
   server.maxHeadersCount = 32;
   server.once('close', () => monitor?.close());
+  server.once('close', () => moderation.close());
   return server;
 }

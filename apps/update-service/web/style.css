@@ -27,9 +27,18 @@ header,
   gap: 20px;
 }
 header {
+  flex-wrap: wrap;
   border-bottom: 1px solid #2a303b;
   padding-bottom: 28px;
   margin-bottom: 18px;
+}
+.header-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.password-change {
+  margin: 24px 0;
 }
 h1 {
   margin: 8px 0 0;
@@ -87,6 +96,7 @@ label {
   gap: 10px;
 }
 input,
+select,
 textarea {
   width: 100%;
   min-width: 0;
@@ -125,6 +135,7 @@ button:disabled {
 }
 button:focus-visible,
 input:focus-visible,
+select:focus-visible,
 textarea:focus-visible,
 summary:focus-visible {
   outline: 2px solid #b8d8a0;
@@ -264,6 +275,47 @@ footer {
 }
 #notice {
   padding: 12px 0;
+}
+nav {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+nav [aria-pressed='true'] {
+  background: #303d50;
+  border-color: #b8d8a0;
+}
+#moderation-config .card {
+  display: grid;
+  gap: 12px;
+}
+textarea {
+  resize: vertical;
+}
+.check {
+  display: flex;
+  align-items: center;
+}
+.check input {
+  width: auto;
+}
+.thresholds {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  margin-top: 16px;
+}
+.preview-result,
+#moderation-events td {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.preview-result {
+  max-width: 100%;
+  font: 12px/1.8 monospace;
+}
+#moderation-panel table {
+  min-width: 720px;
 }
 @media (max-width: 720px) {
   .shell {
