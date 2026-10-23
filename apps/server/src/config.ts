@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ServerOptions } from './server.ts';
+import { moderationConfig } from './moderation.ts';
 import { monitorNodePattern } from '../../../packages/protocol/src/account-monitor.ts';
 
 function monitorConfig(env: NodeJS.ProcessEnv): ServerOptions['accountMonitor'] {
@@ -68,6 +69,10 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
   const options: ServerOptions = {
     accountMonitor: monitorConfig(env),
     token: env.PROXY_TOKEN ?? '',
+    nativeTerminalReview: env.PROXY_NATIVE_TERMINAL_REVIEW === '1',
+    moderation: env.PROXY_MODERATION_CONFIG
+      ? moderationConfig(JSON.parse(readFileSync(env.PROXY_MODERATION_CONFIG, 'utf8')))
+      : undefined,
     dataDir: resolve(env.PROXY_DATA_DIR ?? defaultDataDir),
     host: env.PROXY_HOST ?? (native && !reverseProxy ? '0.0.0.0' : '127.0.0.1'),
     reverseProxy,
@@ -91,6 +96,8 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
         }
       : undefined,
   };
+  if (options.nativeTerminalReview && (!native || !options.moderation))
+    throw new Error('Native terminal review requires the native adapter and node moderation.');
   // Custom builds are deployed by the administrator; legacy release settings are ignored.
   return { options, native, port: port(env.PROXY_PORT, 8787, 'PROXY_PORT') };
 }
