@@ -9,25 +9,40 @@ IMAGE=cc-desk-tunnel:pilot-4a39bc3
 PROJECT=cc-pilot-4a39bc3
 PRODUCTION=cc-desk-tunnel-ba938975-proxy-1
 TEST_ID=''
+RESUME=false
+[[ "${1:-}" != --resume ]] || RESUME=true
 [[ "$(id -u)" = 0 && "$(hostname -s)" = ubuntu-cc ]] || { echo 'Run with sudo on ubuntu-cc.' >&2; exit 1; }
-[[ ! -e "$SOURCE" && ! -e "$STATE" ]] || { echo 'Preparation paths already exist; inspect them instead of overwriting.' >&2; exit 1; }
+if $RESUME; then
+  [[ -f "$STATE/production-before.inspect.json" && -f "$STATE/docker.env" ]] || { echo 'No prepared pilot to resume.' >&2; exit 1; }
+  [[ "$(git -C "$SOURCE" rev-parse HEAD)" = "$COMMIT" ]]
+  docker image inspect "$IMAGE" >/dev/null
+else
+  [[ ! -e "$SOURCE" && ! -e "$STATE" ]] || { echo 'Preparation paths already exist; inspect them instead of overwriting.' >&2; exit 1; }
+  mkdir -m 700 "$STATE"
+  docker inspect "$PRODUCTION" > "$STATE/production-before.inspect.json"
+fi
 docker inspect "$PRODUCTION" >/dev/null
-mkdir -m 700 "$STATE"
 trap 'rc=$?; if [[ -n "$TEST_ID" ]]; then docker stop --time 10 "$TEST_ID" >/dev/null 2>&1 || true; fi; if ((rc)); then printf "Preparation failed; private diagnostics: %s. Production was not changed.\n" "$STATE" >&2; fi' EXIT
-docker inspect "$PRODUCTION" > "$STATE/production-before.inspect.json"
-BEFORE="$(docker inspect --format '{{.Id}} {{.Image}} {{.State.StartedAt}}' "$PRODUCTION")"
+BEFORE="$(python3 -c 'import json,sys; c=json.load(open(sys.argv[1]))[0]; print(c["Id"],c["Image"],c["State"]["StartedAt"])' "$STATE/production-before.inspect.json")"
+[[ "$(docker inspect --format '{{.Id}} {{.Image}} {{.State.StartedAt}}' "$PRODUCTION")" = "$BEFORE" ]]
 free -m > "$STATE/resources.txt"
 df -h / /srv >> "$STATE/resources.txt"
+if ! $RESUME; then
 printf '1/4 Fetching pinned source %s\n' "$COMMIT"
 git clone --quiet --no-checkout https://github.com/benvyf/cc-desk-tunnel.git "$SOURCE"
 git -C "$SOURCE" checkout --quiet --detach "$COMMIT"
 [[ "$(git -C "$SOURCE" rev-parse HEAD)" = "$COMMIT" && -z "$(git -C "$SOURCE" status --porcelain)" ]]
 printf '2/4 Building isolated image; log: %s/build.log\n' "$STATE"
 docker build -t "$IMAGE" -f "$SOURCE/deploy/docker/Dockerfile" "$SOURCE" > "$STATE/build.log" 2>&1
-printf '3/4 Starting fresh test data on 127.0.0.1:18787\n'
+else
+  printf '1-2/4 Resuming with existing pinned source and built image\n'
+fi
+printf '3/4 Starting isolated test data on 127.0.0.1:18787\n'
 export PROXY_DEPLOY_CONFIG="$STATE/docker.env"
+if ! $RESUME; then
 bash "$SOURCE/deploy/manage.sh" init --host cc-desk-tunnel.local --mode fingerprint --data "$STATE/data" --control-port 18787 > "$STATE/init.log" 2>&1
 sed -i "s|^PROXY_IMAGE=.*|PROXY_IMAGE='$IMAGE'|; s|^PROJECT_NAME=.*|PROJECT_NAME='$PROJECT'|; s|^CONTROL_BIND=.*|CONTROL_BIND='127.0.0.1'|" "$PROXY_DEPLOY_CONFIG"
+fi
 dc() { docker compose --env-file "$PROXY_DEPLOY_CONFIG" -p "$PROJECT" -f "$SOURCE/deploy/docker/compose.yaml" "$@"; }
 dc up -d --no-build > "$STATE/start.log" 2>&1
 TEST_ID="$(dc ps -q proxy)"
@@ -43,6 +58,7 @@ wait_healthy() {
 wait_healthy
 docker exec -i "$TEST_ID" node --env-file=/data/config/service.env --input-type=module > "$STATE/protocol-check.json" <<'NODE'
 import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import https from 'node:https';
@@ -66,7 +82,7 @@ async function connection(version) {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket('wss://127.0.0.1:8787/ws', tls);
     const timer = setTimeout(() => finish(new Error('Protocol timeout')), 10000);
-    const expected = new Set(['service.update.check', 'service.update.install']);
+    const expected = new Map(['service.update.check', 'service.update.install'].map(type => [randomUUID(), type]));
     const finish = (error, result) => { clearTimeout(timer); socket.terminate(); error ? reject(error) : resolve(result); };
     socket.on('error', error => finish(error));
     socket.on('open', () => socket.send(JSON.stringify({ type: 'auth', token: process.env.PROXY_TOKEN, protocolVersion: version, deviceName: 'isolated-linux-pilot' })));
@@ -80,7 +96,7 @@ async function connection(version) {
         } else if (m.type === 'ready') {
           assert.equal(version, 20);
           assert.equal(m.update, undefined);
-          for (const type of expected) socket.send(JSON.stringify({ type, requestId: type, ...(type.endsWith('install') ? { version: '99.0.0' } : {}) }));
+          for (const [requestId, type] of expected) socket.send(JSON.stringify({ type, requestId, ...(type.endsWith('install') ? { version: '99.0.0' } : {}) }));
         } else if (m.type === 'response' && expected.has(m.requestId)) {
           assert.equal(m.ok, false);
           assert.equal(m.code, 'updates_unavailable');
