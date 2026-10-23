@@ -65,6 +65,20 @@ test(
       },
     });
     const store = await UpdateStore.open(config.dataDir, config.trustedKeys, config.adminName);
+    const enrollmentDir = join(config.dataDir, 'private/enrollment');
+    await mkdir(enrollmentDir, { recursive: true });
+    const enrollmentBundle = Buffer.from('synthetic enrollment test fixture');
+    await writeFile(join(enrollmentDir, 'ubuntu-test.tar.gz'), enrollmentBundle);
+    await writeFile(
+      join(enrollmentDir, 'packages.json'),
+      JSON.stringify({
+        'ubuntu-test': {
+          sha256: createHash('sha256').update(enrollmentBundle).digest('hex'),
+          tokenSha256: config.monitorNodes!['ubuntu-test'],
+          version: '0.3.6',
+        },
+      }),
+    );
     const server = await createUpdateServer(store, config);
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
     const backend = server.address();
@@ -183,6 +197,13 @@ test(
     await expect(page.locator('#updates-panel')).toBeHidden();
     await expect(page.locator('#moderation-panel')).toBeHidden();
     assert.deepEqual(pageReads, ['monitor']);
+    await page.getByRole('button', { name: '一键接入', exact: true }).click();
+    await expect(page.getByLabel('选择接入节点')).toHaveValue('ubuntu-test');
+    await expect(page.locator('#enrollment-node option[value="ubuntu-pending"]')).toBeDisabled();
+    await page.getByRole('button', { name: '生成接入命令', exact: true }).click();
+    await expect(page.getByLabel('Ubuntu 安装命令')).toHaveValue(/^sudo python3 -c /);
+    await expect(page.locator('#enrollment-expiry')).toContainText('仅能领取一次');
+    assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
     assert.ok(
       await page.evaluate(
         () =>
@@ -358,6 +379,7 @@ test(
     await page.getByRole('button', { name: '确认撤回' }).click();
     await expect(page.locator('#channels').getByText('已撤回发布')).toBeVisible();
     await page.getByRole('button', { name: '退出登录' }).click();
+    await expect(page.getByLabel('Ubuntu 安装命令')).toHaveValue('');
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
     await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();

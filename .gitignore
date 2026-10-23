@@ -39,3 +39,7 @@ playwright-report/
 Thumbs.db
 Desktop.ini
 .idea/
+
+# Python installer verification cache
+__pycache__/
+*.pyc

@@ -18,6 +18,20 @@
         <div class="section-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 id="monitor-heading">账号监控</h2></div><button id="monitor-refresh" class="quiet">刷新账号数据</button></div>
         <p class="muted">正常使用时被动更新，刷新只读取 VPS。换号后保留历史账号；同账号各节点额度分别显示。超过 15 分钟未采集标为过期，不代表离线或封禁。</p>
         <div id="monitor-node-status" class="muted" aria-live="polite"></div>
+        <section class="card" aria-labelledby="enrollment-heading">
+          <div class="section-heading"><h3 id="enrollment-heading">接入 Ubuntu 节点</h3><button id="enrollment-open" class="quiet">一键接入</button></div>
+          <p class="muted">生成一条命令，在 Ubuntu 控制台执行。目前仅准备了第一台 ubuntu-cc 的 v0.3.6 安装包。先结束 Claude 任务并关闭 CC 客户端；安装会短暂重启 CC 服务，自动备份，失败时尝试回滚。</p>
+          <div id="enrollment-options" hidden>
+            <label for="enrollment-node">选择接入节点</label><select id="enrollment-node"></select>
+            <button id="enrollment-generate">生成接入命令</button>
+            <div id="enrollment-result" hidden>
+              <p id="enrollment-expiry" class="muted" aria-live="polite"></p>
+              <label for="enrollment-command">Ubuntu 安装命令</label><textarea id="enrollment-command" readonly rows="5" spellcheck="false" autocomplete="off"></textarea>
+              <button id="enrollment-copy" class="quiet">复制命令</button>
+              <p class="muted">命令含临时安装码，请勿转发。若安装中断，重新生成命令即可重试。安装不会主动读取 Claude 额度；完成后正常打开 CC，等待已有账号数据自然同步。这里的“刷新账号数据”只读取 VPS 缓存。</p>
+            </div>
+          </div>
+        </section>
         <label for="monitor-search">搜索账号<input id="monitor-search" type="search" placeholder="邮箱、备注、节点、套餐或组织" maxlength="254"></label>
         <p id="monitor-count" class="muted"></p>
         <div id="monitor-nodes" class="channels"></div>

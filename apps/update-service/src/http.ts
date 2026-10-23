@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
 import { MonitorStore } from './monitor.ts';
+import { EnrollmentStore } from './enrollment.ts';
 import { validateMonitorReport } from '../../../packages/protocol/src/account-monitor.ts';
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
@@ -52,6 +53,8 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['moderation.js', 'text/javascript'],
     ['password-login.js', 'text/javascript'],
     ['navigation.js', 'text/javascript'],
+    ['enrollment.js', 'text/javascript'],
+    ['monitor-install.py', 'text/plain'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -66,6 +69,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ? new MonitorStore(config.dataDir, Object.keys(config.monitorNodes))
     : undefined;
   const passwordAuth = new PasswordAuth(join(config.dataDir, 'private'));
+  const enrollment = new EnrollmentStore(config);
   let failures = 0;
   let windowStart = Date.now();
   function resetFailureWindow() {
@@ -155,6 +159,24 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         if (!path.startsWith(api + '/')) throw new UpdateError(404, 'Not found.');
+        if (path === `${api}/monitor/enrollment/redeem` && request.method === 'POST') {
+          if (request.headers.origin !== undefined)
+            throw new UpdateError(403, 'Browser redemption is not accepted.');
+          contentType(request, 'application/json');
+          if ((await body(request, 16)).toString('utf8') !== '{}')
+            throw new UpdateError(400, 'Expected empty JSON object.');
+          const authorization = request.headers.authorization ?? '';
+          const bytes = await enrollment.redeem(
+            authorization.startsWith('Bearer ') ? authorization.slice(7) : '',
+          );
+          response.writeHead(200, {
+            ...headers,
+            'content-type': 'application/octet-stream',
+            'content-length': bytes.length,
+          });
+          response.end(bytes);
+          return;
+        }
         if (path === `${api}/monitor/report` && request.method === 'POST') {
           if (!monitor) throw new UpdateError(404, 'Monitoring is not configured.');
           if (request.headers.origin !== undefined)
@@ -246,6 +268,22 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         authenticated(request);
+        if (path === `${api}/monitor/enrollment` && request.method === 'GET') {
+          respond(response, 200, enrollment.status());
+          return;
+        }
+        if (path === `${api}/monitor/enrollment` && request.method === 'POST') {
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 256)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid enrollment JSON.');
+          }
+          respond(response, 201, enrollment.issue(input));
+          return;
+        }
         if (path === `${api}/monitor` && request.method === 'GET') {
           respond(
             response,

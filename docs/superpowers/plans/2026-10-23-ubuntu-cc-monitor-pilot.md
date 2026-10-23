@@ -1,3 +1,5 @@
+> 2026-10-24：下文 SSH 公钥交付/启用步骤已被 [一条命令接入计划](2026-10-24-monitor-enrollment.md) 替代；不要执行旧公钥准备脚本。
+
 # 第一台 Ubuntu 被动监控接入
 
 > **For agentic workers:** Use executing-plans to implement this plan task-by-task. 用户已经授权接入和上线；在当前 `codex/account-monitor-production` 分支继续，不另建工作树。

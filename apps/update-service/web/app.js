@@ -1,6 +1,7 @@
 import { setupModeration } from './moderation.js';
 import { setupPasswordLogin } from './password-login.js';
 import { setupNavigation } from './navigation.js';
+import { setupEnrollment } from './enrollment.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
@@ -44,6 +45,7 @@ function logout() {
   for (const id of ['channels', 'candidates', 'audit', 'monitor-nodes']) $(id).replaceChildren();
   moderation.clear();
   passwordLogin.clear();
+  enrollment.clear();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -492,6 +494,7 @@ $('logout').addEventListener('click', () => {
 });
 const moderation = setupModeration({ request, action, notice, element, date });
 const passwordLogin = setupPasswordLogin({ action, notice, login, request });
+const enrollment = setupEnrollment({ request, action, notice, date });
 const navigation = setupNavigation({
   changed: queuePageRefresh,
   authenticated: () => Boolean(token),

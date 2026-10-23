@@ -32,7 +32,7 @@ for (const file of files) {
   if (privatePath.test(file) && !file.endsWith('.env.example')) {
     errors.push('禁止跟踪的文件路径：' + file);
   }
-  if (!/\.(?:md|mjs|cjs|ts|tsx|html|css|json|txt|sh|ps1)$/.test(file)) continue;
+  if (!/\.(?:md|mjs|cjs|ts|tsx|html|css|json|txt|sh|ps1|py)$/.test(file)) continue;
   const content = git('show', ':' + file);
   const reviewedKeys =
     publicTestKeys.get(file) === createHash('sha256').update(content).digest('hex');
