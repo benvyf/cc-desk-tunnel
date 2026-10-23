@@ -28,6 +28,7 @@ export default function LoginPage({
   showNotes,
   submit,
   openSettings,
+  managedServer,
 }: {
   form: ConnectionForm;
   change: (values: Partial<ConnectionForm>) => void;
@@ -50,6 +51,7 @@ export default function LoginPage({
   submit: () => void;
   // This computer's own settings, which need no connection.
   openSettings: () => void;
+  managedServer?: React.ReactNode;
 }) {
   const connectionName = useConnectionName();
   const [serviceUpgrade, setServiceUpgrade] = useState<{
@@ -192,6 +194,7 @@ export default function LoginPage({
               {shownError}
             </p>
           )}
+          {managedServer}
           {upgrade && (
             <button
               className="button login-submit"

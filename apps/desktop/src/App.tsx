@@ -54,6 +54,7 @@ import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
 import Conversation from './Conversation.tsx';
 import LoginPage from './LoginPage.tsx';
+import ManagedServerUpgrade from './ManagedServerUpgrade.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { exportSession } from './exportSession.ts';
 import { onSharedChange, saveShared, shared, useShared } from './shared.ts';
@@ -161,6 +162,7 @@ export function App({
   const [error, setError] = useState<string | RequestInterruptedError | null>(null);
   // One request at a time from this window; `refreshing` is the slower native status read.
   const [busy, setBusy] = useState(false);
+  const [serverUpgradeWorking, setServerUpgradeWorking] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
   // Which of this computer's settings is open on the login page.
@@ -308,6 +310,7 @@ export function App({
   // being read or changed; this window's own terminal, `terminalSessionId`, also takes the window.
   const anyTerminal = state.sessions.some((session) => session.activeRun?.surface === 'terminal');
   const updateBlocked =
+    serverUpgradeWorking ||
     state.status !== 'disconnected' ||
     proxyConnecting ||
     busy ||
@@ -1353,9 +1356,18 @@ export function App({
           form={form}
           change={changeForm}
           error={
-            currentError && state.mismatch
+            currentError && state.mismatch && !window.desktop
               ? `${currentError}请联系管理员安装匹配的定制版。`
               : currentError
+          }
+          managedServer={
+            window.desktop && form.mode === 'remote' && state.mismatch ? (
+              <ManagedServerUpgrade
+                form={form}
+                disabled={state.status === 'connecting' || proxyConnecting || busy}
+                activity={setServerUpgradeWorking}
+              />
+            ) : undefined
           }
           upgrade={state.mismatch && window.desktop ? upgrade : null}
           older={
@@ -1370,7 +1382,9 @@ export function App({
           direct={direct}
           downloaded={downloaded}
           install={install}
-          connecting={state.status === 'connecting' || proxyConnecting || busy}
+          connecting={
+            state.status === 'connecting' || proxyConnecting || busy || serverUpgradeWorking
+          }
           submit={() => {
             void login(form);
           }}

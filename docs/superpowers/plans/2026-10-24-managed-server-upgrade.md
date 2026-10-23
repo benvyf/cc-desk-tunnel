@@ -25,10 +25,10 @@
 
 ### Task 2: Desktop mismatch upgrade flow
 
-- [ ] Add dedicated main-process check/install/status IPC with fixed paths and certificate-before-token behavior.
-- [ ] Show “升级配套服务端” for protocol mismatch, confirm exact target, show progress/result, and offer bootstrap instructions for old unsupported servers.
-- [ ] Keep legacy update IPC blocked; test same-version protocol mismatch and failed upgrades.
-- [ ] Review and commit after focused tests and frontend build.
+- [x] Add dedicated main-process check/install/status IPC with fixed paths and certificate-before-token behavior.
+- [x] Show “升级配套服务端” for protocol mismatch, confirm exact target, show progress/result, and offer bootstrap instructions for old unsupported servers.
+- [x] Keep legacy update IPC blocked; test same-version protocol mismatch and failed upgrades.
+- [x] Spec and quality reviews approved frozen tree 10539bd90e43519c9f0da9f83485189088b3cfd8. Independent Node 24 regression: 485 tests, 454 passed, 31 skipped, 0 failures; Chrome UI: 5 passed. Production desktop staging/import smoke, typecheck and formatting passed.
 
 ### Task 3: Full packaging, first bootstrap and VPS distribution
 

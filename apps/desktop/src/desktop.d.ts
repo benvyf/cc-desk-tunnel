@@ -72,6 +72,19 @@ declare global {
       // `all` also closes the windows of the other connections.
       quit: (all?: boolean) => Promise<void>;
       version: () => Promise<string>;
+      managedServer: {
+        check: (
+          connection: import('./ManagedServerUpgrade.tsx').ManagedServerConnection,
+        ) => Promise<import('../../server/src/managed-server-http.ts').ServerCheck>;
+        install: (
+          confirmation: import('./ManagedServerUpgrade.tsx').ManagedServerConfirmation,
+        ) => Promise<{ accepted: true; build: number; sha256: string }>;
+        status: (
+          connection: import('./ManagedServerUpgrade.tsx').ManagedServerConnection,
+        ) => Promise<import('../../server/src/managed-server-http.ts').ServerStatus>;
+        cancel: () => Promise<void>;
+        openManager: () => Promise<void>;
+      };
       managedUpdate: {
         state: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
         check: () => Promise<import('./managed-update.ts').ManagedUpdateState>;

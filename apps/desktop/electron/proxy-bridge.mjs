@@ -1,8 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { createServer, request } from 'node:http';
-import { isIP } from 'node:net';
-import { connect } from 'node:tls';
 import { join } from 'node:path';
 import { pipeline } from 'node:stream/promises';
 import { WebSocket, WebSocketServer } from 'ws';
@@ -10,7 +8,21 @@ import { serverMessageSchema, MAX_FRAME_BYTES } from '@cc-desk-tunnel/protocol';
 import { startWindowsSsh } from './windows-ssh.mjs';
 import { startPosixSsh } from './posix-ssh.mjs';
 import { openChannels } from './tunnel-channels.mjs';
-import { httpProxy, openSocket } from './system-proxy.mjs';
+import {
+  connectService,
+  controlTlsOptions,
+  certificateMatches,
+  authorizedGet,
+  connectionWaits,
+} from './secure-service.mjs';
+export {
+  connectService,
+  controlTlsOptions,
+  certificateMatches,
+  authorizedGet,
+  connectionWaits,
+} from './secure-service.mjs';
+export { createManagedServerClient } from './managed-server-client.mjs';
 import { channelFailure, controlFailure, passing } from './connect-errors.mjs';
 // Loaded by the main process from here, so that the package's bundle of this module holds it.
 export { upgradeService } from './service-upgrade.mjs';
@@ -19,81 +31,6 @@ export { upgradeService } from './service-upgrade.mjs';
 // is behind them differs with the system: see each module.
 export const startLocalSsh = process.platform === 'win32' ? startWindowsSsh : startPosixSsh;
 
-export function certificateMatches(observed, trusted) {
-  if (typeof trusted !== 'string' || typeof observed !== 'string') return false;
-  const pin = trusted.replaceAll(':', '').toLowerCase();
-  return /^[a-f0-9]{64}$/.test(pin) && observed.replaceAll(':', '').toLowerCase() === pin;
-}
-export function controlTlsOptions(config) {
-  if (!config.fingerprint) return { rejectUnauthorized: true };
-  if (!certificateMatches(config.fingerprint, config.fingerprint))
-    throw new Error('请输入可信安装信息中的 SHA256 证书指纹，或留空使用 CA 验证。');
-  return { rejectUnauthorized: false };
-}
-// The waits of connecting, in milliseconds. Whatever is not a sensible number of seconds takes the default, and
-// the whole is never shorter than the local SSH service is given plus the rest of the way.
-export function connectionWaits(values) {
-  const wait = (seconds, fallback) =>
-    (Number.isInteger(seconds) && seconds >= 5 && seconds <= 600 ? seconds : fallback) * 1000;
-  const ssh = wait(values?.ssh, 10);
-  return {
-    connect: wait(values?.connect, 15),
-    ssh,
-    ready: Math.max(wait(values?.ready, 45), ssh + 35000),
-  };
-}
-// Starts TLS with the service, through the system's HTTP proxy when the Windows settings name one for it. The proxy
-// only relays bytes: the certificate is still the service's own and is judged as on a direct connection.
-// `route`, when given, is told the proxy that was used, for the words of a failure.
-export async function connectService(address, config, resolveProxy, route) {
-  const port = Number(address.port || 443);
-  const proxy = httpProxy(await resolveProxy?.(`https://${address.hostname}:${port}`));
-  if (route) route.proxy = proxy;
-  const socket = await openSocket(
-    proxy,
-    address.hostname,
-    port,
-    connectionWaits(config.waits).connect,
-  );
-  // Lets the system notice a path that has gone, where something on the way would otherwise drop a quiet
-  // connection without a word.
-  socket.setKeepAlive(true, 30000);
-  return connect({
-    socket,
-    servername: isIP(address.hostname) ? undefined : address.hostname,
-    ...controlTlsOptions(config),
-  });
-}
-// An HTTPS GET carrying the service token. A pinned certificate is checked once the connection stands and before
-// the request, and with it the token, is written to it.
-export async function authorizedGet(address, config, path, token, resolveProxy) {
-  const socket = await connectService(address, config, resolveProxy);
-  await new Promise((resolve, reject) => {
-    socket.once('secureConnect', () => {
-      if (
-        config.fingerprint &&
-        !certificateMatches(socket.getPeerCertificate().fingerprint256, config.fingerprint)
-      ) {
-        socket.destroy();
-        reject(new Error('服务证书指纹不匹配；未发送服务凭据。'));
-      } else resolve();
-    });
-    socket.once('error', reject);
-  });
-  return new Promise((resolve, reject) => {
-    const download = request(
-      {
-        host: address.hostname,
-        path,
-        createConnection: () => socket,
-        headers: { Host: address.host, Authorization: `Bearer ${token}` },
-      },
-      resolve,
-    );
-    download.on('error', reject);
-    download.end();
-  });
-}
 export async function openProxyBridge(
   config,
   binaries,

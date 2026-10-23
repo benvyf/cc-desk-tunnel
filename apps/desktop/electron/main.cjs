@@ -39,6 +39,10 @@ const { pathToFileURL } = require('node:url');
 let bridge;
 let connectionGeneration = 0;
 let proxyOpening = 0;
+let serverClient;
+let serverClientLoading;
+let serverManagementOpening = 0;
+const serverManagementBusy = () => serverManagementOpening > 0 || !!serverClient?.busy();
 const connections = require('./connections.cjs');
 // See connections.cjs. The profile is chosen before anything is read from it, the instance lock included:
 // each connection is then a single instance of its own.
@@ -288,7 +292,8 @@ handle('workspace:remove', async (event, directory) => {
   } catch {}
 });
 handle('proxy:connect', async (event, config) => {
-  if (managedClient.frozen()) throw new Error('正在准备安装更新，请稍后连接');
+  if (managedClient.frozen() || serverManagementBusy())
+    throw new Error('正在准备安装更新，请稍后连接');
   proxyOpening++;
   try {
     if (!config || typeof config.url !== 'string' || typeof config.fingerprint !== 'string')
@@ -347,14 +352,53 @@ const managedClient = managedUpdates.createManagedRuntime({
   app,
   net,
   log,
-  isBusy: () => !!bridge || proxyOpening > 0,
+  isBusy: () => !!bridge || proxyOpening > 0 || serverManagementBusy(),
   notify: (state) => {
     for (const window of BrowserWindow.getAllWindows())
       window.webContents.send('managed-update:changed', state);
   },
   quit: () => app.quit(),
 });
-managedUpdates.registerClientUpdates(handle, managedClient);
+managedUpdates.registerClientUpdates(
+  (channel, listener) =>
+    handle(channel, (...args) => {
+      if (channel === 'managed-update:install' && serverManagementBusy())
+        throw new Error('请等待配套服务端升级结束。');
+      return listener(...args);
+    }),
+  managedClient,
+);
+require('./managed-server-ipc.cjs').registerManagedServerUpdates(
+  (channel, listener) =>
+    handle(channel, async (...args) => {
+      serverManagementOpening++;
+      try {
+        return await listener(...args);
+      } finally {
+        serverManagementOpening--;
+      }
+    }),
+  async () => {
+    serverClientLoading ??= import(
+      pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
+    ).then(({ createManagedServerClient }) => {
+      serverClient = createManagedServerClient({
+        resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+        isBlocked: () => !!bridge || proxyOpening > 0 || managedClient.frozen(),
+        readReplay: () =>
+          readSettings(path.join(app.getPath('userData'), 'managed-server-replay.json')).replay,
+        writeReplay: (replay) =>
+          replaceFile(
+            path.join(app.getPath('userData'), 'managed-server-replay.json'),
+            JSON.stringify({ replay }),
+          ),
+      });
+      return serverClient;
+    });
+    return serverClientLoading;
+  },
+  (url) => shell.openExternal(url),
+);
 // The service token is kept only when the user asks, encrypted for the current account of the system (DPAPI on
 // Windows, the login keychain on macOS).
 handle('login:load', () => {

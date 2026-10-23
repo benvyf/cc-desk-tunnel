@@ -9,6 +9,7 @@ import { promisify } from 'node:util';
 import { WebSocket, WebSocketServer } from 'ws';
 import { httpProxy, openSocket } from '../electron/system-proxy.mjs';
 import { openProxyBridge } from '../electron/proxy-bridge.mjs';
+import { connectService, serviceJson } from '../electron/secure-service.mjs';
 
 async function listen(handler) {
   const server = createServer(handler);
@@ -43,6 +44,24 @@ test('only an HTTP proxy in first place is taken from the system answer', () => 
   for (const answer of ['DIRECT', 'DIRECT; PROXY 127.0.0.1:7890', 'SOCKS5 127.0.0.1:1080', ''])
     assert.equal(httpProxy(answer), null);
   assert.equal(httpProxy(undefined), null);
+});
+
+test('management cancellation bounds a pending system proxy resolver before socket dialing', async () => {
+  let finish;
+  const controller = new AbortController();
+  const pending = connectService(
+    new URL('wss://127.0.0.1:1/ws'),
+    { fingerprint: '' },
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    undefined,
+    controller.signal,
+  );
+  controller.abort();
+  await assert.rejects(pending, /取消/);
+  finish('DIRECT');
 });
 
 test('a connection through the proxy reaches the target; without one it goes direct', async (t) => {
@@ -99,6 +118,71 @@ async function selfSigned() {
   );
   return JSON.parse(stdout);
 }
+
+test(
+  'managed HTTPS POST uses system CONNECT proxy and validates pin before writing token; refuses redirects and oversized JSON',
+  { skip: process.platform !== 'win32', timeout: 30000 },
+  async (t) => {
+    const { cert, key } = await selfSigned();
+    const received = [];
+    let mode = 'normal';
+    const service = createHttpsServer({ cert, key }, async (req, res) => {
+      const chunks = [];
+      for await (const chunk of req) chunks.push(chunk);
+      received.push({
+        path: req.url,
+        token: req.headers.authorization,
+        origin: req.headers.origin,
+        method: req.method,
+        body: JSON.parse(Buffer.concat(chunks).toString()),
+      });
+      if (mode === 'redirect') {
+        res.writeHead(302, { Location: '/steal' });
+        res.end();
+      } else if (mode === 'oversized') res.end('x'.repeat(300000));
+      else res.end(JSON.stringify({ ok: true }));
+    });
+    service.on('tlsClientError', () => {});
+    service.listen(0, '127.0.0.1');
+    await once(service, 'listening');
+    const requests = [],
+      asked = [];
+    const proxy = await proxyServer(requests);
+    t.after(() => {
+      service.closeAllConnections();
+      service.close();
+      proxy.close();
+    });
+    const config = {
+      url: `wss://127.0.0.1:${service.address().port}/nested/ws`,
+      token: 'fixture-token-at-least-24-characters',
+      fingerprint: new X509Certificate(cert).fingerprint256,
+    };
+    const resolveProxy = async (url) => {
+      asked.push(url);
+      return `PROXY 127.0.0.1:${proxy.address().port}`;
+    };
+    const send = (c) =>
+      serviceJson(c, 'POST', '/cc-managed/server/v1/check', { clientProtocol: 1 }, resolveProxy);
+    await assert.rejects(send({ ...config, fingerprint: 'AB'.repeat(32) }), /指纹不匹配/);
+    assert.equal(received.length, 0);
+    assert.deepEqual(await send(config), { ok: true });
+    assert.deepEqual(received[0], {
+      path: '/cc-managed/server/v1/check',
+      token: `Bearer ${config.token}`,
+      origin: undefined,
+      method: 'POST',
+      body: { clientProtocol: 1 },
+    });
+    assert.equal(requests.length, 2);
+    assert.equal(asked.length, 2);
+    mode = 'redirect';
+    await assert.rejects(send(config), /302/);
+    assert.equal(received.length, 2);
+    mode = 'oversized';
+    await assert.rejects(send(config), /过大/);
+  },
+);
 
 test(
   'the control connection goes through the system proxy and still checks the pinned certificate',

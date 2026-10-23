@@ -90,6 +90,8 @@ export async function stageDesktop(
       },
     },
   });
+  // The bridge also bundles the independent Linux server signature verifier and its fixed server keys.
+  // Packaged server-management IPC never imports workspace TypeScript or the Windows update contract.
   // All CommonJS modules ship as written, including helpers required by main/preload.
   // The ESM bridge and its dependencies are already in the bundle above; the release download needs only Node.
   const commonjs = readdirSync(join(root, 'apps/desktop/electron')).filter((file) =>

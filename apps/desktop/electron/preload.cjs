@@ -57,6 +57,13 @@ contextBridge.exposeInMainWorld('desktop', {
     webFrame.setZoomLevel(direction ? webFrame.getZoomLevel() + Math.sign(direction) * 0.5 : 0),
   quit: (all) => ipcRenderer.invoke('app:quit', all),
   version: () => ipcRenderer.invoke('app:version'),
+  managedServer: {
+    check: (connection) => ipcRenderer.invoke('managed-server:check', connection),
+    install: (confirmation) => ipcRenderer.invoke('managed-server:install', confirmation),
+    status: (connection) => ipcRenderer.invoke('managed-server:status', connection),
+    cancel: () => ipcRenderer.invoke('managed-server:cancel'),
+    openManager: () => ipcRenderer.invoke('managed-server:manager'),
+  },
   managedUpdate: {
     state: () => ipcRenderer.invoke('managed-update:state'),
     check: () => ipcRenderer.invoke('managed-update:check'),
