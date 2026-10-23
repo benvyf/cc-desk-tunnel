@@ -49,6 +49,8 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 下一操作：用户运行 `D:/cc-desk-tunnel/CC Desk Tunnel/CC Desk Tunnel.exe`（不再使用独立验收 user-data-dir），检查原连接、设备归属和历史保留，并在“关于与更新”确认 build 2 / pilot / 协议 20，手动检查更新预期显示“当前没有可用更新”。实际客户端界面及其 Chromium 网络栈查询结果待回报，不能由命令行验签代替。未续期或推广 stable，模型测试继续暂停。
 
+用户随后提供正式客户端截图：显示“定制构建 2 · pilot · 协议 20”和“当前没有可用更新”，同时出现再次检查须间隔至少 30 秒的 IPC 报错。2026-10-23 14:00（香港时间）只读核对正式安装目录对应的更新缓存：state 为 idle、release 为 null、消息为“当前没有可用更新”；ledger-pilot 已保存 revision 3 及签名载荷 hash，confirmedBuild 为 2，pending 为空。这证明正式客户端已成功完成更新查询及索引处理，后续过快点击触发的是现有 30 秒节流，不是联网或签名失败。没有改动缓存、客户端代码或发布通道；截图未单独确认正式安装版的服务连接及历史。证据为本地 `artifacts/windows-build2-install-acceptance/installed-update-state.json`。
+
 本地检查脚本 `.local/windows-build2-install-acceptance.mjs` 提供 `preflight` 与 `verify-installed` 两个阶段，证据在 `artifacts/windows-build2-install-acceptance/`，均不进入 Git；脚本只读取安装文件/本机配置并查询 VPS 公开更新入口，不启动 Claude。
 
 ### 保持范围
