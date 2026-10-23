@@ -13,9 +13,8 @@ RESUME=false
 [[ "${1:-}" != --resume ]] || RESUME=true
 [[ "$(id -u)" = 0 && "$(hostname -s)" = ubuntu-cc ]] || { echo 'Run with sudo on ubuntu-cc.' >&2; exit 1; }
 if $RESUME; then
-  [[ -f "$STATE/production-before.inspect.json" && -f "$STATE/docker.env" ]] || { echo 'No prepared pilot to resume.' >&2; exit 1; }
+  [[ -f "$STATE/production-before.inspect.json" ]] || { echo 'No prepared pilot to resume.' >&2; exit 1; }
   [[ "$(git -C "$SOURCE" rev-parse HEAD)" = "$COMMIT" ]]
-  docker image inspect "$IMAGE" >/dev/null
 else
   [[ ! -e "$SOURCE" && ! -e "$STATE" ]] || { echo 'Preparation paths already exist; inspect them instead of overwriting.' >&2; exit 1; }
   mkdir -m 700 "$STATE"
@@ -32,14 +31,20 @@ printf '1/4 Fetching pinned source %s\n' "$COMMIT"
 git clone --quiet --no-checkout https://github.com/benvyf/cc-desk-tunnel.git "$SOURCE"
 git -C "$SOURCE" checkout --quiet --detach "$COMMIT"
 [[ "$(git -C "$SOURCE" rev-parse HEAD)" = "$COMMIT" && -z "$(git -C "$SOURCE" status --porcelain)" ]]
+fi
+# The checkout contains public source only. Docker COPY preserves its modes;
+# the build and runtime users must be able to read it despite our private umask.
+# Private configuration and diagnostics remain under STATE, never under SOURCE.
+chmod -R a+rX "$SOURCE"
+if ! $RESUME || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
 printf '2/4 Building isolated image; log: %s/build.log\n' "$STATE"
 docker build -t "$IMAGE" -f "$SOURCE/deploy/docker/Dockerfile" "$SOURCE" > "$STATE/build.log" 2>&1
 else
-  printf '1-2/4 Resuming with existing pinned source and built image\n'
+  printf '2/4 Reusing existing built image\n'
 fi
 printf '3/4 Starting isolated test data on 127.0.0.1:18787\n'
 export PROXY_DEPLOY_CONFIG="$STATE/docker.env"
-if ! $RESUME; then
+if [[ ! -f "$PROXY_DEPLOY_CONFIG" ]]; then
 bash "$SOURCE/deploy/manage.sh" init --host cc-desk-tunnel.local --mode fingerprint --data "$STATE/data" --control-port 18787 > "$STATE/init.log" 2>&1
 sed -i "s|^PROXY_IMAGE=.*|PROXY_IMAGE='$IMAGE'|; s|^PROJECT_NAME=.*|PROJECT_NAME='$PROJECT'|; s|^CONTROL_BIND=.*|CONTROL_BIND='127.0.0.1'|" "$PROXY_DEPLOY_CONFIG"
 fi
