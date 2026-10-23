@@ -77,6 +77,7 @@ import TitleBar from './TitleBar.tsx';
 import type { BarMenu } from './TitleBar.tsx';
 import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
+import { useManagedUpdate } from './managed-update.ts';
 
 const NativeTerminal = lazy(() => import('./NativeTerminal.tsx'));
 // The notes of every version so far are read only when asked for, and stay out of what the window starts with.
@@ -143,6 +144,7 @@ export function App({
     </Suspense>
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const managedUpdate = useManagedUpdate();
   const [form, setForm] = useState<ConnectionForm>(() => ({
     url: localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws',
     token: '',
@@ -305,6 +307,21 @@ export function App({
   // A native terminal anywhere keeps what the CLI holds for all sessions, the account and its status, from
   // being read or changed; this window's own terminal, `terminalSessionId`, also takes the window.
   const anyTerminal = state.sessions.some((session) => session.activeRun?.surface === 'terminal');
+  const updateBlocked =
+    state.status !== 'disconnected' ||
+    proxyConnecting ||
+    busy ||
+    refreshing ||
+    !!terminalSessionId ||
+    state.sessions.some((session) => !!session.activeRun);
+  useEffect(() => {
+    const report = () => {
+      void window.desktop?.managedUpdate?.activity({ blocked: updateBlocked }).catch(() => {});
+    };
+    report();
+    const timer = setInterval(report, 2000);
+    return () => clearInterval(timer);
+  }, [updateBlocked]);
   const controlsDisabled =
     !connected ||
     busy ||
@@ -1275,6 +1292,26 @@ export function App({
           <button className="button" onClick={disconnect}>
             退出登录
           </button>
+        </section>
+      </main>
+    );
+
+  if (managedUpdate.phase === 'preparing' || managedUpdate.phase === 'installing')
+    return (
+      <main className="workspace">
+        <section className="page">
+          <div className="page-body">
+            <h1>正在准备安装更新</h1>
+            <p role="status">正在协调此安装的所有连接窗口退出。</p>
+            {managedUpdate.phase === 'preparing' && (
+              <button
+                className="button"
+                onClick={() => void window.desktop?.managedUpdate.cancel().catch(() => {})}
+              >
+                取消更新
+              </button>
+            )}
+          </div>
         </section>
       </main>
     );

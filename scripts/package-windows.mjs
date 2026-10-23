@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
 import { build as electronBuild, Platform, Arch } from 'electron-builder';
 import { stageDesktop } from './package-desktop.mjs';
+import { managedBuildIdentity } from './managed-client-build.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const app = join(root, '.local/windows-package/app');
@@ -20,7 +21,8 @@ for (const file of ['openssh/sshd.exe', 'openssh/ssh-keygen.exe', 'pwsh/pwsh.exe
 }
 await stageDesktop(root, app, {
   description: 'Windows client for a native remote Claude Code session',
-  files: ['prepare-ssh.ps1', 'component-host.ps1'],
+  files: ['prepare-ssh.ps1', 'component-host.ps1', 'managed-install.ps1'],
+  managedIdentity: managedBuildIdentity(root),
 });
 const electron = JSON.parse(readFileSync(join(root, 'node_modules/electron/package.json'), 'utf8'));
 // Security software may hold an executable for some seconds after it is copied, while it scans it; electron-builder

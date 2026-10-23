@@ -72,6 +72,17 @@ declare global {
       // `all` also closes the windows of the other connections.
       quit: (all?: boolean) => Promise<void>;
       version: () => Promise<string>;
+      managedUpdate: {
+        state: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
+        check: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
+        download: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
+        install: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
+        cancel: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
+        activity: (value: { blocked: boolean }) => Promise<void>;
+        subscribe: (
+          callback: (state: import('./managed-update.ts').ManagedUpdateState) => void,
+        ) => () => void;
+      };
       // The notes of a released version, read from its page on GitHub.
       releaseNotes: (version: string) => Promise<string>;
       // This computer as the service knows it.

@@ -13,6 +13,7 @@ const {
   shell,
   clipboard,
   nativeTheme,
+  net,
 } = require('electron');
 const path = require('node:path');
 const {
@@ -37,6 +38,7 @@ const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
 let connectionGeneration = 0;
+let proxyOpening = 0;
 const connections = require('./connections.cjs');
 // See connections.cjs. The profile is chosen before anything is read from it, the instance lock included:
 // each connection is then a single instance of its own.
@@ -286,54 +288,73 @@ handle('workspace:remove', async (event, directory) => {
   } catch {}
 });
 handle('proxy:connect', async (event, config) => {
-  if (!config || typeof config.url !== 'string' || typeof config.fingerprint !== 'string')
-    throw new Error('Invalid proxy configuration');
-  const generation = ++connectionGeneration;
-  const previous = bridge;
-  bridge = null;
-  await previous?.close();
-  if (generation !== connectionGeneration) throw new Error('Connection cancelled');
-  const { openProxyBridge } = await import(
-    pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
-  );
-  const vendor =
-    process.env.PROXY_VENDOR_DIR ??
-    (app.isPackaged
-      ? path.join(process.resourcesPath, 'vendor')
-      : path.join(__dirname, '../vendor'));
-  const openssh = process.env.PROXY_OPENSSH_DIR ?? path.join(vendor, 'openssh');
-  const powershell = app.isPackaged ? path.join(vendor, 'pwsh/pwsh.exe') : 'pwsh.exe';
-  const connection = await openProxyBridge(
-    config,
-    {
-      openssh,
-      powershell,
-      scriptDirectory: app.isPackaged
-        ? path.join(process.resourcesPath, 'app.asar.unpacked/electron')
-        : undefined,
-      // Where Claude finds the scheduled tasks to edit; the service names the variable, not the path.
-      environment: { CC_DESK_TUNNEL_SCHEDULES: schedulesPath() },
-      log,
-      // The system's proxy settings (manual, script or automatic detection) as Chromium reads them.
-      resolveProxy: (url) => session.defaultSession.resolveProxy(url),
-    },
-    () => {
-      if (bridge !== connection) return;
-      bridge = null;
-      keepAwake(false);
-      if (!event.sender.isDestroyed()) event.sender.send('proxy:closed');
-    },
-  );
-  if (generation !== connectionGeneration) {
-    await connection.close();
-    throw new Error('Connection cancelled');
+  if (managedClient.frozen()) throw new Error('正在准备安装更新，请稍后连接');
+  proxyOpening++;
+  try {
+    if (!config || typeof config.url !== 'string' || typeof config.fingerprint !== 'string')
+      throw new Error('Invalid proxy configuration');
+    const generation = ++connectionGeneration;
+    const previous = bridge;
+    bridge = null;
+    await previous?.close();
+    if (generation !== connectionGeneration) throw new Error('Connection cancelled');
+    const { openProxyBridge } = await import(
+      pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
+    );
+    const vendor =
+      process.env.PROXY_VENDOR_DIR ??
+      (app.isPackaged
+        ? path.join(process.resourcesPath, 'vendor')
+        : path.join(__dirname, '../vendor'));
+    const openssh = process.env.PROXY_OPENSSH_DIR ?? path.join(vendor, 'openssh');
+    const powershell = app.isPackaged ? path.join(vendor, 'pwsh/pwsh.exe') : 'pwsh.exe';
+    const connection = await openProxyBridge(
+      config,
+      {
+        openssh,
+        powershell,
+        scriptDirectory: app.isPackaged
+          ? path.join(process.resourcesPath, 'app.asar.unpacked/electron')
+          : undefined,
+        // Where Claude finds the scheduled tasks to edit; the service names the variable, not the path.
+        environment: { CC_DESK_TUNNEL_SCHEDULES: schedulesPath() },
+        log,
+        // The system's proxy settings (manual, script or automatic detection) as Chromium reads them.
+        resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+      },
+      () => {
+        if (bridge !== connection) return;
+        bridge = null;
+        keepAwake(false);
+        if (!event.sender.isDestroyed()) event.sender.send('proxy:closed');
+      },
+    );
+    if (generation !== connectionGeneration) {
+      await connection.close();
+      throw new Error('Connection cancelled');
+    }
+    bridge = connection;
+    keepAwake(true);
+    return { url: bridge.url };
+  } finally {
+    proxyOpening--;
   }
-  bridge = connection;
-  keepAwake(true);
-  return { url: bridge.url };
 });
 // Update IPC is registered separately so every renderer path shares the same refusal.
-require('./managed-updates.cjs').registerManagedUpdates(handle);
+const managedUpdates = require('./managed-updates.cjs');
+managedUpdates.registerManagedUpdates(handle);
+const managedClient = managedUpdates.createManagedRuntime({
+  app,
+  net,
+  log,
+  isBusy: () => !!bridge || proxyOpening > 0,
+  notify: (state) => {
+    for (const window of BrowserWindow.getAllWindows())
+      window.webContents.send('managed-update:changed', state);
+  },
+  quit: () => app.quit(),
+});
+managedUpdates.registerClientUpdates(handle, managedClient);
 // The service token is kept only when the user asks, encrypted for the current account of the system (DPAPI on
 // Windows, the login keychain on macOS).
 handle('login:load', () => {
@@ -611,6 +632,7 @@ if (process.platform === 'win32')
   app.setAppUserModelId(app.isPackaged ? 'io.github.ccdesktunnel.desktop' : process.execPath);
 app.whenReady().then(() => {
   if (!ownsInstance) return;
+  void managedClient.initialize();
   log(`Client ${app.getVersion()} started${connectionId ? ` as connection ${connectionId}` : ''}.`);
   void clearPastedPictures();
   connections.mark(base, connectionId, true);
@@ -781,5 +803,6 @@ app.on('before-quit', (event) => {
 });
 app.on('window-all-closed', () => app.quit());
 app.on('quit', () => {
+  managedClient.stop();
   if (ownsInstance) connections.mark(base, connectionId, false);
 });
