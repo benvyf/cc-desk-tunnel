@@ -1,3 +1,5 @@
+> **Custom maintenance build:** current implementation, production state, review fixes and portable source recovery are documented in [DEVELOPMENT-HANDOFF.md](DEVELOPMENT-HANDOFF.md) (Chinese). Use the VPS manager for the custom pilot packages; the working branch is not yet on GitHub. Older installation/update statements below describe upstream behavior.
+
 # CC Desk Tunnel
 
 [简体中文](README.md) | **English**

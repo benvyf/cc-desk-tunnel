@@ -2,9 +2,9 @@
 
 **简体中文** | [English](README.en.md)
 
-> **定制维护版**：在线更新已关闭，客户端与服务端由管理员统一部署。当前修改尚未发布为定制安装包；下方发布安装流程仅在管理员发布并核验配套定制构建后适用。请先阅读[定制维护说明](docs/MANAGED-UPDATES.md)。
+> **定制维护版**：管理中心已提供签名的完整客户端下载、配套服务端下载、账号被动监控与内容审核。当前 pilot：Windows Build 5／Linux Build 2，0.3.6／协议 20；安装与升级需用户确认，Ubuntu 首次接入仍须控制台操作。先阅读[当前开发交接](DEVELOPMENT-HANDOFF.md)与[维护说明](docs/MANAGED-UPDATES.md)。
 
-跨电脑继续开发：[当前进度、目标与续做指南](docs/开发交接与跨电脑续做指南-2026-10-23.md)。
+跨电脑继续开发：[当前进度、目标与续做指南](DEVELOPMENT-HANDOFF.md)。
 
 新增可选功能：[Claude 账号数据被动同步](docs/ACCOUNT-MONITOR.md)，复用 Ubuntu 服务端已有数据上报 VPS，不新增 Claude 查询；需按文档配置部署后启用。
 
@@ -48,7 +48,7 @@ Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、�
 | **账号与用量** | 在客户端里登录 / 退出云端的 Claude 账号，查看额度、重置时间和调用统计 |
 | **定时任务** | 到点向指定会话或新会话发送预设提示词，也可以直接让 Claude 帮你设置 |
 | **省心** | 托盘后台、记住凭据与自动登录、未发送内容按会话保存 |
-| **统一维护** | 关闭在线更新，由管理员部署匹配的定制客户端和服务端 |
+| **统一维护** | VPS 签名客户端更新与配套服务端下载；受管节点可由客户端确认兼容的服务端程序升级，失败回滚 |
 | **浏览器访问（可选）** | 与桌面共用工作台，操作在线设备的已有会话，或新建在服务端执行的普通会话；默认关闭，不增加端口或容器 |
 
 ## 快速开始
@@ -62,7 +62,7 @@ Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、�
 在服务器上执行：
 
 ```sh
-git clone --single-branch --branch codex/vps-update-channel https://github.com/benvyf/cc-desk-tunnel.git
+# 先按 DEVELOPMENT-HANDOFF.md 从完整 Git bundle 恢复当前工作分支
 cd cc-desk-tunnel
 sudo bash deploy/install.sh
 ```
@@ -78,7 +78,7 @@ sudo bash deploy/install.sh
 
 ### 2. 安装 Windows 客户端
 
-从[发布页](https://github.com/benvyf/cc-desk-tunnel/releases)下载 `CC-Desk-Tunnel-Setup-<版本>-x64.exe` 并安装。安装包自带 PowerShell 7 和 OpenSSH，不需要另装任何东西。启动后填入上一步的三项信息并连接。
+定制 Windows 包从[管理中心客户端更新页](https://api.ghostapi.org/cc-updates/admin/updates)登录后下载，核对 Build、协议与摘要，再安装。安装包自带 PowerShell 7 和 OpenSSH，不需要另装任何东西。启动后填入上一步的三项信息并连接。
 
 首次运行会遇到 SmartScreen 提示，处理方法见[杀毒软件与 SmartScreen](#杀毒软件与-smartscreen)。
 

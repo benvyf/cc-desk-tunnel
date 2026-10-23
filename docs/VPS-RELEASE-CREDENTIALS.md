@@ -1,6 +1,6 @@
 # VPS 统一发布与跨电脑凭据
 
-> 2026-10-24：当前已发布完整 Build 3，仍使用下述固定身份，来源与验收见[完整下载上线记录](CLIENT-DOWNLOAD-DEPLOYMENT.md)。该次发布时没有自动续期任务；本文 Build 2 和自动续期部署状态为此前记录。手动发布前应核对实际 timer 状态，不能把新增续期模板当成已启用任务。
+> 当前已发布 Windows Build 5／Linux Build 2，两套自动续期均已登记并启用。本文包含历史身份迁移记录；当前源码恢复、管理入口、运行路径和发布边界见[开发交接](../DEVELOPMENT-HANDOFF.md)，不要从普通 GitHub clone 假定已取得当前工作分支。
 
 2026-10-23 起，生产发布身份由 VPS 集中保管。旧电脑身份 `managed-2026-10-23` 退役，新身份为 `managed-vps-2026-10-23`；旧 build 1 没有发布，保留作历史制品，新公钥从 build 2 开始固定。
 
@@ -28,7 +28,7 @@ VPS：`74.82.201.214`，管理员 SSH 登录后查看 `/root/.cc-update-admin/`�
 
 ## 换电脑继续
 
-开发、测试和打包直接使用 GitHub 仓库，不需要生产私钥。新电脑需要一个获授权的 SSH 登录身份；本机 SSH 密钥不能从 GitHub 自动获得。当前电脑使用 `C:/Users/99794/.ssh/cc-hk-relay-ed25519`。
+开发、测试和打包使用交接 Git bundle 恢复的完整当前工作分支，不需要生产私钥；当前 GitHub 尚未包含该分支。新电脑需要一个获授权的 SSH 登录身份；本机 SSH 密钥不能从 GitHub 自动获得。当前电脑使用 `C:/Users/benben/.ssh/vps_bandwagon_ed25519`。
 
 发布时把安装包、发布模板及干净源码传到 VPS，然后通过 SSH 执行签名与现有发布 API。私钥和令牌无需下载到各台电脑。生产服务源码 `/opt/cc-update-service` 与发布用源码分开。
 
@@ -36,7 +36,7 @@ Windows 构建后，在对应的干净源码 checkout 创建 Git bundle：
 
 ```powershell
 git bundle create D:/release/source.bundle HEAD
-scp -i C:/Users/99794/.ssh/cc-hk-relay-ed25519 D:/release/source.bundle root@74.82.201.214:/root/.cc-update-admin/release-input/
+scp -i C:/Users/benben/.ssh/vps_bandwagon_ed25519 D:/release/source.bundle root@74.82.201.214:/root/.cc-update-admin/release-input/
 ```
 
 同样上传精确对应的 EXE 和模板。在 VPS 上将 bundle 克隆到新的源码目录，使用 bundle 指向的完整提交，不修改该 checkout。Git bundle 不包含未提交改动、依赖或本机凭据。发布工具只使用 Node 内建模块，无需在 VPS 安装 npm 依赖。

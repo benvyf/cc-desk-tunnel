@@ -1,3 +1,5 @@
+> 本文为阶段部署记录，当前状态及跨电脑续做以 [DEVELOPMENT-HANDOFF.md](../DEVELOPMENT-HANDOFF.md) 为准。不要把历史发布步骤直接重跑。
+
 # 完整客户端下载上线记录
 
 2026-10-24（Asia/Hong_Kong）。用户已授权实现推荐方案并上线。管理中心下载区和 Windows 完整安装包已发布，未自动安装用户本机客户端，未升级其他 Ubuntu。
