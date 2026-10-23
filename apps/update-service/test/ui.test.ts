@@ -196,7 +196,16 @@ test(
         pageReads.push(new URL(request.url()).pathname.split('/api/')[1]!);
     });
     await page.getByText('使用旧管理令牌', { exact: true }).click();
-    await page.getByLabel('管理令牌', { exact: true }).fill(token);
+    await page.getByLabel('管理令牌', { exact: true }).fill('中文'.repeat(20));
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('管理令牌格式不正确');
+    await page.getByLabel('管理令牌', { exact: true }).fill('wrong_admin_token_fixture_1234567890');
+    await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('登录已失效或管理令牌不正确');
+    await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
+    assert.equal(await page.getByLabel('管理令牌', { exact: true }).inputValue(), '');
+    pageReads.length = 0;
+    await page.getByLabel('管理令牌', { exact: true }).fill(`  ${token}  `);
     await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
     await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
     await expect(page.locator('#show-accounts')).toHaveAttribute('aria-current', 'page', {
@@ -417,6 +426,12 @@ test(
     const setupToken = await new PasswordAuth(join(root, 'data/private')).issueSetup();
     await page.goto('about:blank');
     await page.goto(origin + '/cc-updates/admin/#setup=' + setupToken);
+    await expect(page.getByRole('heading', { name: '设置管理员密码' })).toBeVisible();
+    assert.equal(new URL(page.url()).hash, '');
+    await page.screenshot({
+      path: fileURLToPath(new URL('../../../.local/admin-password-setup.png', import.meta.url)),
+      fullPage: true,
+    });
     await page.getByLabel('新管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByLabel('确认管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByRole('button', { name: '保存密码并登录', exact: true }).click();
@@ -436,15 +451,72 @@ test(
     await expect(page.locator('#jev-usage')).not.toContainText('读取用量中');
     assert.deepEqual(pageReads, ['moderation/config', 'moderation/events', 'moderation/usage']);
     await expect(page.locator('#monitor-panel')).toBeHidden();
+    await expect(page.getByLabel('处理方式')).toHaveValue('keyword_and_api');
+    await expect(page.getByRole('heading', { name: 'JEV 用量', exact: true })).toBeVisible();
+    await expect(page.locator('#jev-usage')).toContainText('已请求 0 次');
+    await expect(page.getByRole('link', { name: 'TypeSafe 官方控制台' })).toHaveAttribute(
+      'href',
+      'https://console.typesafe.ai/',
+    );
+    assert.equal(await page.locator('#moderation-thresholds input').count(), 20);
+    await expect(
+      page.getByLabel('破甲、越权与内部提示窃取 (policy/jailbreak-extraction)', { exact: true }),
+    ).toHaveValue('0.35');
+    await expect(
+      page.getByLabel('模型蒸馏、复刻与训练取数 (policy/model-distillation)', { exact: true }),
+    ).toHaveValue('0.35');
+    await expect(page.getByText('尚未配置 API 密钥', { exact: true })).toBeVisible();
+    await page
+      .getByLabel('关键词（每行一个，忽略大小写、按子串匹配）')
+      .fill('BLOCK\n<img src=x onerror=alert(1)>');
+    await page.getByRole('button', { name: '保存审核配置', exact: true }).click();
+    await expect(
+      page.getByText('审核配置已保存；仅对已部署门禁的节点生效。', { exact: true }),
+    ).toBeVisible();
+    await page.getByLabel('待审文本', { exact: true }).fill('a BLOCK fixture');
+    await page.getByRole('button', { name: '按已保存策略试算', exact: true }).click();
+    await expect(page.locator('#moderation-result')).toContainText('关键词拦截');
+    // No key is configured: even a regression in keyword matching cannot call the real API.
+    await page.getByLabel('待审文本', { exact: true }).fill('ordinary text fixture');
+    await page.getByRole('button', { name: '按已保存策略试算', exact: true }).click();
+    await expect(page.locator('#moderation-result')).toContainText('jev_key_missing');
+    await expect(page.locator('#moderation-events')).toContainText('审核失败，未放行');
+    assert.equal(await page.locator('img').count(), 0);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     await page.screenshot({
       path: fileURLToPath(new URL('../../../.local/admin-moderation-mobile.png', import.meta.url)),
       fullPage: true,
     });
     await page.getByRole('button', { name: '退出登录' }).click();
+    assert.equal(await page.locator('#moderation-events').textContent(), '');
+    assert.equal(await page.getByLabel('待审文本', { exact: true }).inputValue(), '');
+    await page.getByLabel('管理员密码', { exact: true }).fill('wrong_password_2026');
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('密码不正确');
     await page.getByLabel('管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByRole('button', { name: '登录管理', exact: true }).click();
     await page.locator('#show-accounts').click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
+    await page.getByRole('button', { name: '修改密码', exact: true }).click();
+    await page.getByLabel('当前管理员密码', { exact: true }).fill('wrong_password');
+    await page.getByLabel('新密码', { exact: true }).fill('新密码67890');
+    await page.getByLabel('确认新密码', { exact: true }).fill('新密码67890');
+    await page.getByRole('button', { name: '保存新密码', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('当前密码不正确');
+    await expect(page.getByRole('heading', { name: '修改管理员密码', exact: true })).toBeVisible();
+    await page.getByLabel('当前管理员密码', { exact: true }).fill('synthetic browser password');
+    await page.getByLabel('新密码', { exact: true }).fill('新密码67890');
+    await page.getByLabel('确认新密码', { exact: true }).fill('新密码67890');
+    await page.getByRole('button', { name: '保存新密码', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('密码已修改，当前保持登录');
+    await expect(page.getByRole('heading', { name: '修改管理员密码', exact: true })).toBeHidden();
+    await page.getByRole('button', { name: '退出登录' }).click();
+    await page.getByLabel('管理员密码', { exact: true }).fill('synthetic browser password');
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await expect(page.locator('#notice')).toContainText('密码不正确');
+    await page.getByLabel('管理员密码', { exact: true }).fill('新密码67890');
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
     await page.getByRole('button', { name: '退出登录' }).click();
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);
     assert.deepEqual(scriptErrors, []);

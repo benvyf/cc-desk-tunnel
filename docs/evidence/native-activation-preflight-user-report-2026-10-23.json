@@ -1,0 +1,16 @@
+{
+  "evidenceSource": "user-provided ubuntu-cc terminal output in this chat",
+  "recordedDate": "2026-10-23",
+  "timezone": "Asia/Kuala_Lumpur",
+  "scriptSha256": "5d80abc30774a6553d3c42e37f9184000cfd41e71d0bad2d6ed696ded2b370fc",
+  "scriptChecksumVerified": true,
+  "command": "sudo python3 /tmp/cc-native-activate.py --check",
+  "result": {
+    "preflightPassed": true,
+    "productionUnchanged": true,
+    "cutoverPerformed": false,
+    "imageId": "sha256:75e9c5895bfa232d78905bf1dbf127af173d9f5de88086dc93af80833c8a3b8f",
+    "realModelRequests": 0,
+    "realJevRequests": 0
+  }
+}

@@ -1,5 +1,11 @@
 # 单节点文本审核门禁
 
+> 新装流程已统一：固定官方 CLI 2.1.295，使用 `manage.sh init --moderation-config FILE` 或停服后的 `moderation-config FILE` 导入现有节点 JSON。新配置由 root 管理并只读挂载到 `/etc/claude-code`，生产入口同时启用聊天和原生终端审核。下文 `/data/config/moderation-node.json`、uid 1000/0600 及终端关闭等段落属于早期部署记录；当前默认流程见[部署手册](../deploy/README.md#固定-cli-与强制审核)，第一台已部署状态见[最新交接](开发交接与跨电脑续做指南-2026-10-23.md)。
+
+> 原生终端恢复评估：用户选择继续强制审核。官方故障阻断选项 `onFailure: "block"` 要求 CLI 2.1.295 及以上，当前固定 2.1.293 不能直接满足；未改生产、未升级 CLI、未发送模型请求，终端保持禁用。详见 [可行性与后续隔离验证条件](NATIVE-TERMINAL-MODERATION-ASSESSMENT.md)。
+
+> 当前状态（2026-10-23）：ubuntu-cc 已回传正式启用 PASS，客户端基础验收三项全部通过；真实消息的 JEV→Claude 完整链路尚未验收。切换脚本 `260224cbf2c7ba41db9e282fab94b2db5bf71d6f`；已验收镜像 `c132c31b978f47bcf5783cf374b841eddd86d6eef343cca751426691406d6e24`。本次切换未发送 Claude 模型请求，CLI/SDK、账号和路由一致。临时 SSH 领取授权已撤销，节点凭据保留；其余五台暂缓。下文准备与切换前状态是历史记录。
+
 本阶段在 ubuntu-cc 调用现有 Claude CLI 之前增加独立 HTTPS 文本审核。官方 CLI、SDK、启动参数、登录凭据、网络与代理、遥测配置保持原样；不发送额外 Claude 试验请求，不进行账号切换、协议转发或指纹修改。此设计不能保证平台不会触发账号风控。
 
 ## 覆盖范围
@@ -39,3 +45,57 @@ root 在 VPS 使用 `scripts/create-moderation-node.mjs` 创建配置，文件 0
 准备完成只输出脱敏结果和一次性领取配置用的 SSH **公钥**。私钥留在节点。后续可在 VPS 为该公钥配置短时有效、强制只读此节点配置、禁止端口转发和其他命令的 SSH 授权，再通过 SSH 领取配置，无需在聊天传递任何密钥。启用前重新确认节点空闲并断开客户端；保留当前镜像及一致性备份以支持回退。其他五台节点不在本阶段范围。
 
 用户已将两个新增类别阈值改为 0.5，部署必须完整保留当前数据库中的阈值、关键词、JEV 密钥和管理密码，不使用代码默认值覆盖。
+
+## 2026-10-23 部署进度
+
+VPS 管理服务已部署源码 `2638731374c87e767eca6ff1ec37b6a7352ab4d1`，24 个运行文件清单通过校验。新接口的公网认证、关键词拒绝、重复请求去重、管理员/节点权限隔离和临时节点凭据撤销已验证；未调用 JEV 或 Claude。数据库策略及密钥、管理密码、签名发布状态与部署前相同，两个新增类别均保持 0.5，自动续期 timer 已恢复。
+
+首次公网探测遇到 Nginx reload 后旧 worker 尚未退出而自动回退；加入仅针对未认证入口的短暂等待后再次部署通过。此前失败没有修改 Ubuntu。
+
+私有部署证据 `/root/.cc-update-admin/maintenance/moderation-gate-2638731374c8-r2/result.json`；此前运行目录 `/opt/cc-update-service.previous-moderation-gate-2638731374c8-r2`。凭据仍只保存在 VPS；尚未正式签发 ubuntu-cc 节点凭据。
+
+本地已通过核心门禁测试、相关原有消息路径、管理 API/用量测试、类型检查及真实浏览器管理页面测试。隔离检查脚本在本机以同样模拟逻辑通过；**Ubuntu 镜像构建和节点启用尚待执行，当前生产 CC 消息仍未接入审核**，不能据 VPS 上线宣称完成试点。
+
+下一步在 ubuntu-cc 执行以下固定源码的准备命令，不需要停止正式服务：
+
+```bash
+curl -fL 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2638731374c87e767eca6ff1ec37b6a7352ab4d1/scripts/prepare-moderation-pilot.py' -o /tmp/cc-moderation-2638731.py && echo 'ab1c224707d66c0af2ac4cffa18aa5db43c7177dd67050d1b862c73e22b9eef8  /tmp/cc-moderation-2638731.py' | sha256sum -c - && sudo python3 /tmp/cc-moderation-2638731.py --source 2638731374c87e767eca6ff1ec37b6a7352ab4d1
+```
+
+回传末尾 JSON、PASS 和 `ENROLLMENT_PUBLIC_KEY` 公钥行。私有状态在 `/var/lib/cc-moderation-pilot-2638731374c8`。不要回传里面的生产 inspect 或私钥。收到结果后再签发节点凭据，通过受限临时 SSH 领取；正式切换前重新确认空闲、断开旧客户端并准备一致性备份与回退，不能沿用早先的空闲确认。
+
+## Ubuntu 隔离准备已通过，等待空闲切换
+
+用户回传的 ubuntu-cc 准备结果全部通过，测试镜像 ID 为 `sha256:c132c31b978f47bcf5783cf374b841eddd86d6eef343cca751426691406d6e24`；受保护文件一致、正式容器未变、模型请求为 0。不能再重复构建或重新检查已验收旧代码。
+
+独立节点凭据现保存在 VPS `/root/.cc-update-admin/nodes/ubuntu-cc.json`，服务私有注册表只保存其哈希，已验证认证成功。用户回传的 SSH 公钥已获准临时读取**此文件**，带 `restrict`、强制命令和 UTC `2026-10-23T15:09:50Z` 到期时间（香港时间当日 23:09:50）。禁止 PTY、转发、agent 和任意其他命令；无 JEV 密钥或管理员令牌下发。若领取前授权已经过期，只续期这一条受限授权，不能更改管理密码、节点凭据或放开 SSH 权限。
+
+`scripts/activate-moderation-pilot.py --idle-confirmed` 的切换顺序：
+
+1. 核对已准备的固定镜像、正式容器与数据挂载；通过固定 VPS SSH 主机公钥领取此节点配置到节点 root 私有目录。
+2. 从与正式容器相同的网络命名空间发送一个空审核对象，预期认证后返回 400，确认凭据和连通性；空对象不会到达 JEV。
+3. 检查会话库没有 activeRun，停止此空闲节点并在本机保存一致性 `data.tar`、原 `service.env` 和 compose 环境文件。旧镜像单独打保留标签，无需再次导出整个镜像到另一台机器。
+4. 仅新增 `PROXY_MODERATION_CONFIG=/data/config/moderation-node.json`，配置属 uid 1000、权限 0600；切换到已经隔离验收的镜像，不构建、不拉取、不升级 CLI。
+5. 验证健康、TLS、控制认证，以及已有会话的 terminal.open 被拒绝；不发送 message.send、continue、compact 或账号命令。核对容器环境、路由与挂载、受保护账号/配置文件不变。
+
+脚本在 VPS Linux 临时目录使用模拟 Docker/SSH/健康检查的 4 个核心测试通过，覆盖配置保留/备份、启动验证失败后的自动回退、认证前检失败不停服，以及稍后回退保留新用户文件；测试未调用模型或真实 Docker。
+
+启用失败时自动恢复原镜像及两个环境文件，保留数据；因会话库代码与 schema 未改，不自动用旧数据覆盖用户历史。一致性数据档仅供必要时单独恢复。脚本保存为节点状态目录的 `activate.py`；手动回退命令为 `sudo python3 /var/lib/cc-moderation-pilot-2638731374c8/activate.py --rollback`。备份校验不通过会停止。
+
+用户已确认当前节点空闲、客户端断开，并执行 `bb4b358` 版切换脚本；脚本在第一步凭据领取/端点前检中止，尚未停服、备份或切换。VPS 记录确认领取公钥认证成功。发现端点前检的 `docker run` 缺少 `-i`，导致传入的 Node 检查脚本不能从 stdin 进入容器；已补上该参数，并新增直接覆盖真实 `receive_config` 参数的回归测试（修复前失败、修复后通过）。Linux 上全部 5 项脚本核心测试通过，无模型请求。
+
+修复后沿用本次空闲确认、已验收镜像和已领取配置重试，没有重新构建或轮换凭据。
+
+## 正式切换及客户端基础验收通过
+
+原生终端的后续候选方案见 [官方 2.1.295 终端审核评估](NATIVE-TERMINAL-MODERATION-ASSESSMENT.md)。候选准备不改变本节生产状态；恢复终端仍有未完成的输入路径验证，不能直接启用。
+
+用户已完成 `85876c41ffce` 的目标节点准备，候选镜像 `7154d370f8e5` 通过基础隔离检查，但补测复现权限弹窗 Tab 修改要求漏审。旧候选不得直接激活；修正版改为每批工具结束审核用户文本，并限制自定义命令展开，目标节点仍需运行 `verify-native-terminal-paths.py`。生产保持原聊天审核镜像及终端关闭状态，未修改 JEV 阈值或账号/路由配置。
+
+`adf26f5b4279` 在目标节点的 Tab 补测仍失败，拒绝标记到达模拟模型，不能激活。已补充本批工具结果持久化检查：仅在完整工具结果历史可读后审核同一快照，最多等待本机落盘 1 秒，超时阻断、不重试审核请求。5 项 hook 核心测试及类型检查通过，VPS 真实 CLI 的普通提交、交互问答、压缩、No/Tab 反馈和 SDK 集成通过；仍需 Ubuntu 续测。诊断日志改为 JSON 转义，避免 ANSI 控制码重绘终端。
+
+用户执行 `260224c` 版脚本回传 PASS：`moderationEnabled=true`、`terminalDisabledVerified=true`、`cutoverPerformed=true`、`rolledBack=false`、`modelRequests=0`；协议 20、TLS、控制认证通过，CLI/SDK、凭据和路由保持不变。节点一致性备份在 `/var/lib/cc-moderation-pilot-2638731374c8/activation-backup`，正式结果在同级 `activation-result.json`。
+
+已在 VPS 撤销仅对应此次领取公钥的一条 SSH 授权，保留其他管理员 SSH 授权、节点凭据和注册表。VPS 记录 `/root/.cc-update-admin/nodes/ubuntu-cc-activation-reported.json` 明确区分用户回传的节点证据与本机实际完成的授权撤销；当前电脑仍无 Ubuntu SSH 管理通道。
+
+用户已回传客户端三项全部通过：原会话历史、设备归属和统计正常；普通工作区文件可查看；原生终端按预期被拒绝。此验收未发送聊天消息、继续或压缩，不自动调用 Claude。普通客户端拒绝可能只显示“操作失败，请稍后再试”，详细原因在管理端或节点日志。下一步可由用户在正常使用时发送一条普通无害消息，核对回复和管理中心的 ubuntu-cc 审核记录、JEV 用量；在此之前，真实用户消息的完整 JEV→Claude 链路仍标记未验收。

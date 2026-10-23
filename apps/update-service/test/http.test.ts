@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test, type TestContext } from 'node:test';
@@ -8,6 +8,7 @@ import { signIndex } from '../../../packages/managed-updates/src/index.ts';
 import { UpdateStore } from '../src/store.ts';
 import { createUpdateServer } from '../src/http.ts';
 import { validateConfig } from '../src/config.ts';
+import { PasswordAuth } from '../src/password-auth.ts';
 
 async function fixture(t: TestContext) {
   const root = await mkdtemp(join(tmpdir(), 'cc-update-http-'));
@@ -82,6 +83,225 @@ test('each administration feature has an exact public shell address and rejects 
   assert.equal((await f.request('/cc-updates/admin/navigation.js')).status, 200);
   assert.equal((await f.request('/cc-updates/admin/missing-feature')).status, 404);
   assert.equal((await f.request('/cc-updates/admin/accounts/extra')).status, 404);
+});
+
+test('node review credentials are isolated, revocable, deduplicated and logged without text', async (t) => {
+  const f = await fixture(t);
+  const path = '/cc-updates/v1/moderation/check';
+  const token = 'n'.repeat(43);
+  const registry = join(f.root, 'private/moderation-nodes.json');
+  await writeFile(
+    registry,
+    JSON.stringify({ 'ubuntu-test': createHash('sha256').update(token).digest('hex') }),
+  );
+  const config = await (await f.request(api + '/moderation/config', { headers: f.headers })).json();
+  const { apiKeyConfigured, enforcement, rulesVersion, ...editable } = config;
+  assert.equal(
+    (
+      await f.request(api + '/moderation/config', {
+        method: 'PUT',
+        headers: f.headers,
+        body: JSON.stringify({ ...editable, keywords: ['blocked-fixture'], apiKey: null }),
+      })
+    ).status,
+    200,
+  );
+  const value = {
+    nodeId: 'ubuntu-test',
+    requestId: 'request-1',
+    sessionId: 'session-1',
+    deviceId: 'device-1',
+    kind: 'message.send',
+    text: 'blocked-fixture private text',
+  };
+  const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+  const check = (data = value, custom = headers) =>
+    f.request(path, { method: 'POST', headers: custom, body: JSON.stringify(data) });
+  assert.equal((await check(value, f.headers)).status, 401);
+  assert.equal((await f.request(api + '/status', { headers })).status, 401);
+  assert.equal((await check({ ...value, nodeId: 'other-node' })).status, 400);
+  const first = await check();
+  assert.equal(first.status, 200);
+  const decision = await first.json();
+  assert.deepEqual(Object.keys(decision).sort(), ['allowed', 'id']);
+  assert.equal(decision.allowed, false);
+  assert.deepEqual(await (await check()).json(), decision);
+  assert.equal((await check({ ...value, text: 'different' })).status, 409);
+  const failed = await check({
+    ...value,
+    requestId: 'request-2',
+    text: 'missing key fails closed',
+  });
+  assert.equal((await failed.json()).allowed, false);
+  const events = await (await f.request(api + '/moderation/events', { headers: f.headers })).json();
+  assert.equal(events.filter((event: { kind: string }) => event.kind === 'node.review').length, 2);
+  assert.ok(
+    events.some(
+      (event: { actor: string; detail: { requestId: string } }) =>
+        event.actor === 'ubuntu-test' && event.detail.requestId === value.requestId,
+    ),
+  );
+  assert.ok(!JSON.stringify(events).includes(value.text));
+  await writeFile(registry, '{}');
+  assert.equal((await check()).status, 401);
+});
+
+test('password setup/login require same-origin requests, sessions authorize admin API and logout revokes them', async (t) => {
+  const f = await fixture(t);
+  const password = '管理员密码测试_2026_secure';
+  const auth = new PasswordAuth(join(f.root, 'private'));
+  const code = await auth.issueSetup();
+  const post = (path: string, data: unknown, origin = f.config.origin) =>
+    f.request(api + '/auth/' + path, {
+      method: 'POST',
+      headers: { origin, 'content-type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+  assert.equal(
+    (await post('setup', { setupToken: code, password }, 'https://wrong.invalid')).status,
+    403,
+  );
+  assert.equal((await post('setup', { setupToken: code, password, extra: true })).status, 400);
+  const setup = await post('setup', { setupToken: code, password });
+  assert.equal(setup.status, 200);
+  const { sessionToken } = await setup.json();
+  const sessionHeaders = { authorization: `Bearer ${sessionToken}`, origin: f.config.origin };
+  assert.equal((await f.request(api + '/status', { headers: sessionHeaders })).status, 200);
+  assert.equal((await post('setup', { setupToken: code, password })).status, 401);
+  assert.equal((await post('login', { password: 'wrong_password_2026' })).status, 401);
+  const logged = await post('login', { password });
+  assert.equal(logged.status, 200);
+  assert.ok((await logged.json()).sessionToken);
+  assert.equal(
+    (await f.request(api + '/auth/logout', { method: 'POST', headers: sessionHeaders })).status,
+    204,
+  );
+  assert.equal((await f.request(api + '/status', { headers: sessionHeaders })).status, 401);
+  assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
+});
+
+test('password login attempts share rate limiting and bound JSON body size', async (t) => {
+  const f = await fixture(t);
+  const password = 'local_password_fixture_2026';
+  const auth = new PasswordAuth(join(f.root, 'private'));
+  await auth.setup(await auth.issueSetup(), password);
+  const login = (value: string) =>
+    f.request(api + '/auth/login', {
+      method: 'POST',
+      headers: { origin: f.config.origin, 'content-type': 'application/json' },
+      body: JSON.stringify({ password: value }),
+    });
+  assert.equal((await login('x'.repeat(2049))).status, 413);
+  for (let attempt = 0; attempt < 30; attempt++) assert.equal((await login('short')).status, 401);
+  assert.equal((await login(password)).status, 429);
+  assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
+});
+
+test('password change requires admin authentication, same origin and correct current password', async (t) => {
+  const f = await fixture(t);
+  const auth = new PasswordAuth(join(f.root, 'private'));
+  await auth.setup(await auth.issueSetup(), 'oldpwd12');
+  const login = await f.request(api + '/auth/login', {
+    method: 'POST',
+    headers: f.headers,
+    body: JSON.stringify({ password: 'oldpwd12' }),
+  });
+  const { sessionToken } = await login.json();
+  const headers = { ...f.headers, authorization: `Bearer ${sessionToken}` };
+  const change = (data: unknown, custom = headers) =>
+    f.request(api + '/auth/password', {
+      method: 'POST',
+      headers: custom,
+      body: JSON.stringify(data),
+    });
+  const input = { currentPassword: 'oldpwd12', newPassword: 'newpwd34' };
+  assert.equal((await change(input, { ...headers, authorization: '' })).status, 401);
+  assert.equal((await change(input, { ...headers, origin: 'https://wrong.invalid' })).status, 403);
+  assert.equal((await change({ ...input, newPassword: '1234567' })).status, 400);
+  const wrong = await change({ ...input, currentPassword: 'incorrect' });
+  assert.equal(wrong.status, 400);
+  assert.match((await wrong.json()).error, /当前密码不正确/);
+  assert.equal((await f.request(api + '/status', { headers })).status, 200);
+  const changed = await change(input);
+  assert.equal(changed.status, 200);
+  const replacement = (await changed.json()).sessionToken;
+  assert.equal((await f.request(api + '/status', { headers })).status, 401);
+  assert.equal(
+    (
+      await f.request(api + '/status', {
+        headers: { ...headers, authorization: `Bearer ${replacement}` },
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await f.request(api + '/status', { headers: f.headers })).status, 200);
+});
+
+test('moderation shares administrator auth, keeps credentials private and records fail-closed previews', async (t) => {
+  const f = await fixture(t);
+  const path = `${api}/moderation`;
+  for (const suffix of ['/config', '/events', '/usage'])
+    assert.equal((await f.request(path + suffix)).status, 401);
+  const read = async () => (await f.request(path + '/config', { headers: f.headers })).json();
+  const config = await read();
+  assert.equal(config.mode, 'keyword_and_api');
+  assert.equal(config.enforcement, 'node-api-ready');
+  assert.equal(config.apiKey, undefined);
+  const usage = await (await f.request(path + '/usage', { headers: f.headers })).json();
+  assert.equal(usage.requests, 0);
+  assert.equal(usage.totalTokens, 0);
+  assert.equal(usage.remainingTokens, null);
+  assert.equal(usage.remainingBalance, null);
+  const { apiKeyConfigured, enforcement, rulesVersion, ...editable } = config;
+  const input = { ...editable, keywords: ['block'], apiKey: 'http_fixture_secret_key' };
+  const put = (data: unknown, headers = f.headers) =>
+    f.request(path + '/config', {
+      method: 'PUT',
+      headers,
+      body: JSON.stringify(data),
+    });
+  assert.equal((await put(input, { ...f.headers, origin: 'https://wrong.invalid' })).status, 403);
+  const saved = await put(input);
+  assert.equal(saved.status, 200);
+  assert.equal((await saved.json()).apiKeyConfigured, true);
+  assert.ok(!JSON.stringify(await read()).includes(input.apiKey));
+  assert.equal((await put(input)).status, 409);
+  const preview = await f.request(path + '/preview', {
+    method: 'POST',
+    headers: f.headers,
+    body: JSON.stringify({ text: 'BLOCK me' }),
+  });
+  assert.equal(preview.status, 200);
+  assert.equal((await preview.json()).action, 'keyword_block');
+  const {
+    apiKeyConfigured: configured,
+    enforcement: connected,
+    rulesVersion: rules,
+    ...latest
+  } = await read();
+  assert.equal((await put({ ...latest, apiKey: '' })).status, 200);
+  const failure = await f.request(path + '/preview', {
+    method: 'POST',
+    headers: f.headers,
+    body: JSON.stringify({ text: 'not matched' }),
+  });
+  const failed = await failure.json();
+  assert.equal(failed.allowed, false);
+  assert.equal(failed.error, 'jev_key_missing');
+  const events = await (await f.request(path + '/events', { headers: f.headers })).json();
+  assert.ok(events.some((event: { id: string }) => event.id === failed.id));
+  assert.ok(!JSON.stringify(events).includes(input.apiKey));
+  assert.ok(!JSON.stringify(events).includes('not matched'));
+  assert.equal(
+    (
+      await f.request(path + '/preview', {
+        method: 'POST',
+        headers: f.headers,
+        body: JSON.stringify({ text: 'ok', apiKey: 'bad' }),
+      })
+    ).status,
+    400,
+  );
 });
 
 test('HTTP provides authenticated create/upload/activate and exact public signed GET/HEAD', async (t) => {

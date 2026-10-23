@@ -2,6 +2,8 @@
 
 > 本记录的 build 1 未发布。用户随后授权更换生产身份，凭据已集中保存在 VPS，客户端从 build 2 起固定新公钥。新方案见 [VPS 统一发布](VPS-RELEASE-CREDENTIALS.md)，不再等待旧电脑凭据。
 
+> build 2 已发布，历史状态见 [Build 2 发布记录](UPDATE-CLIENT-BUILD-2.md)；当前完整安装包见 [Build 3 上线记录](CLIENT-DOWNLOAD-DEPLOYMENT.md)。以下为旧 build 1 的历史记录。
+
 日期：2026-10-23，Asia/Hong_Kong。安装包已本机构建并核对，尚未生成生产签名索引或上传更新通道。
 
 ## 制品身份

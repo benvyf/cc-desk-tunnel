@@ -35,7 +35,7 @@ main() {
 
   # What is missing is reported together with how to install it; nothing is installed from here.
   local missing=() packages=() tool
-  for tool in curl tar openssl sha256sum; do
+  for tool in curl tar openssl sha256sum python3; do
     command -v "$tool" >/dev/null || { missing+=("$tool"); packages+=("$([[ "$tool" = sha256sum ]] && echo coreutils || echo "$tool")"); }
   done
   command -v docker >/dev/null || { missing+=("Docker Engine"); packages+=(docker.io); }

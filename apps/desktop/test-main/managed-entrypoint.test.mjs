@@ -72,7 +72,7 @@ test(
       ['-c', `export PATH='${root}/bin':"$PATH"; bash '${root}/entrypoint.sh' server`],
       { encoding: 'utf8' },
     );
-    assert.ok(stdout.includes(`${root}/app/apps/server/src/main.ts`), stdout);
+    assert.ok(stdout.includes(`${root}/app/apps/server/src/managed-main.ts`), stdout);
     assert.equal(stdout.includes(`${root}/data/program/99.0.0/apps/server/src/main.ts`), false);
     assert.equal(readFileSync(join(directory, 'data/program/attempts'), 'utf8'), '0\n');
     assert.equal(readFileSync(join(directory, 'data/program/current'), 'utf8'), '99.0.0\n');

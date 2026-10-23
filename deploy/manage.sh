@@ -12,6 +12,8 @@ Usage:
   manage.sh init --host HOST [--mode fingerprint|certificate|nginx]
     [--data ABSOLUTE_PATH] [--control-port 8787]
     [--cert FULLCHAIN --key PRIVATE_KEY] [--url wss://DOMAIN/ws] [--token SECRET]
+    --moderation-config /absolute/path/to/issued-node.json
+  manage.sh moderation-config FILE          import an existing node JSON while stopped; no enrollment or restart
   manage.sh build|up|status|logs|stop|restart|uninstall|connection|summary
   manage.sh upgrade [--from SERVER_ARCHIVE]   rebuild the image and replace the container in place
   manage.sh client INSTALLER_EXE              disabled; distribute custom installers manually
@@ -22,7 +24,8 @@ Usage:
   manage.sh certificate FULLCHAIN PRIVATE_KEY
   manage.sh renew
 
-Requires Docker Engine + Compose v2+, Bash, OpenSSL, curl, tar.
+Requires Docker Engine + Compose v2+, Bash, Python 3, OpenSSL, curl, tar.
+Reviewed production setup/init and moderation-config require sudo/root.
 Use sudo if your user cannot access Docker. Config defaults to .local/docker.env;
 set PROXY_DEPLOY_CONFIG to manage a different isolated installation.
 Set PROXY_COMPOSE_FILE when managing an image-only standalone compose.yml.
@@ -33,7 +36,18 @@ fail() { echo "$*" >&2; exit 1; }
 valid_port() { [[ "$1" =~ ^[0-9]+$ ]] && ((10#$1 >= 1024 && 10#$1 <= 65535)); }
 safe_value() { [[ "$1" != *"'"* && "$1" != *$'\n'* && "$1" != *$'\r'* && "$1" != *'$'* && "$1" != *'`'* ]]; }
 write_var() { safe_value "$2" || fail "Unsupported characters in $1"; printf "%s='%s'\n" "$1" "$2"; }
-dc() { docker compose --env-file "$CONFIG" -p "$PROJECT_NAME" -f "$COMPOSE" "$@"; }
+dc() {
+  local files=(-f "$COMPOSE")
+  [[ -z "${MANAGED_CONFIG_DIR:-}" ]] || files+=(-f "$ROOT/deploy/docker/reviewed.compose.yaml")
+  docker compose --env-file "$CONFIG" -p "$PROJECT_NAME" "${files[@]}" "$@"
+}
+review_config() {
+  python3 "$ROOT/deploy/configure-moderation.py" "$@" --data "$DATA_DIR" --deploy-config "$CONFIG"
+}
+review_ready() {
+  [[ -n "${MANAGED_CONFIG_DIR:-}" ]] || fail "Import an existing node JSON with sudo manage.sh moderation-config FILE before starting or upgrading."
+  review_config check >/dev/null
+}
 load() {
   [[ -f "$CONFIG" ]] || fail "Run init first."
   # This file is a private, locally generated deployment configuration.
@@ -87,7 +101,11 @@ build_image() {
   fi
   dc build --pull
 }
-running() { [[ -n "$(dc ps --status running -q proxy)" ]]; }
+running() {
+  local ids
+  ids="$(dc ps --status running -q proxy)" || fail "Unable to determine container state; no maintenance performed."
+  [[ -n "$ids" ]]
+}
 ask() {
   local prompt="$1" default="${2:-}" answer
   read -r -p "$prompt${default:+ [$default]}: " answer
@@ -111,6 +129,8 @@ summary() {
   echo "  需放行端口 $([[ "$MODE" = nginx ]] && echo "nginx 的 443/TCP" || echo "$CONTROL_PORT/TCP")"
   echo "  数据目录   $DATA_DIR"
   echo "  部署配置   $CONFIG"
+  echo "  默认构建   固定官方 CLI 2.1.295；实际版本以目标镜像为准"
+  echo "  审核配置   ${MANAGED_CONFIG_DIR:-未接入；启动前须导入节点配置}（不显示密钥）"
   id="$(dc ps -q proxy 2>/dev/null || true)"
   echo "  容器状态   $([[ -n "$id" ]] && docker inspect --format '{{.State.Health.Status}}' "$id" || echo 未启动)"
   echo "下一步"
@@ -150,11 +170,13 @@ case "$command" in
       default_data="${HOME}/.local/share/cc-desk-tunnel-container"
       [[ "$(id -u)" != 0 ]] || default_data=/srv/cc-desk-tunnel
       options+=(--data "$(ask "数据目录（新建，存放账号、会话与证书）" "$default_data")")
+      options+=(--moderation-config "$(ask "管理中心为本节点签发的 JSON 文件绝对路径")")
       token="$(ask "服务凭据（至少 24 位；留空自动生成）")"
       [[ -z "$token" ]] || options+=(--token "$token")
       bash "${BASH_SOURCE[0]}" init "${options[@]}"
     fi
     load
+    review_ready
     echo "构建镜像（首次需要几分钟）…"
     build_image
     dc up -d
@@ -164,12 +186,13 @@ case "$command" in
   init)
     HOST='' MODE=fingerprint DATA_DIR="${HOME}/.local/share/cc-desk-tunnel-container"
     [[ "$(id -u)" != 0 ]] || DATA_DIR=/srv/cc-desk-tunnel
-    CONTROL_PORT=8787 CERT='' KEY='' URL='' TOKEN=''
+    CONTROL_PORT=8787 CERT='' KEY='' URL='' TOKEN='' NODE_CONFIG=''
     while (($#)); do
       [[ $# -ge 2 ]] || fail "Missing value for $1"
       case "$1" in
         --host) HOST="$2" ;; --mode) MODE="$2" ;; --data) DATA_DIR="$2" ;;
         --control-port) CONTROL_PORT="$2" ;;
+        --moderation-config) NODE_CONFIG="$2" ;;
         # Given by scripts written for 0.2.9 and earlier, when the execution channel had a port of its own.
         --frps-port) ;;
         --cert) CERT="$2" ;; --key) KEY="$2" ;; --url) URL="$2" ;; --token) TOKEN="$2" ;;
@@ -185,7 +208,10 @@ case "$command" in
     [[ "$DATA_DIR" != / && "$DATA_DIR" != "$(realpath -- "$HOME")" ]] || fail "Choose a dedicated data directory."
     [[ ! -e "$CONFIG" ]] || fail "Configuration already exists; use upgrade or a separate PROXY_DEPLOY_CONFIG."
     safe_value "$DATA_DIR" || fail "Unsupported data path."
-    [[ "$(id -u)" = 0 || "$(id -u)" = 1000 ]] || fail "Run init with sudo; container data needs uid 1000 ownership."
+    [[ "$(id -u)" = 0 ]] || fail "Use sudo: reviewed deployment configuration must be root managed."
+    command -v python3 >/dev/null || fail "Install Python 3 first."
+    [[ "$NODE_CONFIG" = /* && -f "$NODE_CONFIG" ]] || fail "--moderation-config requires an absolute path to this node's already issued JSON."
+    python3 "$ROOT/deploy/configure-moderation.py" validate-node "$NODE_CONFIG" >/dev/null
     [[ ! -e "$DATA_DIR" ]] || fail "Data directory already exists; do not overwrite it."
     command -v docker >/dev/null && docker compose version >/dev/null || fail "Install Docker Engine and Compose first."
     command -v openssl >/dev/null || fail "Install OpenSSL first."
@@ -223,6 +249,9 @@ case "$command" in
       write_var PROXY_DATA_DIR /data/state
       write_var CLAUDE_CONTEXT_RETENTION_DAYS 3650
       write_var CLAUDE_SETTINGS_PATH /data/config/provider.json
+      write_var DISABLE_TELEMETRY 1
+      write_var DISABLE_ERROR_REPORTING 1
+      write_var DISABLE_AUTOUPDATER 1
     } > "$DATA_DIR/config/service.env"
     printf '{}\n' > "$DATA_DIR/config/provider.json"
     PROJECT_NAME="cc-desk-tunnel-$(openssl rand -hex 4)"
@@ -238,18 +267,28 @@ case "$command" in
     if [[ "$(id -u)" = 0 ]]; then
       chown -R 1000:1000 "$DATA_DIR"
     fi
-    echo "Initialized. Edit $DATA_DIR/config/provider.json for API settings, then build and up."
+    review_config configure --node-config "$NODE_CONFIG"
+    echo "Initialized with mandatory chat/native review. No account login or model request sent."
+    echo "Edit $DATA_DIR/config/provider.json for API settings, then build and up."
     echo "Private client connection information: manage.sh connection"
     exit ;;
 esac
 load
 case "$command" in
   build) build_image ;;
-  up) dc up -d; wait_healthy ;;
+  up) review_ready; dc up -d; wait_healthy ;;
   status) dc ps ;;
   logs) dc logs --tail=100 -f ;;
   stop) dc stop ;;
-  restart) dc restart; wait_healthy ;;
+  restart) review_ready; dc restart; wait_healthy ;;
+  moderation-config)
+    [[ $# = 1 && "$1" = /* && -f "$1" ]] || fail "Specify this node's existing JSON file using an absolute path."
+    running_ids="$(docker ps -q --filter "label=com.docker.compose.project=$PROJECT_NAME" --filter label=com.docker.compose.service=proxy)" \
+      || fail "Unable to confirm this deployment is stopped; no configuration changed."
+    [[ -z "$running_ids" ]] || fail "Stop this deployment before importing review configuration; no service was stopped automatically."
+    review_config configure --node-config "$1"
+    echo "Review configuration imported; no credential issued, no restart or model request performed."
+    ;;
   upgrade)
     # Data, account and configuration live outside the image; only the program is replaced.
     if [[ "${1:-}" = --from ]]; then
@@ -261,7 +300,7 @@ case "$command" in
     fi
     # The port frp had before 0.2.10 is no longer published; its setting goes with it.
     if grep -q '^FRPS_PORT=' "$CONFIG"; then sed -i '/^FRPS_PORT=/d' "$CONFIG"; fi
-    build_image; dc up -d; wait_healthy; summary ;;
+    review_ready; build_image; dc up -d; wait_healthy; summary ;;
   summary) summary ;;
   token)
     # Every saved client login stops working; the summary prints the new token.
@@ -305,7 +344,12 @@ case "$command" in
     if tar -tzf "$1" | grep -E '(^/|(^|/)\.\.(/|$))' >/dev/null; then fail "Unsafe archive paths."; fi
     tar -xzf "$1" -C "$DATA_DIR" --no-same-owner
     [[ "$(id -u)" != 0 ]] || chown -R 1000:1000 "$DATA_DIR"
-    echo "Restored. Confirm config/service.env, host, port and certificate settings before up."
+    node_config="$DATA_DIR/.managed/claude-code/moderation-node.json"
+    if ! tar -tzf "$1" | grep -Fx './.managed/claude-code/moderation-node.json' >/dev/null; then
+      [[ ! -f "$DATA_DIR/config/moderation-node.json" ]] || node_config="$DATA_DIR/config/moderation-node.json"
+    fi
+    review_config configure --node-config "$node_config"
+    echo "Restored with root-managed node review configuration. Confirm host, port and certificates before up."
     ;;
   certificate|renew)
     [[ "$MODE" != nginx ]] || fail "nginx owns and renews the frontend certificate; reload nginx there."
