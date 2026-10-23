@@ -45,7 +45,9 @@ VPS 保留 `/root/.cc-update-admin/source-build-2/` 的干净源码及 `release-
 
 原 `%APPDATA%/CC Desk Tunnel` 和独立验收配置中的设备 ID 一致，保存的地址、指纹、模式和自动登录设置一致；令牌密文未输出或改写。两个配置的定时任务数均为 0。安装前记录了原 settings、草稿及任务文件的 hash，未修改这些文件。安装器使用交互 NSIS，安装结束不自动运行，配置位于安装目录之外，卸载配置为不删除用户数据。
 
-下一操作：用户从托盘完全退出验收客户端，运行 `artifacts/managed-build-2-4a39bc3/CC-Desk-Tunnel-Setup-0.3.6-x64.exe`，将正式版安装到原 `D:/cc-desk-tunnel/CC Desk Tunnel/`。先不要启动；开发工具随后读取实际安装的 app.asar 核对 build、版本、协议、公钥和源码，并比较原配置。再由用户启动正式安装版，检查连接及“关于与更新”。当前没有启动安装器、替换程序、启动正式客户端、续期或推广 stable。
+用户已回报“已安装，未启动”。2026-10-23 12:16（香港时间）安装后检查通过：原目录中实际 app.asar 的版本为 0.3.6、build 2、协议 20，源码提交和内嵌新公钥匹配；系统卸载注册项已从 0.3.5 更新至 0.3.6，仍为原目录的所有用户安装。没有发现运行中的 CC 进程。原 settings、草稿、任务文件的完整 hash 均未变，原设备 ID 保留。以实际安装身份再次核对实时 pilot 签名及更新候选，结果为 `current`，revision 3 有效。
+
+下一操作：用户运行 `D:/cc-desk-tunnel/CC Desk Tunnel/CC Desk Tunnel.exe`（不再使用独立验收 user-data-dir），检查原连接、设备归属和历史保留，并在“关于与更新”确认 build 2 / pilot / 协议 20，手动检查更新预期显示“当前没有可用更新”。实际客户端界面及其 Chromium 网络栈查询结果待回报，不能由命令行验签代替。未续期或推广 stable，模型测试继续暂停。
 
 本地检查脚本 `.local/windows-build2-install-acceptance.mjs` 提供 `preflight` 与 `verify-installed` 两个阶段，证据在 `artifacts/windows-build2-install-acceptance/`，均不进入 Git；脚本只读取安装文件/本机配置并查询 VPS 公开更新入口，不启动 Claude。
 
