@@ -1,6 +1,6 @@
 # 定制更新服务：正式部署与维护
 
-> 最新审核规则：运行源码 `e1b6347`，规则 `cc-text-20-v4`、策略 revision 5，新增破甲与蒸馏取数审核，20 项阈值中新增两项为 0.35，原 18 项为 0.5。验证、修正与回滚资料见 [专项审核记录](JEV-ABUSE-REVIEW.md)。密码、发布、密钥和累计用量保持一致；以下为此前部署历史。
+> 最新状态（2026-10-23）：VPS 运行 `2638731`，独立节点审核接口已上线，用户手调的新增两项阈值 0.5 保留。ubuntu-cc 已回传门禁正式切换 PASS，客户端验收待完成；临时 SSH 领取公钥授权已撤销，节点凭据保留。CLI/SDK、账号及路由不变，切换未发送 Claude 模型请求。详见 [节点门禁记录](MODERATION-NODE-GATE.md)；以下旧阈值和未接入状态为历史记录。
 
 > 最新审核配置（2026-10-23 15:30 香港时间）：运行源码更新为 `c0309cb`，JEV 密钥由用户保存，18 类规则阈值为 0.5；完成 30 次用户授权的 JEV 真实试算，上线调用次数与 Token 累计。CC 消息门禁仍未接入。备份、用量与验证见 [阈值与用量验收](JEV-THRESHOLD-CALIBRATION.md)。下方 `4e3ce9d` 为上一部署记录。
 
@@ -110,4 +110,4 @@ PY
 
 部署验证确认关键词拦截、权限隔离、去重、撤销均正常，两个新增阈值原样保持 0.5，部署未发送 JEV/Claude 请求。证据在 `/root/.cc-update-admin/maintenance/moderation-gate-2638731374c8-r2/result.json`，运行目录回退副本为 `/opt/cc-update-service.previous-moderation-gate-2638731374c8-r2`。自动续期 timer 已恢复运行。
 
-这仅表示 VPS 审核接口就绪，ubuntu-cc 消息门禁尚未启用，其他五台节点暂缓。隔离准备和后续节点凭据交付方式见 [MODERATION-NODE-GATE.md](MODERATION-NODE-GATE.md)。不得为此次门禁升级或重装官方 CLI，不改原账号与路由，也不使用生产 Claude 做自动测试。
+后续 ubuntu-cc 已使用 `260224c` 切换脚本回传正式启用 PASS，客户端验收待完成；其他五台节点暂缓。隔离准备、凭据交付、切换及本机备份记录见 [MODERATION-NODE-GATE.md](MODERATION-NODE-GATE.md)。不得为此次门禁升级或重装官方 CLI，不改原账号与路由，也不使用生产 Claude 做自动测试。

@@ -1,5 +1,7 @@
 # 单节点文本审核门禁
 
+> 当前状态（2026-10-23）：ubuntu-cc 已回传正式启用 PASS，客户端验收待完成。切换脚本 `260224cbf2c7ba41db9e282fab94b2db5bf71d6f`；已验收镜像 `c132c31b978f47bcf5783cf374b841eddd86d6eef343cca751426691406d6e24`。本次切换未发送 Claude 模型请求，CLI/SDK、账号和路由一致。临时 SSH 领取授权已撤销，节点凭据保留；其余五台暂缓。下文准备与切换前状态是历史记录。
+
 本阶段在 ubuntu-cc 调用现有 Claude CLI 之前增加独立 HTTPS 文本审核。官方 CLI、SDK、启动参数、登录凭据、网络与代理、遥测配置保持原样；不发送额外 Claude 试验请求，不进行账号切换、协议转发或指纹修改。此设计不能保证平台不会触发账号风控。
 
 ## 覆盖范围
@@ -78,4 +80,12 @@ curl -fL 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2638731374c87e
 
 用户已确认当前节点空闲、客户端断开，并执行 `bb4b358` 版切换脚本；脚本在第一步凭据领取/端点前检中止，尚未停服、备份或切换。VPS 记录确认领取公钥认证成功。发现端点前检的 `docker run` 缺少 `-i`，导致传入的 Node 检查脚本不能从 stdin 进入容器；已补上该参数，并新增直接覆盖真实 `receive_config` 参数的回归测试（修复前失败、修复后通过）。Linux 上全部 5 项脚本核心测试通过，无模型请求。
 
-**当前等待使用修正版重试，尚未启用生产审核。** 保持本次已确认的空闲和客户端断开状态，沿用已验收镜像与已领取配置，不重新构建、不轮换凭据。最终以节点回传的 `activation-result.json`、PASS 和客户端验收为准；成功后撤销 VPS 上仅对应此领取公钥的临时 SSH 授权。
+修复后沿用本次空闲确认、已验收镜像和已领取配置重试，没有重新构建或轮换凭据。
+
+## 正式切换通过，等待客户端验收
+
+用户执行 `260224c` 版脚本回传 PASS：`moderationEnabled=true`、`terminalDisabledVerified=true`、`cutoverPerformed=true`、`rolledBack=false`、`modelRequests=0`；协议 20、TLS、控制认证通过，CLI/SDK、凭据和路由保持不变。节点一致性备份在 `/var/lib/cc-moderation-pilot-2638731374c8/activation-backup`，正式结果在同级 `activation-result.json`。
+
+已在 VPS 撤销仅对应此次领取公钥的一条 SSH 授权，保留其他管理员 SSH 授权、节点凭据和注册表。VPS 记录 `/root/.cc-update-admin/nodes/ubuntu-cc-activation-reported.json` 明确区分用户回传的节点证据与本机实际完成的授权撤销；当前电脑仍无 Ubuntu SSH 管理通道。
+
+下一步只做客户端验收：重连 ubuntu-cc，查看原会话/设备归属、统计和普通工作区文件，打开原生终端应被拒绝。暂不发送聊天消息、继续或压缩，不自动调用 Claude。普通客户端拒绝可能只显示“操作失败，请稍后再试”，详细原因在管理端或节点日志。此阶段尚未进行真实用户消息的完整 JEV→Claude 链路验收，不以模拟测试或切换 PASS 代替。
