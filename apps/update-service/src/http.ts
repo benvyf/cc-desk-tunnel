@@ -51,6 +51,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['app.js', 'text/javascript'],
     ['moderation.js', 'text/javascript'],
     ['password-login.js', 'text/javascript'],
+    ['navigation.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -58,6 +59,8 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
       type: type!,
     });
   }
+  for (const page of ['accounts', 'updates', 'moderation'])
+    assets.set(`${base}/${page}`, assets.get(base + '/')!);
   const expectedTokenHash = Buffer.from(config.adminTokenSha256, 'hex');
   const monitor = config.monitorNodes
     ? new MonitorStore(config.dataDir, Object.keys(config.monitorNodes))

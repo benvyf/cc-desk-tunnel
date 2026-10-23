@@ -89,6 +89,7 @@ test(
       viewport: { width: 1440, height: 1100 },
     });
     const page = await context.newPage();
+    await page.clock.install();
     const scriptErrors: string[] = [];
     page.on('pageerror', (e) => scriptErrors.push(e.message));
     const bytes = Buffer.from('browser installer fixture');
@@ -166,11 +167,50 @@ test(
     );
     assert.equal(reportResponse.status, 204);
     await page.goto(origin + '/cc-updates/admin/');
+    const pageReads: string[] = [];
+    page.on('request', (request) => {
+      if (request.method() === 'GET' && request.url().includes('/admin/api/'))
+        pageReads.push(new URL(request.url()).pathname.split('/api/')[1]!);
+    });
     await page.getByText('使用旧管理令牌', { exact: true }).click();
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
     await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
-    await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
     await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
+    await expect(page.locator('#show-accounts')).toHaveAttribute('aria-current', 'page', {
+      timeout: 1000,
+    });
+    await expect(page).toHaveURL(origin + '/cc-updates/admin/accounts');
+    await expect(page.locator('#updates-panel')).toBeHidden();
+    await expect(page.locator('#moderation-panel')).toBeHidden();
+    assert.deepEqual(pageReads, ['monitor']);
+    assert.ok(
+      await page.evaluate(
+        () =>
+          document.querySelector('nav')!.getBoundingClientRect().bottom <=
+          document.querySelector('#monitor-panel')!.getBoundingClientRect().top,
+      ),
+    );
+    await page.locator('#show-updates').click();
+    await expect(page).toHaveURL(origin + '/cc-updates/admin/updates');
+    await expect(page.locator('#monitor-panel')).toBeHidden();
+    await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
+    assert.equal(pageReads.at(-1), 'status');
+    await expect(page.locator('body')).not.toHaveClass(/pending/);
+    const updateReads = [...pageReads];
+    await page.clock.runFor(30001);
+    assert.deepEqual(pageReads, updateReads, 'hidden account page must not poll');
+    await page.goBack();
+    await expect(page).toHaveURL(origin + '/cc-updates/admin/accounts');
+    await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
+    await page.goForward();
+    await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
+    await page.locator('#show-accounts').click();
+    await expect(page.locator('body')).not.toHaveClass(/pending/);
+    const monitorReads = pageReads.filter((path) => path === 'monitor').length;
+    await page.clock.runFor(30001);
+    await expect
+      .poll(() => pageReads.filter((path) => path === 'monitor').length)
+      .toBeGreaterThan(monitorReads);
     await expect(
       page.getByRole('heading', { name: 'owner@example.invalid', exact: true }),
     ).toBeVisible();
@@ -198,6 +238,23 @@ test(
     ).toBeVisible();
     const accountNote = '主力账号 <img src=x onerror=alert(1)>';
     await page.getByLabel('账号备注').fill(accountNote);
+    let releasePage!: () => void;
+    const holdPage = new Promise<void>((resolve) => {
+      releasePage = resolve;
+    });
+    await page.route('**/admin/api/status', async (route) => {
+      await holdPage;
+      await route.continue();
+    });
+    await page.locator('#show-updates').click();
+    await expect(page.locator('#monitor-panel')).toBeHidden();
+    await page.goBack();
+    releasePage();
+    await expect(page.locator('body')).not.toHaveClass(/pending/);
+    await page.unroute('**/admin/api/status');
+    await expect(page).toHaveURL(origin + '/cc-updates/admin/accounts');
+    await expect(page.locator('#updates-panel')).toBeHidden();
+    await expect(page.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.getByRole('button', { name: '刷新账号数据' }).click();
     await expect(page.getByLabel('账号备注')).toHaveValue(accountNote);
     let releaseNote!: () => void;
@@ -261,6 +318,18 @@ test(
     await expect(ownerCard).toContainText('历史绑定');
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await expect(page.locator('#monitor-count')).toContainText('已记录 2 个账号');
+    await page.screenshot({
+      path: fileURLToPath(new URL('../../../.local/admin-accounts-desktop.png', import.meta.url)),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 900 });
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
+    await page.screenshot({
+      path: fileURLToPath(new URL('../../../.local/admin-accounts-mobile.png', import.meta.url)),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 1440, height: 1100 });
+    await page.locator('#show-updates').click();
     await page.getByLabel('签名索引（JSON）').setInputFiles(signed);
     await page.getByRole('button', { name: '添加候选' }).click();
     await expect(page.getByText('签名索引已验证，候选已添加。')).toBeVisible();
@@ -292,6 +361,7 @@ test(
     await expect(page.getByRole('button', { name: '登录管理' })).toBeVisible();
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
     await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
+    await page.locator('#show-accounts').click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.getByRole('button', { name: '退出登录' }).click();
     const setupToken = await new PasswordAuth(join(root, 'data/private')).issueSetup();
@@ -302,11 +372,28 @@ test(
     await page.getByRole('button', { name: '保存密码并登录', exact: true }).click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.locator('#show-moderation').click();
+    await expect(page).toHaveURL(origin + '/cc-updates/admin/moderation');
+    await expect(page.locator('#monitor-panel')).toBeHidden();
+    await expect(page.locator('#updates-panel')).toBeHidden();
     await expect(page.locator('#moderation-mode')).toBeVisible();
     await expect(page.locator('#jev-usage')).not.toContainText('读取用量中');
+    await page.reload();
+    await expect(page.getByRole('button', { name: '登录管理', exact: true })).toBeVisible();
+    pageReads.length = 0;
+    await page.getByLabel('管理员密码', { exact: true }).fill('synthetic browser password');
+    await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await expect(page.locator('#moderation-mode')).toBeVisible();
+    await expect(page.locator('#jev-usage')).not.toContainText('读取用量中');
+    assert.deepEqual(pageReads, ['moderation/config', 'moderation/events', 'moderation/usage']);
+    await expect(page.locator('#monitor-panel')).toBeHidden();
+    await page.screenshot({
+      path: fileURLToPath(new URL('../../../.local/admin-moderation-mobile.png', import.meta.url)),
+      fullPage: true,
+    });
     await page.getByRole('button', { name: '退出登录' }).click();
     await page.getByLabel('管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByRole('button', { name: '登录管理', exact: true }).click();
+    await page.locator('#show-accounts').click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.getByRole('button', { name: '退出登录' }).click();
     assert.equal(await page.evaluate(() => localStorage.length + sessionStorage.length), 0);

@@ -29,12 +29,6 @@ export function setupModeration({ request, action, notice, element, date }) {
     jev_block: 'JEV 拦截',
     error: '审核失败，未放行',
   };
-  function show(moderation) {
-    $('updates-panel').hidden = moderation;
-    $('moderation-panel').hidden = !moderation;
-    $('show-updates').setAttribute('aria-pressed', String(!moderation));
-    $('show-moderation').setAttribute('aria-pressed', String(moderation));
-  }
   function renderConfig(value) {
     config = value;
     $('moderation-mode').value = value.mode;
@@ -100,14 +94,6 @@ export function setupModeration({ request, action, notice, element, date }) {
     await refreshEvents();
     await refreshUsage();
   }
-  $('show-updates').addEventListener('click', () => show(false));
-  $('show-moderation').addEventListener('click', () =>
-    action(async () => {
-      await refresh();
-      show(true);
-      notice('');
-    }),
-  );
   $('moderation-refresh').addEventListener('click', () => action(refresh));
   $('moderation-config').addEventListener('submit', (event) => {
     event.preventDefault();
@@ -161,9 +147,9 @@ export function setupModeration({ request, action, notice, element, date }) {
     });
   });
   return {
+    refresh,
     clear() {
       config = undefined;
-      show(false);
       $('moderation-config').reset();
       $('moderation-preview').reset();
       for (const id of [

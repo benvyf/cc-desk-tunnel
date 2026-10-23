@@ -134,6 +134,7 @@ button:disabled {
   border-color: #43516a;
 }
 button:focus-visible,
+a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible,
@@ -276,14 +277,39 @@ footer {
 #notice {
   padding: 12px 0;
 }
-nav {
+.main-nav {
   display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0 0 18px;
+  border-bottom: 1px solid #2a303b;
+  margin-bottom: 26px;
 }
-nav [aria-pressed='true'] {
+.main-nav a {
+  display: block;
+  flex-shrink: 0;
+  padding: 13px 20px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: #a9b8ce;
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+.main-nav a:hover {
+  background: #191f29;
+  color: #edf3ff;
+}
+.main-nav [aria-current='page'] {
   background: #303d50;
   border-color: #b8d8a0;
+  color: #edf3ff;
+}
+#monitor-panel > .section-heading,
+#updates-panel > .section-heading:first-child,
+#moderation-panel > .section-heading:first-child {
+  margin-top: 0;
 }
 #moderation-config .card {
   display: grid;

@@ -8,12 +8,13 @@
 </head>
 <body>
   <div class="shell">
-    <header><div><p class="eyebrow">CC DESK TUNNEL</p><h1>管理中心</h1></div><div class="header-actions"><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
+    <header><div><p class="eyebrow">CC DESK TUNNEL</p><h1>CC 管理中心</h1></div><div class="header-actions"><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
+    <nav id="primary-navigation" class="main-nav" aria-label="管理分区" hidden><a id="show-accounts" href="/cc-updates/admin/accounts">账号监控</a><a id="show-updates" href="/cc-updates/admin/updates">客户端更新</a><a id="show-moderation" href="/cc-updates/admin/moderation">内容审核</a></nav>
     <p id="notice" role="status" aria-live="polite"></p>
     <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>登录管理中心</h2><p class="muted">使用你设置的管理员密码登录。首次设置或忘记密码时，通过 SSH 打开临时密码设置页面。</p><form id="password-login"><label for="admin-password">管理员密码</label><input id="admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><button type="submit">登录管理</button></form><details><summary>使用旧管理令牌</summary><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit" class="quiet">使用令牌登录</button></form></details></section>
     <section id="password-setup-panel" class="card login" hidden><p class="eyebrow">管理员密码</p><h2>设置管理员密码</h2><p class="muted">请设置 8–128 个字符的密码，可以包含中文。设置链接十分钟内有效，仅能使用一次；设置后自动登录。</p><form id="password-setup"><label for="new-admin-password">新管理员密码</label><input id="new-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-admin-password">确认管理员密码</label><input id="confirm-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存密码并登录</button></form></section>
     <main id="dashboard" hidden>
-      <section aria-labelledby="monitor-heading">
+      <section id="monitor-panel" aria-labelledby="monitor-heading" hidden>
         <div class="section-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 id="monitor-heading">账号监控</h2></div><button id="monitor-refresh" class="quiet">刷新账号数据</button></div>
         <p class="muted">正常使用时被动更新，刷新只读取 VPS。换号后保留历史账号；同账号各节点额度分别显示。超过 15 分钟未采集标为过期，不代表离线或封禁。</p>
         <div id="monitor-node-status" class="muted" aria-live="polite"></div>
@@ -22,8 +23,7 @@
         <div id="monitor-nodes" class="channels"></div>
       </section>
       <section id="password-change-panel" class="card password-change" hidden><h2>修改管理员密码</h2><p class="muted">新密码为 8–128 个字符，可包含中文。修改后其他登录会话将失效。</p><form id="password-change"><label for="current-admin-password">当前管理员密码</label><input id="current-admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><label for="changed-admin-password">新密码</label><input id="changed-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-changed-password">确认新密码</label><input id="confirm-changed-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存新密码</button><button id="cancel-password-change" type="button" class="quiet">取消修改</button></form></section>
-      <nav aria-label="管理分区"><button id="show-updates" class="quiet" aria-pressed="true">客户端更新</button><button id="show-moderation" class="quiet" aria-pressed="false">内容审核</button></nav>
-      <section id="updates-panel">
+      <section id="updates-panel" hidden>
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>
       <div id="channels" class="channels"></div>
       <section class="card upload-panel"><div><p class="eyebrow">NEW CANDIDATE</p><h2>准备一次发布</h2><p class="muted">先选择管理员签名的索引，再为候选上传安装包。续期或撤回使用新的签名索引。</p></div><form id="create"><label for="index-file">签名索引（JSON）</label><input id="index-file" type="file" accept=".json,application/json" required><button type="submit">添加候选</button></form></section>

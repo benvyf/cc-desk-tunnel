@@ -68,6 +68,22 @@ async function fixture(t: TestContext) {
 }
 const api = '/cc-updates/admin/api';
 
+test('each administration feature has an exact public shell address and rejects writes', async (t) => {
+  const f = await fixture(t);
+  for (const page of ['accounts', 'updates', 'moderation']) {
+    const path = '/cc-updates/admin/' + page;
+    const response = await f.request(path);
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get('content-type')!, /text\/html/);
+    assert.match(await response.text(), /aria-label="管理分区"/);
+    assert.equal((await f.request(path, { method: 'HEAD' })).status, 200);
+    assert.equal((await f.request(path, { method: 'POST' })).status, 405);
+  }
+  assert.equal((await f.request('/cc-updates/admin/navigation.js')).status, 200);
+  assert.equal((await f.request('/cc-updates/admin/missing-feature')).status, 404);
+  assert.equal((await f.request('/cc-updates/admin/accounts/extra')).status, 404);
+});
+
 test('HTTP provides authenticated create/upload/activate and exact public signed GET/HEAD', async (t) => {
   const f = await fixture(t);
   assert.equal((await f.request('/cc-updates/v1/channels/pilot/win32-x64.json')).status, 404);

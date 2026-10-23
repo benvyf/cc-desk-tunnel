@@ -22,6 +22,7 @@ export const runtimeFiles = [
   'apps/update-service/web/app.js',
   'apps/update-service/web/moderation.js',
   'apps/update-service/web/password-login.js',
+  'apps/update-service/web/navigation.js',
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',
   'packages/protocol/src/account-monitor.ts',

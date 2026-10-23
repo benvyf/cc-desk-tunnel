@@ -1,10 +1,12 @@
 import { setupModeration } from './moderation.js';
 import { setupPasswordLogin } from './password-login.js';
+import { setupNavigation } from './navigation.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
 let controller = new AbortController();
 let pending = false;
+let pageRefreshQueued = false;
 let monitorData;
 const monitorDrafts = new Map();
 function notice(text, error = false) {
@@ -27,6 +29,8 @@ function logout() {
   controller.abort();
   controller = new AbortController();
   token = '';
+  pageRefreshQueued = false;
+  navigation.clear();
   monitorData = undefined;
   monitorDrafts.clear();
   $('monitor-search').value = '';
@@ -69,7 +73,22 @@ async function action(work) {
   } finally {
     pending = false;
     document.body.classList.remove('pending');
+    if (pageRefreshQueued && token) {
+      pageRefreshQueued = false;
+      void action(loadCurrentPage);
+    }
   }
+}
+function queuePageRefresh() {
+  notice('');
+  if (!token) return;
+  if (pending) pageRefreshQueued = true;
+  else void action(loadCurrentPage);
+}
+async function loadCurrentPage() {
+  if (navigation.current === 'accounts') await refreshMonitor();
+  else if (navigation.current === 'updates') await refresh();
+  else await moderation.refresh();
 }
 function releaseDetails(payload) {
   const r = payload.release;
@@ -207,7 +226,6 @@ async function refresh() {
       tr.append(element('td', text));
     $('audit').append(tr);
   }
-  await refreshMonitor();
 }
 async function refreshMonitor() {
   monitorData = await request('/monitor');
@@ -412,12 +430,13 @@ function renderMonitor() {
 }
 async function login(sessionToken) {
   token = sessionToken;
-  await refresh();
+  navigation.activate();
   $('login-panel').hidden = true;
   $('dashboard').hidden = false;
   $('logout').hidden = false;
   $('change-password').hidden = false;
   notice('');
+  await loadCurrentPage();
 }
 $('login').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -452,6 +471,7 @@ $('monitor-search').addEventListener('input', renderMonitor);
 setInterval(() => {
   if (
     token &&
+    navigation.current === 'accounts' &&
     !pending &&
     !document.hidden &&
     !monitorDrafts.size &&
@@ -472,3 +492,7 @@ $('logout').addEventListener('click', () => {
 });
 const moderation = setupModeration({ request, action, notice, element, date });
 const passwordLogin = setupPasswordLogin({ action, notice, login, request });
+const navigation = setupNavigation({
+  changed: queuePageRefresh,
+  authenticated: () => Boolean(token),
+});
