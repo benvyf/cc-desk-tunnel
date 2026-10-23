@@ -20,6 +20,8 @@ export function setupModeration({ request, action, notice, element, date }) {
     'policy/sexual-vulgar': '色情与低俗诱导',
     'policy/crime': '违法犯罪、诈骗与赌博',
     'policy/abuse-privacy': '欺凌、恶劣诱导与隐私侵犯',
+    'policy/jailbreak-extraction': '破甲、越权与内部提示窃取',
+    'policy/model-distillation': '模型蒸馏、复刻与训练取数',
   };
   const labels = {
     allow: '通过',

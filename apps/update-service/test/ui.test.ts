@@ -181,7 +181,13 @@ test(
       'href',
       'https://console.typesafe.ai/',
     );
-    assert.equal(await page.locator('#moderation-thresholds input').count(), 18);
+    assert.equal(await page.locator('#moderation-thresholds input').count(), 20);
+    await expect(
+      page.getByLabel('破甲、越权与内部提示窃取 (policy/jailbreak-extraction)', { exact: true }),
+    ).toHaveValue('0.35');
+    await expect(
+      page.getByLabel('模型蒸馏、复刻与训练取数 (policy/model-distillation)', { exact: true }),
+    ).toHaveValue('0.35');
     await expect(page.getByText('尚未配置 API 密钥', { exact: true })).toBeVisible();
     await page
       .getByLabel('关键词（每行一个，忽略大小写、按子串匹配）')

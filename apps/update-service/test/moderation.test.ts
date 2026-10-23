@@ -136,8 +136,8 @@ test('rule upgrade adds missing policy categories once, preserves credentials an
   f.store.save({ ...editable(f.store), apiKey: key }, 'admin');
   const db = new DatabaseSync(join(f.root, 'private/moderation.sqlite'));
   const old = JSON.parse(db.prepare('SELECT value FROM policy WHERE id=1').get()!.value as string);
-  for (const name of Object.keys(old.thresholds))
-    if (name.startsWith('policy/')) delete old.thresholds[name];
+  delete old.thresholds['policy/jailbreak-extraction'];
+  delete old.thresholds['policy/model-distillation'];
   old.thresholds.sexual = 0.42;
   db.prepare('UPDATE policy SET value=? WHERE id=1').run(JSON.stringify(old));
   db.close();
@@ -146,13 +146,34 @@ test('rule upgrade adds missing policy categories once, preserves credentials an
   assert.equal(migrated.apiKeyConfigured, true);
   assert.equal(migrated.revision, old.revision + 1);
   assert.equal(migrated.thresholds.sexual, 0.42);
-  assert.equal(Object.keys(migrated.thresholds).length, 18);
+  assert.equal(Object.keys(migrated.thresholds).length, 20);
+  assert.equal(migrated.thresholds['policy/jailbreak-extraction'], 0.35);
+  assert.equal(migrated.thresholds['policy/model-distillation'], 0.35);
   const stale = { ...editable(f.store), revision: old.revision };
   assert.throws(() => f.store.save(stale, 'admin'), /changed/);
   assert.equal(f.store.events().filter((event) => event.kind === 'config.migrated').length, 1);
   await f.reopen();
   assert.equal(f.store.config().revision, migrated.revision);
   assert.equal(f.store.events().filter((event) => event.kind === 'config.migrated').length, 1);
+});
+
+test('jailbreak and distillation independently block at the strict boundary and require both answers', async () => {
+  for (const category of ['policy/jailbreak-extraction', 'policy/model-distillation']) {
+    const response = answer();
+    response.answers[category]!.noul = 0.35;
+    const blocked = await checkText(policy, text, async () => Response.json(response));
+    assert.equal(blocked.allowed, false);
+    assert.deepEqual(blocked.categories, [category]);
+    response.answers[category]!.noul = 0.34;
+    assert.equal(
+      (await checkText(policy, text, async () => Response.json(response))).allowed,
+      true,
+    );
+    delete response.answers[category];
+    const incomplete = await checkText(policy, text, async () => Response.json(response));
+    assert.equal(incomplete.allowed, false);
+    assert.equal(incomplete.error, 'jev_response_invalid');
+  }
 });
 
 test('selected policy blocks keywords without a model call and sends non-hits to JEV', async () => {
