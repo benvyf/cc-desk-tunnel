@@ -80,6 +80,9 @@ p {
 .download-card {
   min-width: 0;
 }
+#server-download {
+  overflow-wrap: anywhere;
+}
 .download-link {
   display: inline-block;
   border-radius: 8px;
