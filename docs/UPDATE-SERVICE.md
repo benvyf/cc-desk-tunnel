@@ -2,7 +2,7 @@
 
 当前生产发布方式见 [VPS 统一发布](VPS-RELEASE-CREDENTIALS.md)：生产私钥和令牌由 VPS root 私有目录集中保管，通过 SSH 运行发布工具。本文的管理员电脑离线签名流程仍可用于其他部署；更新分发服务本身仍不读取签名私钥。
 
-这是 [更新通道总设计](superpowers/specs/2026-10-23-vps-update-channel-design.md) 的交付 B，实现独立管理网页、签名候选上传、发布/撤回、审计与只读通道索引。它复用 [离线签名工具](UPDATE-SIGNING.md)，不保管签名私钥。Windows 客户端接入属于交付 C，现有安装包不会因部署本服务而自动获得升级能力。
+这是 [更新通道总设计](superpowers/specs/2026-10-23-vps-update-channel-design.md) 的交付 B，实现独立管理网页、签名候选上传、发布/撤回、审计与只读通道索引。它复用 [签名工具](UPDATE-SIGNING.md)，分发服务不保管签名私钥。Windows 客户端接入已完成，当前 [build 2 引导包](UPDATE-CLIENT-BUILD-2.md) 已发布到 pilot；旧安装包不会因部署本服务而自动获得升级能力。
 
 源码交付后已完成[真实 Linux 隔离验收](UPDATE-SERVICE-LINUX-ACCEPTANCE.md)，随后完成[正式部署及公网验证](UPDATE-SERVICE-PRODUCTION.md)。管理页现位于 `https://api.ghostapi.org/cc-updates/admin/`，两个通道均为空，Windows 客户端接入尚未完成。GhostAPI 应用、六台 Ubuntu 及 DNS 未修改；现有 HTTPS 站点仅增加更新服务路由。
 

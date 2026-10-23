@@ -2,6 +2,8 @@
 
 2026-10-23 起，生产发布身份由 VPS 集中保管。旧电脑身份 `managed-2026-10-23` 退役，新身份为 `managed-vps-2026-10-23`；旧 build 1 没有发布，保留作历史制品，新公钥从 build 2 开始固定。
 
+build 2 已发布至 pilot revision 3，stable 保持 revision 2 空通道；制品、有效期和验收证据见 [正式发布记录](UPDATE-CLIENT-BUILD-2.md)。
+
 ## 去哪里找
 
 VPS：`74.82.201.214`，管理员 SSH 登录后查看 `/root/.cc-update-admin/`。
@@ -16,6 +18,7 @@ VPS：`74.82.201.214`，管理员 SSH 登录后查看 `/root/.cc-update-admin/`�
 | `backup/` | 身份切换前配置和通道记录，含私有配置，仅管理员可读 |
 | `release-input/`、`release-output/` | 发布模板、签名索引、发布证据 |
 | `rotation-evidence.json` | 身份生成和配置切换的脱敏证据 |
+| `CURRENT-RELEASE.json` | 本次发布完成后的通道、制品和证据位置快照；实时状态仍以发布 API 为准 |
 
 目录为 root 所有、0700，凭据为 0600。它位于站点和更新服务数据目录之外；更新服务仅有公钥及令牌 hash，运行账号 `ccupdates` 和 Nginx 账号不能读取私钥。SSH 主机 ED25519 指纹为 `SHA256:Q7TmQOsYoY+V4agj8p2bwHx5qICS3gBqt0NIan/38to`，保留主机校验。
 
@@ -47,6 +50,8 @@ cd /root/.cc-update-admin/source-build-N
 ```
 
 模板遵循 [签名输入格式](UPDATE-SIGNING.md)，不填写 size/sha256。工具读取线上管理状态，自动提高该通道 revision、更新签发时间和三天有效期；核对生产公钥及源码 build，调用现有签名 CLI，再通过 API 创建候选、上传、激活。最后核对公开索引字节、完整下载的安装包大小/hash，并确保另一个通道未变化。输出及 `.evidence.json` 保存在 VPS；每次使用新的输出文件名。失败时查看证据中的 candidateId，按管理页处理未完成候选，不删除数据库记录或改用同 build 的不同安装包。
+
+激活后候选记录仍会保留；确认发布完成后可在管理页删除该候选，公开索引和已发布制品不受影响，避免八个候选名额用尽。
 
 签名空索引使用 `state: empty`、`release: null` 模板，只传 `--input` 和 `--out`。它会改变指定通道，必须属于当次明确发布/撤回安排。续期遵守原来的最多七天规则，工具默认三天；没有配置自动续期任务。
 

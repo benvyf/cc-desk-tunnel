@@ -2,7 +2,7 @@
 
 > 当前凭据管理方式已更新：2026-10-23 按用户要求重新生成身份并集中保存在 VPS `/root/.cc-update-admin/`，使用 `managed-vps-2026-10-23`。下文旧电脑目录和旧公钥为首次部署历史记录，不再用于新发布；当前路径、指纹和操作见 [VPS 统一发布](VPS-RELEASE-CREDENTIALS.md)。本次仅重启独立更新服务以切换身份，未更改 Nginx 或六台 CC 服务端。
 
-日期：2026-10-23（Asia/Hong_Kong）。独立更新管理服务已部署到现有 VPS，并使用现有 `api.ghostapi.org` 的 HTTPS 证书和站点入口。Windows 客户端接入尚未完成；目前没有已发布安装包。
+日期：2026-10-23（Asia/Hong_Kong）。独立更新管理服务已部署到现有 VPS，并使用现有 `api.ghostapi.org` 的 HTTPS 证书和站点入口。Windows 客户端已完成接入，build 2 已使用新身份发布到 pilot revision 3，stable 为 revision 2 空通道；详见 [build 2 发布记录](UPDATE-CLIENT-BUILD-2.md)。以下首次部署验收和备份信息按历史时点保留。
 
 ## 管理员入口和本机身份
 

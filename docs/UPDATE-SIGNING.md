@@ -66,7 +66,7 @@ node scripts/sign-managed-update.mjs `
 
 工具检查 `--source` 是 Git 根目录、HEAD 等于 sourceCommit、无已跟踪修改或未跟踪文件，并从该提交读取桌面版本和协议常量。读取安装包前后检查文件状态，签名前后核对源码。工具将索引自验签成功后，以排他新建方式写出；已有文件和输出符号链接不会被覆盖。失败不会输出私钥、输入 JSON 或 Git 错误内容。
 
-此阶段核对的是管理员提供的源码身份与文件哈希，**尚不能证明任意 EXE 确实由该提交构建**。需由管理员核对原构建记录；后续打包交付将嵌入定制构建身份。工具不负责全局分配 build 或保存发布历史，管理员必须保证 build 全局递增、每个通道 revision 递增；[独立更新服务](UPDATE-SERVICE.md)负责持久校验和激活，现已[部署生产](UPDATE-SERVICE-PRODUCTION.md)，目前仅发布两个签名空通道，没有安装包。
+此阶段核对的是管理员提供的源码身份与文件哈希，**尚不能证明任意 EXE 确实由该提交构建**。需由管理员核对原构建记录，打包交付已嵌入定制构建身份。工具不负责全局分配 build 或保存发布历史，管理员必须保证 build 全局递增、每个通道 revision 递增；[独立更新服务](UPDATE-SERVICE.md)负责持久校验和激活，现已[部署生产](UPDATE-SERVICE-PRODUCTION.md)，当前 build 2 已发布到 pilot，stable 保持空通道。
 
 既有 `managed-preview-fd6e213` 安装包没有新通道身份，不能将其追溯标为 build 1。工具测试仅使用临时测试密钥及非可执行的安装包 fixture；随后正式部署建立了生产签名身份和 revision 1 空通道，首次真实安装包应使用更高 revision。
 
