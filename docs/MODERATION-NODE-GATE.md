@@ -39,3 +39,21 @@ root 在 VPS 使用 `scripts/create-moderation-node.mjs` 创建配置，文件 0
 准备完成只输出脱敏结果和一次性领取配置用的 SSH **公钥**。私钥留在节点。后续可在 VPS 为该公钥配置短时有效、强制只读此节点配置、禁止端口转发和其他命令的 SSH 授权，再通过 SSH 领取配置，无需在聊天传递任何密钥。启用前重新确认节点空闲并断开客户端；保留当前镜像及一致性备份以支持回退。其他五台节点不在本阶段范围。
 
 用户已将两个新增类别阈值改为 0.5，部署必须完整保留当前数据库中的阈值、关键词、JEV 密钥和管理密码，不使用代码默认值覆盖。
+
+## 2026-10-23 部署进度
+
+VPS 管理服务已部署源码 `2638731374c87e767eca6ff1ec37b6a7352ab4d1`，24 个运行文件清单通过校验。新接口的公网认证、关键词拒绝、重复请求去重、管理员/节点权限隔离和临时节点凭据撤销已验证；未调用 JEV 或 Claude。数据库策略及密钥、管理密码、签名发布状态与部署前相同，两个新增类别均保持 0.5，自动续期 timer 已恢复。
+
+首次公网探测遇到 Nginx reload 后旧 worker 尚未退出而自动回退；加入仅针对未认证入口的短暂等待后再次部署通过。此前失败没有修改 Ubuntu。
+
+私有部署证据 `/root/.cc-update-admin/maintenance/moderation-gate-2638731374c8-r2/result.json`；此前运行目录 `/opt/cc-update-service.previous-moderation-gate-2638731374c8-r2`。凭据仍只保存在 VPS；尚未正式签发 ubuntu-cc 节点凭据。
+
+本地已通过核心门禁测试、相关原有消息路径、管理 API/用量测试、类型检查及真实浏览器管理页面测试。隔离检查脚本在本机以同样模拟逻辑通过；**Ubuntu 镜像构建和节点启用尚待执行，当前生产 CC 消息仍未接入审核**，不能据 VPS 上线宣称完成试点。
+
+下一步在 ubuntu-cc 执行以下固定源码的准备命令，不需要停止正式服务：
+
+```bash
+curl -fL 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2638731374c87e767eca6ff1ec37b6a7352ab4d1/scripts/prepare-moderation-pilot.py' -o /tmp/cc-moderation-2638731.py && echo 'ab1c224707d66c0af2ac4cffa18aa5db43c7177dd67050d1b862c73e22b9eef8  /tmp/cc-moderation-2638731.py' | sha256sum -c - && sudo python3 /tmp/cc-moderation-2638731.py --source 2638731374c87e767eca6ff1ec37b6a7352ab4d1
+```
+
+回传末尾 JSON、PASS 和 `ENROLLMENT_PUBLIC_KEY` 公钥行。私有状态在 `/var/lib/cc-moderation-pilot-2638731374c8`。不要回传里面的生产 inspect 或私钥。收到结果后再签发节点凭据，通过受限临时 SSH 领取；正式切换前重新确认空闲、断开旧客户端并准备一致性备份与回退，不能沿用早先的空闲确认。

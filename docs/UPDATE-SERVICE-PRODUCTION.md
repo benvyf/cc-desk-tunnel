@@ -103,3 +103,11 @@ PY
 回滚只撤销更新服务入口并停用独立服务，保留配置、数据、签名历史和备份；不删除账号或其他软件。数据恢复必须停止服务并整体恢复，保留 channel revision、build 身份和审计对应关系，不可只回滚单条索引。后续有真实发布后，应使用新的整体一致备份，不能再用本次空通道初始数据覆盖发布历史。
 
 内容审核、GhostAPI 统一登录、六台 Ubuntu 服务端迁移以及 Windows 客户端自动升级均不属于本次已部署内容。
+
+### 后续增量：2026-10-23 节点审核接口
+
+以上是最初部署的历史边界。其后管理中心已加入独立密码登录、JEV 策略、试算、审计与用量。本阶段新增精确路由 `POST /cc-updates/v1/moderation/check`，源码 `2638731374c87e767eca6ff1ec37b6a7352ab4d1`，继续复用现有登录与管理页面，不更换管理密码、JEV 密钥或签名发布配置。
+
+部署验证确认关键词拦截、权限隔离、去重、撤销均正常，两个新增阈值原样保持 0.5，部署未发送 JEV/Claude 请求。证据在 `/root/.cc-update-admin/maintenance/moderation-gate-2638731374c8-r2/result.json`，运行目录回退副本为 `/opt/cc-update-service.previous-moderation-gate-2638731374c8-r2`。自动续期 timer 已恢复运行。
+
+这仅表示 VPS 审核接口就绪，ubuntu-cc 消息门禁尚未启用，其他五台节点暂缓。隔离准备和后续节点凭据交付方式见 [MODERATION-NODE-GATE.md](MODERATION-NODE-GATE.md)。不得为此次门禁升级或重装官方 CLI，不改原账号与路由，也不使用生产 Claude 做自动测试。
