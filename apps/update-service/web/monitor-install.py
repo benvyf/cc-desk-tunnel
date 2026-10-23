@@ -203,7 +203,7 @@ def install(args, engine, work):
             return
     if original['Image'] != BASE:
         raise InstallError('Container image does not match the reviewed v0.3.6 image.')
-    if busy(engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20args')['Processes']):
+    if busy(engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20pid,args')['Processes']):
         raise InstallError('Claude/SDK task is running. Finish it and close all CC clients, then retry.')
     if not original.get('Config', {}).get('Healthcheck'):
         raise InstallError('Existing local health check is required.')
@@ -269,7 +269,7 @@ def install(args, engine, work):
         # Freeze all processes, then check again before disconnecting clients. No new run can start here.
         engine.request('POST', '/containers/' + original['Id'] + '/pause')
         paused = True
-        if busy(engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20args')['Processes']):
+        if busy(engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20pid,args')['Processes']):
             raise InstallError('A task started during preparation. Nothing installed; close CC clients and retry.')
         frozen_idle(original)
         changed = True
@@ -352,7 +352,7 @@ def main():
                 if not already_paused:
                     engine.request('POST', '/containers/' + current['Id'] + '/pause')
                 try:
-                    if busy(engine.request('GET', '/containers/' + current['Id'] + '/top?ps_args=-eo%20args')['Processes']):
+                    if busy(engine.request('GET', '/containers/' + current['Id'] + '/top?ps_args=-eo%20pid,args')['Processes']):
                         raise InstallError('Finish all Claude tasks and close CC clients before rollback.')
                     frozen_idle(current)
                 except BaseException:

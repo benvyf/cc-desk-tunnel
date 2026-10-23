@@ -20,6 +20,8 @@ class InstallerTests(unittest.TestCase):
             self.assertTrue(installer.busy([[args]]))
         self.assertFalse(installer.busy([['node apps/server/src/main.ts'], ['docker-init -- node apps/server/src/main.ts']]))
         self.assertTrue(installer.busy([['node unknown-worker.js']]))
+        self.assertFalse(installer.busy([['123', 'node /app/apps/server/src/main.ts']]))
+        self.assertTrue(installer.busy([['124', '/opt/runtime/cli/bin/claude --resume private']]))
 
     def test_clone_preserves_runtime_and_adds_only_monitor_settings(self):
         original = {'Id': 'abc', 'Name': '/cc', 'Config': {'Image': 'old', 'Env': ['KEEP=secret', 'PROXY_MONITOR_TOKEN=old'],
@@ -80,7 +82,12 @@ class InstallerTests(unittest.TestCase):
                     def __init__(self): self.calls = []; self.old = copy.deepcopy(original); self.new = None
                     def request(self, method, path, payload=None):
                         self.calls.append((method, path, payload))
-                        if path.endswith('/top?ps_args=-eo%20args'): return {'Processes': [['node /app/apps/server/src/main.ts']]}
+                        if '/top?' in path:
+                            # Docker 29.9 requires PID in ps output to map host processes.
+                            # Reproduce the real daemon error before installation can proceed.
+                            if 'ps_args=-eo%20pid,args' not in path:
+                                raise installer.InstallError("Docker operation failed (HTTP 500): Couldn't find PID field in ps output")
+                            return {'Processes': [['123', 'node /app/apps/server/src/main.ts']]}
                         if path == '/containers/' + installer.CONTAINER + '/json': return self.old
                         if path == '/containers/old/json': return self.old
                         if path.startswith('/images/') and path.endswith('/json'): return {'Id': 'patched'}

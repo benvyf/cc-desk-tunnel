@@ -93,3 +93,10 @@ VPS 已部署运行提交 `1bf5b4ba65e292c413c5ac5aedb61fc7a734802d`，归档 `a
 正式域名经正常证书校验的真实浏览器验收通过：登录、首台可选/其余五台禁用、生成和复制命令、私有包单次领取及SHA256、重复领取401、浏览器领取403、公开包404、独立路由/手机无溢出/零脚本错误。测试领取仅在验收进程内校验摘要，未安装到节点，也未发送合成账号报告。脱敏证据保存在 `.local/enrollment-production-evidence/` 及上述备份目录。
 
 验收时仍为6个配置节点、0个上报节点、0个账号。**Ubuntu还没有执行安装，不能宣称已接通。** 下一步由用户在账号页生成新命令，通过UU远端电脑进入第一台Ubuntu控制台执行；本次没有新增Claude/JEV请求。
+
+
+### Docker 29.9 进程列表兼容修复（2026-10-24）
+
+用户第一台 Ubuntu 实测 Docker29.9.1 / API1.56，旧安装器在下载前报 HTTP500；只读诊断确认容器 running/paused=false，`docker top ... -eo comm` 返回 `Couldn't find PID field in ps output`。旧安装器的 `-eo args` 同样漏掉 Docker 所需的 PID 列。
+
+修正安装前、冻结后及人工回滚三处查询为 `-eo pid,args`。模拟该守护进程约束后旧实现失败，新实现通过 Python5项（含成功/失败子场景）；PID列不影响 Claude/SDK 忙碌检测。管理服务28项（含真实浏览器）通过；隔离 Docker 环境的运行中及暂停后 PID+args 查询通过，独立复查无阻塞。没有升级 Docker、改动业务容器或新增 Claude/JEV 请求。正式 Ubuntu 需使用更新后页面重新生成的命令重试；旧命令绑定旧安装器摘要，不能继续使用。
