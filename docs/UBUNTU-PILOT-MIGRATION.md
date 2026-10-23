@@ -2,6 +2,8 @@
 
 2026-10-23，香港时间。`ubuntu-cc` 已完成备份及生产协议 20 切换，本地认证和独立公网健康检查通过，Windows 客户端验收待完成；其他五台未迁移。模型调用仍为 0。
 
+用户随后要求先核实 Claude 网络和账号风险再继续，客户端验收暂缓；核实状态见 [网络与账号风险记录](CLAUDE-NETWORK-RISK-2026-10-23.md)。当前没有“保证不触发账号风控”的结论。
+
 ## 当前生产结果
 
 用户执行固定版本 `7856fea23357ce310822f5864d1b3ff60ef922b2` 的切换脚本并回传 PASS：`cutoverPerformed:true`、`rolledBack:false`、`backupVerified:true`。实际运行镜像为 `sha256:e3275f6f27d5a39b1468123573930285d68cbbcada741b76eefbc7692ab5a553`；服务端协议 20、WebSocket 认证成功，证书指纹和三项流量开关未变，关键服务配置、provider 和证书/私钥文件校验未变。
