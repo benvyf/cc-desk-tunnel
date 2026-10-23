@@ -413,6 +413,23 @@ test('authentication failure limiter bounds repeated token guessing', async (t) 
   assert.equal((await f.request(`${api}/status`, { headers: f.headers })).status, 200);
 });
 
+test('Linux distribution routes are explicit GET/HEAD and administrator status requires authentication', async (t) => {
+  const f = await fixture(t);
+  assert.equal((await f.request(`${api}/server`)).status, 401);
+  assert.deepEqual(await (await f.request(`${api}/server`, { headers: f.headers })).json(), {
+    published: false,
+  });
+  const index = '/cc-updates/server/v1/channels/pilot/linux-x64.json';
+  assert.equal((await f.request(index)).status, 404);
+  assert.equal((await f.request(index, { method: 'POST' })).status, 405);
+  const installer = await f.request('/cc-updates/admin/server-bootstrap.py');
+  assert.equal(installer.status, 200);
+  assert.match(await installer.text(), /Known first Ubuntu bootstrap/);
+  const head = await f.request('/cc-updates/admin/server-bootstrap.py', { method: 'HEAD' });
+  assert.equal(head.status, 200);
+  assert.equal((await head.arrayBuffer()).byteLength, 0);
+});
+
 test('configuration rejects unknown fields, insecure origins, unsafe paths and private keys', () => {
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const base = {

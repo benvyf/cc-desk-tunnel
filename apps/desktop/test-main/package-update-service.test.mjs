@@ -42,7 +42,9 @@ test('service archive contains only allowlisted runtime files and refuses dirty 
   assert.equal(info.sourceCommit, git('rev-parse', 'HEAD'));
   const tar = process.platform === 'win32' ? 'tar.exe' : 'tar';
   const files = execFileSync(tar, ['-tzf', archive], { encoding: 'utf8', windowsHide: true });
-  assert.doesNotMatch(files, /secret|node_modules|\.git|apps\/server|apps\/desktop/);
+  assert.doesNotMatch(files, /secret|node_modules|\.git|apps\/desktop/);
+  assert.ok(files.includes('apps/server/src/managed-server-files.ts'));
+  assert.ok(!files.includes('apps/server/src/main.ts'));
   assert.match(files, /BUILD-INFO\.json/);
   const before = await readFile(archive);
   await assert.rejects(packageUpdateService(source, archive));

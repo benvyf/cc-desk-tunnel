@@ -39,6 +39,7 @@
 !deploy/docker/runtime-level
 !deploy/docker/managed-settings.json
 !deploy/managed-server.json
+!deploy/server-bootstrap-profile.json
 !deploy/README.md
 !deploy/compose.yml
 !deploy/configure-moderation.py
@@ -59,3 +60,5 @@
 !deploy/update-service/config.example.json
 !deploy/update-service/nginx.conf.example
 !deploy/update-service/production-public.json
+!deploy/update-service/cc-server-index-renew.service
+!deploy/update-service/cc-server-index-renew.timer

@@ -1,0 +1,17 @@
+[Unit]
+Description=Renew the exactly registered Linux server release signature
+After=cc-update-service.service
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/cc-update-service
+ExecStart=/opt/cc-update-runtime/bin/node /opt/cc-update-service/scripts/managed-server-publication.mjs renew /root/.cc-update-admin/server-renewal.json
+TimeoutStartSec=3min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateNetwork=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/srv/cc-update-service/server

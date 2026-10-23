@@ -2,6 +2,7 @@ import { setupModeration } from './moderation.js';
 import { setupPasswordLogin } from './password-login.js';
 import { setupNavigation } from './navigation.js';
 import { setupEnrollment } from './enrollment.js';
+import { setupServerDownload } from './server-download.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
@@ -49,6 +50,7 @@ function logout() {
   moderation.clear();
   passwordLogin.clear();
   enrollment.clear();
+  serverDownload.clear();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -202,6 +204,7 @@ function renderDownloads(channels) {
 async function refresh() {
   clearTimeout(downloadExpiry);
   $('downloads').replaceChildren();
+  await serverDownload.refresh();
   const data = await request('/status');
   renderDownloads(data.channels);
   $('channels').replaceChildren();
@@ -575,6 +578,7 @@ $('logout').addEventListener('click', () => {
 const moderation = setupModeration({ request, action, notice, element, date });
 const passwordLogin = setupPasswordLogin({ action, notice, login, request });
 const enrollment = setupEnrollment({ request, action, notice, date });
+const serverDownload = setupServerDownload({ request, element, notice });
 const navigation = setupNavigation({
   changed: queuePageRefresh,
   authenticated: () => Boolean(token),

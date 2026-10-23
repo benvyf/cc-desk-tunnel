@@ -33,8 +33,9 @@
 ### Task 3: Full packaging, first bootstrap and VPS distribution
 
 - [ ] Package current server source, matching web build, deployment files and signed release metadata without credentials.
-- [ ] Provide initial Ubuntu installer that snapshots actual configuration and retains account/moderation data with rollback.
-- [ ] Add explicit VPS Linux archive/index routes and management-center download entries, preserving existing Windows pilot publication.
+- [x] Provide initial Ubuntu installer that snapshots actual configuration and retains account/moderation data with rollback.
+- [x] Add explicit VPS Linux archive/index routes and management-center download entries, preserving existing Windows pilot publication.
+- [x] Distribution spec, quality and whole-integration reviews approved tree 633d6cb9e49b09efe07b634c51d9d7543dd26aa3. Final Python checks: 18 passed, 1 POSIX skip locally; both new Linux regressions passed, actual Dockerfile/preflight passed with network disabled and zero CLI calls. Fixed extracted directory permissions and safe retry after settled upgrades. New immutable pilot identities: desktop Build 4, server Build 1.
 - [ ] Test in isolated Linux containers without provider credentials or provider network calls, then build and publish the new desktop/server pilot releases.
 - [ ] Verify public HTTPS index, signatures, artifact hashes, management page and rollback evidence.
 

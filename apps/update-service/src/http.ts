@@ -11,6 +11,7 @@ import { validateMonitorReport } from '../../../packages/protocol/src/account-mo
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
 import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
+import { ServerDistribution, SERVER_INDEX_PATH, bootstrapCommand } from './server-distribution.ts';
 
 const base = '/cc-updates/admin';
 const api = base + '/api';
@@ -55,6 +56,8 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['navigation.js', 'text/javascript'],
     ['enrollment.js', 'text/javascript'],
     ['monitor-install.py', 'text/plain'],
+    ['server-bootstrap.py', 'text/plain'],
+    ['server-download.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -65,6 +68,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   for (const page of ['accounts', 'updates', 'moderation'])
     assets.set(`${base}/${page}`, assets.get(base + '/')!);
   const expectedTokenHash = Buffer.from(config.adminTokenSha256, 'hex');
+  const distribution = new ServerDistribution(config.dataDir, config.trustedKeys);
   const monitor = config.monitorNodes
     ? new MonitorStore(config.dataDir, Object.keys(config.monitorNodes))
     : undefined;
@@ -118,6 +122,23 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         const url = new URL(request.url, 'http://localhost');
         if (url.search) throw new UpdateError(404, 'Not found.');
         const path = url.pathname;
+        if (path === SERVER_INDEX_PATH || path.startsWith('/cc-updates/server/v1/artifacts/')) {
+          if (request.method !== 'GET' && request.method !== 'HEAD')
+            throw new UpdateError(405, 'Method not allowed.');
+          if (request.url !== path) throw new UpdateError(404, 'Not found.');
+          const bytes =
+            path === SERVER_INDEX_PATH ? distribution.index() : distribution.artifact(path);
+          if (!bytes) throw new UpdateError(404, 'No signed Linux release published.');
+          response.writeHead(200, {
+            ...headers,
+            'content-type': path === SERVER_INDEX_PATH ? 'application/json' : 'application/gzip',
+            'content-length': bytes.length,
+            'cache-control':
+              path === SERVER_INDEX_PATH ? 'no-store' : 'public, max-age=31536000, immutable',
+          });
+          response.end(request.method === 'HEAD' ? undefined : bytes);
+          return;
+        }
         const asset = assets.get(path);
         if (asset) {
           if (request.method !== 'GET' && request.method !== 'HEAD')
@@ -268,6 +289,23 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         authenticated(request);
+        if (path === `${api}/server` && request.method === 'GET') {
+          const status = distribution.status();
+          respond(response, 200, {
+            ...status,
+            ...(status.published && !status.expired
+              ? {
+                  command: bootstrapCommand(
+                    status.payload.release,
+                    createHash('sha256')
+                      .update(assets.get(base + '/server-bootstrap.py')!.bytes)
+                      .digest('hex'),
+                  ),
+                }
+              : {}),
+          });
+          return;
+        }
         if (path === `${api}/monitor/enrollment` && request.method === 'GET') {
           respond(response, 200, enrollment.status());
           return;
