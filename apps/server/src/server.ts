@@ -62,6 +62,7 @@ import type { UpdateOptions } from './updates.ts';
 import { UsageLog, createUsageReceiver, telemetryEnvironment } from './usage.ts';
 import { WebAccess } from './web-access.ts';
 import { browserActivity, browserCommands, isWebCommand } from './web-commands.ts';
+import { AccountMonitor, type AccountMonitorOptions } from './account-monitor.ts';
 
 type Peer = {
   socket: WebSocket;
@@ -120,6 +121,7 @@ type Seat = {
 type Login = { process: NativeLogin; owner: Peer; url?: string };
 type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
 export type ServerOptions = {
+  accountMonitor?: AccountMonitorOptions;
   token: string;
   dataDir: string;
   stepMs?: number;
@@ -161,6 +163,9 @@ export function createProxyServer(options: ServerOptions) {
     );
   const store = new SessionStore(options.dataDir);
   const usage = new UsageLog(store.database);
+  const accountMonitor = options.accountMonitor
+    ? new AccountMonitor(options.accountMonitor)
+    : undefined;
   const usageReceiver = options.claude ? createUsageReceiver(usage) : undefined;
   const peers = new Set<Peer>();
   // One run or one terminal per session, each a CLI process of its own in the session's directory. What reads
@@ -386,6 +391,7 @@ export function createProxyServer(options: ServerOptions) {
 
   // Stores an event and sends it to the session's subscribers; quota readings also drive the usage periods.
   function record(sessionId: string, runId: string, payload: EventPayload) {
+    accountMonitor?.observe(payload, sessionId, runId);
     if (payload.type === 'native.metrics' && payload.rateLimits?.available)
       usage.observe(payload.rateLimits);
     const event = store.append(sessionId, runId, payload);
@@ -477,6 +483,7 @@ export function createProxyServer(options: ServerOptions) {
     }
     emit(run, { type: 'run.status', status, reason, connectionId: run.connectionId });
     runs.delete(run.sessionId);
+    accountMonitor?.forgetSource(run.id);
     run.controller.abort();
     run.decide?.(false);
     for (const decide of run.approvals.values()) decide(false);
@@ -561,6 +568,7 @@ export function createProxyServer(options: ServerOptions) {
       login: login?.url ? { url: login.url } : null,
       notice,
     };
+    accountMonitor?.observe({ type: 'account.state', ...state });
     if (target) send(target, { type: 'account.state', ...state });
     else broadcast({ type: 'account.state', ...state });
   }
@@ -642,6 +650,7 @@ export function createProxyServer(options: ServerOptions) {
     const controller = new AbortController();
     const closed = () => controller.abort();
     peer.socket.once('close', closed);
+    accountMonitor?.beginSource(command.requestId);
     try {
       const events = await readNativeStatus(
         options.claude,
@@ -658,6 +667,7 @@ export function createProxyServer(options: ServerOptions) {
       updated(command.sessionId);
     } finally {
       peer.socket.removeListener('close', closed);
+      accountMonitor?.forgetSource(command.requestId);
       mutations.delete(command.sessionId);
     }
   }
@@ -889,6 +899,7 @@ export function createProxyServer(options: ServerOptions) {
       stats: inOrder(),
     };
     runs.set(command.sessionId, run);
+    accountMonitor?.beginSource(run.id);
     if (options.claude) run.input = new NativeInput(run.sessionId, (event) => emit(run, event));
     emit(run, {
       type: 'message.user',
@@ -1635,6 +1646,7 @@ export function createProxyServer(options: ServerOptions) {
     },
     async close() {
       closing = true;
+      accountMonitor?.close();
       web.close();
       login?.process.cancel();
       const terminalCleanup = Promise.all(

@@ -1,6 +1,31 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { ServerOptions } from './server.ts';
+import { monitorNodePattern } from '../../../packages/protocol/src/account-monitor.ts';
+
+function monitorConfig(env: NodeJS.ProcessEnv): ServerOptions['accountMonitor'] {
+  const { PROXY_MONITOR_URL: url, PROXY_MONITOR_NODE_ID: nodeId, PROXY_MONITOR_TOKEN: token } = env;
+  if (url === undefined && nodeId === undefined && token === undefined) return undefined;
+  if (
+    !url ||
+    !nodeId ||
+    !token ||
+    !monitorNodePattern.test(nodeId) ||
+    !/^[A-Za-z0-9_-]{32,128}$/.test(token)
+  )
+    throw new Error('Invalid PROXY_MONITOR configuration');
+  const target = new URL(url);
+  if (
+    target.protocol !== 'https:' ||
+    target.username ||
+    target.password ||
+    target.search ||
+    target.hash ||
+    target.pathname !== '/cc-updates/admin/api/monitor/report'
+  )
+    throw new Error('Invalid PROXY_MONITOR_URL');
+  return { url: target.href, nodeId, token };
+}
 
 function port(value: string | undefined, fallback: number, name: string) {
   const number = Number(value ?? fallback);
@@ -41,6 +66,7 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
   if (native && !reverseProxy && (!env.PROXY_TLS_CERT || !env.PROXY_TLS_KEY))
     throw new Error('Direct mode requires PROXY_TLS_CERT and PROXY_TLS_KEY.');
   const options: ServerOptions = {
+    accountMonitor: monitorConfig(env),
     token: env.PROXY_TOKEN ?? '',
     dataDir: resolve(env.PROXY_DATA_DIR ?? defaultDataDir),
     host: env.PROXY_HOST ?? (native && !reverseProxy ? '0.0.0.0' : '127.0.0.1'),

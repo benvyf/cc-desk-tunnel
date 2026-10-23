@@ -27,7 +27,7 @@ function logout() {
   $('dashboard').hidden = true;
   $('logout').hidden = true;
   $('login-panel').hidden = false;
-  for (const id of ['channels', 'candidates', 'audit']) $(id).replaceChildren();
+  for (const id of ['channels', 'candidates', 'audit', 'monitor-nodes']) $(id).replaceChildren();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -192,6 +192,83 @@ async function refresh() {
       tr.append(element('td', text));
     $('audit').append(tr);
   }
+  await refreshMonitor();
+}
+async function refreshMonitor() {
+  const data = await request('/monitor');
+  const container = $('monitor-nodes');
+  container.replaceChildren();
+  if (!data.nodes.length) container.append(element('p', '暂无节点上报数据。', 'empty'));
+  const quotaNames = {
+    five_hour: '5 小时额度',
+    seven_day: '每周额度',
+    seven_day_opus: 'Opus 每周额度',
+    seven_day_sonnet: 'Sonnet 每周额度',
+  };
+  for (const row of data.nodes) {
+    const card = element('article', undefined, 'card');
+    card.append(element('h3', row.nodeId));
+    if (!row.account) card.append(element('p', '未登录或账号未知', 'muted'));
+    else {
+      card.append(
+        element(
+          'p',
+          `账号 ${row.account.id.slice(0, 12)} · ${row.account.subscriptionType ?? '未知订阅'}`,
+        ),
+      );
+      const sampledAt = row.rateLimits?.measuredAt ?? row.observedAt;
+      const stale = Date.now() - Date.parse(sampledAt) > 15 * 60000;
+      card.append(
+        element('span', stale ? '数据已过期' : '最近快照', `badge${stale ? ' error' : ''}`),
+      );
+      if (!row.rateLimits?.available) card.append(element('p', '暂无可用额度数据', 'muted'));
+      else
+        for (const window of row.rateLimits.windows) {
+          const label =
+            quotaNames[window.name] ??
+            (window.name.startsWith('seven_day:')
+              ? `${window.name.slice(10)} 每周额度`
+              : window.name);
+          card.append(
+            element(
+              'p',
+              `${label}：${window.utilization === null ? '未知' : `${window.utilization}%`}`,
+              window.utilization >= 90 ? 'error' : '',
+            ),
+          );
+          if (window.resetsAt)
+            card.append(
+              element(
+                'p',
+                Date.parse(window.resetsAt) <= Date.now()
+                  ? `重置时间已过，等待新数据（${date(window.resetsAt)}）`
+                  : `重置时间：${date(window.resetsAt)}`,
+                'muted',
+              ),
+            );
+        }
+      if (row.rateLimits?.available && !row.rateLimits.windows.length)
+        card.append(element('p', '本次未返回额度窗口', 'muted'));
+      if (row.usage) {
+        const u = row.usage;
+        card.append(
+          element(
+            'p',
+            `最近上报会话累计：输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()} tokens`,
+            'muted',
+          ),
+        );
+        if (u.costUsd !== null)
+          card.append(element('p', `API 价格估算 $${u.costUsd.toFixed(4)}（非订阅账单）`, 'muted'));
+        card.append(element('p', `用量采集：${date(u.measuredAt)}`, 'muted'));
+      }
+      card.append(element('p', `数据采集：${date(sampledAt)}`, 'muted'));
+    }
+    card.append(
+      element('p', `节点观察：${date(row.observedAt)}\nVPS 接收：${date(row.receivedAt)}`, 'muted'),
+    );
+    container.append(card);
+  }
 }
 $('login').addEventListener('submit', (event) => {
   event.preventDefault();
@@ -221,6 +298,10 @@ $('create').addEventListener('submit', (event) => {
   });
 });
 $('refresh').addEventListener('click', () => action(refresh));
+$('monitor-refresh').addEventListener('click', () => action(refreshMonitor));
+setInterval(() => {
+  if (token && !pending && !document.hidden) void action(refreshMonitor);
+}, 30000);
 $('logout').addEventListener('click', () => {
   logout();
   notice('已退出。');

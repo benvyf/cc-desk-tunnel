@@ -1,5 +1,6 @@
 import { createPublicKey } from 'node:crypto';
 import { isAbsolute, parse, resolve } from 'node:path';
+import { monitorNodePattern } from '../../../packages/protocol/src/account-monitor.ts';
 
 export type UpdateConfig = {
   origin: string;
@@ -8,6 +9,7 @@ export type UpdateConfig = {
   adminName: string;
   adminTokenSha256: string;
   trustedKeys: Record<string, string>;
+  monitorNodes?: Record<string, string>;
 };
 
 export function validateConfig(value: unknown): UpdateConfig {
@@ -17,7 +19,10 @@ export function validateConfig(value: unknown): UpdateConfig {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
   const c = value as Record<string, unknown>;
   const fields = ['origin', 'dataDir', 'port', 'adminName', 'adminTokenSha256', 'trustedKeys'];
-  if (Object.keys(c).length !== fields.length || !fields.every((k) => Object.hasOwn(c, k)))
+  if (
+    Object.keys(c).some((k) => ![...fields, 'monitorNodes'].includes(k)) ||
+    !fields.every((k) => Object.hasOwn(c, k))
+  )
     return fail();
   if (typeof c.origin !== 'string' || typeof c.dataDir !== 'string' || !isAbsolute(c.dataDir))
     return fail();
@@ -48,5 +53,26 @@ export function validateConfig(value: unknown): UpdateConfig {
       return fail();
     if (createPublicKey(pem).asymmetricKeyType !== 'ed25519') return fail();
   }
-  return Object.freeze({ ...c, trustedKeys: Object.freeze({ ...c.trustedKeys }) }) as UpdateConfig;
+  if (Object.hasOwn(c, 'monitorNodes')) {
+    if (!c.monitorNodes || typeof c.monitorNodes !== 'object' || Array.isArray(c.monitorNodes))
+      return fail();
+    const nodes = Object.entries(c.monitorNodes);
+    if (
+      nodes.length > 64 ||
+      nodes.some(
+        ([id, hash]) =>
+          !monitorNodePattern.test(id) ||
+          typeof hash !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(hash) ||
+          hash === c.adminTokenSha256,
+      )
+    )
+      return fail();
+    if (new Set(nodes.map(([, hash]) => hash)).size !== nodes.length) return fail();
+  }
+  return Object.freeze({
+    ...c,
+    ...(c.monitorNodes ? { monitorNodes: Object.freeze({ ...c.monitorNodes }) } : {}),
+    trustedKeys: Object.freeze({ ...c.trustedKeys }),
+  }) as UpdateConfig;
 }

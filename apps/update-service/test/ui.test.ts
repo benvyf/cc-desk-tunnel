@@ -54,6 +54,11 @@ test(
       adminName: 'browser-test',
       adminTokenSha256: createHash('sha256').update(token).digest('hex'),
       trustedKeys: { test: keys.publicKey.export({ type: 'spki', format: 'pem' }) },
+      monitorNodes: {
+        'ubuntu-test': createHash('sha256')
+          .update('test_node_browser_12345678901234567890')
+          .digest('hex'),
+      },
     });
     const store = await UpdateStore.open(config.dataDir, config.trustedKeys, config.adminName);
     const server = await createUpdateServer(store, config);
@@ -117,10 +122,54 @@ test(
     const artifact = join(root, 'CC-Desk-Tunnel-Setup-0.3.6-x64.exe');
     await writeFile(signed, index(1, false));
     await writeFile(artifact, bytes);
+    const sampledAt = new Date(Date.now() - 3600000).toISOString();
+    const reportResponse = await fetch(
+      `http://127.0.0.1:${backendPort}/cc-updates/admin/api/monitor/report`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: 'Bearer test_node_browser_12345678901234567890',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          schema: 1,
+          nodeId: 'ubuntu-test',
+          observedAt: new Date().toISOString(),
+          account: { id: 'a'.repeat(64), subscriptionType: 'max' },
+          rateLimits: {
+            available: true,
+            measuredAt: sampledAt,
+            windows: [
+              {
+                name: 'five_hour',
+                utilization: 82,
+                resetsAt: new Date(Date.now() + 3600000).toISOString(),
+              },
+            ],
+          },
+          usage: null,
+        }),
+      },
+    );
+    assert.equal(reportResponse.status, 204);
     await page.goto(origin + '/cc-updates/admin/');
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
     await page.getByRole('button', { name: '登录管理' }).click();
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '账号监控' })).toBeVisible();
+    await expect(
+      page.locator('#monitor-nodes').getByText('ubuntu-test', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator('#monitor-nodes').getByText('5 小时额度：82%', { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.locator('#monitor-nodes').getByText('数据已过期', { exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: '刷新账号数据' }).click();
+    await expect(
+      page.locator('#monitor-nodes').getByText('5 小时额度：82%', { exact: true }),
+    ).toBeVisible();
     await page.getByLabel('签名索引（JSON）').setInputFiles(signed);
     await page.getByRole('button', { name: '添加候选' }).click();
     await expect(page.getByText('签名索引已验证，候选已添加。')).toBeVisible();

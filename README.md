@@ -6,6 +6,8 @@
 
 跨电脑继续开发：[当前进度、目标与续做指南](docs/开发交接与跨电脑续做指南-2026-10-23.md)。
 
+新增可选功能：[Claude 账号数据被动同步](docs/ACCOUNT-MONITOR.md)，复用 Ubuntu 服务端已有数据上报 VPS，不新增 Claude 查询；需按文档配置部署后启用。
+
 用桌面客户端驱动云端的 Claude Code，经反向隧道在你的 Windows 本机执行。
 
 Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、编译器和各种工具都留在 Windows 本机。CC Desk Tunnel 把两端接起来：服务器上是一个容器，Windows 上是一个桌面客户端，Claude 通过一条加密的反向 SSH 通道在你的电脑上读写文件、执行命令。

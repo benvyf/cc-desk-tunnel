@@ -4,6 +4,8 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { Readable } from 'node:stream';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
+import { MonitorStore } from './monitor.ts';
+import { validateMonitorReport } from '../../../packages/protocol/src/account-monitor.ts';
 
 const base = '/cc-updates/admin';
 const api = base + '/api';
@@ -51,6 +53,9 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     });
   }
   const expectedTokenHash = Buffer.from(config.adminTokenSha256, 'hex');
+  const monitor = config.monitorNodes
+    ? new MonitorStore(config.dataDir, Object.keys(config.monitorNodes))
+    : undefined;
   let failures = 0;
   let windowStart = Date.now();
   function authenticated(request: IncomingMessage): void {
@@ -117,7 +122,50 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         if (!path.startsWith(api + '/')) throw new UpdateError(404, 'Not found.');
+        if (path === `${api}/monitor/report` && request.method === 'POST') {
+          if (!monitor) throw new UpdateError(404, 'Monitoring is not configured.');
+          if (request.headers.origin !== undefined)
+            throw new UpdateError(403, 'Browser reports are not accepted.');
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 16384)).toString('utf8'));
+          } catch (error) {
+            if (error instanceof UpdateError) throw error;
+            throw new UpdateError(400, 'Invalid report.');
+          }
+          const nodeId =
+            input && typeof input === 'object' && !Array.isArray(input)
+              ? (input as Record<string, unknown>).nodeId
+              : undefined;
+          const expected =
+            typeof nodeId === 'string' && Object.hasOwn(config.monitorNodes!, nodeId)
+              ? config.monitorNodes![nodeId]
+              : undefined;
+          const auth = request.headers.authorization ?? '';
+          const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
+          if (
+            !expected ||
+            !/^[A-Za-z0-9_-]{32,128}$/.test(token) ||
+            !timingSafeEqual(
+              createHash('sha256').update(token).digest(),
+              Buffer.from(expected, 'hex'),
+            )
+          )
+            throw new UpdateError(401, 'Node authentication required.');
+          try {
+            monitor.put(validateMonitorReport(input));
+          } catch {
+            throw new UpdateError(400, 'Invalid report.');
+          }
+          respond(response, 204);
+          return;
+        }
         authenticated(request);
+        if (path === `${api}/monitor` && request.method === 'GET') {
+          respond(response, 200, monitor?.status() ?? { nodes: [] });
+          return;
+        }
         if (path === `${api}/status` && request.method === 'GET') {
           respond(response, 200, store.status());
           return;
@@ -176,5 +224,6 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     },
   );
   server.maxHeadersCount = 32;
+  server.once('close', () => monitor?.close());
   return server;
 }

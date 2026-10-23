@@ -11,14 +11,17 @@ export const runtimeFiles = [
   'apps/update-service/src/http.ts',
   'apps/update-service/src/main.ts',
   'apps/update-service/src/store.ts',
+  'apps/update-service/src/monitor.ts',
   'apps/update-service/web/index.html',
   'apps/update-service/web/app.js',
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',
+  'packages/protocol/src/account-monitor.ts',
   'deploy/update-service/cc-update-service.service',
   'deploy/update-service/nginx.conf.example',
   'deploy/update-service/config.example.json',
   'docs/UPDATE-SERVICE.md',
+  'docs/ACCOUNT-MONITOR.md',
 ];
 
 export async function packageUpdateService(root, output) {
