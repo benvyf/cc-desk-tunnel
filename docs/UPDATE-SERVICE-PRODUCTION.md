@@ -1,5 +1,7 @@
 # 定制更新服务：正式部署与维护
 
+> 最新管理服务（2026-10-23 15:13 香港时间）：完整运行源码 `4e3ce9d` 已部署，管理中心共用密码登录，提供客户端更新、内容审核配置/试算/记录及修改密码。CC 生产消息门禁尚未接入，JEV 密钥未配置。原密码、发布状态和服务配置保持不变，自动续期 timer active；回滚源码与验收见 [审核模块上线记录](MODERATION-ADMIN-INTEGRATION.md#上线记录)。下文首次部署令牌登录说明为历史记录，当前网页登录使用 [管理员密码](ADMIN-PASSWORD-LOGIN.md)。
+
 > 当前凭据管理方式已更新：2026-10-23 按用户要求重新生成身份并集中保存在 VPS `/root/.cc-update-admin/`，使用 `managed-vps-2026-10-23`。下文旧电脑目录和旧公钥为首次部署历史记录，不再用于新发布；当前路径、指纹和操作见 [VPS 统一发布](VPS-RELEASE-CREDENTIALS.md)。本次仅重启独立更新服务以切换身份，未更改 Nginx 或六台 CC 服务端。
 
 日期：2026-10-23（Asia/Hong_Kong）。独立更新管理服务已部署到现有 VPS，并使用现有 `api.ghostapi.org` 的 HTTPS 证书和站点入口。Windows 客户端已完成接入，build 2 已使用新身份发布到 pilot revision 3，stable 为 revision 2 空通道；详见 [build 2 发布记录](UPDATE-CLIENT-BUILD-2.md)。以下首次部署验收和备份信息按历史时点保留。

@@ -57,7 +57,7 @@ sub2api 的同步审核在缺少 API 密钥或模型调用失败时会返回允�
 
 ## 本次已实现：管理配置与审核内核
 
-代码位于现有 `apps/update-service`，管理入口继续使用 `/cc-updates/admin/`，复用管理员令牌、Origin 校验及退出流程。
+代码位于现有 `apps/update-service`，管理入口继续使用 `/cc-updates/admin/`，复用管理员密码登录、兼容令牌、Origin 校验及退出流程。管理模块已于 2026-10-23 部署，运行源码为 `4e3ce9d`，详见 [上线记录](MODERATION-ADMIN-INTEGRATION.md#上线记录)。
 
 - `src/jev.ts`：TypeSafe 原生文本请求、13 分类问题、响应校验、超时、1 MiB 响应上限。单次请求，不自动重试；默认 5 秒。错误只保留稳定原因码，不保存服务商错误正文。
 - `src/moderation.ts`：四种策略、配置版本冲突检查、私有 SQLite 配置和操作记录。默认采用用户选定的 `keyword_and_api`，初始关键词为空、API 密钥未配置。
