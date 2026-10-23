@@ -46,6 +46,31 @@ VPS 仅约 1 GB 内存，运行七个既有业务容器，不在其上构建 CC 
 
 下一步执行只读脚本 `scripts/inspect-ubuntu-pilot.py`，只输出镜像 ID、Compose 路径及项目、挂载、端口、版本、三项流量开关和 OTEL 变量名、磁盘用量。它不会输出完整环境变量、配置内容、令牌或证书私钥，不会停止服务。脱敏报告保存为私有状态目录下 `preflight-sanitized.json`，可回传；其余 inspect、配置及备份仍不可回传。任务是否空闲需要操作者确认，健康状态不代表没有运行任务。
 
+## 生产盘点及待执行切换
+
+2026-10-23 11:32 香港时间的脱敏盘点已回传：
+
+- 旧镜像：`sha256:8b9d684a84664ad27a7d97d808a8a8a057940b6ca3f5c080d6bc2182792d2390`，应用 0.3.5，原生 CLI 2.1.293。
+- 已验收新镜像：`sha256:e3275f6f27d5a39b1468123573930285d68cbbcada741b76eefbc7692ab5a553`。
+- 原 Compose 项目 `cc-desk-tunnel-ba938975`；配置 `/opt/cc-desk-tunnel/.local/docker.env`；Compose 文件 `/opt/cc-desk-tunnel/deploy/docker/compose.yaml`。
+- 唯一挂载 `/srv/cc-desk-tunnel:/data`，端口 `0.0.0.0:8787`。数据占用 255819776 字节，旧镜像 1902422321 字节，可用空间 8824700928 字节。
+- 三项独立流量开关均为 1，未发现总禁用开关或 service/container 层的 OTEL 变量；这不表示运行时没有内部 OTEL 采集。
+- 用户已确认“此节点无任务，旧客户端已断开”。当前尚未回传生产切换结果。
+
+切换脚本为 `scripts/cutover-ubuntu-pilot.py --idle-confirmed`，只适用上述固定节点和镜像。先保存旧镜像及完整源码/配置，再停止单个服务并完整归档数据，核验归档可读性、SHA256 和关键配置；随后更新原 docker.env 中的镜像设置，以原 Compose 项目、配置和挂载启动已验收镜像，禁止构建或拉取。检查本地 TLS 固定指纹、协议 20、WebSocket 认证及三项开关，未调用模型。生产中的历史、统计、文件和终端仍需 Windows 客户端验收。
+
+备份放在 `/var/lib/cc-desk-tunnel-pilot-4a39bc3/production-backup/`，root-only，包含 `old-image.tar`、`source-config.tar`、`data.tar`、`docker.env` 和校验清单。数据备份失败时重启原容器；开始切换后失败则核验备份、停止/移除该服务容器，将切换后的数据重命名保留，再恢复备份数据和旧镜像，检查协议 19。不会删除新版本数据，也不会修改其他节点及中转配置。
+
+脚本执行时将自身保存到节点私有状态目录，之后手动回滚命令是：
+
+```bash
+sudo python3 /var/lib/cc-desk-tunnel-pilot-4a39bc3/cutover.py --rollback
+```
+
+回滚只应在节点空闲、客户端断开时执行。新数据保留在 `/srv/cc-desk-tunnel.failed-pilot-<时间戳>`，原程序源码不改变，旧配置中的镜像设置固定到备份镜像标签，避免标签漂移。私有日志为 `cutover-private.log`；不要直接回传日志、配置或备份内容。本次备份在同一磁盘，离机副本尚待安排。
+
+本机用临时目录、实际文件归档和模拟 Docker 验证了成功切换、认证失败恢复旧快照并保留新数据、数据备份失败重启旧容器三个核心流程。没有本机 Linux/Docker 运行环境，实际生产结果以目标节点执行及公网/客户端验收为准。
+
 ## 隔离通过后的切换顺序
 
 1. 从原容器确认实际挂载目录、镜像 ID、Compose 配置、版本及原生 CLI 版本；记录三项 Claude 流量开关和 OTEL 配置，不输出密钥。必要时在隔离环境先验证已有数据的兼容性。
