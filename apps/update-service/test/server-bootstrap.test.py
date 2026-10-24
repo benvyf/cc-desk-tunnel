@@ -48,6 +48,24 @@ class BootstrapTests(unittest.TestCase):
         self.assertEqual(b.PROFILE, json.loads((root / 'deploy/server-bootstrap-profile.json').read_text()))
         self.assertIn('!deploy/server-bootstrap-profile.json', (root / '.dockerignore').read_text())
 
+    def test_reviewed_native_activation_policy_mount_is_preserved_and_stays_read_only(self):
+        original = self.original()
+        source = '/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed'
+        original['Mounts'][1]['Source'] = source
+        original['HostConfig']['Mounts'] = [
+            {'Type': 'bind', 'Source': source, 'Target': '/etc/claude-code', 'ReadOnly': True},
+        ]
+        b.validate_runtime(original)
+        cloned = b.clone_config(original, 'new-image')
+        self.assertEqual(cloned['HostConfig'], original['HostConfig'])
+        for changed in ({'RW': True}, {'Type': 'volume'}, {'Source': source + '-other'},
+                        {'Source': '/tmp/managed'}, {'Destination': '/other-policy'}):
+            with self.subTest(changed=changed):
+                bad = copy.deepcopy(original)
+                bad['Mounts'][1].update(changed)
+                with self.assertRaises(b.InstallError):
+                    b.validate_runtime(bad)
+
     def test_bootstrap_rejects_changed_serializers_even_when_signed_compatibility_matches(self):
         root = pathlib.Path(__file__).parents[3]
         closure = ['apps/server/src/' + name + '.ts' for name in ('store', 'usage', 'web-access', 'native-settings', 'native-onboarding', 'native-instructions', 'native-moderation-hook', 'moderation', 'errors', 'native-deployment', 'native-terminal-policy', 'web-certificate', 'web-totp', 'device-terms', 'claude', 'legacy', 'native-account')] + ['packages/protocol/src/index.ts', 'packages/protocol/src/web.ts', 'packages/protocol/src/web-certificate.ts']

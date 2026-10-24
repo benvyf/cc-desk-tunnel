@@ -180,12 +180,18 @@ def validate_runtime(original):
     if any(v.get('HostPort', '') in ('', '0') for a in h.get('PortBindings', {}).values() for v in (a or [])):
         raise InstallError('Dynamic ports are not supported.')
     mounts = original.get('Mounts', [])
-    expected = {'/data': ('/srv/cc-desk-tunnel', True), '/etc/claude-code': ('/etc/claude-code', False)}
+    # The reviewed first-node activation mounted its private policy directory here.
+    # Preserve that exact bind; do not move policy files or accept arbitrary sources.
+    expected = {
+        '/data': ({'/srv/cc-desk-tunnel'}, True),
+        '/etc/claude-code': ({'/etc/claude-code',
+                             '/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed'}, False),
+    }
     if len(mounts) != 2 or {m['Destination'] for m in mounts} != set(expected):
         raise InstallError('Unknown mounts; manual image upgrade required.')
     for m in mounts:
-        source, rw = expected[m['Destination']]
-        if m['Type'] != 'bind' or m['Source'] != source or bool(m.get('RW')) != rw:
+        sources, rw = expected[m['Destination']]
+        if m['Type'] != 'bind' or m['Source'] not in sources or bool(m.get('RW')) != rw:
             raise InstallError('Expected data and read-only policy bind mounts.')
 
 
