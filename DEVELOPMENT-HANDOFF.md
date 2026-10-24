@@ -6,6 +6,8 @@
 
 review离线复现512条缓存已满、修改策略、重新审核最旧文本后，该条目因Map.set覆盖不更新顺序而被下一条新内容淘汰，重复文本多付一次审核。修复只在替换条目前delete再set，保持最新审核结果的淘汰顺序。扩展原有容量回归，先证实旧代码失败，再验证新代码复用：模拟审核调用由515恢复预期514。15项去重/HTTP相关测试及TypeScript通过，没有真实Claude/JEV请求。仅发布控制中心模块，不改Ubuntu、审核策略或发布索引；原生hook修复仍待镜像维护。
 
+控制中心已从干净源码c47de22a27d6483a062d94ac9cd4b8cf0fc2d714上线，48个运行文件中只改变moderation-nodes.ts；正式包独立导入通过。备份/var/backups/cc-update-service/jev-cache-order-20261024T092101Z，旧运行目录/opt/cc-update-service.previous-jev-cache-order-c47de22。配置、管理员登录、审核策略、发布索引、续期登记及节点清单均保持，两timer active。实际生产Claude/JEV验收请求为0。详见[缓存顺序修复发布](docs/evidence/jev-cache-order-production-2026-10-24.json)。
+
 ### 2026-10-24 JEV小范围费用优化
 
 用户要求优先采用改动小、收益明确的两项修复。控制中心扩展为同节点/会话/策略下完整相同文本跨入口复用，最多512份近期内容并刷新命中顺序，保留A→B→A的通过结果；拒绝、错误、请求ID冲突、内容/策略/会话隔离保持。原生hook按tool_use_id和实际文本避免transcript与tool_calls重复拼接，不遗漏不同hook内容或权限反馈。9项去重/hook测试、27项HTTP/审核回归、18项打包/发布/兼容性测试通过（另2项平台/浏览器测试跳过），TypeScript通过；没有真实Claude/JEV请求。

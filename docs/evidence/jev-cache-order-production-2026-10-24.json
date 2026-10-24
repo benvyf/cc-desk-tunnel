@@ -1,0 +1,35 @@
+{
+  "phase": "complete",
+  "sourceCommit": "c47de22a27d6483a062d94ac9cd4b8cf0fc2d714",
+  "backup": "/var/backups/cc-update-service/jev-cache-order-20261024T092101Z",
+  "previousRuntime": "/opt/cc-update-service.previous-jev-cache-order-c47de22",
+  "runtimeInventoryFiles": 48,
+  "changedRuntimeFiles": [
+    "apps/update-service/src/moderation-nodes.ts"
+  ],
+  "configurationUnchanged": true,
+  "privateLoginUnchanged": true,
+  "moderationPolicyUnchanged": true,
+  "publicationIndexesUnchanged": true,
+  "renewalRegistrationsUnchanged": true,
+  "existingNodeListUnchanged": true,
+  "publicAssetsVerified": true,
+  "freshEndpointAuthVerified": true,
+  "productionInstallationGrantsCreated": 0,
+  "ubuntuNodesChanged": false,
+  "providerRequests": 0,
+  "fullFreshVmInstallVerified": false,
+  "bothRenewalTimersActive": true,
+  "runtimeArchiveSha256": "cdb3ae1da68d4516cf930c8df7121f00298387b7d4a1e9387633206c2cc19a3c",
+  "validation": {
+    "regressionFailedBeforeFix": true,
+    "relatedTestsPassedAfterFix": 15,
+    "typescriptPassed": true,
+    "actualPackagedRuntimeImportPassed": true,
+    "syntheticProviderOnly": true,
+    "expectedReviewCalls": 514,
+    "beforeFixReviewCalls": 515,
+    "afterFixReviewCalls": 514,
+    "refreshedApprovalReused": true
+  }
+}
