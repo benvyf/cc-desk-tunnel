@@ -113,6 +113,7 @@ export class NodeReviews {
       this.content.set(context, cached);
     } else {
       const entry = { revision, result };
+      this.content.delete(context);
       this.content.set(context, entry);
       if (this.content.size > 512) this.content.delete(this.content.keys().next().value!);
       const forget = () => {

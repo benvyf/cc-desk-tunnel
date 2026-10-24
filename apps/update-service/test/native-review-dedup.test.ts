@@ -238,12 +238,13 @@ test('desktop input and native hooks share exact content, while extra history an
   assert.equal(calls, 4, 'New user permission text must still be reviewed');
 });
 
-test('content approvals are bounded and keep recently used entries', async (t) => {
+test('full content cache retains policy-refreshed approvals and evicts the oldest entry', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   const reviews = new NodeReviews();
   let calls = 0;
+  let revision = 1;
   const store = {
-    config: () => ({ revision: 1 }),
+    config: () => ({ revision }),
     review: async () => ({ id: `fixture-${++calls}`, allowed: true }),
   } as unknown as ModerationStore;
   let request = 0;
@@ -265,13 +266,18 @@ test('content approvals are bounded and keep recently used entries', async (t) =
   const first = await check('text-0');
   for (let n = 1; n < 512; n++) await check(`text-${n}`);
   assert.equal(calls, 512);
-  assert.deepEqual(await check('text-0'), first);
+  revision++;
+  const refreshed = await check('text-0');
+  assert.notDeepEqual(refreshed, first, 'A new policy must review the old content again');
+  assert.equal(calls, 513);
   await check('text-512');
+  assert.equal(calls, 514);
   assert.deepEqual(
     await check('text-0'),
-    first,
-    'A recently used approval survives capacity eviction',
+    refreshed,
+    'The freshly reviewed approval must survive capacity eviction',
   );
+  assert.equal(calls, 514, 'Repeating the refreshed content must not pay for another review');
   await check('text-1');
-  assert.equal(calls, 514, 'The oldest approval is evicted and reviewed again');
+  assert.equal(calls, 515, 'The oldest approval is evicted and reviewed again');
 });
