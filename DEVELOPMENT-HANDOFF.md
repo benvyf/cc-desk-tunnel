@@ -8,6 +8,8 @@
 
 发布检查发现native-moderation-hook.ts属于现有COMPATIBILITY_PATHS保护闭包，普通程序更新不能替换。保持校验与已发布Linux Build3不变，只部署控制中心优化；hook修复源码与测试准备完成，待后续管理员镜像维护。本环境没有ubuntu-cc的SSH管理入口，不能宣称已应用该节点修复，也不应发一个现有节点无法普通升级的Build4。完整边界见[审核说明](docs/MODERATION-NODE-GATE.md)和[后续设计](docs/JEV-COST-REPAIR-DESIGN.md)。当前工作区并行桌面样式改动保留，不纳入本次提交。
 
+控制中心已从干净源码e2b5fdfddb90acf5f9a43e57d0a5e55916bd13bc上线，正式包SHA256为7e8fe1c2c4d4554d00942d55f8e93503006a5dfa669dabb976f1287d542c88e2，48文件中仅审核节点模块和审核说明变化。备份/var/backups/cc-update-service/jev-small-20261024T091422Z；配置、管理员登录、审核策略、发布索引、续期登记及现有节点均保持，两timer active。实际运行包独立导入和干净checkout类型检查通过，真实Claude/JEV调用为0。Windows Build7/Linux Build3不变，Ubuntu未操作。部署证据见[小范围修复发布](docs/evidence/jev-small-production-2026-10-24.json)。
+
 ### 2026-10-24 原生终端重复JEV调用
 
 用户报告一个问题产生多次审核。只读VPS事件元数据确认，香港时间16:14–16:19的8条记录中有5次相同16161字节文本和2次相同16169字节文本，均为同一会话；工具批次hook生成新请求ID导致原有去重失效。控制中心新增原生会话最近通过内容的摘要/策略revision缓存及同时请求合并，不缓存拒绝或错误；新内容、节点/会话/策略变化重新审核。普通CC输入仍按请求审核，入口与终端审查内容不同可能各触发一次。见[审核说明](docs/MODERATION-NODE-GATE.md)。13项相关测试通过，合成JEV提供方证明一次输入加8次相同工具hook只记1次JEV请求；未调用真实Claude/JEV。工作区并行中的客户端界面改动由用户保留，本次不纳入提交或发布。
