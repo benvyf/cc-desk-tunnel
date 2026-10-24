@@ -27,6 +27,7 @@ import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
 import ShortcutSettings from './ShortcutSettings.tsx';
 import { IconButton, Switch } from './ui.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import type { MenuItem } from './ui.tsx';
 import ManagedUpdatePanel from './ManagedUpdatePanel.tsx';
 
@@ -193,20 +194,13 @@ function TranscriptViewSettings() {
             <strong>展示多少</strong>
             <small>{current.detail}</small>
           </span>
-          <div className="stat-chips" role="radiogroup" aria-label="工作步骤展示">
-            {viewModes.map((entry) => (
-              <button
-                type="button"
-                key={entry.mode}
-                role="radio"
-                className="stat-chip"
-                aria-checked={entry.mode === view.mode}
-                onClick={() => set({ mode: entry.mode })}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="工作步骤展示"
+            role="radiogroup"
+            value={view.mode}
+            options={viewModes.map((entry) => ({ value: entry.mode, label: entry.label }))}
+            onChange={(mode) => set({ mode })}
+          />
         </div>
       </div>
     </>

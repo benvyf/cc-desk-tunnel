@@ -20,6 +20,9 @@
   --raised: var(--surface-3);
   --hover: light-dark(#eeede9, #292927);
   --selected: light-dark(#e7e5df, #30302d);
+  --segmented-bg: light-dark(#e9e9e9, #252525);
+  --segmented-active: light-dark(#ffffff, #444444);
+  --segmented-shadow: 0 1px 3px light-dark(#00000012, #00000026);
   --line-strong: light-dark(#c7c5be, #50504b);
   --focus-line: var(--accent);
   --text: light-dark(#20201e, #dedcd6);
@@ -130,23 +133,6 @@
 }
 :root[data-theme='dark'] {
   color-scheme: dark;
-}
-.connection-modes {
-  display: flex;
-  border-bottom: 1px solid var(--line);
-}
-.connection-modes button {
-  flex: 1;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  padding: 5px 8px;
-  background: transparent;
-  min-height: var(--control-md);
-  line-height: 20px;
-}
-.connection-modes button[aria-pressed='true'] {
-  border-bottom-color: var(--accent);
-  color: var(--accent);
 }
 .native-terminal {
   /* ANSI output keeps a dark canvas; its controls must use the same palette in either app theme. */
@@ -3307,38 +3293,118 @@ details[open] > summary > .fold-chevron {
   color: var(--muted);
 }
 .segmented {
-  display: inline-flex;
+  container: segmented / inline-size;
+  display: block;
+  width: calc(var(--segmented-count) * 104px + 4px);
   max-width: 100%;
-  border: 1px solid var(--line);
+  min-width: 0;
+  height: 36px;
   border-radius: var(--radius-full);
+  background: var(--segmented-bg);
   overflow-x: auto;
   scrollbar-width: none;
 }
+.segmented.connection-modes {
+  width: 100%;
+}
+.segmented-track {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: repeat(var(--segmented-count), 1fr);
+  width: max-content;
+  min-width: 100%;
+  height: 36px;
+  padding: 2px;
+}
+.segmented-indicator {
+  position: absolute;
+  z-index: -1;
+  inset-block: 2px;
+  inset-inline-start: 2px;
+  width: calc((100% - 4px) / var(--segmented-count));
+  border-radius: var(--radius-full);
+  background: var(--segmented-active);
+  box-shadow: var(--segmented-shadow);
+  transform: translateX(calc(var(--segmented-index) * 100% * var(--segmented-direction, 1)));
+  transition: transform var(--cds-dur-base) var(--cds-ease-snap);
+  pointer-events: none;
+}
+.segmented:dir(rtl) {
+  --segmented-direction: -1;
+}
 .segmented button {
-  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: max-content;
+  height: 32px;
+  min-height: 0;
   border: 0;
-  border-right: 1px solid var(--line);
-  padding: 5px 11px;
-  background: var(--surface);
-  font-size: 12px;
+  border-radius: var(--radius-full);
+  padding: 0 clamp(6px, 2cqw, 12px);
+  background: transparent;
+  font-size: var(--font-caption);
+  font-weight: 400;
   color: var(--muted);
   white-space: nowrap;
-  min-height: calc(var(--control-md) - 2px);
   line-height: 20px;
 }
 .segmented button:focus-visible {
   outline-offset: -3px;
 }
-.segmented button:first-child {
-  border-radius: var(--radius-full) 0 0 var(--radius-full);
+.segmented button:is([aria-pressed='true'], [aria-checked='true']) {
+  color: var(--text);
 }
-.segmented button:last-child {
-  border-right: 0;
-  border-radius: 0 var(--radius-full) var(--radius-full) 0;
+.segmented button:enabled:hover {
+  color: var(--text);
 }
-.segmented button[aria-pressed='true'] {
-  background: var(--accent-soft);
-  color: var(--accent-strong);
+.segmented-icon {
+  display: inline-flex;
+  flex: none;
+  color: var(--faint);
+}
+.segmented-icon svg {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+}
+.segmented button:is([aria-pressed='true'], [aria-checked='true']) .segmented-icon {
+  color: var(--accent);
+}
+.stat-picks > .segmented {
+  margin-top: 12px;
+}
+@container segmented (max-width: 254px) {
+  .segmented button {
+    padding-inline: 8px;
+    gap: 4px;
+  }
+  .segmented-icon {
+    display: none;
+  }
+}
+@media (forced-colors: active) {
+  .segmented {
+    outline: 1px solid ButtonText;
+    outline-offset: -1px;
+  }
+  .segmented-indicator {
+    forced-color-adjust: none;
+    background: Highlight;
+    box-shadow: none;
+    /* Keep HighlightText over Highlight throughout selection changes. */
+    transition: none;
+  }
+  .segmented .segmented-track > button {
+    transition: none;
+  }
+  .segmented button:is([aria-pressed='true'], [aria-checked='true']),
+  .segmented button:is([aria-pressed='true'], [aria-checked='true']) .segmented-icon {
+    color: HighlightText;
+    outline-color: HighlightText;
+    forced-color-adjust: none;
+  }
 }
 .usage-tiles {
   display: grid;
@@ -4504,7 +4570,7 @@ dialog:has(.web-settings-form) {
 .motion-presence[data-kind='shade'] > * {
   animation-duration: var(--cds-dur-sheet);
 }
-.connection-modes button,
+.segmented button,
 .rail button,
 .side-action,
 .theme-option {
@@ -4586,7 +4652,8 @@ dialog:has(.web-settings-form) {
   .background-tasks li {
     animation: none !important;
   }
-  /* Zero durations affect future transitions; remove running thinking transitions as well. */
+  /* Zero durations affect future transitions; remove running transitions as well. */
+  .segmented-indicator,
   .thinking-block::details-content,
   .thinking-grid,
   .thinking-block .thinking-preview,

@@ -1,9 +1,10 @@
-import { Download, Settings, SquareTerminal, Unplug } from './icons.tsx';
+import { Download, Globe, Laptop, Settings, SquareTerminal, Unplug } from './icons.tsx';
 import { useState } from 'react';
 import { thisDevice } from './device.ts';
 import { GithubMark, openProject, project } from './project.tsx';
 import { useConnectionName } from './shared.ts';
 import { Button } from './ui.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 
 export type ConnectionForm = {
   url: string;
@@ -110,22 +111,16 @@ export default function LoginPage({
           className="connection-form"
         >
           {window.desktop?.dev && (
-            <div className="connection-modes" role="group" aria-label="连接方式">
-              <button
-                type="button"
-                aria-pressed={form.mode === 'local'}
-                onClick={() => change({ mode: 'local' })}
-              >
-                本地模拟
-              </button>
-              <button
-                type="button"
-                aria-pressed={form.mode === 'remote'}
-                onClick={() => change({ mode: 'remote' })}
-              >
-                远程代理
-              </button>
-            </div>
+            <SegmentedControl
+              className="connection-modes"
+              label="连接方式"
+              value={form.mode}
+              options={[
+                { value: 'local', label: '本地模拟', icon: <Laptop /> },
+                { value: 'remote', label: '远程代理', icon: <Globe /> },
+              ]}
+              onChange={(mode) => change({ mode })}
+            />
           )}
           <label>
             服务地址
