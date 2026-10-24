@@ -368,6 +368,7 @@ test('a delayed edit preserves subsequent navigation and the forked draft', asyn
   const title = await createSession(page, '延迟编辑');
   await send(page, '等待编辑的消息');
   await settled(page);
+  await page.locator('.message.user .message-content').hover();
   await page.getByRole('button', { name: '编辑重发', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   const otherRow = page.locator('.session-row').filter({ hasText: other });
@@ -430,6 +431,7 @@ test('loading an edited draft respects focus moved to conversation search', asyn
   await createSession(page, '编辑时查找');
   await send(page, '待编辑的原始消息');
   await settled(page);
+  await page.locator('.message.user .message-content').hover();
   await page.getByRole('button', { name: '编辑重发', exact: true }).click();
   await expect.poll(() => !!release).toBe(true);
   const box = page.getByRole('textbox', { name: '消息', exact: true });
@@ -464,12 +466,14 @@ test('a sent question can be copied while awaiting approval and edited after sto
   await expect(page.getByRole('button', { name: '允许', exact: true })).toBeVisible();
   const question = page.locator('.message.user');
   await expect(question.getByRole('button', { name: '编辑重发', exact: true })).toHaveCount(0);
+  await question.locator('.message-content').hover();
   await question.getByRole('button', { name: '复制消息', exact: true }).click();
   expect(
     await page.evaluate(() => (window as unknown as { copiedQuestion: string }).copiedQuestion),
   ).toBe(original);
   await page.getByRole('button', { name: '停止运行', exact: true }).click();
   await settled(page);
+  await question.locator('.message-content').hover();
   await question.getByRole('button', { name: '编辑重发', exact: true }).click();
   await expect(page.locator('.session-row.selected strong')).toHaveText(`${title}（分叉）`);
   await expect(page.getByRole('textbox', { name: '消息' })).toHaveValue(original);

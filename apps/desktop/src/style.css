@@ -110,7 +110,7 @@
   --button-sm: 28px;
   --button-md: 32px;
   --button-lg: 40px;
-  --user-bubble: light-dark(#f0f4f8, #242a30);
+  --user-bubble: light-dark(#f0f0ef, #212121);
   /* Code retains the reference's dark canvas in either app theme. */
   --code-bg: #171716;
   --code-header-bg: #0e0e0d;
@@ -123,10 +123,10 @@
   --code-shadow: 0 2px 6px light-dark(#00000026, #00000000);
   --cds-copy-feedback: 2500ms;
   --bar: 40px;
-  --font-body: 14px;
-  --font-title: 16px;
-  --font-caption: 12px;
-  --font-caption-small: 11px;
+  --font-body: var(--interface-font-size, 14px);
+  --font-title: calc(16rem / 14);
+  --font-caption: calc(12rem / 14);
+  --font-caption-small: calc(11rem / 14);
   --leading-body: 1.75;
   --leading-title: 1.5;
   --leading-caption: 1.6;
@@ -170,7 +170,7 @@
   align-items: center;
   padding: 4px 12px;
   min-height: 40px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .native-terminal > header > span {
   display: flex;
@@ -181,7 +181,7 @@
   margin: 0;
   padding: 5px 12px;
   color: #f2979e;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .terminal-host {
   flex: 1;
@@ -195,7 +195,7 @@
 }
 .message.thinking {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 * {
   box-sizing: border-box;
@@ -268,7 +268,7 @@ p {
   margin-top: 0;
 }
 h1 {
-  font-size: 18px;
+  font-size: calc(18rem / 14);
   margin-bottom: 0;
   font-weight: 600;
 }
@@ -303,14 +303,14 @@ label {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   font-weight: 500;
 }
 .button {
   --button-height: var(--button-md);
   --button-leading: 20px;
   --button-padding: 14px;
-  --button-font: 14px;
+  --button-font: 1rem;
   --button-radius: var(--radius-md);
   display: inline-flex;
   align-items: center;
@@ -360,14 +360,14 @@ label {
   --button-height: var(--button-xs);
   --button-leading: 16px;
   --button-padding: 8px;
-  --button-font: 12px;
+  --button-font: calc(12rem / 14);
   --button-radius: var(--radius-sm);
 }
 :is(.button, .icon-button)[data-size='sm'] {
   --button-height: var(--button-sm);
   --button-leading: 18px;
   --button-padding: 12px;
-  --button-font: 12px;
+  --button-font: calc(12rem / 14);
   --button-radius: var(--radius-sm);
 }
 :is(.button, .icon-button)[data-size='md'] {
@@ -442,7 +442,7 @@ label {
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--muted);
   line-height: 18px;
 }
@@ -477,7 +477,7 @@ button.chip.danger:hover:not(:disabled) {
   align-items: center;
   gap: 9px;
   font-weight: 600;
-  font-size: 20px;
+  font-size: calc(20rem / 14);
   white-space: nowrap;
 }
 .brand-connection {
@@ -486,7 +486,7 @@ button.chip.danger:hover:not(:disabled) {
   border-radius: var(--radius-full);
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-weight: 500;
   vertical-align: middle;
 }
@@ -504,7 +504,7 @@ button.chip.danger:hover:not(:disabled) {
   white-space: nowrap;
   padding: 1px 7px;
   border-radius: var(--radius-xs);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   font-weight: 500;
   border: 1px solid;
   min-height: var(--control-xs);
@@ -517,11 +517,11 @@ button.chip.danger:hover:not(:disabled) {
 }
 .muted {
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .error-text {
   color: var(--danger-text);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   margin-bottom: 0;
   overflow-wrap: anywhere;
   /* A connection failure says what happened on its first line and what to check on the next. */
@@ -540,7 +540,7 @@ button.chip.danger:hover:not(:disabled) {
 }
 .login-content > .brand {
   margin-bottom: 42px;
-  font-size: 24px;
+  font-size: calc(24rem / 14);
 }
 .login-links {
   display: flex;
@@ -570,7 +570,7 @@ button.chip.danger:hover:not(:disabled) {
   border: 0;
   background: none;
   color: inherit;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   opacity: 0.6;
   cursor: pointer;
   min-height: var(--control-sm);
@@ -702,7 +702,7 @@ html[data-platform='darwin'] .titlebar {
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   color: var(--muted);
   line-height: 20px;
 }
@@ -714,7 +714,7 @@ html[data-platform='darwin'] .titlebar {
   flex: 1;
   min-width: 0;
   margin: 0 14px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   font-weight: 500;
   color: var(--muted);
   text-align: center;
@@ -726,13 +726,13 @@ html[data-platform='darwin'] .titlebar {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
   white-space: nowrap;
 }
 .connection-status small {
   color: var(--faint);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 .connection-dot,
 .running-dot {
@@ -771,7 +771,7 @@ html[data-platform='darwin'] .titlebar {
   border-radius: var(--radius-md);
   background: none;
   color: var(--faint);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   white-space: nowrap;
   min-height: var(--control-sm);
   line-height: 20px;
@@ -800,7 +800,7 @@ dialog:has(.release-notes) {
   margin-bottom: 14px;
   overflow-y: auto;
   overflow-wrap: anywhere;
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
 }
 .connection-dot.online {
   background: var(--ok);
@@ -877,7 +877,7 @@ dialog:has(.release-notes) {
 .sidebar-brand .brand {
   flex: 1;
   min-width: 0;
-  font-size: 18px;
+  font-size: calc(18rem / 14);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -892,7 +892,7 @@ dialog:has(.release-notes) {
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
   text-align: left;
   min-height: var(--control-md);
   line-height: 20px;
@@ -925,7 +925,7 @@ dialog:has(.release-notes) {
 .session-search input {
   height: var(--control-md);
   padding: 6px 12px 6px 34px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   border: 0;
   border-radius: var(--radius-full);
   background: var(--hover);
@@ -948,14 +948,14 @@ dialog:has(.release-notes) {
   min-height: 34px;
   color: var(--faint);
   padding: 12px 8px 4px;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
 }
 /* Whether another computer is connected, beside its name: its sessions can then be worked on from here. */
 .device-state {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 11.5px;
+  font-size: calc(11.5rem / 14);
 }
 .device-state::before {
   content: '';
@@ -976,7 +976,7 @@ dialog:has(.release-notes) {
   gap: 6px;
   padding: 6px 8px 2px 14px;
   color: var(--muted);
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
 }
 .list-heading > .project-toggle,
 .elsewhere-project > .project-toggle {
@@ -1004,7 +1004,7 @@ dialog:has(.release-notes) {
   margin: 2px 0;
   padding: 0 4px 0 9px;
   border-radius: var(--radius-md);
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
   font-weight: 400;
 }
 .project-group > h2:hover {
@@ -1041,7 +1041,7 @@ dialog:has(.release-notes) {
 .project-toggle > small {
   flex: none;
   color: var(--faint);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .project-group > h2 > .pin-mark {
   width: 12px;
@@ -1053,7 +1053,7 @@ dialog:has(.release-notes) {
 }
 .project-empty {
   margin: 4px 0 8px 34px;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--faint);
 }
 .project-more {
@@ -1064,7 +1064,7 @@ dialog:has(.release-notes) {
   background: none;
   color: var(--muted);
   font: inherit;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   cursor: pointer;
 }
 .project-more:hover {
@@ -1073,7 +1073,7 @@ dialog:has(.release-notes) {
 .list-empty {
   margin: 20px 10px;
   color: var(--faint);
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
 }
 .session-row {
   display: flex;
@@ -1109,12 +1109,12 @@ dialog:has(.release-notes) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 400;
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
 }
 .session-select small {
   flex: none;
   color: var(--faint);
-  font-size: 11.5px;
+  font-size: calc(11.5rem / 14);
 }
 .session-row.selected .session-select small {
   color: var(--text-2);
@@ -1156,11 +1156,11 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-lg);
   background: var(--raised);
   box-shadow: var(--shadow-popover);
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   pointer-events: none;
 }
 .session-card strong {
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
   overflow-wrap: anywhere;
 }
 .session-card span {
@@ -1190,7 +1190,7 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-full);
   background: var(--danger-solid);
   color: white;
-  font-size: 10px;
+  font-size: calc(10rem / 14);
   line-height: 15px;
 }
 .notice-list {
@@ -1217,7 +1217,7 @@ dialog:has(.release-notes) {
   border: 0;
   background: none;
   color: var(--accent);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   min-height: var(--control-xs);
   line-height: 16px;
   padding: 2px 6px;
@@ -1231,7 +1231,7 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
 }
 .notice:disabled {
   opacity: 1;
@@ -1281,7 +1281,7 @@ dialog:has(.release-notes) {
 .menu-heading {
   margin: 0;
   padding: 6px 10px 8px;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--muted);
 }
 .menu button,
@@ -1294,7 +1294,7 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-md);
   padding: 6px 10px;
   background: transparent;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   text-align: left;
   color: var(--text);
   min-height: var(--control-md);
@@ -1321,7 +1321,7 @@ dialog:has(.release-notes) {
 .permission-confirm {
   margin: 0;
   padding: 6px 10px 10px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   line-height: 1.6;
 }
 .permission-confirm-actions {
@@ -1356,12 +1356,12 @@ dialog:has(.release-notes) {
 .menu-label small {
   display: block;
   margin-top: 1px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 .menu kbd {
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--faint);
 }
 .menu button > .menu-check,
@@ -1400,7 +1400,7 @@ dialog:has(.release-notes) {
   justify-content: center;
 }
 .page-title {
-  font-size: 26px;
+  font-size: calc(26rem / 14);
   font-weight: 600;
   margin: 0 0 22px;
 }
@@ -1450,7 +1450,7 @@ dialog:has(.release-notes) {
   gap: 18px;
   padding: 15px 0;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 14px;
+  font-size: 1rem;
 }
 .setting-row:last-child,
 .settings-list label:last-child {
@@ -1470,12 +1470,12 @@ dialog:has(.release-notes) {
 .setting-row small,
 .settings-list small {
   font-weight: 400;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--muted);
 }
 .setting-value {
   color: var(--muted);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   overflow-wrap: anywhere;
   text-align: right;
 }
@@ -1496,7 +1496,7 @@ dialog:has(.release-notes) {
   background: var(--surface-3);
   color: var(--text);
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   line-height: 1.55;
   resize: vertical;
 }
@@ -1556,7 +1556,7 @@ dialog:has(.release-notes) {
 }
 kbd {
   font-family: inherit;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
 }
 .key-list kbd {
   padding: 2px 8px;
@@ -1571,7 +1571,7 @@ kbd {
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   min-height: var(--control-compact);
   line-height: 18px;
 }
@@ -1610,11 +1610,11 @@ kbd {
 }
 .schedule-row strong {
   font-weight: 500;
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
 }
 .schedule-row small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .schedule-row-actions {
   display: flex;
@@ -1643,12 +1643,12 @@ kbd {
   background: transparent;
   border: 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .history-status {
   color: var(--faint);
   text-align: center;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   padding: 12px 0;
 }
 .message {
@@ -1686,7 +1686,7 @@ kbd {
   min-height: var(--control-md);
   padding: 0 20px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .conversation-find {
   display: flex;
@@ -1703,7 +1703,7 @@ kbd {
   width: 90px;
 }
 .find-count {
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--muted);
   white-space: nowrap;
 }
@@ -1726,7 +1726,7 @@ kbd {
   color: var(--match-text);
 }
 .message-time {
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   font-weight: 400;
   color: var(--muted);
 }
@@ -1744,7 +1744,7 @@ kbd {
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   user-select: none;
   min-height: var(--control-xs);
   line-height: 16px;
@@ -1784,7 +1784,7 @@ kbd {
   background: var(--code-header-bg);
   color: var(--code-muted);
   font-family: Consolas, 'Cascadia Code', monospace;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 20px;
 }
 .code-language {
@@ -1906,7 +1906,7 @@ kbd {
   color: var(--code-text);
   color-scheme: dark;
   font-family: Consolas, 'Cascadia Code', monospace;
-  font-size: 13px;
+  font-size: var(--code-font-size, 13px);
   line-height: 1.5;
 }
 .transcript {
@@ -1930,13 +1930,13 @@ kbd {
 }
 .empty-state h2 {
   margin: 0;
-  font-size: 20px;
+  font-size: calc(20rem / 14);
   overflow-wrap: anywhere;
   text-align: center;
 }
 .empty-project {
   color: var(--faint);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   overflow-wrap: anywhere;
   word-break: normal;
   max-width: 100%;
@@ -1950,14 +1950,14 @@ kbd {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-weight: 600;
   margin-bottom: 9px;
   color: var(--muted);
 }
 .message-label span {
   font-weight: 400;
-  font-size: 10px;
+  font-size: calc(10rem / 14);
   color: var(--faint);
 }
 /* A question is a bubble as wide as its words, at the right, with its line under it. */
@@ -2046,21 +2046,21 @@ kbd {
   border-radius: var(--radius-md);
   overflow-x: auto;
   padding: 14px;
-  font-size: 12px;
+  font-size: var(--code-font-size, 13px);
   line-height: 1.6;
 }
 .message-content :not(pre) > code {
   background: var(--hover);
   border-radius: 3px;
   padding: 2px 4px;
-  font-size: 12px;
+  font-size: var(--code-font-size, 13px);
 }
 .message-content table {
   display: block;
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .message-content th,
 .message-content td {
@@ -2074,7 +2074,7 @@ kbd {
 }
 .schedule-form label {
   gap: 6px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   color: var(--muted);
 }
 .schedule-form input:not([type='checkbox']),
@@ -2120,7 +2120,7 @@ kbd {
   border-radius: var(--radius-md);
   background: var(--warn-soft);
   color: var(--warn-text);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .schedule-actions {
   display: flex;
@@ -2131,7 +2131,7 @@ kbd {
 .turn-process,
 .work,
 .tool {
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 .turn-process > summary,
@@ -2158,7 +2158,7 @@ kbd {
   color: var(--text);
 }
 .turn-process > .message {
-  font-size: 14px;
+  font-size: 1rem;
   color: var(--text);
 }
 .turn-process svg.app-icon,
@@ -2188,7 +2188,7 @@ details[open] > summary > .fold-chevron {
 /* The button under a reply; it opens a card above it with the figures, like the usage card in other chat apps. */
 .turn-stats {
   position: relative;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 /* Under a message: what belongs to it. Hidden until the pointer is over the message, always there on the latest reply,
@@ -2200,7 +2200,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   gap: 4px;
   margin-top: 2px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 .message-footer > * {
@@ -2223,7 +2223,22 @@ details[open] > summary > .fold-chevron {
   justify-content: flex-end;
 }
 .message.user .message-footer > :is(.message-time, .copy-button, .message-action) {
+  opacity: 0;
+  pointer-events: none;
+}
+/* The bubble starts the reveal; its footer and keyboard focus keep the controls usable. */
+.message.user[data-controls-visible]
+  .message-footer
+  > :is(.message-time, .copy-button, .message-action),
+.message.user:focus-within .message-footer > :is(.message-time, .copy-button, .message-action) {
   opacity: 1;
+  pointer-events: auto;
+}
+@media (hover: none), (pointer: coarse) {
+  .message.user .message-footer > :is(.message-time, .copy-button, .message-action) {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 .user .message-footer > :is(.copy-button, .message-action) {
   justify-content: center;
@@ -2237,7 +2252,7 @@ details[open] > summary > .fold-chevron {
   height: var(--icon-sm);
 }
 .user .message-footer .message-time {
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 20px;
 }
 .message.user:has(> .message-footer) {
@@ -2245,7 +2260,7 @@ details[open] > summary > .fold-chevron {
 }
 .message-delivery {
   padding: 0 4px;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--faint);
 }
 .message-delivery.unsettled {
@@ -2254,7 +2269,7 @@ details[open] > summary > .fold-chevron {
 /* A question put in while the run went on is a word in passing: a smaller bubble. */
 .message.user.joined .message-content {
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .message-footer .message-time {
   padding: 0 4px;
@@ -2312,7 +2327,7 @@ details[open] > summary > .fold-chevron {
   max-width: 820px;
   margin: -16px auto 0;
   padding: 0 28px 8px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 /* Each card opens above its own button, its left edge in line with it. */
@@ -2353,7 +2368,7 @@ details[open] > summary > .fold-chevron {
   gap: 8px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--line-soft);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .turn-stats-card header strong {
   font-weight: 500;
@@ -2379,7 +2394,7 @@ details[open] > summary > .fold-chevron {
 .turn-stats-card dd {
   margin: 2px 0 0;
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   font-variant-numeric: tabular-nums;
 }
 .turn-stats-card p {
@@ -2407,7 +2422,7 @@ details[open] > summary > .fold-chevron {
   margin: 10px 0 0;
   padding: 0;
   list-style: none;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .context-breakdown li {
   display: flex;
@@ -2465,7 +2480,7 @@ details[open] > summary > .fold-chevron {
 .work-heading small,
 .tool-time {
   color: var(--faint);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   white-space: nowrap;
 }
 .work > .tool {
@@ -2639,13 +2654,13 @@ details[open] > summary > .fold-chevron {
   white-space: nowrap;
   color: var(--text-2);
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 11.5px;
+  font-size: calc(11.5rem / 14);
 }
 .tool-diff {
   display: flex;
   gap: 5px;
   font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 .tool-diff ins {
   color: var(--added);
@@ -2668,7 +2683,7 @@ details[open] > summary > .fold-chevron {
   padding: 8px 12px;
   max-height: 260px;
   overflow: auto;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .tool-input,
 .tool-output {
@@ -2676,7 +2691,7 @@ details[open] > summary > .fold-chevron {
   padding: 8px 10px;
   max-height: 200px;
   overflow: auto;
-  font-size: 11.5px;
+  font-size: var(--code-font-size, 13px);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -2694,7 +2709,7 @@ details[open] > summary > .fold-chevron {
 }
 .approval-actions .button {
   min-height: var(--control-md);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .run-notice {
   color: var(--faint);
@@ -2739,7 +2754,7 @@ details[open] > summary > .fold-chevron {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 .run-indicator .running-dot {
@@ -2774,7 +2789,7 @@ details[open] > summary > .fold-chevron {
 .background-hint {
   margin: 0;
   color: var(--faint);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .background-tasks ul {
   display: grid;
@@ -2791,7 +2806,7 @@ details[open] > summary > .fold-chevron {
   padding: 8px 12px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .background-tasks li {
   animation: appear var(--cds-dur-base) var(--cds-ease-out);
@@ -2800,7 +2815,7 @@ details[open] > summary > .fold-chevron {
   display: block;
   margin-top: 2px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .background-tasks li span {
   flex: 1;
@@ -2914,7 +2929,7 @@ details[open] > summary > .fold-chevron {
   background: var(--surface-1);
   color: var(--muted);
   font-family: Consolas, 'Cascadia Code', monospace;
-  font-size: 10px;
+  font-size: calc(10rem / 14);
   line-height: 16px;
 }
 .attachment-kind svg {
@@ -2959,7 +2974,7 @@ details[open] > summary > .fold-chevron {
   overflow: hidden;
   padding: 6px 10px 9px;
   background: var(--surface-2);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 16px;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -2969,7 +2984,7 @@ details[open] > summary > .fold-chevron {
   inset-inline: 8px;
   top: 39px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: calc(10rem / 14);
   line-height: 14px;
 }
 .attachment-tile[data-status='preparing']::after {
@@ -2990,7 +3005,7 @@ details[open] > summary > .fold-chevron {
 }
 .attachment-error {
   margin: 8px 18px 0;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 @keyframes attachment-enter {
   from {
@@ -3151,11 +3166,11 @@ details[open] > summary > .fold-chevron {
   padding: 13px 15px;
   display: grid;
   gap: 5px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .context-tooltip small {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 .model-trigger {
   display: flex;
@@ -3167,7 +3182,7 @@ details[open] > summary > .fold-chevron {
   background: transparent;
   border: 0;
   border-radius: var(--radius-md);
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   line-height: 20px;
 }
 .model-trigger:hover:not(:disabled) {
@@ -3179,7 +3194,7 @@ details[open] > summary > .fold-chevron {
   white-space: nowrap;
 }
 .model-trigger small {
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
   flex-shrink: 0;
 }
@@ -3201,7 +3216,7 @@ details[open] > summary > .fold-chevron {
   justify-content: center;
   align-items: center;
   min-height: var(--control-compact);
-  font-size: 15px;
+  font-size: calc(15rem / 14);
   color: var(--accent);
 }
 .effort-heading .icon-button {
@@ -3226,7 +3241,7 @@ details[open] > summary > .fold-chevron {
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--muted);
   min-height: var(--control-sm);
   line-height: 20px;
@@ -3234,7 +3249,7 @@ details[open] > summary > .fold-chevron {
 .model-back {
   margin: 0 0 6px -4px;
   color: var(--text);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .model-current:hover,
 .model-back:hover {
@@ -3301,7 +3316,7 @@ details[open] > summary > .fold-chevron {
   border: 0;
   background: none;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   cursor: pointer;
   white-space: nowrap;
   min-height: var(--control-sm);
@@ -3326,7 +3341,7 @@ details[open] > summary > .fold-chevron {
   background: transparent;
   padding: 6px 10px;
   border-radius: var(--radius-md);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   min-height: var(--control-md);
   line-height: 20px;
 }
@@ -3342,7 +3357,7 @@ details[open] > summary > .fold-chevron {
 }
 .model-options small {
   display: block;
-  font-size: 11.5px;
+  font-size: calc(11.5rem / 14);
   color: var(--muted);
   margin-top: 2px;
 }
@@ -3362,7 +3377,7 @@ details[open] > summary > .fold-chevron {
 .slash-menu button em {
   margin-left: 6px;
   color: var(--faint);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-style: normal;
 }
 .slash-menu button {
@@ -3375,7 +3390,7 @@ details[open] > summary > .fold-chevron {
   border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   min-height: var(--control-md);
   line-height: 20px;
 }
@@ -3386,13 +3401,13 @@ details[open] > summary > .fold-chevron {
 .slash-menu button small {
   display: block;
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5rem / 14);
   margin-top: 2px;
 }
 .scenario-label {
   flex-direction: row;
   align-items: center;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--faint);
   gap: 7px;
   padding-left: 6px;
@@ -3402,7 +3417,7 @@ details[open] > summary > .fold-chevron {
   color: var(--muted);
   border: 0;
   padding: 2px 4px;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   min-height: var(--control-sm);
 }
 .send-button,
@@ -3482,12 +3497,12 @@ details[open] > summary > .fold-chevron {
 }
 .account-identity h2 {
   margin: 0 0 3px;
-  font-size: 17px;
+  font-size: calc(17rem / 14);
   overflow-wrap: anywhere;
 }
 .account-identity p {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   margin: 0;
   text-transform: capitalize;
 }
@@ -3504,7 +3519,7 @@ details[open] > summary > .fold-chevron {
   padding: 12px 14px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .account-confirm p {
   flex: 1 1 260px;
@@ -3519,7 +3534,7 @@ details[open] > summary > .fold-chevron {
   padding: 16px;
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-xl);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
 }
 .account-login p {
   display: flex;
@@ -3535,7 +3550,7 @@ details[open] > summary > .fold-chevron {
   border-radius: 50%;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   flex-shrink: 0;
 }
 .account-login-actions {
@@ -3557,7 +3572,7 @@ details[open] > summary > .fold-chevron {
   padding: 11px 0;
   border-bottom: 1px solid var(--line-soft);
   gap: 18px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .account-details dt {
   color: var(--muted);
@@ -3570,7 +3585,7 @@ details[open] > summary > .fold-chevron {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 14px;
+  font-size: 1rem;
   margin: 32px 0 18px;
 }
 .quota-row {
@@ -3580,7 +3595,7 @@ details[open] > summary > .fold-chevron {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .quota-row strong {
   font-weight: 500;
@@ -3598,7 +3613,7 @@ details[open] > summary > .fold-chevron {
 .quota-row small,
 .account-updated {
   color: var(--faint);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 .account-section-title .button {
   margin-left: auto;
@@ -3610,7 +3625,7 @@ details[open] > summary > .fold-chevron {
   border: 0;
   background: transparent;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   text-align: left;
 }
 .quota-period:hover {
@@ -3631,14 +3646,14 @@ details[open] > summary > .fold-chevron {
   width: auto;
   padding: 5px 9px;
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .usage-custom {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 .segmented {
@@ -3769,19 +3784,19 @@ details[open] > summary > .fold-chevron {
 }
 .usage-tiles span {
   display: block;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
 }
 .usage-tiles strong {
   display: block;
-  font-size: 22px;
+  font-size: calc(22rem / 14);
   font-weight: 600;
   margin-top: 2px;
   font-variant-numeric: tabular-nums;
 }
 .usage-tiles small {
   display: block;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--faint);
   margin-top: 2px;
 }
@@ -3797,7 +3812,7 @@ details[open] > summary > .fold-chevron {
   justify-content: space-between;
   gap: 10px;
   flex-wrap: wrap;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
   margin-bottom: 10px;
 }
@@ -3811,7 +3826,7 @@ details[open] > summary > .fold-chevron {
   position: absolute;
   top: 2px;
   left: 0;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--faint);
   font-variant-numeric: tabular-nums;
   pointer-events: none;
@@ -3850,7 +3865,7 @@ details[open] > summary > .fold-chevron {
   border-radius: var(--radius-lg);
   background: var(--raised);
   box-shadow: var(--shadow-popover);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
   white-space: nowrap;
   pointer-events: none;
@@ -3862,7 +3877,7 @@ details[open] > summary > .fold-chevron {
 .usage-axis {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--faint);
   margin-top: 5px;
 }
@@ -3872,7 +3887,7 @@ details[open] > summary > .fold-chevron {
 .usage-table table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-variant-numeric: tabular-nums;
 }
 .usage-table th {
@@ -3990,7 +4005,7 @@ details[open] > summary > .fold-chevron {
   justify-content: space-between;
   width: 46px;
   margin: -6px 0;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--faint);
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -4037,7 +4052,7 @@ details[open] > summary > .fold-chevron {
 }
 .usage-section {
   margin: 0 0 6px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-weight: 400;
   color: var(--muted);
 }
@@ -4065,7 +4080,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   gap: 8px;
   margin-top: 12px;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--muted);
 }
 .usage-pager label {
@@ -4117,7 +4132,7 @@ details[open] > summary > .fold-chevron {
   gap: 8px;
   justify-content: space-between;
   padding: 8px 20px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   background: var(--danger-soft);
   color: var(--danger-text);
   border-bottom: 1px solid var(--danger-line);
@@ -4142,7 +4157,7 @@ details[open] > summary > .fold-chevron {
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   background: var(--surface);
-  font-size: 13px;
+  font-size: calc(13rem / 14);
   line-height: 1.6;
 }
 .elsewhere-bar > svg.app-icon {
@@ -4377,7 +4392,7 @@ dialog::backdrop {
   border-bottom: 0;
 }
 .account-heading h1 {
-  font-size: 26px;
+  font-size: calc(26rem / 14);
 }
 .account-heading h1 > svg.app-icon {
   display: none;
@@ -4387,7 +4402,7 @@ dialog::backdrop {
 }
 .setting-actions code {
   align-self: center;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 /* A question Claude asks: each one with its choices, and room for an answer of the user's own. */
 .question-card {
@@ -4413,14 +4428,14 @@ dialog::backdrop {
   width: 100%;
   padding: 0;
   margin-bottom: 4px;
-  font-size: 14px;
+  font-size: 1rem;
   font-weight: 600;
   color: var(--text);
 }
 .question-card legend small {
   margin-left: 8px;
   font-weight: 400;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--faint);
 }
 .question-header {
@@ -4429,7 +4444,7 @@ dialog::backdrop {
   border-radius: var(--radius-xs);
   background: var(--accent-soft);
   color: var(--accent-strong);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   font-weight: 500;
 }
 .question-option {
@@ -4443,7 +4458,7 @@ dialog::backdrop {
   border-radius: var(--radius-md);
   background: var(--surface);
   text-align: left;
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
   color: var(--text);
 }
 .question-option:hover:not(:disabled) {
@@ -4456,7 +4471,7 @@ dialog::backdrop {
 .question-option small {
   display: block;
   margin-top: 1px;
-  font-size: 12.5px;
+  font-size: calc(12.5rem / 14);
   color: var(--muted);
 }
 .question-option svg.app-icon {
@@ -4467,7 +4482,7 @@ dialog::backdrop {
 .question-card input {
   padding: 5px 12px;
   border-radius: var(--radius-md);
-  font-size: 13.5px;
+  font-size: calc(13.5rem / 14);
 }
 .question-card .approval-actions {
   border-top: 0;
@@ -4496,7 +4511,7 @@ dialog::backdrop {
   background: var(--surface);
   color: var(--muted);
   font: inherit;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   cursor: pointer;
   min-height: var(--control-compact);
   line-height: 18px;
@@ -4587,7 +4602,7 @@ dialog::backdrop {
   justify-content: space-between;
   gap: 2px;
   padding: 8px 3px 3px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .theme-option-label svg.app-icon {
   width: var(--icon-sm);
@@ -4622,7 +4637,7 @@ dialog::backdrop {
 }
 .web-login-body h1 {
   margin: 0 0 8px;
-  font-size: 26px;
+  font-size: calc(26rem / 14);
 }
 .web-login-body form,
 .web-settings-form fieldset {
@@ -4649,7 +4664,7 @@ dialog::backdrop {
   color: var(--text);
   background: var(--surface-2);
   border-bottom: 1px solid var(--line);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .web-trust-warning svg.app-icon {
   flex-shrink: 0;
@@ -4682,7 +4697,7 @@ dialog::backdrop {
 }
 .web-access-address {
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .web-sessions {
   border-top: 1px solid var(--line-soft);
@@ -4716,7 +4731,7 @@ dialog::backdrop {
 }
 .web-sessions li small {
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .web-settings-form {
   width: 100%;
@@ -4732,7 +4747,7 @@ dialog:has(.web-settings-form) {
 .web-settings-form textarea {
   resize: vertical;
   font-family: monospace;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .web-settings-form .dialog-actions {
   margin-top: 24px;
@@ -4787,7 +4802,7 @@ dialog:has(.web-settings-form) {
 }
 .web-expiry {
   color: var(--danger);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 @media (max-width: 700px) {
   .web-access-settings .setting-row {
@@ -4806,7 +4821,7 @@ dialog:has(.web-settings-form) {
   display: grid;
   gap: 4px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   padding: 0 0 16px;
   overflow-wrap: anywhere;
 }
@@ -4854,7 +4869,7 @@ dialog:has(.web-settings-form) {
 }
 .web-proxy-fields p {
   margin: 0;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 1.6;
 }
 .web-proxy-fields pre {
@@ -4866,7 +4881,7 @@ dialog:has(.web-settings-form) {
   overflow: auto;
   max-width: 100%;
   max-height: 280px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   line-height: 1.6;
   user-select: text;
 }
@@ -4877,7 +4892,7 @@ dialog:has(.web-settings-form) {
 }
 .web-proxy-trust > summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .web-proxy-trust > p,
 .web-proxy-trust > pre {
@@ -5013,4 +5028,24 @@ dialog:has(.web-settings-form) {
   .thinking-block > summary > .fold-chevron {
     transition: none;
   }
+}
+
+/* Numeric typography settings remain usable when the text grows or the window narrows. */
+.font-size-control {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 8px;
+  color: var(--muted);
+}
+.font-size-control input {
+  width: 72px;
+  min-height: var(--control-compact);
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.font-size-settings > .setting-row > span:first-child {
+  min-width: 0;
 }

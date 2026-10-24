@@ -125,6 +125,25 @@ test('Electron: a second connection is a window of its own and shares what is th
     await effort(other).selectOption('');
     await expect(effort(page)).toHaveValue('');
     await expect(stats(page)).toBeChecked();
+    const font = (target: Page, name: string) =>
+      target.getByRole('spinbutton', { name, exact: true });
+    await font(other, '界面字号').fill('');
+    await font(page, '界面字号').fill('18');
+    await expect(font(other, '界面字号')).toHaveValue('18');
+    await expect(font(other, '界面字号')).toBeFocused();
+    await expect(other.locator('html')).toHaveCSS('font-size', '18px');
+    await font(page, '代码字体大小').fill('99');
+    await font(other, '代码字体大小').fill('16');
+    await expect(font(page, '代码字体大小')).toHaveValue('16');
+    await font(page, '代码字体大小').press('Tab');
+    await expect(font(page, '代码字体大小')).toHaveValue('16');
+    await expect(font(page, '界面字号')).toHaveValue('18');
+    await expect(page.locator('html')).toHaveCSS('--code-font-size', '16px');
+    await page.getByRole('button', { name: '恢复默认字号', exact: true }).click();
+    await expect(font(other, '界面字号')).toHaveValue('14');
+    await expect(font(other, '代码字体大小')).toHaveValue('13');
+    await expect(other.locator('html')).toHaveCSS('font-size', '14px');
+    await expect(stats(other)).toBeChecked();
     await other.getByRole('switch', { name: '关闭窗口时留在后台', exact: true }).click();
     await expect
       .poll(() => JSON.parse(readFileSync(resolve(profile, 'settings.json'), 'utf8')).closeToTray)

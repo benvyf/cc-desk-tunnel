@@ -83,6 +83,7 @@ test('Electron chooses real files, generates bounded previews, restores and send
     await expect(message.getByAltText('附件图片.png')).toBeVisible();
     await expect(message).not.toContainText(directory);
     await expect(message).toHaveAttribute('data-copy-text', `"${photo}"`);
+    await message.hover();
     await page
       .locator('.message.user')
       .last()

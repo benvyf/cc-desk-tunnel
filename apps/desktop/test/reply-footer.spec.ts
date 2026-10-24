@@ -199,17 +199,17 @@ test('a question has no heading either; its line is under it at the right', asyn
   // Plainly received is quiet; a delivery left unconfirmed stays in sight without the pointer.
   await expect(line.locator('.message-delivery')).toHaveText('原生已接收');
   await expect(line.locator('.message-delivery')).toHaveCSS('opacity', '0');
-  await expect(line.locator('.copy-button')).toHaveCSS('opacity', '1');
+  await expect(line.locator('.copy-button')).toHaveCSS('opacity', '0');
   const unconfirmed = second.locator('.message-delivery');
   await expect(unconfirmed).toHaveText('接收未确认');
   await expect(unconfirmed).toHaveCSS('opacity', '1');
-  await expect(second.locator('.copy-button')).toHaveCSS('opacity', '1');
+  await expect(second.locator('.copy-button')).toHaveCSS('opacity', '0');
   await first.locator('.message-content').hover();
   await expect(line.locator('.copy-button')).toHaveCSS('opacity', '1');
   await page.screenshot({ path: resolve('.local/screenshots/question-footer.png') });
 });
 
-test('user time, copy and edit are always visible in reference order in both themes', async ({
+test('user controls reveal over the bubble in reference order without moving messages in both themes', async ({
   page,
 }) => {
   await open(page);
@@ -218,11 +218,28 @@ test('user time, copy and edit are always visible in reference order in both the
   await page.mouse.move(2, 2);
   for (const colorScheme of ['light', 'dark'] as const) {
     await page.emulateMedia({ colorScheme });
+    const before = await question.boundingBox();
+    for (const control of await line
+      .locator('.message-time, .copy-button, .message-action')
+      .all()) {
+      await expect(control).toHaveCSS('opacity', '0');
+      await expect(control).toHaveCSS('pointer-events', 'none');
+    }
+    await line.hover();
+    await expect(line.locator('.copy-button')).toHaveCSS('opacity', '0');
+    // The empty space to the left of a short bubble must not reveal its controls.
+    const row = (await question.boundingBox())!;
+    await page.mouse.move(row.x + 1, row.y + 1);
+    await expect(line.locator('.copy-button')).toHaveCSS('opacity', '0');
+    await question.locator('.message-content').hover();
     await expect(line.locator('.message-time')).toHaveCSS('opacity', '1');
     const copy = line.getByRole('button', { name: '复制消息', exact: true });
     const edit = line.getByRole('button', { name: '编辑重发', exact: true });
     await expect(copy).toHaveCSS('opacity', '1');
     await expect(edit).toHaveCSS('opacity', '1');
+    await expect(copy).toHaveCSS('pointer-events', 'auto');
+    await expect(edit).toHaveCSS('pointer-events', 'auto');
+    expect(await question.boundingBox()).toEqual(before);
     const timeBox = (await line.locator('time').boundingBox())!;
     const copyBox = (await copy.boundingBox())!;
     const editBox = (await edit.boundingBox())!;
@@ -234,14 +251,145 @@ test('user time, copy and edit are always visible in reference order in both the
       path: resolve(`.local/screenshots/user-controls-${colorScheme}.png`),
       animations: 'disabled',
     });
+    await page.mouse.move(2, 2);
+    await expect(copy).toHaveCSS('opacity', '0');
   }
   await page.setViewportSize({ width: 320, height: 600 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await line.scrollIntoViewIfNeeded();
+  await question.locator('.message-content').hover();
   await expect(line.getByRole('button', { name: '编辑重发', exact: true })).toBeInViewport();
   await question.screenshot({
     path: resolve('.local/screenshots/user-controls-narrow.png'),
     animations: 'disabled',
+  });
+});
+
+for (const reducedMotion of ['no-preference', 'reduce'] as const) {
+  test(`user controls wait after leaving and cancel hiding on re-entry with ${reducedMotion} motion`, async ({
+    page,
+  }) => {
+    await page.emulateMedia({ reducedMotion });
+    await open(page);
+    const question = page.locator('.message.user').first();
+    const bubble = question.locator('.message-content');
+    const copy = question.locator('.message-footer .copy-button');
+    await page.mouse.move(2, 2);
+    await expect(copy).toHaveCSS('opacity', '0');
+    await bubble.hover();
+    await expect(copy).toHaveCSS('opacity', '1');
+    await copy.hover();
+    await page.waitForTimeout(1000);
+    await expect(copy).toHaveCSS('opacity', '1');
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(450);
+    await expect(copy).toHaveCSS('opacity', '1');
+    await expect(copy).toHaveCSS('pointer-events', 'auto');
+    await bubble.hover();
+    await page.waitForTimeout(450);
+    await expect(copy).toHaveCSS('opacity', '1');
+    await page.mouse.move(2, 2);
+    await page.waitForTimeout(450);
+    await expect(copy).toHaveCSS('opacity', '1');
+    await expect(copy).toHaveCSS('opacity', '0', { timeout: 2000 });
+    await expect(copy).toHaveCSS('pointer-events', 'none');
+  });
+}
+
+test('keyboard focus reveals user controls and keeps them visible until focus leaves', async ({
+  page,
+}) => {
+  await open(page);
+  await page.mouse.move(2, 2);
+  const question = page.locator('.message.user').first();
+  const copy = question.getByRole('button', { name: '复制消息', exact: true });
+  const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  await expect(copy).toHaveCSS('opacity', '0');
+  await copy.focus();
+  await expect(copy).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Tab');
+  await expect(edit).toBeFocused();
+  await expect(edit).toHaveCSS('opacity', '1');
+  await page.waitForTimeout(1100);
+  await expect(copy).toHaveCSS('opacity', '1');
+  await page.keyboard.press('Tab');
+  await expect(copy).toHaveCSS('opacity', '0');
+});
+
+test('hover timers belong to each user message independently', async ({ page }) => {
+  await open(page);
+  const questions = page.locator('.message.user');
+  const first = questions.nth(0).locator('.message-footer .copy-button');
+  const second = questions.nth(1).locator('.message-footer .copy-button');
+  await questions.nth(0).locator('.message-content').hover();
+  await expect(first).toHaveCSS('opacity', '1');
+  await expect(second).toHaveCSS('opacity', '0');
+  await questions.nth(1).locator('.message-content').hover();
+  await expect(second).toHaveCSS('opacity', '1');
+  await expect(first).toHaveCSS('opacity', '0');
+  await expect(second).toHaveCSS('opacity', '1');
+});
+
+test('copy remains clickable during the leave grace period and retains its feedback', async ({
+  page,
+}) => {
+  await open(page);
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      configurable: true,
+      value: async (text: string) => Object.assign(window, { copiedQuestion: text }),
+    }),
+  );
+  const question = page.locator('.message.user').first();
+  const copy = question.locator('.message-footer .copy-button');
+  await question.locator('.message-content').hover();
+  await expect(copy).toHaveCSS('opacity', '1');
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(450);
+  await copy.click();
+  await expect(copy).toHaveAccessibleName('已复制');
+  expect(
+    await page.evaluate(() => (window as unknown as { copiedQuestion: string }).copiedQuestion),
+  ).toBe('第一问');
+  await page.mouse.move(2, 2);
+  await page.waitForTimeout(1100);
+  await expect(copy).toBeFocused();
+  await expect(copy).toHaveCSS('opacity', '1');
+});
+
+test('a focus-revealed footer remains visible when the pointer enters and its focused edit disappears', async ({
+  page,
+}) => {
+  const { emit, connectionId } = await open(page);
+  await page.mouse.move(2, 2);
+  const question = page.locator('.message.user').first();
+  const copy = question.locator('.message-footer .copy-button');
+  const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  await edit.focus();
+  await expect(copy).toHaveCSS('opacity', '1');
+  await copy.hover();
+  emit({ type: 'run.status', status: 'running', connectionId });
+  await expect(edit).toHaveCount(0);
+  await expect(copy).toHaveCSS('opacity', '1');
+  await page.waitForTimeout(1100);
+  await expect(copy).toHaveCSS('opacity', '1');
+  await page.mouse.move(2, 2);
+  await expect(copy).toHaveCSS('opacity', '0');
+});
+
+test.describe('touch user message controls', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 800 } });
+  test('time, copy and edit remain visible without hover', async ({ page }) => {
+    await open(page);
+    expect(await page.evaluate(() => matchMedia('(hover: none)').matches)).toBe(true);
+    const question = page.locator('.message.user').first();
+    const line = question.locator('.message-footer');
+    for (const control of await line
+      .locator('.message-time, .copy-button, .message-action')
+      .all()) {
+      await expect(control).toHaveCSS('opacity', '1');
+      await expect(control).toHaveCSS('pointer-events', 'auto');
+    }
   });
 });
 
@@ -258,6 +406,7 @@ test('copy and time stay available while running; edit returns only after the ru
   const question = page.locator('.message.user').first();
   const copy = question.getByRole('button', { name: '复制消息', exact: true });
   const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  await question.locator('.message-content').hover();
   for (const status of ['running', 'awaiting_approval'] as const) {
     emit({ type: 'run.status', status, connectionId });
     await expect(edit).toHaveCount(0);

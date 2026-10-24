@@ -1,7 +1,19 @@
 import { expect, test } from '@playwright/test';
-import type { Locator } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { resolve } from 'node:path';
 import { createSession, login, screenshots, sessionAction } from './helpers.ts';
+
+async function interfaceSize(page: Page, size: number) {
+  await page.evaluate(async (size) => {
+    const path = '/src/prefs.ts';
+    const { setPrefs } = await import(path);
+    setPrefs((prefs: import('../src/prefs.ts').Prefs) => ({
+      ...prefs,
+      fontSizes: { ...prefs.fontSizes, interface: size },
+    }));
+  }, size);
+  await expect(page.locator('html')).toHaveCSS('font-size', `${size}px`);
+}
 
 async function contrast(control: Locator) {
   return control.evaluate((element) => {
@@ -300,12 +312,13 @@ test('composer popups stay reachable with long drafts and while resizing', async
       ),
     );
   });
-  for (const [label, selector] of [
+  for (const { label, selector, fontSize } of [
     ['审批模式', '.permission-menu'],
     ['模型与推理强度', '.model-menu'],
     ['上下文窗口', '.context-tooltip'],
-  ]) {
+  ].flatMap(([label, selector]) => [14, 20].map((fontSize) => ({ label, selector, fontSize })))) {
     await page.setViewportSize({ width: 390, height: 480 });
+    await interfaceSize(page, fontSize);
     await page.getByRole('button', { name: label, exact: true }).click();
     const popup = page.locator(selector);
     if (label === '模型与推理强度') await page.locator('.model-current').click();
@@ -330,7 +343,9 @@ test('composer popups stay reachable with long drafts and while resizing', async
               box.y + box.height <= viewport.height - 8
             );
           },
-          { message: `${label} remains inside ${viewport.width}×${viewport.height}` },
+          {
+            message: `${label} at ${fontSize}px remains inside ${viewport.width}×${viewport.height}`,
+          },
         )
         .toBe(true);
     }
@@ -437,11 +452,12 @@ test('a long draft keeps native send and stop actions reachable in a short windo
   });
   const stop = page.getByRole('button', { name: '停止运行', exact: true });
   const send = page.getByRole('button', { name: '发送消息', exact: true });
-  for (const viewport of [
+  for (const { fontSize, ...viewport } of [
     { width: 320, height: 280 },
     { width: 390, height: 400 },
-  ]) {
+  ].flatMap((viewport) => [14, 20].map((fontSize) => ({ ...viewport, fontSize })))) {
     await page.setViewportSize(viewport);
+    await interfaceSize(page, fontSize);
     for (const button of [stop, send]) {
       await expect(button).toBeVisible();
       const box = (await button.boundingBox())!;
@@ -476,11 +492,11 @@ test('a long draft keeps native send and stop actions reachable in a short windo
     await input.focus();
     await expect(input).toBeInViewport();
     await page.screenshot({
-      path: resolve(screenshots, `attachments-short-${viewport.width}.png`),
+      path: resolve(screenshots, `attachments-short-${viewport.width}-font-${fontSize}.png`),
       animations: 'disabled',
     });
   }
   expect(
     await page.evaluate(() => (window as unknown as { sizingActions: string[] }).sizingActions),
-  ).toEqual(['stop', 'send', 'stop', 'send']);
+  ).toEqual(['stop', 'send', 'stop', 'send', 'stop', 'send', 'stop', 'send']);
 });

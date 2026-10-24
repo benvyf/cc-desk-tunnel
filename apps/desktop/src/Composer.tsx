@@ -28,6 +28,7 @@ import ComposerControls from './ComposerControls.tsx';
 import PermissionMenu from './PermissionMenu.tsx';
 import { IconButton } from './ui.tsx';
 import type { MenuPosition } from './ui.tsx';
+import { usePrefs } from './prefs.ts';
 
 export type Scenario = 'chat' | 'tool' | 'question' | 'error';
 // A draft that is only a slash and an optional command name opens the command menu.
@@ -137,6 +138,7 @@ export default function Composer({
   stop: () => void;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
+  const interfaceFontSize = usePrefs().fontSizes.interface;
   const branch = useBranch(session.projectPath, !!session.activeRun);
   const [dropping, setDropping] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -230,9 +232,9 @@ export default function Composer({
     input.current?.focus();
   }
   useLayoutEffect(() => {
-    // Grow with the draft; the stylesheet's max-height decides when scrolling takes over.
+    // Grow with the draft and shared font changes; the stylesheet limits when scrolling takes over.
     fitDraft(input.current);
-  }, [draft, session.id]);
+  }, [draft, session.id, interfaceFontSize]);
   useEffect(() => {
     // An edit is ready only once its fork/history has loaded and the input is enabled.
     const box = input.current;

@@ -297,6 +297,18 @@ function Message({
 }) {
   const time = messageTime(item.kind === 'assistant' ? (item.doneAt ?? item.at) : item.at);
   const user = item.kind === 'user';
+  const [controlsShown, setControlsShown] = useState(false);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  function showControls() {
+    clearTimeout(leaveTimer.current);
+    setControlsShown(true);
+  }
+  function leaveControls() {
+    clearTimeout(leaveTimer.current);
+    // Give the pointer time to reach the footer, or to return after an accidental departure.
+    leaveTimer.current = setTimeout(() => setControlsShown(false), 800);
+  }
   const attached = user ? splitAttachmentMessage(item.text) : null;
   const stamp = time && (
     <time className="message-time" dateTime={item.at} title={time.full}>
@@ -304,7 +316,10 @@ function Message({
     </time>
   );
   return (
-    <article className={`message ${item.kind}${latest ? ' latest' : ''}${joined ? ' joined' : ''}`}>
+    <article
+      className={`message ${item.kind}${latest ? ' latest' : ''}${joined ? ' joined' : ''}`}
+      data-controls-visible={user && controlsShown ? true : undefined}
+    >
       {!user && !native && (
         <div className="message-label">
           CC Desk Tunnel
@@ -317,6 +332,8 @@ function Message({
         className={`message-content${streaming ? ' streaming' : ''}`}
         data-search-content
         data-copy-text={item.text}
+        onPointerEnter={user ? showControls : undefined}
+        onPointerLeave={user ? leaveControls : undefined}
       >
         {attached ? (
           <>
@@ -328,7 +345,14 @@ function Message({
         )}
       </div>
       {user && (
-        <div className="message-footer">
+        <div
+          className="message-footer"
+          onPointerEnter={(event) => {
+            // Keyboard focus can reveal the footer before the pointer ever enters the bubble.
+            if (controlsShown || event.currentTarget.matches(':focus-within')) showControls();
+          }}
+          onPointerLeave={leaveControls}
+        >
           {item.delivery && (
             <span
               className={`message-delivery${item.delivery === '原生已接收' ? '' : ' unsettled'}`}

@@ -24,6 +24,7 @@ import { barText, inBar, sampleSession, sessionFields } from './sessionStats.ts'
 import { GithubMark, openProject, project } from './project.tsx';
 import SettingsPanel from './SettingsPanel.tsx';
 import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
+import FontSizeSettings from './FontSizeSettings.tsx';
 import type { NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
@@ -57,7 +58,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '主题 外观 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
+      '主题 外观 字体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
   },
   {
     id: 'notifications',
@@ -526,6 +527,7 @@ function General({
       <div className="page-body">
         <h1 className="page-title">常规</h1>
         <ThemeSettings />
+        <FontSizeSettings />
         <SessionDefaultsSettings capabilities={capabilities} />
         {web && <WebAccessSettings client={client} browser={browser} connectionUrl={form.url} />}
         {!window.desktop && !browser && (
