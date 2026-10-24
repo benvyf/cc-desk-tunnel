@@ -245,20 +245,68 @@ test('mainline themes and browser access settings coexist and retain the chosen 
     'background-color',
     'rgb(255, 255, 255)',
   );
-  await page.getByRole('radio', { name: '深色', exact: true }).click();
+  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(245, 245, 243)');
+  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(238, 237, 233)');
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(252, 252, 251)');
+  await expect(page.locator('[data-preview="dark"] .theme-preview-side')).toHaveCSS(
+    'background-color',
+    'rgb(17, 17, 16)',
+  );
+  await page.screenshot({ path: resolve(webScreenshots, 'theme-light-desktop.png') });
+  await page.getByRole('radio', { name: '浅色', exact: true }).press('ArrowRight');
+  await expect(page.getByRole('radio', { name: '深色', exact: true })).toBeFocused();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(17, 17, 16)');
+  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(11, 11, 10)');
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(21, 21, 21)');
+  await expect(page.locator('[data-preview="light"] .theme-preview-side')).toHaveCSS(
+    'background-color',
+    'rgb(245, 245, 243)',
+  );
   await expect(page.locator('.web-access-settings')).toHaveCSS(
     'background-color',
-    'rgb(30, 31, 35)',
+    'rgb(26, 26, 25)',
   );
-  await expect(page.getByRole('note')).toHaveCSS('background-color', 'rgb(42, 44, 49)');
-  await expect(page.getByRole('note')).toHaveCSS('color', 'rgb(228, 230, 234)');
+  await expect(page.getByRole('note')).toHaveCSS('background-color', 'rgb(26, 26, 25)');
+  await expect(page.getByRole('note')).toHaveCSS('color', 'rgb(222, 220, 214)');
+  await page.screenshot({ path: resolve(webScreenshots, 'theme-dark-desktop.png') });
+  for (const width of [320, 390, 720]) {
+    await page.setViewportSize({ width, height: 844 });
+    const choices = page.getByRole('radiogroup', { name: '主题', exact: true });
+    await expect(choices.getByRole('radio', { name: '深色', exact: true })).toBeInViewport();
+    expect(
+      await choices
+        .locator('button')
+        .evaluateAll((buttons) =>
+          buttons.every((button) => button.scrollWidth <= button.clientWidth),
+        ),
+    ).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
+      true,
+    );
+    expect(
+      await choices.locator('.theme-option-label').evaluateAll((labels) =>
+        labels.every((label) => {
+          const style = getComputedStyle(label);
+          return (
+            label.clientHeight <=
+            parseFloat(style.lineHeight) +
+              parseFloat(style.paddingTop) +
+              parseFloat(style.paddingBottom) +
+              1
+          );
+        }),
+      ),
+    ).toBe(true);
+    await page.screenshot({ path: resolve(webScreenshots, `theme-dark-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page
     .locator('.setting-row')
     .filter({ hasText: '访问设置' })
     .getByRole('button', { name: '设置', exact: true })
     .click();
-  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(38, 40, 45)');
+  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(32, 32, 30)');
   await expect(page.getByLabel('服务端访问路径', { exact: false })).toHaveValue('web-fixture');
   await page.screenshot({ path: resolve(webScreenshots, 'browser-settings-dark-desktop.png') });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -274,7 +322,7 @@ test('mainline themes and browser access settings coexist and retain the chosen 
   );
   await expect(page.locator('.web-access-settings')).toHaveCSS(
     'background-color',
-    'rgb(30, 31, 35)',
+    'rgb(26, 26, 25)',
   );
   await page.getByRole('radio', { name: '跟随系统', exact: true }).click();
   await page.emulateMedia({ colorScheme: 'light' });
@@ -285,7 +333,16 @@ test('mainline themes and browser access settings coexist and retain the chosen 
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('.web-access-settings')).toHaveCSS(
     'background-color',
-    'rgb(30, 31, 35)',
+    'rgb(26, 26, 25)',
+  );
+  await expect(page.locator('[data-preview="system"] .theme-preview-side')).toHaveCSS(
+    'background-color',
+    'rgb(17, 17, 16)',
+  );
+  await page.getByRole('radio', { name: '浅色', exact: true }).click();
+  await expect(page.locator('[data-preview="system"] .theme-preview-side')).toHaveCSS(
+    'background-color',
+    'rgb(17, 17, 16)',
   );
 });
 

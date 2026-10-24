@@ -26,7 +26,12 @@ export default function NativeTerminal({
       cursorBlink: true,
       scrollback: 2000,
       allowProposedApi: false,
-      theme: { background: '#18191c', foreground: '#e2e5e9', cursor: '#a8d8be' },
+      theme: {
+        background: '#0b0b0a',
+        foreground: '#dedcd6',
+        cursor: '#d97757',
+        selectionBackground: '#633d2c',
+      },
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);

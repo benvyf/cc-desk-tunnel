@@ -3,6 +3,7 @@ import type { ReactNode } from 'react';
 import {
   ArrowLeft,
   Bell,
+  Check,
   CircleHelp,
   Info,
   Keyboard,
@@ -53,7 +54,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
+      '主题 外观 浅色 深色 跟随系统 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
   },
   {
     id: 'notifications',
@@ -118,23 +119,57 @@ function ThemeSettings() {
   return (
     <>
       <h2 className="page-heading">外观</h2>
-      <div className="card">
+      <div className="card theme-card">
         <div className="setting-row stat-picks">
           <span>
             <strong>主题</strong>
             <small>跟随系统时随系统的浅色或深色设置切换</small>
           </span>
-          <div className="stat-chips" role="radiogroup" aria-label="主题">
+          <div
+            className="theme-options"
+            role="radiogroup"
+            aria-label="主题"
+            onKeyDown={(event) => {
+              if (event.altKey || event.ctrlKey || event.metaKey) return;
+              const index = themes.findIndex((entry) => entry.theme === theme);
+              const next =
+                event.key === 'Home'
+                  ? 0
+                  : event.key === 'End'
+                    ? themes.length - 1
+                    : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+                      ? (index + 1) % themes.length
+                      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+                        ? (index + themes.length - 1) % themes.length
+                        : null;
+              if (next === null) return;
+              event.preventDefault();
+              setPrefs((prefs) => ({ ...prefs, theme: themes[next].theme }));
+              event.currentTarget.querySelectorAll('button')[next].focus();
+            }}
+          >
             {themes.map((entry) => (
               <button
                 type="button"
                 key={entry.theme}
                 role="radio"
-                className="stat-chip"
+                className="theme-option"
                 aria-checked={entry.theme === theme}
+                tabIndex={entry.theme === theme ? 0 : -1}
                 onClick={() => setPrefs((prefs) => ({ ...prefs, theme: entry.theme }))}
               >
-                {entry.label}
+                <span className="theme-preview" data-preview={entry.theme} aria-hidden="true">
+                  <span className="theme-preview-rail" />
+                  <span className="theme-preview-side" />
+                  <span className="theme-preview-page">
+                    <span className="theme-preview-message" />
+                    <span className="theme-preview-composer" />
+                  </span>
+                </span>
+                <span className="theme-option-label">
+                  {entry.label}
+                  {entry.theme === theme && <Check aria-hidden="true" />}
+                </span>
               </button>
             ))}
           </div>

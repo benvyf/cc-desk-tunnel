@@ -575,8 +575,8 @@ handle('shared:save', (_event, key, value) => {
 // The colours are the title bar's in style.css: `--chrome` and `--text`.
 const windowColours = () =>
   nativeTheme.shouldUseDarkColors
-    ? { color: '#141518', symbolColor: '#e4e6ea' }
-    : { color: '#edf0f6', symbolColor: '#22262e' };
+    ? { color: '#0b0b0a', symbolColor: '#dedcd6' }
+    : { color: '#eeede9', symbolColor: '#20201e' };
 function followTheme(prefs) {
   const theme = prefs?.theme;
   nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';

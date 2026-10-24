@@ -9,7 +9,9 @@ import './style.css';
 document.documentElement.dataset.platform = window.desktop?.platform ?? 'browser';
 // The colours chosen in the settings, set before the page first draws.
 const showTheme = () => {
-  document.documentElement.dataset.theme = getPrefs().theme;
+  const theme = getPrefs().theme;
+  if (document.documentElement.dataset.theme !== theme)
+    document.documentElement.dataset.theme = theme;
 };
 showTheme();
 onPrefs(showTheme);
