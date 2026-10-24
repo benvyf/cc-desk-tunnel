@@ -2,6 +2,14 @@
 
 这是本项目当前工作状态与跨电脑续做的权威入口。旧文档中的 Build 2/3、未接入客户端、没有续期等陈述属于历史阶段；遇到冲突以本文件及 VPS 实际签名索引为准。生产状态是检查时的快照，后续 revision／有效期会自动续期。
 
+### 2026-10-24 首次接入挂载修复补充
+
+用户执行首台 bootstrap 时，在停服前收到 `Expected data and read-only policy bind mounts.`。回传只读 inspect 确认容器仍 running，数据源为 `/srv/cc-desk-tunnel`，审核源为历史正式激活目录 `/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed`，后者正确地只读挂载到容器内 `/etc/claude-code`。安装器此前只允许宿主源 `/etc/claude-code`，遗漏了这个已审查的历史路径。
+
+修复提交 `0fcc03ecd2954720e647bbedf2cd995ebbc0bc50` 只增加该精确路径的兼容，仍拒绝可写审核目录、未知路径及额外挂载；克隆容器时保留原 HostConfig。回归先复现失败再通过，Linux Python bootstrap 16/16 通过。VPS 管理中心已从该提交的干净源码运行包部署，42 文件 inventory 校验通过，公开安装器 SHA256 为 `270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0`，管理 API 生成命令已绑定新摘要。发布的 Windows Build 5、Linux Build 2、三个已核对的通道索引、生产配置和 CURRENT-RELEASE 均未改动；两套续期继续使用这些不可变制品对应的源码。
+
+备份 `/var/backups/cc-update-service/bootstrap-policy-0fcc03e-20261024T022330Z`；旧运行目录 `/opt/cc-update-service.previous-bootstrap-policy-0fcc03e`。脱敏部署证据见 `docs/evidence/bootstrap-policy-mount-fix-2026-10-24.json`。下文较早的“VPS 运行源码同为 9ab5f49”属于修复前快照，当前管理中心源码以本补充为准，安装包源码身份仍为 9ab5f49。首台尚待用户刷新管理页、重新复制命令并执行成功；旧命令绑定旧安装器摘要，不能复用。本轮未启动真实 Claude、JEV 或额度查询。
+
 ## 1. 用户要实现什么
 
 把 CC Desk Tunnel 定制维护版做成完整管理系统。管理中心统一登录、顶部导航，每个功能独立页面与地址：账号监控、客户端更新、内容审核。页面刷新及前进后退保留当前功能，只加载当前页面所需数据。
