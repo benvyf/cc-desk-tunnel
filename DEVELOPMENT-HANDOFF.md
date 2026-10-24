@@ -8,6 +8,8 @@
 
 新增动态注册表保存在管理服务 private 目录，只存凭据摘要，兼容原静态节点配置；重启时先合并节点再打开监控数据库。核心接口、Linux OpenSSL 与模拟安装、真实 Edge 复制/过期/清空/390px、实际运行包导入测试通过。尚无空白 Ubuntu VM 完整联网安装反馈，不把模拟 apt/Docker 流程当成实机成功。使用、重试边界及网络说明见 [新机部署](docs/FRESH-UBUNTU-INSTALL.md)。
 
+控制中心已从干净源码 `75e92b102fd5d28305385031beafdd865aae5477` 打包并上线，运行清单48文件。VPS备份 `/var/backups/cc-update-service/fresh-ubuntu-20261024T073549Z`，旧运行目录 `/opt/cc-update-service.previous-fresh-75e92b1`。公网四项资源与源码字节相同；实际公开 Linux Build 3 的签名、完整归档清单和配套 Web 经新安装器函数验证通过。原配置、管理员凭据、审核策略、节点列表、发布索引、续期登记不变，两timer active；未签发生产测试安装码、未改任何Ubuntu节点、未发Claude/JEV请求。脱敏证据见 [新机入口发布](docs/evidence/fresh-ubuntu-production-2026-10-24.json)。
+
 ### 2026-10-24 GitHub 同步完成
 
 用户已授权将最新改动同步到 GitHub，账号编号、服务端账号管理、控制中心升级命令、客户端固定升级入口及发布记录均已推送至 `benvyf/cc-desk-tunnel` 的 `codex/account-monitor-production` 分支。下文各发布快照中的“尚未推送 GitHub”是当时状态，以本节为准；安装包与运行包的源码身份不因后续文档提交改变。工作区原有未跟踪安装目录和历史资料保留本地，未纳入本次推送。
