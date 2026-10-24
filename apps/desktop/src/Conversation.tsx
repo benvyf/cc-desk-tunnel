@@ -46,6 +46,8 @@ import ConversationFind, { SearchExpanded } from './ConversationFind.tsx';
 import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
+import AttachmentTiles from './AttachmentTiles.tsx';
+import { splitAttachmentMessage } from './attachments.ts';
 
 const RichText = lazy(() => import('./RichText.tsx'));
 const Rich = ({ text, streaming = false }: { text: string; streaming?: boolean }) => (
@@ -295,6 +297,7 @@ function Message({
 }) {
   const time = messageTime(item.kind === 'assistant' ? (item.doneAt ?? item.at) : item.at);
   const user = item.kind === 'user';
+  const attached = user ? splitAttachmentMessage(item.text) : null;
   const stamp = time && (
     <time className="message-time" dateTime={item.at} title={time.full}>
       {time.short}
@@ -315,7 +318,14 @@ function Message({
         data-search-content
         data-copy-text={item.text}
       >
-        {user ? <p>{item.text}</p> : <Rich text={item.text} streaming={streaming} />}
+        {attached ? (
+          <>
+            {attached.text && <p>{attached.text}</p>}
+            <AttachmentTiles items={attached.files} />
+          </>
+        ) : (
+          <Rich text={item.text} streaming={streaming} />
+        )}
       </div>
       {user && (
         <div className="message-footer">

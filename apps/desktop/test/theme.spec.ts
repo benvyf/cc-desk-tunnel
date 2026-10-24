@@ -387,6 +387,14 @@ test('a long draft keeps native send and stop actions reachable in a short windo
             },
             projectName: '用于检查窄窗口布局的长项目名称',
             draft: '保留输入内容并让草稿区内部滚动\n'.repeat(30),
+            attachments: [
+              {
+                id: 'sizing-image',
+                name: '用于检查完整可见性的附件.png',
+                path: '/fixture/image.png',
+                status: 'ready',
+              },
+            ],
             setDraft() {},
             native: true,
             connected: true,
@@ -446,6 +454,31 @@ test('a long draft keeps native send and stop actions reachable in a short windo
         .locator('.composer textarea')
         .evaluate((input) => input.scrollHeight > input.clientHeight),
     ).toBe(true);
+    const geometry = await page.locator('.attachment-tiles').evaluate((row) => {
+      const tile = row.querySelector('.attachment-tile')!.getBoundingClientRect();
+      const bounds = row.getBoundingClientRect();
+      return {
+        tileTop: tile.top,
+        tileBottom: tile.bottom,
+        rowTop: bounds.top,
+        rowBottom: bounds.bottom,
+      };
+    });
+    expect(geometry.tileTop).toBeGreaterThanOrEqual(geometry.rowTop);
+    expect(geometry.tileBottom).toBeLessThanOrEqual(geometry.rowBottom);
+    const remove = page.getByRole('button', {
+      name: '移除 用于检查完整可见性的附件.png',
+      exact: true,
+    });
+    await remove.focus();
+    await expect(remove).toBeInViewport();
+    const input = page.getByRole('textbox', { name: '消息', exact: true });
+    await input.focus();
+    await expect(input).toBeInViewport();
+    await page.screenshot({
+      path: resolve(screenshots, `attachments-short-${viewport.width}.png`),
+      animations: 'disabled',
+    });
   }
   expect(
     await page.evaluate(() => (window as unknown as { sizingActions: string[] }).sizingActions),

@@ -29,6 +29,7 @@ const {
 } = require('node:fs');
 const { stat, writeFile } = require('node:fs/promises');
 const { gitBranch } = require('./git-branch.cjs');
+const { clearPastedPictures } = require('./pasted-images.cjs');
 const { asOnDisk } = require('./disk-path.cjs');
 const { openLog } = require('./client-log.cjs');
 const { hostname } = require('node:os');
@@ -145,6 +146,23 @@ handle('files:choose', async (event) => {
   });
   return result.canceled ? [] : result.filePaths;
 });
+// Decode off the renderer thread, limit source size and send only a small raster thumbnail over IPC.
+handle('attachment:preview', async (_event, file) => {
+  if (
+    typeof file !== 'string' ||
+    !path.isAbsolute(file) ||
+    !/\.(png|jpe?g|gif|webp|bmp|avif|heic)$/i.test(file)
+  )
+    return null;
+  try {
+    const info = await stat(file);
+    if (!info.isFile() || info.size > 20 << 20) return null;
+    const image = await nativeImage.createThumbnailFromPath(file, { width: 256, height: 192 });
+    return image.isEmpty() ? null : image.toDataURL();
+  } catch {
+    return null;
+  }
+});
 // A picture that is only on the clipboard has no file Claude could be pointed at. It is written into the
 // profile, from where Claude reads it like any other attached file; a week later it is removed at start.
 const pastedDirectory = () => path.join(app.getPath('userData'), 'pasted');
@@ -165,13 +183,6 @@ handle('image:save', async (_event, type, bytes) => {
   await writeFile(target, bytes);
   return target;
 });
-async function clearPastedPictures() {
-  for (const name of await readdir(pastedDirectory()).catch(() => [])) {
-    const file = path.join(pastedDirectory(), name);
-    const age = Date.now() - (await stat(file).catch(() => ({ mtimeMs: Date.now() }))).mtimeMs;
-    if (age > 7 * 24 * 3600 * 1000) await unlink(file).catch(() => {});
-  }
-}
 // Writes text the page produced (an exported session) where the user chooses.
 handle('file:save', async (event, name, text) => {
   const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
@@ -678,7 +689,7 @@ app.whenReady().then(() => {
   if (!ownsInstance) return;
   void managedClient.initialize();
   log(`Client ${app.getVersion()} started${connectionId ? ` as connection ${connectionId}` : ''}.`);
-  void clearPastedPictures();
+  void clearPastedPictures(pastedDirectory(), readSettings(draftsPath()));
   connections.mark(base, connectionId, true);
   setInterval(takeShared, 2000);
   // Shortcuts are the page's, where the user can change them or turn them off; Electron's default menu would

@@ -50,6 +50,7 @@ import SessionBar from './SessionBar.tsx';
 import { isHere, thisDevice } from './device.ts';
 import { isMac, selfUpdating } from './platform.ts';
 import { useDrafts } from './drafts.ts';
+import { attachmentMessage, messageLimit, splitAttachmentMessage } from './attachments.ts';
 import SchedulePanel from './SchedulePanel.tsx';
 import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
@@ -182,7 +183,7 @@ export function App({
   const [projects, setProjects] = useState(savedProjects);
   // The folders that hold sessions without a project; new ones are made in the first.
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [drafts, setDraft] = useDrafts();
+  const [drafts, setDraft, attachmentDrafts, setAttachments] = useDrafts();
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
   // The side column is shown beside the page on a wide window and laid over it on a narrow one.
@@ -841,17 +842,35 @@ export function App({
         ...(projectPath ? { projectPath } : {}),
       });
       if (!response.sessionId) return;
-      if (before) setDraft(response.sessionId, before.text);
+      if (before) {
+        const attached = splitAttachmentMessage(before.text);
+        setDraft(response.sessionId, attached.text);
+        setAttachments(response.sessionId, () => attached.files);
+      }
       show(response.sessionId);
     });
   }
-  async function send(text = draft) {
+  async function send(override?: string) {
+    const attached = selected ? (attachmentDrafts[selected.id] ?? []) : [];
+    if (override === undefined && attached.some((item) => item.status !== 'ready')) return;
+    const text = override ?? attachmentMessage(draft, attached);
     if (!selected || !text.trim() || inputDisabled) return;
+    if (text.trim().length > messageLimit) {
+      setError(`消息过长（含附件），请缩短正文或移除部分附件（最多 ${messageLimit} 字符）。`);
+      return;
+    }
     const sessionId = selected.id;
     setSlashOpen(false);
     await act(async () => {
       await client.request({ type: 'message.send', sessionId, text, scenario });
       setDraft(sessionId, '');
+      if (override === undefined) {
+        const sent = new Set(attached.map((item) => item.id));
+        const sentPaths = new Set(attached.map((item) => item.path));
+        setAttachments(sessionId, (current) =>
+          current.filter((item) => !sent.has(item.id) && !sentPaths.has(item.path)),
+        );
+      }
     });
   }
   // Takes up the last turn, which was stopped or cut off, without the user writing anything.
@@ -1767,6 +1786,8 @@ export function App({
                 }
                 draft={draft}
                 setDraft={(text) => setDraft(selected.id, text)}
+                attachments={attachmentDrafts[selected.id] ?? []}
+                setAttachments={setAttachments}
                 native={nativeMode}
                 connected={connected}
                 busy={busy}
@@ -1875,6 +1896,7 @@ export function App({
               void act(async () => {
                 await client.request({ type: 'session.delete', sessionId: deleteSession.id });
                 setDraft(deleteSession.id, '');
+                setAttachments(deleteSession.id, () => []);
                 // A plain session's directory goes with it when the session left nothing there.
                 if (isInside(deleteSession.projectPath, workspaceRoots))
                   void window.desktop?.removeWorkspace(deleteSession.projectPath);

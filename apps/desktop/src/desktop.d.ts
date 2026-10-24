@@ -36,6 +36,8 @@ declare global {
       openLogs: () => Promise<void>;
       openDevTools: () => Promise<void>;
       saveImage: (type: string, bytes: Uint8Array) => Promise<string>;
+      // A bounded local thumbnail, never the original full-size file or executable SVG markup.
+      attachmentPreview: (path: string) => Promise<string | null>;
       // The branch a project's working tree is on, or null outside a repository.
       gitBranch: (path: string) => Promise<string | null>;
       copyText: (text: string) => Promise<void>;
@@ -49,8 +51,8 @@ declare global {
       removeWorkspace: (directory: string) => Promise<void>;
       loadLogin: () => Promise<import('./LoginPage.tsx').ConnectionForm | null>;
       saveLogin: (login: import('./LoginPage.tsx').ConnectionForm) => Promise<void>;
-      loadDrafts: () => Promise<Record<string, string>>;
-      saveDrafts: (drafts: Record<string, string>) => Promise<void>;
+      loadDrafts: () => Promise<import('./drafts.ts').SavedDrafts>;
+      saveDrafts: (drafts: import('./drafts.ts').SavedDrafts) => Promise<void>;
       loadSchedules: (initial: string) => Promise<{ path: string; text: string }>;
       saveSchedules: (text: string) => Promise<void>;
       onSchedulesChanged: (callback: (text: string) => void) => () => void;

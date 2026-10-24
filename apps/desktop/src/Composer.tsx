@@ -1,4 +1,7 @@
 import Presence from './Presence.tsx';
+import AttachmentTiles from './AttachmentTiles.tsx';
+import { attachmentMessage, fileName, messageLimit } from './attachments.ts';
+import type { Attachment, SetAttachments } from './attachments.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -64,6 +67,8 @@ export default function Composer({
   chooseProject,
   draft,
   setDraft,
+  attachments = [],
+  setAttachments,
   native,
   connected,
   busy,
@@ -95,6 +100,8 @@ export default function Composer({
   chooseProject?: (position: MenuPosition) => void;
   draft: string;
   setDraft: (text: string) => void;
+  attachments?: Attachment[];
+  setAttachments?: SetAttachments;
   native: boolean;
   connected: boolean;
   busy: boolean;
@@ -128,6 +135,22 @@ export default function Composer({
   const input = useRef<HTMLTextAreaElement>(null);
   const branch = useBranch(session.projectPath, !!session.activeRun);
   const [dropping, setDropping] = useState(false);
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
+  const attachmentBlocked = attachments.some((item) => item.status !== 'ready');
+  const messageTooLong = attachmentMessage(draft, attachments).trim().length > messageLimit;
+  function submit() {
+    if (
+      !inputDisabled &&
+      !attachmentBlocked &&
+      !messageTooLong &&
+      (draft.trim() || attachments.length)
+    )
+      send();
+  }
+  useEffect(() => {
+    setAttachmentError(null);
+    setDropping(false);
+  }, [session.id]);
   // The command menu: this window's own actions, then Claude Code's commands that fit what follows the slash. Enter
   // runs the one picked; Tab or a click puts a command in the box, to be given its arguments.
   // Until the keys pick one, the first that can be used is picked.
@@ -226,40 +249,91 @@ export default function Composer({
       cancelAnimationFrame(frame);
     };
   }, []);
-  // A file reaches Claude as its Windows path in the message: Claude reads it through the execution channel,
-  // the same way it reads the project.
-  function attach(paths: string[]) {
-    if (!paths.length) return;
-    const box = input.current;
-    // The box holds what is typed right now; a picture is attached a moment after it was pasted.
-    const current = box ? box.value : draft;
-    const at = box ? box.selectionStart : current.length;
-    const before = current.slice(0, at);
-    const text = paths.map((path) => `"${path}"`).join(' ');
-    const lead = before && !/\s$/.test(before) ? ' ' : '';
-    setDraft(`${before}${lead}${text} ${current.slice(at)}`);
-    box?.focus();
-  }
   const shown = useRef(session.id);
   shown.current = session.id;
+  async function chooseFiles() {
+    const target = session.id;
+    setAttachmentError(null);
+    try {
+      const paths = await window.desktop!.chooseFiles();
+      if (!paths.length) return;
+      const added = paths.map((path): Attachment => ({
+        id: crypto.randomUUID(),
+        name: fileName(path),
+        path,
+        status: 'ready',
+      }));
+      setAttachments?.(target, (current) => {
+        const known = new Set(current.map((item) => item.path));
+        return [
+          ...current,
+          ...added.filter((item) => {
+            if (known.has(item.path)) return false;
+            known.add(item.path);
+            return true;
+          }),
+        ];
+      });
+      if (shown.current === target) input.current?.focus();
+    } catch {
+      if (shown.current === target) setAttachmentError('无法打开文件选择器，请重试');
+    }
+  }
   // Files copied in Explorer have a path. A picture that is only on the clipboard (a screenshot, an image
   // copied from a page) has none: the client saves it on this computer and its path is attached like any other.
   async function paste(files: File[]) {
-    const pasted = session.id;
-    const found: string[] = [];
+    const target = session.id;
     for (const file of files) {
-      const path = window.desktop!.pathForFile(file);
-      if (path) found.push(path);
-      else if (file.type.startsWith('image/'))
+      const id = crypto.randomUUID();
+      let path = '';
+      try {
+        path = window.desktop!.pathForFile(file);
+      } catch {
+        /* Clipboard images have no path. */
+      }
+      if (!path && !file.type.startsWith('image/')) continue;
+      setAttachments?.(target, (current) =>
+        path && current.some((item) => item.path === path)
+          ? current
+          : [
+              ...current,
+              {
+                id,
+                name: file.name || '粘贴的图片',
+                path: path || undefined,
+                status: path ? 'ready' : 'preparing',
+              },
+            ],
+      );
+      if (path) continue;
+      // Start every save immediately; one slow image does not hide the rest of a multi-file paste.
+      void (async () => {
         try {
-          found.push(
-            await window.desktop!.saveImage(file.type, new Uint8Array(await file.arrayBuffer())),
+          if (file.size > 20 << 20) throw new Error('只能粘贴不超过 20 MB 的图片。');
+          const saved = await window.desktop!.saveImage(
+            file.type,
+            new Uint8Array(await file.arrayBuffer()),
           );
-        } catch {
-          // A picture that could not be saved is left out; the rest is still attached.
+          setAttachments?.(target, (current) =>
+            current.map((item) =>
+              item.id === id ? { ...item, path: saved, status: 'ready' } : item,
+            ),
+          );
+        } catch (error) {
+          setAttachments?.(target, (current) =>
+            current.map((item) =>
+              item.id === id
+                ? {
+                    ...item,
+                    status: 'error',
+                    error: error instanceof Error ? error.message : '无法保存图片',
+                  }
+                : item,
+            ),
+          );
         }
+      })();
     }
-    if (shown.current === pasted) attach(found);
   }
   return (
     <div className="composer-area">
@@ -315,7 +389,7 @@ export default function Composer({
         className={`composer ${dropping ? 'dropping' : ''}`}
         onSubmit={(event) => {
           event.preventDefault();
-          send();
+          submit();
         }}
         onDragOver={(event) => {
           if (!window.desktop || inputDisabled || !event.dataTransfer.types.includes('Files'))
@@ -331,62 +405,93 @@ export default function Composer({
           void paste([...event.dataTransfer.files]);
         }}
       >
-        <textarea
-          ref={input}
-          aria-label="消息"
-          placeholder="随心输入…"
-          value={draft}
-          disabled={inputDisabled}
-          maxLength={16000}
-          rows={2}
-          onChange={(event) => {
-            setDraft(event.target.value);
-            setSlashOpen(native && slashDraft.test(event.target.value));
-            setPick(null);
-          }}
-          onPaste={(event) => {
-            // Pasted text is left to the browser, also when a program put a picture of it beside the text.
-            if (!window.desktop || !event.clipboardData.files.length) return;
-            const files = [...event.clipboardData.files];
-            const text = event.clipboardData.getData('text/plain');
-            const usable = files.filter(
-              (file) =>
-                window.desktop!.pathForFile(file) || (!text && file.type.startsWith('image/')),
-            );
-            if (!usable.length) return;
-            event.preventDefault();
-            void paste(usable);
-          }}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              setSlashOpen(false);
-              return;
-            }
-            if (menuShown && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+        <div className="composer-input">
+          <AttachmentTiles
+            items={attachments}
+            disabled={inputDisabled}
+            remove={(id) => {
+              const path = attachments.find((item) => item.id === id)?.path;
+              setAttachments?.(session.id, (current) =>
+                current.filter((item) => item.id !== id && (!path || item.path !== path)),
+              );
+              input.current?.focus();
+            }}
+          />
+          {attachmentError && (
+            <p className="attachment-error" role="alert">
+              {attachmentError}
+            </p>
+          )}
+          {messageTooLong && (
+            <p className="attachment-error" role="alert">
+              消息过长（含附件），请缩短正文或移除部分附件（最多 {messageLimit} 字符）。
+            </p>
+          )}
+          <textarea
+            ref={input}
+            aria-label="消息"
+            placeholder="随心输入…"
+            value={draft}
+            disabled={inputDisabled}
+            maxLength={messageLimit}
+            aria-invalid={messageTooLong || undefined}
+            rows={2}
+            onChange={(event) => {
+              setDraft(event.target.value);
+              setSlashOpen(native && slashDraft.test(event.target.value));
+              setPick(null);
+            }}
+            onPaste={(event) => {
+              // Pasted text is left to the browser, also when a program put a picture of it beside the text.
+              if (!window.desktop || inputDisabled || !event.clipboardData.files.length) return;
+              const files = [...event.clipboardData.files];
+              const text = event.clipboardData.getData('text/plain');
+              const usable = files.filter(
+                (file) =>
+                  (() => {
+                    try {
+                      return !!window.desktop!.pathForFile(file);
+                    } catch {
+                      return false;
+                    }
+                  })() ||
+                  (!text && file.type.startsWith('image/')),
+              );
+              if (!usable.length) return;
               event.preventDefault();
-              setPick((at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
-              return;
-            }
-            if (menuShown && event.key === 'Tab' && !event.shiftKey) {
-              event.preventDefault();
-              const command = items[at].fill;
-              if (command) fill(command);
-              return;
-            }
-            if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-              event.preventDefault();
-              if (!menuShown) send();
-              else if (!items[at].disabled) items[at].run();
-            }
-          }}
-        />
+              void paste(usable);
+            }}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                setSlashOpen(false);
+                return;
+              }
+              if (menuShown && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                event.preventDefault();
+                setPick((at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
+                return;
+              }
+              if (menuShown && event.key === 'Tab' && !event.shiftKey) {
+                event.preventDefault();
+                const command = items[at].fill;
+                if (command) fill(command);
+                return;
+              }
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                if (!menuShown) submit();
+                else if (!items[at].disabled) items[at].run();
+              }
+            }}
+          />
+        </div>
         <div className="composer-toolbar">
           {window.desktop && (
             <IconButton
-              title="添加文件：把文件的路径放进消息"
+              title="添加附件"
               className="attach-button"
               disabled={inputDisabled}
-              onClick={() => void window.desktop!.chooseFiles().then(attach)}
+              onClick={() => void chooseFiles()}
             >
               <Plus />
             </IconButton>
@@ -440,7 +545,7 @@ export default function Composer({
               <Square />
             </IconButton>
           )}
-          {resume && !draft.trim() ? (
+          {resume && !draft.trim() && !attachments.length ? (
             <IconButton title="接着上一轮继续" className="send-button" onClick={resume}>
               <Play />
             </IconButton>
@@ -451,7 +556,12 @@ export default function Composer({
                 className="icon-button send-button"
                 aria-label="发送消息"
                 title="发送消息"
-                disabled={!draft.trim() || inputDisabled}
+                disabled={
+                  (!draft.trim() && !attachments.length) ||
+                  inputDisabled ||
+                  attachmentBlocked ||
+                  messageTooLong
+                }
               >
                 <ArrowRight />
               </button>

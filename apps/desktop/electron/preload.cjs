@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('desktop', {
   pathForFile: (file) => webUtils.getPathForFile(file),
   saveFile: (name, text) => ipcRenderer.invoke('file:save', name, text),
   saveImage: (type, bytes) => ipcRenderer.invoke('image:save', type, bytes),
+  attachmentPreview: (path) => ipcRenderer.invoke('attachment:preview', path),
   openFolder: (directory) => ipcRenderer.invoke('folder:open', directory),
   openLogs: () => ipcRenderer.invoke('log:open'),
   openDevTools: () => ipcRenderer.invoke('devtools:open'),
