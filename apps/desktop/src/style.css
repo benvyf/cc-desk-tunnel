@@ -1511,6 +1511,7 @@ dialog:has(.release-notes) {
   gap: 8px;
 }
 .settings-list select,
+.session-defaults select,
 .settings-list input {
   flex: none;
   width: 150px;
@@ -1519,6 +1520,12 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-md);
   background: var(--surface-3);
   color: var(--text);
+}
+.session-defaults select {
+  width: 180px;
+  max-width: 100%;
+  min-width: 0;
+  text-overflow: ellipsis;
 }
 .help-text {
   padding: 14px 20px;
@@ -3265,6 +3272,9 @@ details[open] > summary > .fold-chevron {
   border: 1px solid var(--line);
   background: white;
   box-shadow: var(--shadow-sm);
+}
+.model-menu .effort-slider {
+  touch-action: none;
 }
 .model-menu input[type='range']:disabled {
   opacity: 0.6;

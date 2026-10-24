@@ -63,6 +63,7 @@ import { onSharedChange, saveShared, shared, useShared } from './shared.ts';
 import { useNotifications } from './notifications.ts';
 import { folderName, isInside, isNewer, pathKey, withProject } from './paths.ts';
 import { getPrefs, setPrefs, toggled, usePrefs } from './prefs.ts';
+import { sessionDefaultOptions } from './modelDefaults.ts';
 import { actions, comboOf, keyFor, show as comboText } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
 import Rail from './Rail.tsx';
@@ -714,7 +715,28 @@ export function App({
   }
   async function createSession(projectPath: string) {
     const response = await client.request({ type: 'session.create', title: '新会话', projectPath });
-    if (response.sessionId) show(response.sessionId);
+    if (response.sessionId) await initializeSession(response.sessionId);
+  }
+  async function initializeSession(sessionId: string) {
+    const options = sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models);
+    if (options.model || options.effort) {
+      try {
+        await client.request({
+          type: 'session.configure',
+          sessionId,
+          permissionMode:
+            client.state.sessions.find((session) => session.id === sessionId)?.permissionMode ??
+            'default',
+          ...options,
+        });
+      } catch (error) {
+        // Creation succeeded: keep its workspace even if applying defaults fails.
+        setError(
+          `新会话已创建，但默认模型与推理强度未能应用，请在会话中重新选择。${error instanceof Error ? error.message : ''}`,
+        );
+      }
+    }
+    show(sessionId);
   }
   async function createInProject(path: string) {
     await act(() => createSession(path));
@@ -734,7 +756,7 @@ export function App({
     if (browser) {
       await act(async () => {
         const response = await client.request({ type: 'server.session.create', title: '新会话' });
-        if (response.sessionId) show(response.sessionId);
+        if (response.sessionId) await initializeSession(response.sessionId);
       });
       return;
     }
@@ -1545,6 +1567,7 @@ export function App({
         <SettingsPage
           sideOpen={sideOpen}
           client={client}
+          capabilities={signedOut ? null : capabilities}
           browser={!!browser}
           section={place.section}
           go={(section) => open('settings', section)}

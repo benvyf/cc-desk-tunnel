@@ -118,6 +118,13 @@ test('Electron: a second connection is a window of its own and shares what is th
     await expect(stats(other)).not.toBeChecked();
     await stats(page).click();
     await expect(stats(other)).toBeChecked();
+    const effort = (target: Page) =>
+      target.getByRole('combobox', { name: '默认推理强度', exact: true });
+    await effort(page).selectOption('high');
+    await expect(effort(other)).toHaveValue('high');
+    await effort(other).selectOption('');
+    await expect(effort(page)).toHaveValue('');
+    await expect(stats(page)).toBeChecked();
     await other.getByRole('switch', { name: '关闭窗口时留在后台', exact: true }).click();
     await expect
       .poll(() => JSON.parse(readFileSync(resolve(profile, 'settings.json'), 'utf8')).closeToTray)

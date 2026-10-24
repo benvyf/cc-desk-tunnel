@@ -13,14 +13,10 @@ import type {
 import ContextMeter from './ContextMeter.tsx';
 import { IconButton } from './ui.tsx';
 import { usePopupBounds } from './usePopupBounds.ts';
+import EffortSlider from './EffortSlider.tsx';
+import { effortNames } from './modelDefaults.ts';
+import { modelName } from './modelName.ts';
 
-const effortNames: Record<Effort, string> = {
-  low: '低',
-  medium: '中',
-  high: '高',
-  xhigh: '极高',
-  max: '最高',
-};
 export default function ComposerControls({
   model,
   effort,
@@ -72,31 +68,19 @@ export default function ComposerControls({
   // The menu opens on the effort slider; the list of models is one step further in.
   const [choosing, setChoosing] = useState(false);
   const [preview, setPreview] = useState<Effort | null>(null);
-  const dragging = useRef(false);
-  const commitPending = useRef(false);
   const chosen =
     capabilities?.models.find((row) => row.value === (model ?? 'default')) ??
     capabilities?.models.find((row) => row.resolvedModel === (model ?? nativeSession?.model));
   const levels = chosen?.supportedEffortLevels ?? [];
   const actual = nativeSession?.effort;
   const shownEffort = preview ?? effort ?? actual;
-  const label = chosen?.displayName ?? model ?? '原生默认';
-  async function saveEffort() {
-    dragging.current = false;
-    if (!commitPending.current || disabled) return;
-    commitPending.current = false;
-    const value = preview;
-    try {
-      await configure({ effort: value });
-    } finally {
-      setPreview(null);
-    }
-  }
+  const label = modelName(
+    chosen,
+    model === chosen?.value ? (nativeSession?.model ?? model) : (model ?? nativeSession?.model),
+  );
   useEffect(() => {
     setPreview(null);
-    commitPending.current = false;
-    dragging.current = false;
-  }, [model]);
+  }, [model, open]);
   const quota = usePrefs().quota ? quotaFigures(metrics?.rateLimits) : [];
   const fullest = Math.max(0, ...quota.map((figure) => figure.used));
   return (
@@ -129,6 +113,7 @@ export default function ComposerControls({
           className="model-trigger"
           disabled={disabled}
           aria-label="模型与推理强度"
+          title={label}
           aria-expanded={open}
           onClick={() => {
             setOpen((value) => !value);
@@ -161,61 +146,13 @@ export default function ComposerControls({
                   <ChevronRight />
                 </button>
                 {levels.length > 0 && (
-                  <input
-                    style={
-                      {
-                        '--fill': shownEffort
-                          ? `${(Math.max(0, levels.indexOf(shownEffort)) / Math.max(1, levels.length - 1)) * 100}%`
-                          : '0%',
-                      } as CSSProperties
-                    }
-                    aria-label="推理强度"
+                  <EffortSlider
+                    key={model ?? 'default'}
+                    levels={levels}
+                    value={effort ?? actual ?? null}
                     disabled={disabled}
-                    type="range"
-                    min={0}
-                    max={levels.length - 1}
-                    aria-valuetext={shownEffort ? effortNames[shownEffort] : '原生默认'}
-                    value={Math.max(0, levels.indexOf(shownEffort ?? 'high'))}
-                    data-unset={shownEffort ? undefined : ''}
-                    onPointerDown={(event) => {
-                      dragging.current = true;
-                      // Unset: the handle is hidden, so pressing where it would be picks that level; dragging or a press elsewhere overrides it.
-                      if (!shownEffort) {
-                        setPreview(levels[Number(event.currentTarget.value)]);
-                        commitPending.current = true;
-                      }
-                      event.currentTarget.setPointerCapture(event.pointerId);
-                    }}
-                    onChange={(event) => {
-                      setPreview(levels[Number(event.target.value)]);
-                      commitPending.current = true;
-                    }}
-                    onPointerUp={() => {
-                      void saveEffort();
-                    }}
-                    onPointerCancel={() => {
-                      dragging.current = false;
-                      commitPending.current = false;
-                      setPreview(null);
-                    }}
-                    onKeyUp={(event) => {
-                      if (
-                        [
-                          'ArrowLeft',
-                          'ArrowRight',
-                          'ArrowUp',
-                          'ArrowDown',
-                          'Home',
-                          'End',
-                          'PageUp',
-                          'PageDown',
-                        ].includes(event.key)
-                      )
-                        void saveEffort();
-                    }}
-                    onBlur={() => {
-                      if (!dragging.current) void saveEffort();
-                    }}
+                    onPreview={setPreview}
+                    onCommit={(value) => configure({ effort: value })}
                   />
                 )}
                 {levels.length > 0 && (
@@ -275,7 +212,7 @@ export default function ComposerControls({
                           }}
                         >
                           <span>
-                            {row.displayName}
+                            {modelName(row)}
                             {row.resolvedModel && <small>{row.resolvedModel}</small>}
                             <small>{row.description}</small>
                           </span>

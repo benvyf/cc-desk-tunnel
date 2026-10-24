@@ -23,6 +23,8 @@ import { inSummary, sampleStats, statFields, summaryText } from './turnStats.ts'
 import { barText, inBar, sampleSession, sessionFields } from './sessionStats.ts';
 import { GithubMark, openProject, project } from './project.tsx';
 import SettingsPanel from './SettingsPanel.tsx';
+import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
+import type { NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
 import ShortcutSettings from './ShortcutSettings.tsx';
@@ -55,7 +57,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '主题 外观 浅色 深色 跟随系统 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
+      '主题 外观 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
   },
   {
     id: 'notifications',
@@ -497,6 +499,7 @@ function Connections() {
 
 function General({
   client,
+  capabilities,
   browser,
   web,
   form,
@@ -505,6 +508,7 @@ function General({
   chooseWorkspace,
 }: {
   client: ProxyClient;
+  capabilities: NativeCapabilities | null;
   browser: boolean;
   web: boolean;
   form: ConnectionForm;
@@ -522,6 +526,7 @@ function General({
       <div className="page-body">
         <h1 className="page-title">常规</h1>
         <ThemeSettings />
+        <SessionDefaultsSettings capabilities={capabilities} />
         {web && <WebAccessSettings client={client} browser={browser} connectionUrl={form.url} />}
         {!window.desktop && !browser && (
           <p className="muted">窗口、会话和连接的设置只在桌面客户端里有。</p>
@@ -843,6 +848,7 @@ function About({
 export default function SettingsPage({
   sideOpen = true,
   client,
+  capabilities = null,
   section,
   go,
   native,
@@ -865,6 +871,7 @@ export default function SettingsPage({
   back?: () => void;
   browser?: boolean;
   client: ProxyClient;
+  capabilities?: NativeCapabilities | null;
   section: Section;
   go: (section: Section) => void;
   native: boolean;
@@ -946,6 +953,7 @@ export default function SettingsPage({
         ) : section === 'general' ? (
           <General
             client={client}
+            capabilities={capabilities}
             browser={browser}
             web={!back && (native || browser)}
             form={form}

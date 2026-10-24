@@ -2,6 +2,8 @@ import { useSyncExternalStore } from 'react';
 import { onSharedChange, saveShared, shareOnce, shared } from './shared.ts';
 import { defaultView, viewModes } from './transcriptView.ts';
 import type { TranscriptView } from './transcriptView.ts';
+import { readSessionDefaults } from './modelDefaults.ts';
+import type { SessionDefaults } from './modelDefaults.ts';
 
 // Choices that belong to this computer and never reach the service: what is pinned, what a project is called
 // here, which events raise a notification, and the keyboard shortcuts. The windows of the computer's
@@ -49,6 +51,7 @@ export type Prefs = {
   // The strip under the input box with the whole session's figures; chosen the same way.
   sessionBar: { enabled: boolean; summary: Record<string, boolean> };
   theme: Theme;
+  sessionDefaults: SessionDefaults;
 };
 
 const storageKey = 'proxy-prefs';
@@ -77,6 +80,7 @@ const defaults: Prefs = {
   view: defaultView,
   sessionBar: { enabled: false, summary: {} },
   theme: 'system',
+  sessionDefaults: { model: null, effort: null },
 };
 
 function stored(): unknown {
@@ -141,6 +145,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
         ),
       },
       theme: themes.find((entry) => entry.theme === saved.theme)?.theme ?? defaults.theme,
+      sessionDefaults: readSessionDefaults(saved.sessionDefaults),
     };
   } catch {
     return defaults;
