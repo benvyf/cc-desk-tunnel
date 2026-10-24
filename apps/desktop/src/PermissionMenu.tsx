@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import type { PermissionMode } from '@cc-desk-tunnel/protocol';
 import { usePrefs } from './prefs.ts';
+import { usePopupBounds } from './usePopupBounds.ts';
 
 // The modes are Claude Code's own; the lines under them say what each asks the user for.
 type Mode = { value: PermissionMode; name: string; detail: string; icon: typeof Hand };
@@ -52,6 +53,7 @@ export default function PermissionMenu({
   // A session already in that mode shows it, whatever the setting says now.
   const offered = allowed || mode === bypass.value ? [...modes, bypass] : modes;
   const container = useRef<HTMLDivElement>(null);
+  usePopupBounds(container, '.permission-menu', open, confirming);
   useEffect(() => {
     if (!open) return;
     const dismiss = (event: PointerEvent) => {

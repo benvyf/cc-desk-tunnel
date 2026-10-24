@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { NativeMetrics } from '@cc-desk-tunnel/protocol';
 import { usePopover } from './usePopover.ts';
+import { usePopupBounds } from './usePopupBounds.ts';
 
 // The native summary names its categories in English; the common ones are translated, any other is shown as it came.
 const categoryNames: Record<string, string> = {
@@ -59,6 +60,7 @@ export default function ContextMeter({
 }) {
   const [hovered, setHovered] = useState(false);
   const container = useRef<HTMLDivElement>(null);
+  usePopupBounds(container, '.context-tooltip', !withPercent && hovered);
   const popover = usePopover();
   useEffect(() => {
     if (withPercent) return;
@@ -142,7 +144,9 @@ export default function ContextMeter({
       className="context-control"
       ref={container}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseLeave={() => {
+        if (!container.current?.contains(document.activeElement)) setHovered(false);
+      }}
     >
       <button
         type="button"

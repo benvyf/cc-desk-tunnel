@@ -11,6 +11,7 @@ import type {
 } from '@cc-desk-tunnel/protocol';
 import ContextMeter from './ContextMeter.tsx';
 import { IconButton } from './ui.tsx';
+import { usePopupBounds } from './usePopupBounds.ts';
 
 const effortNames: Record<Effort, string> = {
   low: '低',
@@ -48,6 +49,7 @@ export default function ComposerControls({
   // With the strip under the input box switched on, the ring is shown there instead.
   const barShowsContext = usePrefs().sessionBar.enabled;
   const container = useRef<HTMLDivElement>(null);
+  usePopupBounds(container, '.model-menu', open);
   useEffect(() => {
     const dismiss = (event: PointerEvent) => {
       if (!container.current?.contains(event.target as Node)) {

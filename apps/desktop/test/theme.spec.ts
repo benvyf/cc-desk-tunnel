@@ -229,3 +229,108 @@ test('notification popup stays inside narrow windows and dismisses with Escape',
     if (width < 700) await page.mouse.click(width - 8, 350);
   }
 });
+
+test('composer popups stay reachable with long drafts and while resizing', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 480 });
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const reactPath = '/node_modules/.vite/deps/react.js';
+    const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+    const controlsPath = '/src/ComposerControls.tsx';
+    const permissionPath = '/src/PermissionMenu.tsx';
+    const React = (await import(reactPath)).default;
+    const { createRoot } = (await import(domPath)).default;
+    const { default: Controls } = await import(controlsPath);
+    const { default: Permission } = await import(permissionPath);
+    const h = React.createElement;
+    const root = document.createElement('div');
+    document.body.replaceChildren(root);
+    createRoot(root).render(
+      h(
+        'div',
+        { className: 'shell side-closed' },
+        h('header', { className: 'titlebar' }),
+        h('nav', { className: 'rail' }),
+        h(
+          'main',
+          { className: 'workspace' },
+          h(
+            'div',
+            { className: 'composer-area', style: { marginTop: 'auto' } },
+            h(
+              'div',
+              { className: 'composer' },
+              h('textarea'),
+              h(
+                'div',
+                { className: 'composer-toolbar' },
+                h(Permission, { mode: 'default', disabled: false, change() {} }),
+                h(Controls, {
+                  model: 'sonnet',
+                  effort: 'high',
+                  nativeSession: null,
+                  metrics: null,
+                  capabilities: {
+                    models: Array.from({ length: 20 }, (_, index) => ({
+                      value: index ? `model-${index}` : 'sonnet',
+                      displayName: `模型 ${index}`,
+                      supportedEffortLevels: ['low', 'medium', 'high'],
+                    })),
+                  },
+                  disabled: false,
+                  async configure() {},
+                  openAccount() {},
+                  refresh() {},
+                  refreshing: false,
+                  canRefreshModels: false,
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+  for (const [label, selector] of [
+    ['审批模式', '.permission-menu'],
+    ['模型与推理强度', '.model-menu'],
+    ['上下文窗口', '.context-tooltip'],
+  ]) {
+    await page.setViewportSize({ width: 390, height: 480 });
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const popup = page.locator(selector);
+    if (label === '模型与推理强度') await page.locator('.model-current').click();
+    await page.locator('.composer textarea').evaluate((input) => {
+      (input as HTMLTextAreaElement).value = '长草稿\n'.repeat(40);
+      input.style.height = '999px';
+    });
+    for (const viewport of [
+      { width: 390, height: 480 },
+      { width: 320, height: 260 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect
+        .poll(
+          async () => {
+            const box = await popup.boundingBox();
+            return (
+              !!box &&
+              box.x >= 8 &&
+              box.y >= 48 &&
+              box.x + box.width <= viewport.width - 8 &&
+              box.y + box.height <= viewport.height - 8
+            );
+          },
+          { message: `${label} remains inside ${viewport.width}×${viewport.height}` },
+        )
+        .toBe(true);
+    }
+    if (label !== '上下文窗口') {
+      const last = popup.getByRole(label === '审批模式' ? 'menuitemradio' : 'option').last();
+      await last.focus();
+      await expect(last).toBeInViewport();
+    }
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+  }
+});
