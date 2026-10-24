@@ -33,11 +33,12 @@ import { describe, duration, summarize } from './activity.ts';
 import type { Category } from './activity.ts';
 import type { HistoryState, TaskProgress } from './client.ts';
 import { RunStatus, TaskLine } from './RunStatus.tsx';
+import RunNotice from './RunNotice.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import { conversation } from './transcript.ts';
 import { usePrefs } from './prefs.ts';
-import { firstLine } from './transcriptView.ts';
+import { thinkingPreview } from './transcriptView.ts';
 import type { TranscriptItem, Turn, Work } from './transcript.ts';
 import { CopyButton, copyText } from './copy.tsx';
 import { messageTime } from './messageTime.ts';
@@ -224,12 +225,19 @@ function WorkItems({
               <span className="tool-heading">
                 <Brain />
                 <span className="tool-verb">思考</span>
-                {preview && <span className="thinking-preview">{firstLine(item.text)}</span>}
+                {preview && (
+                  <span className="thinking-preview" data-search-ignore>
+                    {thinkingPreview(item.text)}
+                  </span>
+                )}
               </span>
             }
           >
             {() => (
-              <div className="message-content tool-detail" data-search-content>
+              <div
+                className={`message-content tool-detail${active ? ' streaming' : ''}`}
+                data-search-content
+              >
                 <Rich text={item.text} />
               </div>
             )}
@@ -282,6 +290,7 @@ function Message({
   closing = false,
   latest = false,
   joined = false,
+  streaming = false,
 }: {
   item: Text;
   native: boolean;
@@ -291,6 +300,7 @@ function Message({
   latest?: boolean;
   // A question put in while the run went on.
   joined?: boolean;
+  streaming?: boolean;
 }) {
   const time = messageTime(item.kind === 'assistant' ? (item.doneAt ?? item.at) : item.at);
   const user = item.kind === 'user';
@@ -309,7 +319,11 @@ function Message({
           <CopyButton text={item.text} />
         </div>
       )}
-      <div className="message-content" data-search-content data-copy-text={item.text}>
+      <div
+        className={`message-content${streaming ? ' streaming' : ''}`}
+        data-search-content
+        data-copy-text={item.text}
+      >
         {user ? <p>{item.text}</p> : <Rich text={item.text} />}
       </div>
       {user && (
@@ -388,7 +402,7 @@ function TurnView({
           />
         )
       ) : (
-        <Message key={step.id} item={step} native={native} />
+        <Message key={step.id} item={step} native={native} streaming={active} />
       ),
     );
   return (
@@ -444,14 +458,7 @@ function TurnView({
         )
       )}
       {turn.notices.map((item) => (
-        <div
-          key={item.id}
-          className={`run-notice ${item.error ? 'failed' : ''}`}
-          role={item.error ? 'alert' : 'status'}
-          data-search-content
-        >
-          {item.text}
-        </div>
+        <RunNotice key={item.id} text={item.text} error={item.error} />
       ))}
     </>
   );
@@ -738,9 +745,10 @@ export default function Conversation({
           if (top < lastTop.current && top < 240 && !loadError) loadMore();
           lastTop.current = top;
         }}
-        onPointerDown={(event) => {
-          // Steps opened or closed are being read where they are.
-          if ((event.target as HTMLElement).closest('summary')) leave();
+        onClickCapture={(event) => {
+          // A disclosure is being read where it is, whether activated by pointer or keyboard.
+          // Stop following before its handler changes the transcript's height.
+          if ((event.target as HTMLElement).closest('summary, .notice-toggle')) leave();
         }}
         onKeyDown={(event) => {
           if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]'))

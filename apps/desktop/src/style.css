@@ -77,8 +77,15 @@
   --control-lg: 40px;
   --shadow: 0 8px 28px light-dark(#20201e18, #00000066), 0 1px 3px light-dark(#20201e0d, #00000040);
   --bar: 40px;
+  --font-body: 14px;
+  --font-title: 16px;
+  --font-caption: 12px;
+  --font-caption-small: 11px;
+  --leading-body: 1.75;
+  --leading-title: 1.5;
+  --leading-caption: 1.6;
   font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
-  font-size: 14px;
+  font-size: var(--font-body);
   color: var(--text);
   background: var(--surface-1);
   font-synthesis: none;
@@ -205,6 +212,17 @@ svg {
   height: 18px;
   flex-shrink: 0;
   stroke-width: 1.8;
+  /* Only inline formatting uses this offset; flex controls keep their existing centering. */
+  vertical-align: -0.125em;
+}
+h1,
+h2,
+h3,
+h4 {
+  line-height: var(--leading-title);
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 h1,
 h2,
@@ -217,7 +235,7 @@ h1 {
   font-weight: 600;
 }
 h2 {
-  font-size: 18px;
+  font-size: var(--font-title);
   font-weight: 600;
 }
 a {
@@ -1278,7 +1296,7 @@ dialog:has(.release-notes) {
   margin: 0 0 22px;
 }
 .page-heading {
-  font-size: 14px;
+  font-size: var(--font-title);
   font-weight: 600;
   margin: 30px 0 12px;
 }
@@ -1691,7 +1709,9 @@ kbd {
 .empty-project {
   color: var(--faint);
   font-size: 12px;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: normal;
+  max-width: 100%;
   text-align: center;
 }
 .message {
@@ -1756,9 +1776,28 @@ kbd {
   margin: 0;
 }
 .message-content {
-  line-height: 1.85;
+  line-height: var(--leading-body);
   overflow-wrap: anywhere;
+  word-break: normal;
   min-width: 0;
+}
+.message-content :is(p, li),
+.help-text p,
+.page-notes,
+.run-notice-text {
+  text-wrap: pretty;
+}
+/* Streaming text keeps ordinary wrapping as each chunk arrives. */
+.message-content.streaming :is(p, li, h1, h2, h3, h4) {
+  text-wrap: wrap;
+}
+/* Size direct inline icons, preserving KaTeX's stretchy SVGs and nested button icons. */
+.message-content :is(p, li, h1, h2, h3, h4) > svg.lucide {
+  width: 1em;
+  height: 1em;
+}
+.message-content small > svg.lucide {
+  vertical-align: -0.075em;
 }
 .message-content > :last-child {
   margin-bottom: 0;
@@ -1766,7 +1805,7 @@ kbd {
 .message-content h1,
 .message-content h2,
 .message-content h3 {
-  font-size: 17px;
+  font-size: var(--font-title);
   margin-top: 16px;
 }
 .message-content ul,
@@ -2193,13 +2232,28 @@ details[open] > summary > .fold-chevron {
   margin-left: 0;
 }
 .thinking-preview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   min-width: 0;
   overflow: hidden;
   color: var(--faint);
-  font-size: 12px;
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
   font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+.thinking-block:has(.thinking-preview):not([open]) > summary,
+.thinking-block:has(.thinking-preview):not([open]) .tool-heading {
+  align-items: flex-start;
+  line-height: var(--leading-caption);
+}
+.thinking-block:has(.thinking-preview):not([open]) > summary > svg,
+.thinking-block:has(.thinking-preview):not([open]) .tool-heading > svg {
+  margin-top: calc((1lh - 13px) / 2);
 }
 .turn-process > summary .failed {
   color: var(--fail);
@@ -2284,8 +2338,36 @@ details[open] > summary > .fold-chevron {
   color: var(--faint);
   border-left: 2px solid var(--line-strong);
   padding: 5px 12px;
-  font-size: 12px;
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: normal;
   margin: 0 0 24px;
+}
+.run-notice-text {
+  white-space: pre-wrap;
+}
+.run-notice-text:not(.expanded) {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
+}
+.notice-toggle {
+  display: block;
+  margin: 5px 0 0;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-caption-small);
+}
+.notice-toggle:hover {
+  background: var(--hover);
+  color: var(--text);
 }
 .run-notice.failed {
   color: var(--danger-text);
@@ -2300,6 +2382,27 @@ details[open] > summary > .fold-chevron {
 }
 .run-indicator .running-dot {
   margin-top: 0;
+}
+/* Equal-width digits keep timers and usage figures steady as their values update. */
+.message-time,
+.tool-time,
+.tool-diff,
+.work-heading small,
+.turn-process > summary,
+.run-indicator,
+.background-tasks small,
+.find-count,
+.session-select small,
+.session-card small,
+.notice-badge,
+.notice small,
+.session-bar,
+.turn-stats,
+.context-tooltip,
+.quota-row,
+.quota-note,
+.account-updated {
+  font-variant-numeric: tabular-nums;
 }
 .background-tasks {
   display: grid;
