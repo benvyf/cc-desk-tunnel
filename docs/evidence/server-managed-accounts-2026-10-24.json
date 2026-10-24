@@ -1,5 +1,5 @@
 {
-  "status": "Implemented and verified in workspace; not packaged or deployed",
+  "status": "Source verification snapshot before publication; subsequent VPS release recorded separately",
   "userSelectedLoginLocation": "Ubuntu terminal using the official Claude Code CLI",
   "displayNumberFormat": "CC-XXXX-XXXX-XXXX-XXXX (uppercase hexadecimal from existing account ID)",
   "typescript": {
@@ -55,5 +55,6 @@
       "realUpgradePerformed": false
     },
     "clientParser": "Account number survives account.state, live event, fragment and history parsing; legacy metadata remains readable"
-  }
+  },
+  "subsequentProductionRelease": "account-mode-production-release-2026-10-24.json"
 }

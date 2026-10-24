@@ -2,13 +2,15 @@
 
 这是本项目当前工作状态与跨电脑续做的权威入口。旧文档中的 Build 2/3、未接入客户端、没有续期等陈述属于历史阶段；遇到冲突以本文件及 VPS 实际签名索引为准。生产状态是检查时的快照，后续 revision／有效期会自动续期。
 
-### 2026-10-24 新需求：服务端登录、客户端编号（源码已实现，未发布）
+### 2026-10-24 服务端登录、客户端编号（VPS 已上线，Ubuntu 待升级）
 
 用户要求客户端不再管理 Claude 登录、客户端不显示邮箱，控制中心显示编号与邮箱对应；已明确选择在 Ubuntu 终端通过官方 Claude Code 登录。工作区已实现移除客户端登录/退出/授权码入口、服务端拒绝对应远程账号操作、账号身份元数据发送前转为稳定编号（含历史回放），控制中心并列显示/搜索编号和邮箱。编号基于既有完整账号 ID，示例 `CC-7A3F-91C2-6B8D-4E50`，无需新增请求、编号分配服务或数据库迁移。原始监控仍保留邮箱。
 
-后续 review 的两项发布问题已修复：控制中心运行包补入编号依赖；编号解析扩展独立到 `packages/protocol/src/account-display.ts`，保持 `index.ts`、`native-account.ts` 与 Build 2 原始字节一致，旧登录实现保留但账号入口不调用。不修改受管升级白名单和校验规则，可沿用现有程序升级路径；离线回归以已发布 Build 2 摘要为基线，检查模拟新 Build 的兼容性准入、实际运行包完整性及编号往返解析。当前仍未发布生产或生成新的正式安装包。
+后续 review 的两项发布问题已修复：控制中心运行包补入编号依赖；编号解析扩展独立到 `packages/protocol/src/account-display.ts`，保持 `index.ts`、`native-account.ts` 与 Build 2 原始字节一致，旧登录实现保留但账号入口不调用。不修改受管升级白名单和校验规则，可沿用现有程序升级路径；离线回归以已发布 Build 2 摘要为基线，检查模拟新 Build 的兼容性准入、实际运行包完整性及编号往返解析。
 
-review 修复后重新通过 Node24 TypeScript、前端生产构建、单次74项相关回归及模拟数据的真实 React/Edge 账号页面检查；没有启动真实 Claude/SDK 会话、调用 JEV/额度接口或改变线上。具体设计、将来登录操作及范围见 `docs/SERVER-MANAGED-ACCOUNTS.md`，验证见 `docs/evidence/server-managed-accounts-2026-10-24.json`，本地界面预览 `.local/account-mode-preview/account-number.png`。本轮未生成/签名/发布新的正式安装包；线上仍是下面已验收的 Windows Build 5、Linux Build 2。后续打包必须提交干净源码并使用新 Build，预计客户端6/服务端3，以实际登记为准，控制中心也需配套部署。不要把源码/UI 预览当成生产已修改。
+review 修复后通过 Node24 TypeScript、前端生产构建、74项相关回归及模拟数据的真实 React/Edge 账号页面检查。随后用户授权“部署上线”：以干净源码 `224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a` 正式构建并部署控制中心，发布 Windows Build 6（pilot revision 11）和 Linux Build 3（pilot revision 5），版本0.3.6／协议20；stable 保持空通道。两套续期登记已更新、timer active。完整制品摘要、公网签名和管理页资源均核验通过；未启动真实 Claude/SDK 会话、JEV 或额度请求。发布详情与证据见 [正式发布记录](docs/ACCOUNT-MODE-RELEASE-2026-10-24.md)。
+
+**发布不等于用户节点已升级。** 首台 Ubuntu 当前已确认的实机版本仍为 Build 2；用户 Windows 客户端也未由开发工具安装 Build 6。下一步安装新的 Windows 包，并关闭所有 CC 连接后在 Ubuntu 执行 [Build 3 单行受管升级命令](docs/ubuntu-build3-upgrade-command.txt)，等待成功输出后重新连接验收。不要重跑首次 bootstrap 或为此重新登录 Claude。VPS 备份 `/var/backups/cc-update-service/account-display-20261024T041203Z`，旧运行目录 `/opt/cc-update-service.previous-account-224d7bc`。本次发布源码及历史提交已保存 VPS Git bundle，尚未推送 GitHub。
 
 ### 2026-10-24 首台受管接入、正常会话与被动上报成功（当前状态）
 
@@ -81,7 +83,7 @@ VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下
 | 部分 | 当前状态与边界 |
 | --- | --- |
 | VPS 管理中心 | 已上线，独立账号监控／客户端更新／内容审核页面，统一顶部导航与登录 |
-| 签名下载 | pilot 客户端 Build 5、Linux 服务端 Build 2；版本 0.3.6，协议 20；stable 保持空通道 |
+| 签名下载 | pilot 客户端 Build 6、Linux 服务端 Build 3；版本 0.3.6，协议 20；stable 保持空通道；首台实机升级待执行 |
 | 续期 | Windows 与 Linux 各有独立 systemd timer，登记精确源码／制品身份；不会自动推进 Build 或同步上游 |
 | 被动监控代码 | schema 2、邮箱／备注、身份／额度时效、重试与缓存已实现 |
 | 第一台监控接入 | 用户安装成功，VPS 缓存已收到 ubuntu-cc 自然上报：1账号、1节点，身份/邮箱/Pro套餐、额度和会话usage有数据；备份见下文 |
@@ -115,7 +117,7 @@ VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下
 
 本轮验证：Node 24 全量 498 项，466 通过、32 平台／可选跳过、0 失败；TypeScript、仓库检查和 diff 检查通过。Python bootstrap 15 项（本机 14 通过、1 POSIX 跳过），监控安装器 5 通过。新增回归先确认原实现失败，再验证修复通过。实际最终安装包、Linux 权限与上线验证见随交接包附带的脱敏证据。
 
-### 最终发布与验证快照
+### 先前 Build 5／2 发布与验证快照（历史；当前发布见顶部）
 
 - Windows x64 Build 5：201080092 字节，SHA256 `301822128518e76af90e6ca62e5fc3ac07786b4ca4a4df5fe8d3f6158670206c`；pilot revision 10，有效期至 `2026-10-26T19:49:08.623Z`。
 - Linux x64 Build 2：1563938 字节，SHA256 `19f4a60538b1fea67a9f4438d13c4cf75a821bed0b9973d93af7d5c69d852f11`；descriptor SHA256 `3d81089396d4a2820adcca021f10a5d66fc58120037344a78fda26fc48e1f626`；pilot revision 4，有效期至 `2026-11-06T19:49:06.726Z`。
@@ -203,7 +205,7 @@ Python 测试文件名含点，使用上面的直接执行方式；不要用普�
 ## 8. 接下来按什么顺序做
 
 1. 在新电脑恢复交接 bundle，先看工作树和本文档，核对线上签名索引／CURRENT-RELEASE；不要重复历史发布。
-2. 首台 Ubuntu 的首次 bootstrap 已完成，保留顶部记录的私有备份与离线回滚命令，无需重跑接入或再次恢复 CLI。
+2. VPS 已发布 Windows Build 6／Linux Build 3；首台 Ubuntu 的首次 bootstrap 已完成，关闭所有 CC 连接后执行顶部链接的受管升级命令。保留现有备份，无需重跑接入、再次恢复 CLI 或重新登录。等待用户回传升级结果，再确认新账号界面和正常使用。
 3. 用户已确认最新完整桌面包连接、会话及管理页查看正常；VPS 已核对到首台真实自然上报的身份/邮箱/套餐、额度及usage，基础流程验收通过。后续在正常使用中核对备注持久化、缓存滞后、退出、未知和错误状态，尚未观察到的状态标为待验证，不为演示主动调用第三方接口。
 4. 在首台完成真实安装、重启、正常使用及失败恢复演练后，再决定其他节点接入；每台先核实真实镜像／源码／版本，独立审核与上报身份，不共用秘密、不自动登录 Claude。
 5. 多账号后续工作：在真实自然样本下核验同账号多节点归并、换号后归属、未知字段和额度缓存隔离、备注持久化；现有邮箱／备注／节点／套餐／组织搜索已实现，再按规模完善筛选、分页、保留策略、容量测试和运维备份。未在此轮实现账号池自动调度、自动换号、批量登录或对第三方额度的主动轮询。

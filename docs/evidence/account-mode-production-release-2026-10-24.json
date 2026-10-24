@@ -1,0 +1,131 @@
+{
+  "date": "2026-10-24",
+  "status": "VPS deployed and pilot artifacts published; user Ubuntu upgrade and Windows installation pending",
+  "sourceCommit": "224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a",
+  "runtimeDeployment": {
+    "phase": "runtime-deployed-awaiting-publication",
+    "sourceCommit": "224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a",
+    "backup": "/var/backups/cc-update-service/account-display-20261024T041203Z",
+    "previousRuntime": "/opt/cc-update-service.previous-account-224d7bc",
+    "runtimeInventoryFiles": 43,
+    "changedRuntimeFiles": [
+      "apps/update-service/src/monitor.ts",
+      "apps/update-service/web/app.js",
+      "docs/ACCOUNT-MONITOR.md",
+      "packages/protocol/src/account-monitor.ts",
+      "packages/protocol/src/account-number.ts"
+    ],
+    "configurationUnchanged": true,
+    "privateLoginUnchanged": true,
+    "moderationPolicyUnchanged": true,
+    "indexesUnchangedDuringRuntimeDeployment": true,
+    "accountNumberMappingsVerified": 1,
+    "bothRenewalTimersPausedForRegistration": true,
+    "providerRequests": 0
+  },
+  "publication": {
+    "phase": "complete",
+    "sourceCommit": "224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a",
+    "windowsBuild": 6,
+    "linuxBuild": 3,
+    "windowsRevision": 11,
+    "linuxRevision": 5,
+    "windowsArtifactVerified": true,
+    "linuxArtifactVerified": true,
+    "windowsDownload": "https://api.ghostapi.org/cc-updates/v1/artifacts/6/win32-x64/CC-Desk-Tunnel-Setup-0.3.6-x64.exe",
+    "linuxDownload": "https://api.ghostapi.org/cc-updates/server/v1/artifacts/3/linux-x64/cc-desk-tunnel-server-0.3.6-build3.tar.gz",
+    "stableUnchanged": true,
+    "candidateRemoved": true,
+    "renewalRegistrationsVerified": true,
+    "bothRenewalTimersActive": true,
+    "providerRequests": 0,
+    "ubuntuUpgradeExecuted": false
+  },
+  "publicVerification": {
+    "checkedOn": "2026-10-24",
+    "sourceCommit": "224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a",
+    "windowsBuild": 6,
+    "linuxBuild": 3,
+    "windowsRevision": 11,
+    "linuxRevision": 5,
+    "signaturesVerifiedWithPinnedKeys": true,
+    "windowsHeadAndRangeVerified": true,
+    "linuxDownloadSha256Verified": true,
+    "publicMonitorScriptMatchesSource": true,
+    "unauthenticatedMonitorStatus": 401,
+    "stableEmpty": true
+  },
+  "artifacts": {
+    "windows": {
+      "filename": "CC-Desk-Tunnel-Setup-0.3.6-x64.exe",
+      "size": 201081223,
+      "sha256": "c3ba7aa38198adbd728ee39919edcea2d4162303b9db2db6d864e27fece77e85",
+      "build": 6,
+      "appVersion": "0.3.6",
+      "protocol": 20
+    },
+    "linux": {
+      "build": 3,
+      "appVersion": "0.3.6",
+      "protocol": 20,
+      "size": 1569200,
+      "sha256": "55bc3834b8f4be34974b203edc360e6b4ea2a17abedf36af6acfba0b9eee713c",
+      "descriptorSha256": "604bd3492aa569ba71e82ee71f974b1fa9717a795909a1e841757d7956d6cf0f"
+    },
+    "service": {
+      "filename": "cc-update-service-224d7bc.tar.gz",
+      "size": 112391,
+      "sha256": "a96c03e5466fa325b59196c705713f1af4a88c60deaabb0f9dde60fb313fdb83"
+    }
+  },
+  "verification": {
+    "sourceFocusedRegressionPassed": 74,
+    "typescriptAndFrontendBuildPassed": true,
+    "packagedWindowsSmokePassed": 1,
+    "linuxRuntimeFocusedTestsPassed": 17,
+    "linuxPackageInventoryFilesVerified": 154,
+    "linuxDockerSmoke": {
+      "network": "none",
+      "accountMounts": false,
+      "readOnly": true,
+      "uid": 1000,
+      "build": 3,
+      "protocol": 20,
+      "healthPassed": true,
+      "readinessPassed": true,
+      "sigtermPassed": true,
+      "cliExecutions": 0
+    },
+    "upgradeCommand": {
+      "localSyntheticOnly": true,
+      "results": [
+        {
+          "scenario": "success",
+          "passed": true
+        },
+        {
+          "scenario": "busy",
+          "passed": true
+        },
+        {
+          "scenario": "mismatch",
+          "passed": true
+        },
+        {
+          "scenario": "rollback",
+          "passed": true
+        },
+        {
+          "scenario": "already-installed",
+          "passed": true
+        }
+      ]
+    }
+  },
+  "upgradeHelperSha256": "fdc2f3c931bf60b00f3f85c3debd38da9a50afd772fbb55a2652ea36d7bc988a",
+  "realClaudeOrSdkSessionsStarted": false,
+  "jevOrQuotaRequestsMade": false,
+  "ubuntuUpgradeExecuted": false,
+  "userWindowsInstallationExecuted": false,
+  "githubPushed": false
+}

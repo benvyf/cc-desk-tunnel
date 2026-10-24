@@ -2,7 +2,7 @@
 
 2026-10-24。用户选择：在 Ubuntu 服务端终端通过官方 Claude Code 登录、退出和换号，客户端只使用服务端已经登录的账号。
 
-当前为工作区已实现、已验证的改动，尚未发布到生产或生成新的完整安装包。线上已验收的 Windows Build 5、Linux Build 2 仍保持原样。
+已从源码 `224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a` 正式构建并部署控制中心，发布 Windows Build 6、Linux Build 3（0.3.6／协议20）。用户 Ubuntu 当前已确认实机仍为 Build 2，需受管升级；Windows 新安装包也待用户安装。详见 [发布记录](ACCOUNT-MODE-RELEASE-2026-10-24.md) 与 [Ubuntu 单行升级命令](ubuntu-build3-upgrade-command.txt)。
 
 ## 操作与显示
 
@@ -49,10 +49,10 @@ sudo docker exec -it cc-desk-tunnel-ba938975-proxy-1 /opt/runtime/node/bin/node 
 
 账号编号字段为协议20的可选扩展，保留旧字段供内部/旧数据读取；未修改官方 CLI、SDK、JEV、模型调用或凭据格式。控制中心可先上线编号展示，旧节点报告也能直接映射。再发布新的 Windows 与 Linux 构建，完成配套升级；旧服务端不会提供编号，新客户端连接它时显示“账号编号尚未读取”。新服务端发给旧客户端的账号信息也不会包含邮箱，但旧界面不认识编号。
 
-本轮 review 修复保持 Build 2 的完整兼容性校验闭包与依赖锁不变：编号及客户端解析扩展位于独立的 `packages/protocol/src/account-display.ts`，原 `index.ts` 的持久化协议定义不变；服务端只在发送边界做身份投影。未修改兼容性白名单、bootstrap profile 或放宽摘要校验。以已发布源码 `9ab5f49f8155076ae5d7eacb33d9e369da4e2199` 的固定摘要作为离线回归基线，签名模拟 Build 3 经现有监督程序检查返回 `compatible=true`、`reason=available`；因此本需求可沿用已有受管程序升级路径，无需为此更换基础镜像。正式安装、健康检查与回滚仍需发布前在隔离 Linux 环境验证，未在生产执行。
+本轮 review 修复保持 Build 2 的完整兼容性校验闭包与依赖锁不变：编号及客户端解析扩展位于独立的 `packages/protocol/src/account-display.ts`，原 `index.ts` 的持久化协议定义不变；服务端只在发送边界做身份投影。未修改兼容性白名单、bootstrap profile 或放宽摘要校验。以已发布源码 `9ab5f49f8155076ae5d7eacb33d9e369da4e2199` 的固定摘要作为离线回归基线，签名模拟 Build 3 经现有监督程序检查返回 `compatible=true`、`reason=available`；因此本需求可沿用已有受管程序升级路径，无需为此更换基础镜像。正式 Linux 归档已在无网络、无账号挂载的隔离 Docker 环境验证 Build 3、健康、就绪、SIGTERM 及零 CLI 执行。真实 Ubuntu 的升级与回滚仍待实机验收。
 
 控制中心打包清单已补入 `account-number.ts`。离线回归实际生成归档、解压并在无工作区依赖的目录导入 HTTP 模块，防止源码测试通过而部署时缺少文件。服务端打包回归同时检查展示模块、编号模块和发送投影模块都进入归档。
 
-后续发布应使用新 Build（基于当前登记预计 Windows Build 6、Linux Build 3，以正式签名发布时登记为准），不能覆盖 Build 5/2。实际签名、打包、发布和生产升级尚未执行。
+已正式签名发布 Windows Build 6（revision 11）与 Linux Build 3（revision 5），完整下载摘要通过验证，续期已登记并恢复。未覆盖历史 Build 5/2；Ubuntu 业务节点尚未执行本次升级。
 
 review 修复后已重新完成 Node v24.22.1 TypeScript 检查、生产前端构建、单次74项相关回归（含实际归档完整性、升级兼容性准入与客户端编号解析），以及真实 React 开发页面中的模拟 WebSocket 验证：编号、邮箱隐藏、远程登录控件移除、未登录提示和零页面错误。测试未使用真实账号、未执行 Claude/SDK 会话、未调用 JEV 或额度接口。证据见 [验证记录](evidence/server-managed-accounts-2026-10-24.json)。
