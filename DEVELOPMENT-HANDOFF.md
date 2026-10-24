@@ -2,6 +2,16 @@
 
 这是本项目当前工作状态与跨电脑续做的权威入口。旧文档中的 Build 2/3、未接入客户端、没有续期等陈述属于历史阶段；遇到冲突以本文件及 VPS 实际签名索引为准。生产状态是检查时的快照，后续 revision／有效期会自动续期。
 
+### 2026-10-25 Windows Build 8 与旧客户端清理
+
+全部十项桌面 UI 改进已合入并推送 `main`；Windows Build 8 从干净源码 `d4241207606dde316e5b02bb17d4e795217b159d` 打包，版本 0.3.6／协议 20。实际打包 EXE 的隔离离线启动测试、包内身份与源码模块核对通过。安装包 201095763 字节，SHA256 `cd38fa53c6acec2161ce143b90a72ec8caaf6fa8160a25fb1dff42bc86bc3719`。生产签名 pilot revision 14，发布时有效至香港时间 2026-10-28 01:49:07；自动续期已登记、强制续签与 systemd 服务验证通过。
+
+新包公网完整下载/hash 校验通过后，按用户要求删除旧 Windows Build 2–7 的六个公开安装包及五个上传副本，共 2211868732 字节（约 2.06 GiB）；VPS 空闲空间由约 1.2 GiB 增至 2.8 GiB。保留 Build 8 的公开包和续期源包，以及不可复用的历史构建身份、源码和审计。后续发布也应在验证新包后及时清理旧 Windows 安装包。Linux Build 3、stable 索引及原有管理服务保持，未安装本机客户端，未操作 Ubuntu，也未发起 Claude/JEV/额度请求。
+
+发布与清理证据位于 VPS `/root/.cc-update-admin/client-build-8/`；新源码为 `/root/.cc-update-admin/source-build-8`，自动续期配置仍为 `/root/.cc-update-admin/automation/config.json`。公开下载及脱敏验证见[Build 8 发布证据](docs/evidence/windows-client-build8-2026-10-25.json)。
+
+VPS 侧公网完整下载的大小与 SHA256 校验通过；本机完整下载在五分钟后超时，未声称该项通过。随后本机核对固定公钥签名、HEAD、首部／中部／尾部各 1 MiB 的 Range 内容与本地原包逐字节一致，并确认全部旧 Build 2–7 地址返回 404。
+
 ### 2026-10-24 review修复：策略更新后的缓存顺序
 
 review离线复现512条缓存已满、修改策略、重新审核最旧文本后，该条目因Map.set覆盖不更新顺序而被下一条新内容淘汰，重复文本多付一次审核。修复只在替换条目前delete再set，保持最新审核结果的淘汰顺序。扩展原有容量回归，先证实旧代码失败，再验证新代码复用：模拟审核调用由515恢复预期514。15项去重/HTTP相关测试及TypeScript通过，没有真实Claude/JEV请求。仅发布控制中心模块，不改Ubuntu、审核策略或发布索引；原生hook修复仍待镜像维护。
@@ -127,7 +137,7 @@ VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下
 | 部分 | 当前状态与边界 |
 | --- | --- |
 | VPS 管理中心 | 已上线，独立账号监控／客户端更新／内容审核页面，统一顶部导航与登录 |
-| 签名下载 | pilot 客户端 Build 7、Linux 服务端 Build 3；版本 0.3.6，协议 20；stable 保持空通道；用户已回传首台 Build 3 升级成功 |
+| 签名下载 | pilot 客户端 Build 8、Linux 服务端 Build 3；版本 0.3.6，协议 20；旧 Windows Build 2–7 安装包已清理；stable 保持空通道；用户已回传首台 Build 3 升级成功 |
 | 续期 | Windows 与 Linux 各有独立 systemd timer，登记精确源码／制品身份；不会自动推进 Build 或同步上游 |
 | 被动监控代码 | schema 2、邮箱／备注、身份／额度时效、重试与缓存已实现 |
 | 第一台监控接入 | 用户安装成功，VPS 缓存已收到 ubuntu-cc 自然上报：1账号、1节点，身份/邮箱/Pro套餐、额度和会话usage有数据；备份见下文 |
