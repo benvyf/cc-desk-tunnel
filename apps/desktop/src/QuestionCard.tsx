@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X } from './icons.tsx';
 
 type Question = {
   question: string;

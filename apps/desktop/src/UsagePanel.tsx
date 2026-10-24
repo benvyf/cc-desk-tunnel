@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from './icons.tsx';
 import type { UsagePage, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import { IconButton } from './ui.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import { ModelBreakdown, TokenTrend, cacheHitRate, percent } from './UsageCharts.tsx';
 
 const pageSize = 50;
@@ -171,26 +172,20 @@ export default function UsagePanel({
       </header>
       <div className="account-body usage-body">
         <div className="usage-filters">
-          <div className="segmented" role="group" aria-label="时间范围">
-            {[
+          <SegmentedControl
+            label="时间范围"
+            value={preset}
+            options={[
               ...(summary?.windows
                 .filter((window) => quotaName(window.name))
                 .map((window) => [window.name, `本期${quotaName(window.name)}`] as const) ?? []),
               ...presets,
-            ].map(([value, label]) => (
-              <button
-                type="button"
-                key={value}
-                aria-pressed={preset === value}
-                onClick={() => {
-                  setPreset(value);
-                  setLoadedAt(Date.now());
-                }}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
+            ].map(([value, label]) => ({ value, label }))}
+            onChange={(value) => {
+              setPreset(value);
+              setLoadedAt(Date.now());
+            }}
+          />
           <select
             aria-label="模型"
             value={model}
@@ -279,18 +274,15 @@ export default function UsagePanel({
                   : '每 30 分钟'}
               {measures[measure]}
             </span>
-            <div className="segmented" role="group" aria-label="图表指标">
-              {(Object.keys(measures) as Measure[]).map((key) => (
-                <button
-                  type="button"
-                  key={key}
-                  aria-pressed={measure === key}
-                  onClick={() => setMeasure(key)}
-                >
-                  {measures[key]}
-                </button>
-              ))}
-            </div>
+            <SegmentedControl
+              label="图表指标"
+              value={measure}
+              options={(Object.keys(measures) as Measure[]).map((value) => ({
+                value,
+                label: measures[value],
+              }))}
+              onChange={setMeasure}
+            />
           </figcaption>
           <div className="usage-plot" onMouseLeave={() => setHover(null)}>
             <span className="usage-peak">{peak ? format(peak) : ''}</span>

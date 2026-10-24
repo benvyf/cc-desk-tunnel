@@ -1,6 +1,6 @@
 import { createContext, useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { ArrowDown, ArrowUp, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, X } from './icons.tsx';
 import { matchingRanges } from './conversationSearch.ts';
 import { IconButton } from './ui.tsx';
 

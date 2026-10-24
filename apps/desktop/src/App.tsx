@@ -30,7 +30,7 @@ import {
   Unplug,
   UserRound,
   X,
-} from 'lucide-react';
+} from './icons.tsx';
 import { GithubMark, openProject, project } from './project.tsx';
 import type {
   Effort,
@@ -50,6 +50,7 @@ import SessionBar from './SessionBar.tsx';
 import { isHere, thisDevice } from './device.ts';
 import { isMac, selfUpdating } from './platform.ts';
 import { useDrafts } from './drafts.ts';
+import { attachmentMessage, messageLimit, splitAttachmentMessage } from './attachments.ts';
 import SchedulePanel from './SchedulePanel.tsx';
 import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
@@ -76,6 +77,7 @@ import SettingsPage from './SettingsPage.tsx';
 import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
 import TitleBar from './TitleBar.tsx';
+import Presence from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
 import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
@@ -140,10 +142,14 @@ export function App({
   const [clock] = useState(() => ({ now: client.serviceNow, activityAt: client.activityAt }));
   // The version whose notes are shown, over whichever page is up.
   const [notes, setNotes] = useState<string | null>(null);
-  const notesDialog = notes && (
-    <Suspense fallback={null}>
-      <ReleaseNotes version={notes} onClose={() => setNotes(null)} />
-    </Suspense>
+  const notesDialog = (
+    <Presence kind="dialog">
+      {notes ? (
+        <Suspense fallback={null}>
+          <ReleaseNotes version={notes} onClose={() => setNotes(null)} />
+        </Suspense>
+      ) : null}
+    </Presence>
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const managedUpdate = useManagedUpdate();
@@ -177,7 +183,8 @@ export function App({
   const [projects, setProjects] = useState(savedProjects);
   // The folders that hold sessions without a project; new ones are made in the first.
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [drafts, setDraft] = useDrafts();
+  const [drafts, setDraft, attachmentDrafts, setAttachments] = useDrafts();
+  const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
   // The side column is shown beside the page on a wide window and laid over it on a narrow one.
@@ -199,6 +206,7 @@ export function App({
   });
   // Places visited, for the title bar's way back and forward.
   const trail = useRef<{ places: Place[]; at: number }>({ places: [place], at: 0 });
+  const navigation = useRef(0);
   const [, setTrailAt] = useState(0);
   const accountOpen = place.page === 'settings' && place.section === 'account';
   const prefs = usePrefs();
@@ -642,6 +650,8 @@ export function App({
   }
   // Moves the window to a place and remembers it; going back or forward revisits without adding to the trail.
   function visit(next: Place, record = true) {
+    navigation.current++;
+    setFocusDraftSession(null);
     if (next.sessionId && next.sessionId !== client.state.selectedId) client.select(next.sessionId);
     setPlace(next);
     closeSide();
@@ -825,6 +835,7 @@ export function App({
   // A fork continues from the same context in a session of its own. Forking before a message brings that
   // message back as a draft, which is how an earlier message is edited and sent again.
   async function fork(session: Session, before?: { id: string; text: string }) {
+    const startedAt = navigation.current;
     await act(async () => {
       // The copy of a session that is on another computer needs a directory on this one.
       const projectPath = onThis(session) ? undefined : await placeHere(session);
@@ -836,17 +847,39 @@ export function App({
         ...(projectPath ? { projectPath } : {}),
       });
       if (!response.sessionId) return;
-      if (before) setDraft(response.sessionId, before.text);
-      show(response.sessionId);
+      if (before) {
+        const attached = splitAttachmentMessage(before.text);
+        setDraft(response.sessionId, attached.text);
+        setAttachments(response.sessionId, () => attached.files);
+      }
+      // A slow fork must not take the reader away from a page they have since chosen.
+      if (navigation.current === startedAt) {
+        show(response.sessionId);
+        if (before) setFocusDraftSession(response.sessionId);
+      }
     });
   }
-  async function send(text = draft) {
+  async function send(override?: string) {
+    const attached = selected ? (attachmentDrafts[selected.id] ?? []) : [];
+    if (override === undefined && attached.some((item) => item.status !== 'ready')) return;
+    const text = override ?? attachmentMessage(draft, attached);
     if (!selected || !text.trim() || inputDisabled) return;
+    if (text.trim().length > messageLimit) {
+      setError(`消息过长（含附件），请缩短正文或移除部分附件（最多 ${messageLimit} 字符）。`);
+      return;
+    }
     const sessionId = selected.id;
     setSlashOpen(false);
     await act(async () => {
       await client.request({ type: 'message.send', sessionId, text, scenario });
       setDraft(sessionId, '');
+      if (override === undefined) {
+        const sent = new Set(attached.map((item) => item.id));
+        const sentPaths = new Set(attached.map((item) => item.path));
+        setAttachments(sessionId, (current) =>
+          current.filter((item) => !sent.has(item.id) && !sentPaths.has(item.path)),
+        );
+      }
     });
   }
   // Takes up the last turn, which was stopped or cut off, without the user writing anything.
@@ -1499,15 +1532,18 @@ export function App({
         openUpdate={(position) => setMenu({ kind: 'update', ...position })}
         openSettings={(position) => setMenu({ kind: 'settings', ...position })}
       />
-      {sideOpen && (
-        <button
-          className="sidebar-shade"
-          aria-label="收起侧栏"
-          onClick={() => setSideOpen(false)}
-        />
-      )}
+      <Presence kind="shade">
+        {sideOpen && (
+          <button
+            className="sidebar-shade"
+            aria-label="收起侧栏"
+            onClick={() => setSideOpen(false)}
+          />
+        )}
+      </Presence>
       {place.page === 'settings' ? (
         <SettingsPage
+          sideOpen={sideOpen}
           client={client}
           browser={!!browser}
           section={place.section}
@@ -1544,6 +1580,7 @@ export function App({
         />
       ) : place.page === 'schedules' ? (
         <SchedulePanel
+          sideOpen={sideOpen}
           schedules={schedules}
           sessions={sessions}
           projects={projects}
@@ -1552,6 +1589,7 @@ export function App({
       ) : (
         <>
           <Sidebar
+            sideOpen={sideOpen}
             sessions={sessions}
             elsewhere={elsewhere}
             devices={state.devices}
@@ -1756,7 +1794,11 @@ export function App({
                     : (position) => setMenu({ kind: 'move', sessionId: selected.id, ...position })
                 }
                 draft={draft}
+                focusDraft={focusDraftSession === selected.id}
+                onDraftFocusHandled={() => setFocusDraftSession(null)}
                 setDraft={(text) => setDraft(selected.id, text)}
+                attachments={attachmentDrafts[selected.id] ?? []}
+                setAttachments={setAttachments}
                 native={nativeMode}
                 connected={connected}
                 busy={busy}
@@ -1799,104 +1841,121 @@ export function App({
           </main>
         </>
       )}
-      {menu && openMenu && (
-        <Menu
-          // One menu may give way to another in the same place, which is then laid out anew.
-          key={menu.kind}
-          label={openMenu.label}
-          heading={'heading' in openMenu ? openMenu.heading : undefined}
-          x={menu.x}
-          y={menu.y}
-          above={menu.above}
-          onClose={closeMenu}
-          items={openMenu.items}
-        />
-      )}
-      {repointProject && (
-        <AddProjectDialog
-          title="更改项目文件夹"
-          action="更改"
-          busy={busy}
-          connected={connected}
-          error={actionError}
-          close={() => setRepointProject(null)}
-          add={(written) => {
-            void act(async () => {
-              if (!written) return;
-              const path = (await window.desktop?.asOnDisk(written)) ?? written;
-              await repoint(repointProject, path);
-              setRepointProject(null);
-            });
-          }}
-        />
-      )}
-      {createOpen && (
-        <AddProjectDialog
-          busy={busy}
-          connected={connected}
-          error={actionError}
-          close={() => setCreateOpen(false)}
-          add={(written) => {
-            void act(async () => {
-              if (!written) return;
-              const path = (await window.desktop?.asOnDisk(written)) ?? written;
-              setProjects((value) => withProject(value, path));
-              setCreateOpen(false);
-            });
-          }}
-        />
-      )}
-      {deleteSession && (
-        <DeleteSessionDialog
-          session={deleteSession}
-          native={nativeMode}
-          busy={busy}
-          connected={connected}
-          error={actionError}
-          close={() => setDeleteSession(null)}
-          confirm={() => {
-            void act(async () => {
-              await client.request({ type: 'session.delete', sessionId: deleteSession.id });
-              setDraft(deleteSession.id, '');
-              // A plain session's directory goes with it when the session left nothing there.
-              if (isInside(deleteSession.projectPath, workspaceRoots))
-                void window.desktop?.removeWorkspace(deleteSession.projectPath);
-              setDeleteSession(null);
-            });
-          }}
-        />
-      )}
-      {renameProject && (
-        <RenameProjectDialog
-          path={renameProject}
-          name={prefs.projectNames[pathKey(renameProject)] ?? ''}
-          close={() => setRenameProject(null)}
-          rename={(name) => {
-            setPrefs((value) => {
-              const projectNames = { ...value.projectNames };
-              if (name) projectNames[pathKey(renameProject)] = name;
-              else delete projectNames[pathKey(renameProject)];
-              return { ...value, projectNames };
-            });
-            setRenameProject(null);
-          }}
-        />
-      )}
-      {renameSession && (
-        <RenameSessionDialog
-          session={renameSession}
-          busy={busy}
-          connected={connected}
-          error={actionError}
-          close={() => setRenameSession(null)}
-          rename={(title) => {
-            void act(async () => {
-              await client.request({ type: 'session.rename', sessionId: renameSession.id, title });
-              setRenameSession(null);
-            });
-          }}
-        />
-      )}
+      <Presence>
+        {menu && openMenu && (
+          <Menu
+            // One menu may give way to another in the same place, which is then laid out anew.
+            key={menu.kind}
+            label={openMenu.label}
+            heading={'heading' in openMenu ? openMenu.heading : undefined}
+            x={menu.x}
+            y={menu.y}
+            above={menu.above}
+            onClose={closeMenu}
+            items={openMenu.items}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {repointProject && (
+          <AddProjectDialog
+            title="更改项目文件夹"
+            action="更改"
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setRepointProject(null)}
+            add={(written) => {
+              void act(async () => {
+                if (!written) return;
+                const path = (await window.desktop?.asOnDisk(written)) ?? written;
+                await repoint(repointProject, path);
+                setRepointProject(null);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {createOpen && (
+          <AddProjectDialog
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setCreateOpen(false)}
+            add={(written) => {
+              void act(async () => {
+                if (!written) return;
+                const path = (await window.desktop?.asOnDisk(written)) ?? written;
+                setProjects((value) => withProject(value, path));
+                setCreateOpen(false);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {deleteSession && (
+          <DeleteSessionDialog
+            session={deleteSession}
+            native={nativeMode}
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setDeleteSession(null)}
+            confirm={() => {
+              void act(async () => {
+                await client.request({ type: 'session.delete', sessionId: deleteSession.id });
+                setDraft(deleteSession.id, '');
+                setAttachments(deleteSession.id, () => []);
+                // A plain session's directory goes with it when the session left nothing there.
+                if (isInside(deleteSession.projectPath, workspaceRoots))
+                  void window.desktop?.removeWorkspace(deleteSession.projectPath);
+                setDeleteSession(null);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {renameProject && (
+          <RenameProjectDialog
+            path={renameProject}
+            name={prefs.projectNames[pathKey(renameProject)] ?? ''}
+            close={() => setRenameProject(null)}
+            rename={(name) => {
+              setPrefs((value) => {
+                const projectNames = { ...value.projectNames };
+                if (name) projectNames[pathKey(renameProject)] = name;
+                else delete projectNames[pathKey(renameProject)];
+                return { ...value, projectNames };
+              });
+              setRenameProject(null);
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {renameSession && (
+          <RenameSessionDialog
+            session={renameSession}
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setRenameSession(null)}
+            rename={(title) => {
+              void act(async () => {
+                await client.request({
+                  type: 'session.rename',
+                  sessionId: renameSession.id,
+                  title,
+                });
+                setRenameSession(null);
+              });
+            }}
+          />
+        )}
+      </Presence>
       {notesDialog}
     </div>
   );

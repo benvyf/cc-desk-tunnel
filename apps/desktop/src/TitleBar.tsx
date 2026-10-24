@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, PanelLeft } from 'lucide-react';
+import { ArrowLeft, ArrowRight, PanelLeft } from './icons.tsx';
 import { IconButton } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 

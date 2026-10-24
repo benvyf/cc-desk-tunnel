@@ -2,7 +2,7 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
-import type { Session } from '@cc-desk-tunnel/protocol';
+import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 
 const clock = new Intl.DateTimeFormat('zh-CN', {
   hour: '2-digit',
@@ -14,7 +14,7 @@ const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60_000);
 // Two finished turns. The first reply is written over 25 minutes, so the time under it must be the one of its last
 // text, not of its first. The second question is put in on the same run, and its delivery was never confirmed.
 // Unfinished, only the first turn is there, still running, its figures already reported.
-async function open(page: import('@playwright/test').Page, finished = true) {
+async function open(page: import('@playwright/test').Page, finished = true, at = Date.now()) {
   await page.addInitScript(() =>
     localStorage.setItem('proxy-prefs', JSON.stringify({ stats: { enabled: true } })),
   );
@@ -46,6 +46,7 @@ async function open(page: import('@playwright/test').Page, finished = true) {
     outputPerSecond: 50,
     partial: false,
   };
+  let emit = (_payload: SessionEvent['payload']) => {};
   await page.routeWebSocket('ws://127.0.0.1:18893/ws', (route) => {
     const reply = (value: unknown) => route.send(JSON.stringify(value));
     let sequence = 0;
@@ -56,6 +57,15 @@ async function open(page: import('@playwright/test').Page, finished = true) {
       createdAt: createdAt.toISOString(),
       payload,
     });
+    emit = (payload) => {
+      if (payload.type === 'run.status') {
+        session.activeRun = ['running', 'awaiting_approval'].includes(payload.status)
+          ? { id: runId, status: payload.status, connectionId }
+          : null;
+        reply({ type: 'session.updated', session });
+      }
+      reply({ type: 'session.event', event: event(new Date(), payload) });
+    };
     route.onMessage((raw) => {
       const message = JSON.parse(String(raw));
       if (message.type === 'device') return;
@@ -72,7 +82,7 @@ async function open(page: import('@playwright/test').Page, finished = true) {
       }
       if (message.type === 'session.subscribe') {
         const events = [
-          event(minutesAgo(40), {
+          event(new Date(at - 40 * 60_000), {
             type: 'message.user',
             messageId: questions[0],
             text: '第一问',
@@ -134,6 +144,7 @@ async function open(page: import('@playwright/test').Page, finished = true) {
     .locator('.session-select')
     .click();
   await expect(page.locator('.message.assistant')).toHaveCount(finished ? 2 : 1);
+  return { emit, connectionId, runId };
 }
 
 test('a reply has no heading; copy, figures and time are under it', async ({ page }) => {
@@ -146,6 +157,29 @@ test('a reply has no heading; copy, figures and time are under it', async ({ pag
   await expect(footer.locator('.message-time')).toContainText(clock.format(minutesAgo(5)));
   await expect(footer.locator('.message-time')).not.toContainText(clock.format(minutesAgo(30)));
 });
+
+for (const running of [false, true]) {
+  test(`a ${running ? 'running' : 'finished'} question gains date context at midnight and after window resume`, async ({
+    page,
+  }) => {
+    const evening = new Date(2026, 9, 25, 23, 59);
+    await page.clock.install({ time: evening });
+    await page.clock.pauseAt(evening);
+    const { emit, connectionId } = await open(page, true, evening.getTime());
+    if (running) {
+      emit({ type: 'run.status', status: 'running', connectionId });
+      await expect(page.getByRole('button', { name: '编辑重发', exact: true })).toHaveCount(0);
+    }
+    const time = page.locator('.message.user').first().locator('.message-time');
+    await expect(time).toHaveText('23:19');
+    await page.clock.runFor(60_001);
+    await expect(time).toHaveText('昨天 23:19');
+    // A sleeping window can resume after several days without delivering its timer first.
+    await page.clock.setSystemTime(new Date(2026, 9, 28, 10));
+    await page.evaluate(() => window.dispatchEvent(new Event('focus')));
+    await expect(time).toHaveText('10/25 23:19');
+  });
+}
 
 test('a question has no heading either; its line is under it at the right', async ({ page }) => {
   await open(page);
@@ -165,14 +199,83 @@ test('a question has no heading either; its line is under it at the right', asyn
   // Plainly received is quiet; a delivery left unconfirmed stays in sight without the pointer.
   await expect(line.locator('.message-delivery')).toHaveText('原生已接收');
   await expect(line.locator('.message-delivery')).toHaveCSS('opacity', '0');
-  await expect(line.locator('.copy-button')).toHaveCSS('opacity', '0');
+  await expect(line.locator('.copy-button')).toHaveCSS('opacity', '1');
   const unconfirmed = second.locator('.message-delivery');
   await expect(unconfirmed).toHaveText('接收未确认');
   await expect(unconfirmed).toHaveCSS('opacity', '1');
-  await expect(second.locator('.copy-button')).toHaveCSS('opacity', '0');
+  await expect(second.locator('.copy-button')).toHaveCSS('opacity', '1');
   await first.locator('.message-content').hover();
   await expect(line.locator('.copy-button')).toHaveCSS('opacity', '1');
   await page.screenshot({ path: resolve('.local/screenshots/question-footer.png') });
+});
+
+test('user time, copy and edit are always visible in reference order in both themes', async ({
+  page,
+}) => {
+  await open(page);
+  const question = page.locator('.message.user').first();
+  const line = question.locator('.message-footer');
+  await page.mouse.move(2, 2);
+  for (const colorScheme of ['light', 'dark'] as const) {
+    await page.emulateMedia({ colorScheme });
+    await expect(line.locator('.message-time')).toHaveCSS('opacity', '1');
+    const copy = line.getByRole('button', { name: '复制消息', exact: true });
+    const edit = line.getByRole('button', { name: '编辑重发', exact: true });
+    await expect(copy).toHaveCSS('opacity', '1');
+    await expect(edit).toHaveCSS('opacity', '1');
+    const timeBox = (await line.locator('time').boundingBox())!;
+    const copyBox = (await copy.boundingBox())!;
+    const editBox = (await edit.boundingBox())!;
+    expect(timeBox.x + timeBox.width).toBeLessThanOrEqual(copyBox.x);
+    expect(copyBox.x + copyBox.width).toBeLessThanOrEqual(editBox.x);
+    expect(copyBox.width).toBe(24);
+    expect(editBox.width).toBe(24);
+    await question.screenshot({
+      path: resolve(`.local/screenshots/user-controls-${colorScheme}.png`),
+      animations: 'disabled',
+    });
+  }
+  await page.setViewportSize({ width: 320, height: 600 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await line.scrollIntoViewIfNeeded();
+  await expect(line.getByRole('button', { name: '编辑重发', exact: true })).toBeInViewport();
+  await question.screenshot({
+    path: resolve('.local/screenshots/user-controls-narrow.png'),
+    animations: 'disabled',
+  });
+});
+
+test('copy and time stay available while running; edit returns only after the run stops', async ({
+  page,
+}) => {
+  const { emit, connectionId } = await open(page);
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      configurable: true,
+      value: async (text: string) => Object.assign(window, { copiedQuestion: text }),
+    }),
+  );
+  const question = page.locator('.message.user').first();
+  const copy = question.getByRole('button', { name: '复制消息', exact: true });
+  const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  for (const status of ['running', 'awaiting_approval'] as const) {
+    emit({ type: 'run.status', status, connectionId });
+    await expect(edit).toHaveCount(0);
+    await expect(copy).toBeVisible();
+    await expect(question.locator('time')).toHaveCSS('opacity', '1');
+  }
+  await copy.focus();
+  await page.keyboard.press('Enter');
+  await expect(question.getByRole('button', { name: '已复制', exact: true })).toBeFocused();
+  expect(
+    await page.evaluate(() => (window as unknown as { copiedQuestion: string }).copiedQuestion),
+  ).toBe('第一问');
+  for (const status of ['cancelled', 'completed', 'failed'] as const) {
+    emit({ type: 'run.status', status, connectionId });
+    await expect(edit).toBeVisible();
+    emit({ type: 'run.status', status: 'running', connectionId });
+    await expect(edit).toHaveCount(0);
+  }
 });
 
 test('the line under a reply shows on the latest one, and on another while the pointer is over it', async ({

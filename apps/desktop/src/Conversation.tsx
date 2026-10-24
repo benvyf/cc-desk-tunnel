@@ -13,10 +13,9 @@ import {
   ArrowDown,
   ArrowUpToLine,
   Bot,
-  Brain,
   Check,
   ChevronRight,
-  FilePen,
+  FileCode,
   FileText,
   Globe,
   LoaderCircle,
@@ -27,17 +26,18 @@ import {
   SquareTerminal,
   Wrench,
   X,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 import { describe, duration, summarize } from './activity.ts';
 import type { Category } from './activity.ts';
 import type { HistoryState, TaskProgress } from './client.ts';
 import { RunStatus, TaskLine } from './RunStatus.tsx';
+import RunNotice from './RunNotice.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import { conversation } from './transcript.ts';
 import { usePrefs } from './prefs.ts';
-import { firstLine } from './transcriptView.ts';
+import ThinkingAccordion from './ThinkingAccordion.tsx';
 import type { TranscriptItem, Turn, Work } from './transcript.ts';
 import { CopyButton, copyText } from './copy.tsx';
 import { messageTime } from './messageTime.ts';
@@ -45,11 +45,14 @@ import TurnStats from './TurnStats.tsx';
 import ConversationFind, { SearchExpanded } from './ConversationFind.tsx';
 import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
+import Presence from './Presence.tsx';
+import AttachmentTiles from './AttachmentTiles.tsx';
+import { splitAttachmentMessage } from './attachments.ts';
 
 const RichText = lazy(() => import('./RichText.tsx'));
-const Rich = ({ text }: { text: string }) => (
+const Rich = ({ text, streaming = false }: { text: string; streaming?: boolean }) => (
   <Suspense fallback={<p>{text}</p>}>
-    <RichText text={text} />
+    <RichText text={text} streaming={streaming} />
   </Suspense>
 );
 
@@ -69,7 +72,7 @@ type Live = {
 };
 const icons: Record<Category, typeof Wrench> = {
   command: SquareTerminal,
-  edit: FilePen,
+  edit: FileCode,
   read: FileText,
   search: Search,
   web: Globe,
@@ -205,37 +208,33 @@ function WorkItems({
   active,
   live,
   preview,
+  until,
 }: {
   work: Work;
   active: boolean;
   live: Live;
   preview?: boolean;
+  until?: string;
 }) {
   return (
     <>
-      {work.items.map((item) =>
-        item.kind === 'tool' ? (
+      {work.items.map((item, index) => {
+        const running = active && index === work.items.length - 1 && !until;
+        return item.kind === 'tool' ? (
           <ToolRow key={item.id} tool={item} active={active} live={live} />
         ) : (
-          <Fold
-            key={item.id}
-            className="tool thinking-block"
-            summary={
-              <span className="tool-heading">
-                <Brain />
-                <span className="tool-verb">思考</span>
-                {preview && <span className="thinking-preview">{firstLine(item.text)}</span>}
-              </span>
-            }
-          >
+          <ThinkingAccordion key={item.id} text={item.text} running={running} preview={preview}>
             {() => (
-              <div className="message-content tool-detail" data-search-content>
-                <Rich text={item.text} />
+              <div
+                className={`message-content tool-detail${running ? ' streaming' : ''}`}
+                data-search-content
+              >
+                <Rich text={item.text} streaming={running} />
               </div>
             )}
-          </Fold>
-        ),
-      )}
+          </ThinkingAccordion>
+        );
+      })}
     </>
   );
 }
@@ -245,11 +244,13 @@ function WorkGroup({
   active,
   latest,
   live,
+  until,
 }: {
   work: Work;
   active: boolean;
   latest: boolean;
   live: Live;
+  until?: string;
 }) {
   const { label, waiting, running, started, ended } = summarize(work, active, latest);
   return (
@@ -264,13 +265,13 @@ function WorkGroup({
         </span>
       }
     >
-      {() => <WorkItems work={work} active={active} live={live} />}
+      {() => <WorkItems work={work} active={active} live={live} until={until} />}
     </Fold>
   );
 }
 
 // No message has a heading; what belongs to it is in a line under it, shown while the pointer is over the message. Under
-// a question: how it was delivered, its time, editing and copy, at the right like the question. Under the reply that
+// a question: how it was delivered, its time, copy and editing, always shown at the right like the question. Under the reply that
 // closes a turn: copy, the turn's figures and the time, always shown on the latest. Replies said along the way have
 // nothing under them. A delivery that did not plainly arrive stays in sight. Replies of the simulated service keep the
 // heading, which says they are not real.
@@ -282,6 +283,7 @@ function Message({
   closing = false,
   latest = false,
   joined = false,
+  streaming = false,
 }: {
   item: Text;
   native: boolean;
@@ -291,12 +293,14 @@ function Message({
   latest?: boolean;
   // A question put in while the run went on.
   joined?: boolean;
+  streaming?: boolean;
 }) {
   const time = messageTime(item.kind === 'assistant' ? (item.doneAt ?? item.at) : item.at);
   const user = item.kind === 'user';
+  const attached = user ? splitAttachmentMessage(item.text) : null;
   const stamp = time && (
     <time className="message-time" dateTime={item.at} title={time.full}>
-      {time.short}
+      {user ? time.compact : time.short}
     </time>
   );
   return (
@@ -309,8 +313,19 @@ function Message({
           <CopyButton text={item.text} />
         </div>
       )}
-      <div className="message-content" data-search-content data-copy-text={item.text}>
-        {user ? <p>{item.text}</p> : <Rich text={item.text} />}
+      <div
+        className={`message-content${streaming ? ' streaming' : ''}`}
+        data-search-content
+        data-copy-text={item.text}
+      >
+        {attached ? (
+          <>
+            {attached.text && <p>{attached.text}</p>}
+            <AttachmentTiles items={attached.files} />
+          </>
+        ) : (
+          <Rich text={item.text} streaming={streaming} />
+        )}
       </div>
       {user && (
         <div className="message-footer">
@@ -322,6 +337,7 @@ function Message({
             </span>
           )}
           {stamp}
+          <CopyButton text={item.text} />
           {edit && (
             <button
               type="button"
@@ -333,7 +349,6 @@ function Message({
               <Pencil />
             </button>
           )}
-          <CopyButton text={item.text} />
         </div>
       )}
       {!user && native && closing && (
@@ -372,11 +387,13 @@ function TurnView({
   const expanded = usePrefs().view.mode === 'expanded';
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
   const steps = () =>
-    turn.steps.map((step, index) =>
-      step.kind === 'work' ? (
+    turn.steps.map((step, index) => {
+      const next = turn.steps[index + 1] ?? turn.answer;
+      const until = (next?.kind === 'work' ? next.items[0].at : next?.at) ?? turn.endedAt;
+      return step.kind === 'work' ? (
         expanded ? (
           <div key={step.id} className="work-flat">
-            <WorkItems work={step} active={active} live={live} preview />
+            <WorkItems work={step} active={active} live={live} until={until} preview />
           </div>
         ) : (
           <WorkGroup
@@ -385,12 +402,13 @@ function TurnView({
             active={active}
             latest={index === turn.steps.length - 1}
             live={live}
+            until={until}
           />
         )
       ) : (
-        <Message key={step.id} item={step} native={native} />
-      ),
-    );
+        <Message key={step.id} item={step} native={native} streaming={active} />
+      );
+    });
   return (
     <>
       {turn.question?.continued ? (
@@ -444,14 +462,7 @@ function TurnView({
         )
       )}
       {turn.notices.map((item) => (
-        <div
-          key={item.id}
-          className={`run-notice ${item.error ? 'failed' : ''}`}
-          role={item.error ? 'alert' : 'status'}
-          data-search-content
-        >
-          {item.text}
-        </div>
+        <RunNotice key={item.id} text={item.text} error={item.error} />
       ))}
     </>
   );
@@ -552,9 +563,27 @@ export default function Conversation({
     if (findRequest !== lastFindRequest.current) openFind();
     lastFindRequest.current = findRequest;
   }, [findRequest]);
-  // Running timers tick once a second, and only while something runs.
+  // Date labels refresh at local midnight and when the window resumes.
   const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      clearTimeout(timer);
+      const current = new Date();
+      setNow(current.getTime());
+      const nextDay = new Date(current);
+      nextDay.setHours(24, 0, 0, 0);
+      timer = setTimeout(refresh, nextDay.getTime() - current.getTime());
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
   const running = !!session?.activeRun;
+  // Running timers tick once a second, and only while something runs.
   useEffect(() => {
     if (!running) return;
     setNow(Date.now());
@@ -738,9 +767,10 @@ export default function Conversation({
           if (top < lastTop.current && top < 240 && !loadError) loadMore();
           lastTop.current = top;
         }}
-        onPointerDown={(event) => {
-          // Steps opened or closed are being read where they are.
-          if ((event.target as HTMLElement).closest('summary')) leave();
+        onClickCapture={(event) => {
+          // A disclosure is being read where it is, whether activated by pointer or keyboard.
+          // Stop following before its handler changes the transcript's height.
+          if ((event.target as HTMLElement).closest('summary, .notice-toggle')) leave();
         }}
         onKeyDown={(event) => {
           if ((event.target as HTMLElement).closest('input, textarea, [contenteditable="true"]'))
@@ -911,9 +941,11 @@ export default function Conversation({
           </div>
         )}
       </div>
-      {contextMenu && (
-        <Menu label="对话文字操作" {...contextMenu} onClose={() => setContextMenu(null)} />
-      )}
+      <Presence>
+        {contextMenu && (
+          <Menu label="对话文字操作" {...contextMenu} onClose={() => setContextMenu(null)} />
+        )}
+      </Presence>
     </SearchExpanded.Provider>
   );
 }

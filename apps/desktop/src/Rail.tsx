@@ -1,4 +1,4 @@
-import { CalendarClock, Download, MessagesSquare, Settings } from 'lucide-react';
+import { CalendarClock, Download, MessagesSquare, Settings } from './icons.tsx';
 import type { MenuPosition } from './ui.tsx';
 
 export type Page = 'chat' | 'schedules' | 'settings';
@@ -33,7 +33,7 @@ export default function Rail({
         aria-current={page === 'chat' ? 'page' : undefined}
         onClick={() => go('chat')}
       >
-        <MessagesSquare />
+        <MessagesSquare weight={page === 'chat' ? 'bold' : 'regular'} />
       </button>
       {schedules && (
         <button
@@ -43,7 +43,7 @@ export default function Rail({
           aria-current={page === 'schedules' ? 'page' : undefined}
           onClick={() => go('schedules')}
         >
-          <CalendarClock />
+          <CalendarClock weight={page === 'schedules' ? 'bold' : 'regular'} />
         </button>
       )}
       <span className="rail-space" />
@@ -67,7 +67,7 @@ export default function Rail({
         aria-current={page === 'settings' ? 'page' : undefined}
         onClick={(event) => openSettings(beside(event.currentTarget))}
       >
-        <Settings />
+        <Settings weight={page === 'settings' ? 'bold' : 'regular'} />
       </button>
     </nav>
   );

@@ -1,28 +1,44 @@
 import { Fragment, useEffect, useLayoutEffect, useRef } from 'react';
-import type { MouseEvent, ReactNode } from 'react';
-import { Check, X } from 'lucide-react';
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import { Check, X } from './icons.tsx';
+
+export type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
+
+export function Button({
+  variant = 'secondary',
+  size = 'md',
+  type = 'button',
+  className = '',
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  size?: ButtonSize;
+}) {
+  return (
+    <button {...props} type={type} className={`button ${variant} ${className}`} data-size={size} />
+  );
+}
 
 export function IconButton({
   title,
-  onClick,
   children,
-  disabled = false,
+  size,
   className = '',
-}: {
+  type = 'button',
+  ...props
+}: Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'title' | 'aria-label'> & {
   title: string;
-  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   children: ReactNode;
-  disabled?: boolean;
-  className?: string;
+  size?: ButtonSize;
 }) {
   return (
     <button
+      {...props}
       className={`icon-button ${className}`}
-      type="button"
+      type={type}
+      data-size={size}
       title={title}
       aria-label={title}
-      onClick={onClick}
-      disabled={disabled}
     >
       {children}
     </button>
@@ -63,9 +79,10 @@ export function Modal({
   children: ReactNode;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  useEffect(() => {
-    ref.current?.showModal();
-    return () => ref.current?.close();
+  useLayoutEffect(() => {
+    const dialog = ref.current;
+    dialog?.showModal();
+    return () => dialog?.close();
   }, []);
   return (
     <dialog

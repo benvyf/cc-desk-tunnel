@@ -1,6 +1,7 @@
+import Presence from './Presence.tsx';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronRight, Copy, ExternalLink, RotateCcw, Trash2 } from 'lucide-react';
+import { ChevronRight, Copy, ExternalLink, RotateCcw, Trash2 } from './icons.tsx';
 import type {
   WebCertificateState,
   WebProof,
@@ -399,69 +400,81 @@ export default function WebAccessSettings({
           </p>
         )}
       </div>
-      {values && dialog === 'access' && (
-        <AccessDialog
-          client={client}
-          browser={browser}
-          values={values}
-          certificate={certificate}
-          connectionUrl={connectionUrl}
-          close={close}
-          changed={setValues}
-        />
-      )}
-      {values && dialog === 'totp' && (
-        <TotpDialog client={client} browser={browser} close={close} changed={setValues} />
-      )}
-      {values && dialog === 'disable' && (
-        <ConfirmDialog
-          title="关闭两步验证"
-          text="关闭两步验证后，使用服务凭据即可登录。已登录浏览器将退出。"
-          proof={browser ? values.totpEnabled : undefined}
-          act={async (proof) => {
-            const result = await client.fetch({ type: 'web.totp.disable', ...proof });
-            setValues(result.values);
-          }}
-          close={close}
-        />
-      )}
-      {values && typeof dialog === 'object' && dialog && (
-        <ConfirmDialog
-          title="退出浏览器登录"
-          text={
-            dialog.revoke === own
-              ? '退出当前浏览器的登录？'
-              : '退出这个浏览器的登录？它需要重新输入服务凭据和动态码。'
-          }
-          // Ending another login from a browser asks for proof; a desktop or this browser itself need none.
-          proof={browser && dialog.revoke !== own ? values.totpEnabled : undefined}
-          act={async (proof) => {
-            const result = await client.fetch({
-              type: 'web.sessions.revoke',
-              sessionId: dialog.revoke,
-              ...proof,
-            });
-            setValues(result.values);
-          }}
-          close={close}
-        />
-      )}
-      {dialog === 'certificate' && values && (
-        <CertificateDialog
-          client={client}
-          domain={values.domain}
-          close={close}
-          changed={setCertificate}
-        />
-      )}
-      {dialog === 'reset' && (
-        <ConfirmDialog
-          title="恢复默认证书"
-          text="恢复部署时的默认证书？当前自定义证书将被移除；如果默认证书为自签名，浏览器会重新提示证书确认。"
-          act={async () => setCertificate(await client.fetch({ type: 'web.certificate.reset' }))}
-          close={close}
-        />
-      )}
+      <Presence kind="dialog">
+        {values && dialog === 'access' && (
+          <AccessDialog
+            client={client}
+            browser={browser}
+            values={values}
+            certificate={certificate}
+            connectionUrl={connectionUrl}
+            close={close}
+            changed={setValues}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {values && dialog === 'totp' && (
+          <TotpDialog client={client} browser={browser} close={close} changed={setValues} />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {values && dialog === 'disable' && (
+          <ConfirmDialog
+            title="关闭两步验证"
+            text="关闭两步验证后，使用服务凭据即可登录。已登录浏览器将退出。"
+            proof={browser ? values.totpEnabled : undefined}
+            act={async (proof) => {
+              const result = await client.fetch({ type: 'web.totp.disable', ...proof });
+              setValues(result.values);
+            }}
+            close={close}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {values && typeof dialog === 'object' && dialog && (
+          <ConfirmDialog
+            title="退出浏览器登录"
+            text={
+              dialog.revoke === own
+                ? '退出当前浏览器的登录？'
+                : '退出这个浏览器的登录？它需要重新输入服务凭据和动态码。'
+            }
+            // Ending another login from a browser asks for proof; a desktop or this browser itself need none.
+            proof={browser && dialog.revoke !== own ? values.totpEnabled : undefined}
+            act={async (proof) => {
+              const result = await client.fetch({
+                type: 'web.sessions.revoke',
+                sessionId: dialog.revoke,
+                ...proof,
+              });
+              setValues(result.values);
+            }}
+            close={close}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {dialog === 'certificate' && values && (
+          <CertificateDialog
+            client={client}
+            domain={values.domain}
+            close={close}
+            changed={setCertificate}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {dialog === 'reset' && (
+          <ConfirmDialog
+            title="恢复默认证书"
+            text="恢复部署时的默认证书？当前自定义证书将被移除；如果默认证书为自签名，浏览器会重新提示证书确认。"
+            act={async () => setCertificate(await client.fetch({ type: 'web.certificate.reset' }))}
+            close={close}
+          />
+        )}
+      </Presence>
     </>
   );
 }

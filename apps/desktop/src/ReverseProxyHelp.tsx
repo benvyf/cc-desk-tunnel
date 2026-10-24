@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { ChevronRight, Copy } from 'lucide-react';
+import { ChevronRight, Copy } from './icons.tsx';
 import type { WebCertificateState } from '@cc-desk-tunnel/protocol';
 import { IconButton } from './ui.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import { copyText } from './copy.tsx';
 import { proxyCertificateName, proxyConfiguration, proxyUpstream } from './reverse-proxy.ts';
 
@@ -101,20 +102,15 @@ export default function ReverseProxyHelp({
           </p>
         </details>
         <div className="web-proxy-toolbar">
-          <div className="segmented" aria-label="反向代理软件">
-            {(['nginx', 'caddy'] as const).map((value) => (
-              <button
-                type="button"
-                key={value}
-                aria-pressed={kind === value}
-                onClick={() => {
-                  setKind(value);
-                }}
-              >
-                {value === 'nginx' ? 'NGINX' : 'Caddy'}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="反向代理软件"
+            value={kind}
+            options={[
+              { value: 'nginx', label: 'NGINX' },
+              { value: 'caddy', label: 'Caddy' },
+            ]}
+            onChange={setKind}
+          />
           <IconButton title="复制反代配置" disabled={!config} onClick={() => void copy()}>
             <Copy />
           </IconButton>

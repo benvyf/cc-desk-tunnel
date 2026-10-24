@@ -32,5 +32,6 @@ export function messageTime(at: string, now = new Date()) {
     : date.toDateString() === yesterday.toDateString()
       ? '昨天'
       : (date.getFullYear() !== now.getFullYear() ? dayOfYear : day).format(date);
-  return { short: `${label} ${clock.format(date)}`, full: whole.format(date) };
+  const short = `${label} ${clock.format(date)}`;
+  return { short, compact: today ? clock.format(date) : short, full: whole.format(date) };
 }

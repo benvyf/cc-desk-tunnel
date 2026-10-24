@@ -11,7 +11,7 @@ import {
   Settings2,
   SlidersHorizontal,
   UserRound,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { ProxyClient } from './client.ts';
 import WebAccessSettings from './WebAccessSettings.tsx';
 import Help from './Help.tsx';
@@ -27,6 +27,7 @@ import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
 import ShortcutSettings from './ShortcutSettings.tsx';
 import { IconButton, Switch } from './ui.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import type { MenuItem } from './ui.tsx';
 import ManagedUpdatePanel from './ManagedUpdatePanel.tsx';
 
@@ -193,20 +194,13 @@ function TranscriptViewSettings() {
             <strong>展示多少</strong>
             <small>{current.detail}</small>
           </span>
-          <div className="stat-chips" role="radiogroup" aria-label="工作步骤展示">
-            {viewModes.map((entry) => (
-              <button
-                type="button"
-                key={entry.mode}
-                role="radio"
-                className="stat-chip"
-                aria-checked={entry.mode === view.mode}
-                onClick={() => set({ mode: entry.mode })}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
+          <SegmentedControl
+            label="工作步骤展示"
+            role="radiogroup"
+            value={view.mode}
+            options={viewModes.map((entry) => ({ value: entry.mode, label: entry.label }))}
+            onChange={(mode) => set({ mode })}
+          />
         </div>
       </div>
     </>
@@ -847,6 +841,7 @@ function About({
 // Settings in one place, sorted by whose they are: Claude Code's own (kept on the cloud host) and this
 // client's (kept on this computer).
 export default function SettingsPage({
+  sideOpen = true,
   client,
   section,
   go,
@@ -865,6 +860,7 @@ export default function SettingsPage({
   back,
   browser = false,
 }: {
+  sideOpen?: boolean;
   // Given before a connection exists: only this computer's own settings are shown, and this leaves them.
   back?: () => void;
   browser?: boolean;
@@ -895,7 +891,7 @@ export default function SettingsPage({
   );
   return (
     <>
-      <aside className="sidebar">
+      <aside className="sidebar" inert={!sideOpen}>
         <div className="sidebar-brand">
           {back && (
             <IconButton title="返回登录" onClick={back}>
@@ -925,7 +921,7 @@ export default function SettingsPage({
                 aria-current={item.id === section ? 'page' : undefined}
                 onClick={() => go(item.id)}
               >
-                <item.icon />
+                <item.icon weight={item.id === section ? 'bold' : 'regular'} />
                 {item.name}
               </button>
             </div>
@@ -933,7 +929,7 @@ export default function SettingsPage({
           {shown.length === 0 && <p className="list-empty">没有匹配的设置</p>}
         </nav>
       </aside>
-      <main className="workspace">
+      <main className="workspace settings-workspace">
         {section === 'account' ? (
           account
         ) : section === 'claude' ? (

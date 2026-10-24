@@ -1,5 +1,6 @@
+import Presence from './Presence.tsx';
 import { useEffect, useState } from 'react';
-import { Activity, Database } from 'lucide-react';
+import { Activity, Database } from './icons.tsx';
 import type { NativeMetrics } from '@cc-desk-tunnel/protocol';
 import ContextMeter from './ContextMeter.tsx';
 import { usePrefs } from './prefs.ts';
@@ -36,26 +37,28 @@ function Part({
         {icon}
         <span>{barText(group, stats, chosen) || title}</span>
       </button>
-      {open && (
-        <div className="turn-stats-card" role="dialog" aria-label={title} ref={card}>
-          <header>
-            {icon}
-            <strong>{title}</strong>
-            {headline && <b>{headline.value}</b>}
-          </header>
-          <dl>
-            {rows
-              .filter((row) => row !== headline)
-              .map(({ field, value }) => (
-                <div key={field.key}>
-                  <dt>{field.label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-          </dl>
-          {note && <p>{note}</p>}
-        </div>
-      )}
+      <Presence>
+        {open && (
+          <div className="turn-stats-card" role="dialog" aria-label={title} ref={card}>
+            <header>
+              {icon}
+              <strong>{title}</strong>
+              {headline && <b>{headline.value}</b>}
+            </header>
+            <dl>
+              {rows
+                .filter((row) => row !== headline)
+                .map(({ field, value }) => (
+                  <div key={field.key}>
+                    <dt>{field.label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+            </dl>
+            {note && <p>{note}</p>}
+          </div>
+        )}
+      </Presence>
     </div>
   );
 }

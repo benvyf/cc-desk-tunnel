@@ -183,8 +183,11 @@ test('expanded folds nothing and groups nothing', async ({ page }) => {
   await expect(page.locator('.work')).toHaveCount(0);
   await expect(page.locator('.work-flat')).toHaveCount(2);
   await expect(page.locator('.work-flat .tool-subject')).toHaveText(['列目录1', '列目录2']);
-  // The first line of each thought, without its Markdown; a number it starts with stays.
-  await expect(page.locator('.thinking-preview')).toHaveText(['1 号目录先看看', '2 号目录先看看']);
+  // Subsequent source lines reach the two-line preview; Markdown is removed and initial numbers stay.
+  await expect(page.locator('.thinking-preview')).toHaveText([
+    '1 号目录先看看\n再决定怎么做',
+    '2 号目录先看看\n再决定怎么做',
+  ]);
 });
 
 test('the settings choose how much of the work is shown', async ({ page }) => {

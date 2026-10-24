@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { X, SquareTerminal } from 'lucide-react';
+import { X, SquareTerminal } from './icons.tsx';
 import type { ProxyClient } from './client.ts';
 import { IconButton } from './ui.tsx';
 import '@xterm/xterm/css/xterm.css';

@@ -1,5 +1,6 @@
+import Presence from './Presence.tsx';
 import { useEffect, useRef, useState } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell } from './icons.tsx';
 import type { Notifications } from './notifications.ts';
 import { ago } from './paths.ts';
 
@@ -52,39 +53,41 @@ export default function NoticeBell({
         <Bell />
         {unread > 0 && <span className="notice-badge">{unread > 9 ? '9+' : unread}</span>}
       </button>
-      {open && (
-        <div className="notice-list" role="dialog" aria-label="通知">
-          <header>
-            <strong>通知</strong>
-            {notices.length > 0 && (
-              <button type="button" onClick={clear}>
-                清空
+      <Presence>
+        {open && (
+          <div className="notice-list" role="dialog" aria-label="通知">
+            <header>
+              <strong>通知</strong>
+              {notices.length > 0 && (
+                <button type="button" onClick={clear}>
+                  清空
+                </button>
+              )}
+            </header>
+            {notices.length === 0 && <p className="list-empty">暂无通知</p>}
+            {notices.map((notice) => (
+              <button
+                type="button"
+                key={notice.id}
+                className={`notice ${notice.kind}`}
+                disabled={!notice.sessionId}
+                onClick={() => {
+                  setOpen(false);
+                  openSession(notice.sessionId!);
+                }}
+              >
+                <span>
+                  <strong>{notice.title}</strong>
+                  <small>
+                    {names[notice.kind]} · {ago(notice.at)}
+                  </small>
+                </span>
+                <span className="notice-body">{notice.body}</span>
               </button>
-            )}
-          </header>
-          {notices.length === 0 && <p className="list-empty">暂无通知</p>}
-          {notices.map((notice) => (
-            <button
-              type="button"
-              key={notice.id}
-              className={`notice ${notice.kind}`}
-              disabled={!notice.sessionId}
-              onClick={() => {
-                setOpen(false);
-                openSession(notice.sessionId!);
-              }}
-            >
-              <span>
-                <strong>{notice.title}</strong>
-                <small>
-                  {names[notice.kind]} · {ago(notice.at)}
-                </small>
-              </span>
-              <span className="notice-body">{notice.body}</span>
-            </button>
-          ))}
-        </div>
-      )}
+            ))}
+          </div>
+        )}
+      </Presence>
     </div>
   );
 }

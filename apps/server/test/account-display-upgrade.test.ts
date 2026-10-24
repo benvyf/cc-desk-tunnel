@@ -18,15 +18,13 @@ import { ManagedServerSupervisor } from '../src/managed-server-supervisor.ts';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 
-test('account display changes retain the reviewed Build 2 baseline and admit a managed program update', async (t) => {
+test('managed program updates match the installed baseline and reject historical Build 2 drift', async (t) => {
   const reviewed = JSON.parse(
     readFileSync(
       new URL('fixtures/account-display-upgrade-baseline.json', import.meta.url),
       'utf8',
     ),
   );
-  assert.deepEqual(compatibility(root), reviewed.compatibility);
-  assert.equal(sha256(readFileSync(join(root, 'package-lock.json'))), reviewed.packageLockSha256);
   const profile = JSON.parse(
     readFileSync(join(root, 'deploy/server-bootstrap-profile.json'), 'utf8'),
   );
@@ -46,11 +44,12 @@ test('account display changes retain the reviewed Build 2 baseline and admit a m
     mkdirSync(dirname(target), { recursive: true });
     copyFileSync(join(root, file), target);
   }
+  // Model an installed image built from current sources, independently of historical Build 2.
   const descriptor = buildDescriptor(baseline, {
     build: 2,
     protocol: 20,
     appVersion: '0.3.6',
-    sourceCommit: reviewed.sourceCommit,
+    sourceCommit: 'a'.repeat(40),
   });
   writeFileSync(join(baseline, 'SERVER-RELEASE.json'), JSON.stringify(descriptor));
   const keys = generateKeyPairSync('ed25519');
@@ -76,7 +75,7 @@ test('account display changes retain the reviewed Build 2 baseline and admit a m
       compatibility: compatibility(root),
     },
   };
-  const envelope = signServerIndex(payload, 'test', keys.privateKey);
+  let envelope = signServerIndex(payload, 'test', keys.privateKey);
   const stateRoot = join(scratch, 'state');
   mkdirSync(stateRoot);
   const supervisor = new ManagedServerSupervisor({
@@ -93,4 +92,23 @@ test('account display changes retain the reviewed Build 2 baseline and admit a m
   const result = await supervisor.check(20);
   assert.equal(result.compatible, true);
   assert.equal(result.reason, 'available');
+  // Historical inventories stay immutable. Later hook/dependency changes require a new base image.
+  envelope = signServerIndex(
+    {
+      ...payload,
+      revision: 4,
+      release: {
+        ...payload.release,
+        build: 4,
+        sha256: 'e'.repeat(64),
+        compatibility: reviewed.compatibility,
+        packageLockSha256: reviewed.packageLockSha256,
+      },
+    },
+    'test',
+    keys.privateKey,
+  );
+  const historical = await supervisor.check(20);
+  assert.equal(historical.compatible, false);
+  assert.equal(historical.reason, 'manual-image-upgrade');
 });

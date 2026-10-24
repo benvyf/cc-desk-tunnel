@@ -105,6 +105,7 @@ test('the settings of this computer open from the login page without a connectio
     '常规',
     '通知',
     '快捷键',
+    '关于与更新',
   ]);
   await page.getByRole('button', { name: '通知', exact: true }).click();
   await expect(page.getByRole('heading', { name: '通知', level: 1 })).toBeVisible();

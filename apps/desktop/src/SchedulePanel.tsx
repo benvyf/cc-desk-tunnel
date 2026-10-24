@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { CalendarClock, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { CalendarClock, Pencil, Play, Plus, Trash2 } from './icons.tsx';
 import type { Effort, NativeCapabilities, Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { describeSchedule, parseTasks, stamp } from './schedules.ts';
 import type { Schedule, Schedules, Task } from './schedules.ts';
-import { IconButton } from './ui.tsx';
+import { Button, IconButton } from './ui.tsx';
 
 // The editor's fields: every kind of rule and target keeps its own input, so switching kinds loses nothing.
 type Form = {
@@ -309,11 +309,13 @@ function Editor({
 
 // The tasks are listed in the side column; the main area holds the editor, or says what the page is for.
 export default function SchedulePanel({
+  sideOpen = true,
   schedules,
   sessions,
   projects,
   capabilities,
 }: {
+  sideOpen?: boolean;
   schedules: Schedules;
   sessions: Session[];
   projects: string[];
@@ -333,7 +335,7 @@ export default function SchedulePanel({
   };
   return (
     <>
-      <aside className="sidebar">
+      <aside className="sidebar" inert={!sideOpen}>
         <div className="sidebar-brand">
           <span className="brand">定时任务</span>
         </div>
@@ -384,9 +386,9 @@ export default function SchedulePanel({
                       <Pencil />
                     </IconButton>
                     {removing === task.id ? (
-                      <button
-                        type="button"
-                        className="button danger"
+                      <Button
+                        variant="danger"
+                        size="xs"
                         onClick={() => {
                           setRemoving(null);
                           if (editing?.id === task.id) setEditing(undefined);
@@ -394,7 +396,7 @@ export default function SchedulePanel({
                         }}
                       >
                         确认删除
-                      </button>
+                      </Button>
                     ) : (
                       <IconButton title={`删除 ${task.name}`} onClick={() => setRemoving(task.id)}>
                         <Trash2 />

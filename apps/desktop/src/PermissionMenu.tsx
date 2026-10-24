@@ -1,13 +1,14 @@
+import Presence from './Presence.tsx';
 import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
-  FilePen,
+  FileCode,
   Hand,
   ListChecks,
   ShieldCheck,
   ShieldOff,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { PermissionMode } from '@cc-desk-tunnel/protocol';
 import { usePrefs } from './prefs.ts';
 import { usePopupBounds } from './usePopupBounds.ts';
@@ -26,7 +27,7 @@ const modes: Mode[] = [
     value: 'acceptEdits',
     name: '接受编辑',
     detail: '文件编辑直接通过，执行命令仍先询问',
-    icon: FilePen,
+    icon: FileCode,
   },
   { value: 'plan', name: '计划模式', detail: '只调研并给出计划，不做改动', icon: ListChecks },
 ];
@@ -84,57 +85,59 @@ export default function PermissionMenu({
         <span>{current.name}</span>
         <ChevronDown />
       </button>
-      {open && confirming && (
-        <div className="permission-menu" role="alertdialog" aria-label="确认绕过权限">
-          <p className="menu-heading">确认绕过权限？</p>
-          <p className="permission-confirm">
-            这个会话里 Claude
-            做任何事都不再征求同意，包括删除文件和在你的电脑上执行任意命令，直到你换回别的审批模式。只在你能承担后果的环境里使用。
-          </p>
-          <div className="permission-confirm-actions">
-            <button type="button" onClick={() => setConfirming(false)}>
-              取消
-            </button>
-            <button
-              type="button"
-              className="danger"
-              onClick={() => {
-                setOpen(false);
-                change(bypass.value);
-              }}
-            >
-              绕过权限
-            </button>
-          </div>
-        </div>
-      )}
-      {open && !confirming && (
-        <div className="permission-menu" role="menu" aria-label="审批模式">
-          <p className="menu-heading">Claude Code 操作前如何征求同意？</p>
-          {offered.map(({ value, name, detail, icon: Icon }) => (
-            <button
-              type="button"
-              role="menuitemradio"
-              aria-checked={value === mode}
-              aria-label={name}
-              className={value === bypass.value ? 'danger' : undefined}
-              key={value}
-              onClick={() => {
-                if (value === bypass.value && value !== mode) return setConfirming(true);
-                setOpen(false);
-                if (value !== mode) change(value);
-              }}
-            >
-              <Icon />
-              <span className="menu-label">
-                {name}
-                <small>{detail}</small>
-              </span>
-              {value === mode && <Check className="menu-check" />}
-            </button>
+      <Presence>
+        {open &&
+          (confirming ? (
+            <div className="permission-menu" role="alertdialog" aria-label="确认绕过权限">
+              <p className="menu-heading">确认绕过权限？</p>
+              <p className="permission-confirm">
+                这个会话里 Claude
+                做任何事都不再征求同意，包括删除文件和在你的电脑上执行任意命令，直到你换回别的审批模式。只在你能承担后果的环境里使用。
+              </p>
+              <div className="permission-confirm-actions">
+                <button type="button" onClick={() => setConfirming(false)}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  onClick={() => {
+                    setOpen(false);
+                    change(bypass.value);
+                  }}
+                >
+                  绕过权限
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="permission-menu" role="menu" aria-label="审批模式">
+              <p className="menu-heading">Claude Code 操作前如何征求同意？</p>
+              {offered.map(({ value, name, detail, icon: Icon }) => (
+                <button
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={value === mode}
+                  aria-label={name}
+                  className={value === bypass.value ? 'danger' : undefined}
+                  key={value}
+                  onClick={() => {
+                    if (value === bypass.value && value !== mode) return setConfirming(true);
+                    setOpen(false);
+                    if (value !== mode) change(value);
+                  }}
+                >
+                  <Icon />
+                  <span className="menu-label">
+                    {name}
+                    <small>{detail}</small>
+                  </span>
+                  {value === mode && <Check className="menu-check" />}
+                </button>
+              ))}
+            </div>
           ))}
-        </div>
-      )}
+      </Presence>
     </div>
   );
 }

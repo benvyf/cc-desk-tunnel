@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ShieldAlert } from 'lucide-react';
+import { ShieldAlert } from './icons.tsx';
 import type { WebLoginState } from '@cc-desk-tunnel/protocol';
 import { browserLogin, browserLogout, browserSession } from './browser-api.ts';
 import { App } from './App.tsx';

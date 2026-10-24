@@ -4,9 +4,7 @@
   "backup": "/var/backups/cc-update-service/jev-cache-order-20261024T092101Z",
   "previousRuntime": "/opt/cc-update-service.previous-jev-cache-order-c47de22",
   "runtimeInventoryFiles": 48,
-  "changedRuntimeFiles": [
-    "apps/update-service/src/moderation-nodes.ts"
-  ],
+  "changedRuntimeFiles": ["apps/update-service/src/moderation-nodes.ts"],
   "configurationUnchanged": true,
   "privateLoginUnchanged": true,
   "moderationPolicyUnchanged": true,

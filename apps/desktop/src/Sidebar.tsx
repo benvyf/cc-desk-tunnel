@@ -12,7 +12,7 @@ import {
   Search,
   SquarePen,
   X,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import type { ConnectedDevice } from './client.ts';
 import NoticeBell from './NoticeBell.tsx';
@@ -44,6 +44,7 @@ type Elsewhere = {
 };
 
 export default function Sidebar({
+  sideOpen = true,
   localProjects = true,
   sessions,
   elsewhere,
@@ -63,6 +64,7 @@ export default function Sidebar({
   sessionMenu,
   projectMenu,
 }: {
+  sideOpen?: boolean;
   localProjects?: boolean;
   sessions: Session[];
   // Sessions on the user's other computers: listed apart, by computer and under it by project folder, and not
@@ -308,7 +310,7 @@ export default function Sidebar({
     );
   }
   return (
-    <aside className="sidebar" ref={aside}>
+    <aside className="sidebar" inert={!sideOpen} ref={aside}>
       <div className="sidebar-brand">
         <span className="brand">
           CC Desk Tunnel

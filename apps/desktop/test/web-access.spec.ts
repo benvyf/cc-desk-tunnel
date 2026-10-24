@@ -529,6 +529,8 @@ for (const browser of [false, true])
   test(`TOTP setup copies the full secret, verifies the new code, and clears secrets (browser ${browser})`, async ({
     page,
   }) => {
+    const errors: string[] = [];
+    page.on('pageerror', (error) => errors.push(error.message));
     await settingsFixture(page, true, false, browser);
     await page
       .locator('.setting-row')
@@ -566,6 +568,7 @@ for (const browser of [false, true])
         Object.defineProperty(window, 'desktop', {
           configurable: true,
           value: {
+            saveDrafts: async () => {},
             copyText: async (text: string) => {
               clipboard.desktopCalls++;
               await write(text);
@@ -573,6 +576,9 @@ for (const browser of [false, true])
           },
         });
     }, browser);
+    // Flush the app's pending draft while the desktop clipboard bridge is mocked too.
+    await page.evaluate(() => window.dispatchEvent(new Event('pagehide')));
+    expect(errors).toEqual([]);
     await page.getByLabel('验证新动态码').fill('123456');
     await page.getByRole('button', { name: '复制密钥', exact: true }).click();
     await expect(page.getByRole('button', { name: '复制失败，请重试', exact: true })).toBeVisible();
@@ -663,6 +669,7 @@ for (const browser of [false, true])
         expect(call.proof).toEqual({ password: 'test-password' });
       else expect(call).not.toHaveProperty('proof');
     }
+    expect(errors).toEqual([]);
   });
 
 test('desktop TOTP setup retries errors and discards a pending result on disconnect', async ({

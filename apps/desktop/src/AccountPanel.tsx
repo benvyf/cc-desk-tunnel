@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { UserRound, RefreshCw, Activity, ShieldCheck, ListOrdered } from 'lucide-react';
+import { UserRound, RefreshCw, Activity, ShieldCheck, ListOrdered } from './icons.tsx';
 import type { NativeMetrics, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type {
   AccountState,
@@ -7,7 +7,7 @@ import type {
 } from '../../../packages/protocol/src/account-display.ts';
 import UsagePanel, { dollars, quotaName, tokens } from './UsagePanel.tsx';
 import type { ProxyClient } from './client.ts';
-import { IconButton } from './ui.tsx';
+import { Button, IconButton } from './ui.tsx';
 
 export default function AccountPanel({
   client,
@@ -101,10 +101,10 @@ export default function AccountPanel({
         <h2 className="account-section-title">
           <Activity />
           订阅用量
-          <button type="button" className="button secondary" onClick={() => setLog('today')}>
+          <Button size="sm" onClick={() => setLog('today')}>
             <ListOrdered />
             调用日志
-          </button>
+          </Button>
         </h2>
         {metrics?.rateLimits?.available ? (
           <div className="quota-list">

@@ -1,7 +1,15 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { createServer, request } from 'node:http';
 import type { IncomingMessage } from 'node:http';
 import { tmpdir } from 'node:os';
@@ -202,6 +210,23 @@ test('Web starts disabled, persists its switch and stable server device, and onl
   f.command({ type: 'web.settings.update', values: { enabled: false } });
   f.restart();
   assert.equal(f.web.enabled, false);
+});
+
+test('the desktop icon attribution is distributed as a reachable Web asset', async (t) => {
+  const notice = new URL('../../desktop/public/assets/THIRD_PARTY_NOTICES.txt', import.meta.url);
+  assert.ok(existsSync(notice), 'Icon attribution must live under the served assets directory');
+  const text = readFileSync(notice, 'utf8');
+  assert.match(text, /Copyright \(c\) 2020 Phosphor Icons/);
+  assert.match(text, /Permission is hereby granted/);
+  const f = await fixture(t);
+  writeFileSync(join(f.directory, 'assets', 'THIRD_PARTY_NOTICES.txt'), text);
+  f.enable();
+  for (const path of ['', 'review-client']) {
+    f.command({ type: 'web.settings.update', values: { path } });
+    const response = await f.http(`${path ? '/' + path : ''}/assets/THIRD_PARTY_NOTICES.txt`);
+    assert.equal(response.status, 200);
+    assert.equal(response.text, text);
+  }
 });
 
 test('Web index uses its HTTP CSP without changing the desktop build or static assets', async (t) => {

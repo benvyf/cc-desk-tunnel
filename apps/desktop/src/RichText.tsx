@@ -4,10 +4,11 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { isValidElement, memo, useRef, useState } from 'react';
+import { isValidElement, memo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { Code, Image } from 'lucide-react';
+import { FileCode, Eye } from './icons.tsx';
 import { CopyButton } from './copy.tsx';
+import { revealStreaming } from './streaming.ts';
 
 // A finished drawing in a block of `svg` is shown as the picture it is, its source one click away. As an image
 // it runs no script and loads nothing from elsewhere.
@@ -20,11 +21,37 @@ function drawing(children: ReactNode) {
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const block = useRef<HTMLPreElement>(null);
+  const language = isValidElement<{ className?: string }>(children)
+    ? (/\blanguage-([^\s]+)/.exec(children.props.className ?? '')?.[1] ?? 'text')
+    : 'text';
   const svg = drawing(children);
   const [shown, setShown] = useState<'picture' | 'source' | 'broken'>('picture');
   const picture = svg !== null && shown === 'picture';
   return (
     <div className="code-block">
+      <div className="code-header" data-search-ignore>
+        <span className="code-language" title={language}>
+          <FileCode />
+          {language}
+        </span>
+        <span className="code-actions">
+          {svg !== null && shown !== 'broken' && (
+            <button
+              type="button"
+              className="copy-button"
+              onClick={() => setShown(picture ? 'source' : 'picture')}
+            >
+              {picture ? <FileCode /> : <Eye />}
+              <span>{picture ? '查看源码' : '查看图像'}</span>
+            </button>
+          )}
+          <CopyButton
+            text={() => svg ?? block.current?.textContent ?? ''}
+            label="复制代码"
+            variant="code"
+          />
+        </span>
+      </div>
       {picture ? (
         <img
           className="code-picture"
@@ -35,25 +62,15 @@ function CodeBlock({ children }: { children?: ReactNode }) {
       ) : (
         <pre ref={block}>{children}</pre>
       )}
-      <span className="code-actions" data-search-ignore>
-        {svg !== null && shown !== 'broken' && (
-          <button
-            type="button"
-            className="copy-button"
-            onClick={() => setShown(picture ? 'source' : 'picture')}
-          >
-            {picture ? <Code /> : <Image />}
-            <span>{picture ? '查看源码' : '查看图像'}</span>
-          </button>
-        )}
-        <CopyButton text={() => svg ?? block.current?.textContent ?? ''} label="复制代码" />
-      </span>
     </div>
   );
 }
 
 const components: Components = {
   pre: CodeBlock,
+  span: ({ node, ...props }) => (
+    <span key={String(node?.properties['data-reveal-key'] ?? '')} {...props} />
+  ),
   a: ({ children, ...props }) => (
     <a {...props} target="_blank" rel="noopener noreferrer">
       {children}
@@ -124,16 +141,54 @@ const remarkPlugins = [remarkGfm, remarkMath];
 const rehypePlugins: [typeof rehypeKatex, { strict: boolean }][] = [
   [rehypeKatex, { strict: false }],
 ];
+const motionPreference =
+  typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+const reducedMotion = () => motionPreference?.matches ?? true;
+const motionOff = () => true;
+const noMotionSubscription = () => () => {};
+function subscribeMotion(listener: () => void) {
+  motionPreference?.addEventListener('change', listener);
+  return () => motionPreference?.removeEventListener('change', listener);
+}
 
-export default memo(function RichText({ text }: { text: string }) {
+export default memo(function RichText({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
+  // Static history adds no media listeners. Live preference changes discard old reveal spans,
+  // so re-enabling motion cannot replay already displayed text.
+  const reduced = useSyncExternalStore(
+    streaming ? subscribeMotion : noMotionSubscription,
+    streaming ? reducedMotion : motionOff,
+    motionOff,
+  );
+  const reveal = streaming && !reduced;
+  const source = dollars(text);
+  const [frame, setFrame] = useState({
+    source,
+    streaming: reveal,
+    start: source.length,
+    revision: 0,
+  });
+  if (frame.source !== source || frame.streaming !== reveal) {
+    setFrame({
+      source,
+      streaming: reveal,
+      start: reveal && source.startsWith(frame.source) ? frame.source.length : source.length,
+      revision: frame.revision + 1,
+    });
+  }
   return (
     <Markdown
       remarkPlugins={remarkPlugins}
-      rehypePlugins={rehypePlugins}
+      rehypePlugins={reveal ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins}
       skipHtml
       components={components}
     >
-      {dollars(text)}
+      {source}
     </Markdown>
   );
 });
