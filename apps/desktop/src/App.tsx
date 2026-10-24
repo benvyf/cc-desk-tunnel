@@ -39,6 +39,7 @@ import type {
   Session,
   SessionEvent,
 } from '@cc-desk-tunnel/protocol';
+import type { NativeCapabilities } from '../../../packages/protocol/src/account-display.ts';
 import { browserSession, browserSocket, watchActivity } from './browser-api.ts';
 import { CertificateWarning } from './WebGate.tsx';
 import { hostCapabilities } from './host-capabilities.ts';
@@ -293,7 +294,8 @@ export function App({
     () => events.filter((event) => event.payload.type === 'turn.stats').length,
     [events],
   );
-  const capabilities = latest(events, 'native.capabilities') ?? state.capabilities;
+  const capabilities: NativeCapabilities | null =
+    latest(events, 'native.capabilities') ?? state.capabilities;
   const metrics = latest(events, 'native.metrics');
   // Quota belongs to the account, so the newest reading from any session wins over the selected session's.
   const quota = [metrics, state.metrics]
@@ -1071,7 +1073,9 @@ export function App({
   const adapterName = nativeMode ? 'Claude Code' : 'Simulation';
   const accountName = signedOut
     ? '未登录'
-    : (state.account?.email ?? capabilities?.account.email ?? (nativeMode ? '账号' : '离线模拟'));
+    : (state.account?.accountNumber ??
+      capabilities?.account.accountNumber ??
+      (nativeMode ? '账号' : '离线模拟'));
   const upgradeItem: MenuItem | null = upgrade
     ? {
         label: `升级客户端到 ${upgrade}`,
@@ -1116,7 +1120,7 @@ export function App({
             label: `账号 · ${accountName}`,
             icon: <UserRound />,
             detail: signedOut
-              ? '点击登录 Claude 账号'
+              ? '请在 Ubuntu 服务端登录 Claude Code'
               : (state.account?.subscriptionType ??
                 capabilities?.account.subscriptionType ??
                 '账号与额度'),

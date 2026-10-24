@@ -1,17 +1,15 @@
-import {
-  continues,
-  isFragment,
-  PROTOCOL_VERSION,
-  serverMessageSchema,
-} from '@cc-desk-tunnel/protocol';
-import type { EventPayload } from '@cc-desk-tunnel/protocol';
+import { continues, isFragment, PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import { serverMessageSchema } from '../../../packages/protocol/src/account-display.ts';
 import type {
   AccountState,
+  NativeCapabilities,
+  ServerMessage,
+} from '../../../packages/protocol/src/account-display.ts';
+import type { EventPayload } from '@cc-desk-tunnel/protocol';
+import type {
   Command,
   Device,
-  NativeCapabilities,
   NativeMetrics,
-  ServerMessage,
   ServiceUpdate,
   Session,
   SessionEvent,

@@ -99,6 +99,12 @@ test('server archives contain a fresh Web build without local data or desktop de
     'release archive only contains regular files',
   );
   assert.ok(entries.includes('packages/managed-server/src/index.ts'));
+  for (const path of [
+    'apps/server/src/account-presentation.ts',
+    'packages/protocol/src/account-display.ts',
+    'packages/protocol/src/account-number.ts',
+  ])
+    assert.ok(entries.includes(path), `Server archive omits account display dependency: ${path}`);
   assert.ok(!entries.includes('deploy/private.local.json'));
   const descriptorBytes = execFileSync(tar, ['-xOzf', output, 'SERVER-RELEASE.json'], {
     windowsHide: true,

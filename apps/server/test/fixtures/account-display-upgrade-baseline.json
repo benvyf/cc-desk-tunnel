@@ -1,0 +1,28 @@
+{
+  "sourceCommit": "9ab5f49f8155076ae5d7eacb33d9e369da4e2199",
+  "build": 2,
+  "protocol": 20,
+  "packageLockSha256": "db9f2582269b324f3a091eea0082a406e8e7a02bd4b748a155dac419b0f025d8",
+  "compatibility": {
+    "apps/server/src/store.ts": "0f5aa51f63590f270f132b11257fb2e496f2859cec88f0d1835a63c416bc3554",
+    "apps/server/src/usage.ts": "4bde92f9f877e4c579eead3fe4994f863a501663417403f0c8b9c42aaa9990dc",
+    "apps/server/src/web-access.ts": "18e480b94c4c29569ad27a4bf57c7838ea584ae20b812f68030cf7676cb571f6",
+    "apps/server/src/native-settings.ts": "7eb0a58a361bf47eab0e6338f0c8dd8df803e10f1bd7f346a9649752a877b20f",
+    "apps/server/src/native-onboarding.ts": "6777362622817745be87480d79aa443811f231dc2dc576e1950dec4658d313f7",
+    "apps/server/src/native-instructions.ts": "31b01bd3c65476408b1618dcb00a1e0bf59c9e2a058179f788c5ab1ef9d2a048",
+    "apps/server/src/native-moderation-hook.ts": "6d140f6e7b8e5602eed6b187fc3a47c675486b05caf187c66e7650749eb77973",
+    "apps/server/src/moderation.ts": "b849be7a7f2fc994a7a316e8bddf500f1ff72738745ea34f1700f0edd9169f3a",
+    "apps/server/src/errors.ts": "2f39eeba21699f498d251507cc70110cb2455b161d2cb075679703fa8448c721",
+    "apps/server/src/native-deployment.ts": "a1793be4327430c599cf5477d579ff2fbd3367fa4c9bc2f8b43758ede9c3bf3e",
+    "apps/server/src/native-terminal-policy.ts": "7abb7202eca070593cd7fe961ab522d2e5363294b23ecf1c0eba54c2f340a2b3",
+    "apps/server/src/web-certificate.ts": "56e372003ce90535250e1f7706f24e19b07497e68f678580bc04a5243de97162",
+    "apps/server/src/web-totp.ts": "a0eaf188fecc7970cdba3f54b568bdd04b34e52c69f2d5796c837d56448e25d0",
+    "apps/server/src/device-terms.ts": "c65825d94abcd7e81c50514cd9c3d7d9f392a09430baefbf4e9a0522bb7760f9",
+    "apps/server/src/claude.ts": "d6030cac81e13c39231e5f10f69cdb1a46252753b53ddfb17b2d3ad81bd1fd83",
+    "apps/server/src/legacy.ts": "6849c4c27678c8308e1c2456c091047071d0a7502425b757cb2eda489b2addee",
+    "apps/server/src/native-account.ts": "f73433400fde0147491d6ca355ba1024e06a54dfe7bbec53c6b8f2474e13c17c",
+    "packages/protocol/src/index.ts": "74c3b0f5f9a5c081459b034f561463622604da29a51a49084b1e93aa69cd6bbd",
+    "packages/protocol/src/web.ts": "27011dd28fcaff36afed63bc3a6c75a274ce0ad9493479e314d494ad32cd628c",
+    "packages/protocol/src/web-certificate.ts": "e958aa1226b10101ca91da23e161afd2db7972ba5764245a8f25749dbebd55ff"
+  }
+}

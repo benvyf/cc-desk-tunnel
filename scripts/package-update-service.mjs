@@ -35,6 +35,7 @@ export const runtimeFiles = [
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',
   'packages/protocol/src/account-monitor.ts',
+  'packages/protocol/src/account-number.ts',
   'deploy/update-service/cc-update-service.service',
   'deploy/update-service/cc-admin-password-setup',
   'deploy/update-service/nginx.conf.example',

@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { setTimeout as delay } from 'node:timers/promises';
 import { test, type TestContext } from 'node:test';
 import { AccountMonitor } from '../src/account-monitor.ts';
+import { accountMessageForClient } from '../src/account-presentation.ts';
 import { environmentConfig, clearServiceVariables } from '../src/config.ts';
 import type { NativeMetrics } from '@cc-desk-tunnel/protocol';
 
@@ -71,6 +72,16 @@ const identity = {
   subscriptionType: 'max',
   login: null,
 } as const;
+
+test('client numbering does not strip the email from private monitoring reports', async (t) => {
+  const f = await fixture(t);
+  const publicMessage = accountMessageForClient(identity);
+  assert.ok(!JSON.stringify(publicMessage).includes(identity.email));
+  f.monitor.observe(identity);
+  await f.wait(1);
+  assert.equal(f.reports[0].account.email, identity.email);
+  assert.match(f.reports[0].account.id, /^[a-f0-9]{64}$/);
+});
 
 test('monitor mirrors authorized identity, removes content/secrets and ignores context-only repeats', async (t) => {
   const f = await fixture(t);

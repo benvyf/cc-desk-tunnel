@@ -1,0 +1,59 @@
+{
+  "status": "Implemented and verified in workspace; not packaged or deployed",
+  "userSelectedLoginLocation": "Ubuntu terminal using the official Claude Code CLI",
+  "displayNumberFormat": "CC-XXXX-XXXX-XXXX-XXXX (uppercase hexadecimal from existing account ID)",
+  "typescript": {
+    "node": "v24.22.1",
+    "passed": true
+  },
+  "frontendBuild": {
+    "node": "v24.22.1",
+    "passed": true
+  },
+  "focusedRegression": {
+    "node": "v24.22.1",
+    "platform": "win32",
+    "cases": 74,
+    "passed": 74,
+    "method": "Single successful run of nine related test files after review fixes",
+    "scope": "Account projection and client parsing, remote auth rejection, historical replay, private monitor reporting, registry mapping, native parsing, server behavior, real source archives and managed upgrade admission"
+  },
+  "ui": {
+    "source": "Real React UI in Vite development mode and local Edge with synthetic WebSocket data, rerun after parser fix",
+    "sidebarNumberVerified": true,
+    "accountNumberVerified": true,
+    "legacyEmailNotDisplayed": true,
+    "loginLogoutCodeControlsRemoved": true,
+    "signedOutServerHintVerified": true,
+    "remoteAuthCommandsSent": 0,
+    "pageErrors": 0
+  },
+  "realClaudeOrSdkSessionsStarted": false,
+  "jevOrQuotaRequestsMade": false,
+  "productionChanged": false,
+  "previousFocusedRegression": {
+    "node": "v24.19.0",
+    "cases": 70,
+    "passed": 70,
+    "method": "Related suite plus successful rerun of corrected history-cursor fixture",
+    "scope": "Account projection, remote auth rejection, historical replay, original monitor reporting, registry mapping, persistence, existing native parsing and server behavior"
+  },
+  "reviewFixes": {
+    "updateServiceArchive": "Actual runtime archive extracted and HTTP module imported without workspace dependencies; no port opened",
+    "serverArchive": "Actual test archive includes account-presentation.ts, account-display.ts and account-number.ts",
+    "managedUpgrade": {
+      "baselineSourceCommit": "9ab5f49f8155076ae5d7eacb33d9e369da4e2199",
+      "baselineBuild": 2,
+      "simulatedCandidateBuild": 3,
+      "compatible": true,
+      "reason": "available",
+      "compatibilityClosureUnchanged": true,
+      "packageLockUnchanged": true,
+      "bootstrapPinnedAccountAndProtocolUnchanged": true,
+      "compatibilityChecksRelaxed": false,
+      "processLaunched": false,
+      "realUpgradePerformed": false
+    },
+    "clientParser": "Account number survives account.state, live event, fragment and history parsing; legacy metadata remains readable"
+  }
+}

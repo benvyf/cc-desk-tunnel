@@ -1,26 +1,13 @@
 import { useEffect, useState } from 'react';
-import {
-  UserRound,
-  RefreshCw,
-  Activity,
-  ShieldCheck,
-  LogIn,
-  LogOut,
-  ExternalLink,
-  Copy,
-  Check,
-  ListOrdered,
-} from 'lucide-react';
+import { UserRound, RefreshCw, Activity, ShieldCheck, ListOrdered } from 'lucide-react';
+import type { NativeMetrics, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type {
   AccountState,
   NativeCapabilities,
-  NativeMetrics,
-  UsageSummary,
-} from '@cc-desk-tunnel/protocol';
+} from '../../../packages/protocol/src/account-display.ts';
 import UsagePanel, { dollars, quotaName, tokens } from './UsagePanel.tsx';
 import type { ProxyClient } from './client.ts';
 import { IconButton } from './ui.tsx';
-import { copyText } from './copy.tsx';
 
 export default function AccountPanel({
   client,
@@ -42,11 +29,6 @@ export default function AccountPanel({
   refresh: () => void;
 }) {
   const account = capabilities?.account;
-  const [working, setWorking] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [code, setCode] = useState('');
-  const [confirmLogout, setConfirmLogout] = useState(false);
-  const [copied, setCopied] = useState(false);
   const signedOut = state?.loggedIn === false;
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [log, setLog] = useState<string | null>(null);
@@ -64,17 +46,6 @@ export default function AccountPanel({
   }, [client, metrics?.rateLimits?.measuredAt, log]);
   if (log)
     return <UsagePanel client={client} summary={summary} initial={log} back={() => setLog(null)} />;
-  async function act(command: Parameters<ProxyClient['request']>[0]) {
-    setFailure(null);
-    setWorking(true);
-    try {
-      await client.request(command);
-    } catch (error) {
-      setFailure(error instanceof Error ? error.message : '操作失败。');
-    } finally {
-      setWorking(false);
-    }
-  }
   return (
     <section className="account-page" aria-label="账号信息">
       <header className="account-heading">
@@ -97,145 +68,23 @@ export default function AccountPanel({
             <UserRound />
           </div>
           <div>
-            <h2>{signedOut ? '尚未登录' : (state?.email ?? account?.email ?? 'Claude Code')}</h2>
+            <h2>
+              {signedOut
+                ? '尚未登录'
+                : (state?.accountNumber ?? account?.accountNumber ?? '账号编号尚未读取')}
+            </h2>
             <p>
               {signedOut
-                ? '云端 Claude Code 还没有登录账号'
-                : (state?.subscriptionType ?? account?.subscriptionType ?? '账号信息尚未读取')}
+                ? '请在 Ubuntu 服务端登录 Claude Code'
+                : (state?.subscriptionType ?? account?.subscriptionType ?? '套餐尚未读取')}
             </p>
           </div>
-          {signedOut && !state.login && (
-            <button
-              type="button"
-              className="button primary"
-              disabled={working}
-              onClick={() => {
-                void act({ type: 'account.login' });
-              }}
-            >
-              <LogIn />
-              {working ? '获取链接…' : '登录'}
-            </button>
-          )}
-          {state?.loggedIn && !confirmLogout && (
-            <button
-              type="button"
-              className="button secondary"
-              disabled={working}
-              onClick={() => setConfirmLogout(true)}
-            >
-              <LogOut />
-              退出登录
-            </button>
-          )}
         </div>
-        {(failure ?? state?.notice) && (
-          <p className="error-text" role="alert">
-            {failure ?? state?.notice}
-          </p>
-        )}
-        {state?.loggedIn && confirmLogout && (
-          <div className="account-confirm" role="group" aria-label="确认退出登录">
-            <p>退出后云端的登录凭据会被官方 CLI 清除，会话记录保留；再次使用需要重新登录。</p>
-            <button
-              type="button"
-              className="button secondary"
-              disabled={working}
-              onClick={() => setConfirmLogout(false)}
-            >
-              取消
-            </button>
-            <button
-              type="button"
-              className="button danger"
-              disabled={working}
-              onClick={() => {
-                void act({ type: 'account.logout' }).then(() => setConfirmLogout(false));
-              }}
-            >
-              <LogOut />
-              退出登录
-            </button>
-          </div>
-        )}
-        {signedOut && state.login && (
-          <form
-            className="account-login"
-            aria-label="登录 Claude 账号"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void act({ type: 'account.code', code: code.trim() }).then(() => setCode(''));
-            }}
-          >
-            <p>
-              <strong>1</strong>在浏览器打开官方授权页并登录。
-            </p>
-            <div className="account-login-actions">
-              <button
-                type="button"
-                className="button primary"
-                onClick={() => {
-                  if (window.desktop)
-                    void window.desktop
-                      .openExternal(state.login!.url)
-                      .catch(() => setFailure('无法打开浏览器，请复制链接。'));
-                  else window.open(state.login!.url, '_blank', 'noopener');
-                }}
-              >
-                <ExternalLink />
-                打开授权页
-              </button>
-              <button
-                type="button"
-                className="button secondary"
-                onClick={() => {
-                  void copyText(state.login!.url).then(
-                    () => {
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
-                    },
-                    () => setFailure('复制失败，请重试。'),
-                  );
-                }}
-              >
-                {copied ? <Check /> : <Copy />}
-                {copied ? '已复制' : '复制链接'}
-              </button>
-            </div>
-            <p>
-              <strong>2</strong>把授权页最后显示的代码粘贴到这里。
-            </p>
-            <input
-              aria-label="授权码"
-              value={code}
-              onChange={(event) => setCode(event.target.value)}
-              spellCheck={false}
-              autoComplete="off"
-              required
-            />
-            <div className="account-login-actions">
-              <button
-                type="button"
-                className="button secondary"
-                disabled={working}
-                onClick={() => {
-                  void act({ type: 'account.cancel' });
-                }}
-              >
-                取消
-              </button>
-              <button className="button primary" disabled={working || !code.trim()}>
-                <Check />
-                完成登录
-              </button>
-            </div>
-          </form>
-        )}
+        <p className="muted">
+          账号由服务端管理，登录、退出和换号请在 Ubuntu 终端操作。编号与邮箱的对应关系可在 CC
+          控制中心查看。
+        </p>
         <dl className="account-details">
-          <div>
-            <dt>组织</dt>
-            <dd>{account?.organization ?? '未提供'}</dd>
-          </div>
           <div>
             <dt>模型服务</dt>
             <dd>

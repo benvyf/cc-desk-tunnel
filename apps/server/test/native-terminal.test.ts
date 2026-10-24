@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { NativeTerminal, terminalArguments, terminalEnvironment } from '../src/native-terminal.ts';
 import { completeOnboarding } from '../src/native-onboarding.ts';
-import { NativeLogin, parseAccountStatus } from '../src/native-account.ts';
+import { parseAccountStatus } from '../src/native-account.ts';
 import type { TerminalSpawner } from '../src/native-terminal.ts';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
@@ -160,61 +160,7 @@ test('a signed-in account skips the first-run wizard; a signed-out one keeps it'
   assert.equal(completeOnboarding(directory), false);
 });
 
-test('official sign-in: the link is read from the command output, the pasted code is typed back, exit decides the result', async () => {
-  let data!: (text: string) => void, exit!: (event: { exitCode: number; signal?: number }) => void;
-  const written: string[] = [];
-  let launched: string[] = [];
-  const spawn: TerminalSpawner = (_file, args) => {
-    launched = args;
-    return {
-      pid: 1,
-      onData: (listener) => {
-        data = listener;
-        return { dispose() {} };
-      },
-      onExit: (listener) => {
-        exit = listener;
-        return { dispose() {} };
-      },
-      write: (text: string) => {
-        written.push(text);
-      },
-      resize() {},
-      pause() {},
-      resume() {},
-      kill() {},
-    };
-  };
-  let result: boolean | undefined;
-  const replies: string[] = [];
-  const login = new NativeLogin(
-    'claude',
-    (succeeded) => {
-      result = succeeded;
-    },
-    (text) => {
-      replies.push(text);
-    },
-    spawn,
-  );
-  assert.deepEqual(launched, ['auth', 'login']);
-  data(
-    "Opening browser to sign in…\r\nIf the browser didn't open, visit: \x1b]8;;https://claude.com/cai/oauth/authorize?code=true&sta",
-  );
-  data('te=abc\x07https://claude.com/cai/oauth/authorize?code=true&sta');
-  data('te=abc\x1b]8;;\x07\r\nPaste code here if prompted > ');
-  assert.equal(await login.url, 'https://claude.com/cai/oauth/authorize?code=true&state=abc');
-  login.submit('wrong');
-  data(
-    'wrong\r\nInvalid code. Please make sure the full code was copied.\r\nPaste code here if prompted > ',
-  );
-  await delay(500);
-  assert.deepEqual(replies, ['Invalid code. Please make sure the full code was copied.']);
-  login.submit('code#state');
-  assert.deepEqual(written, ['wrong\r', 'code#state\r']);
-  exit({ exitCode: 0 });
-  assert.equal(result, true);
-
+test('official account status parses identity without exposing extra fields', () => {
   assert.deepEqual(
     parseAccountStatus(
       '{"loggedIn":true,"authMethod":"claude.ai","email":"user@example.invalid","orgName":"Org","orgId":"x","subscriptionType":"pro"}',

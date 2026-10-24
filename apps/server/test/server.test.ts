@@ -7,8 +7,10 @@ import { test } from 'node:test';
 import { createServer } from 'node:http';
 import type { TestContext } from 'node:test';
 import { WebSocket } from 'ws';
-import { PROTOCOL_VERSION, serverMessageSchema } from '@cc-desk-tunnel/protocol';
-import type { ServerMessage, SessionEvent } from '@cc-desk-tunnel/protocol';
+import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import type { SessionEvent } from '@cc-desk-tunnel/protocol';
+import { serverMessageSchema } from '../../../packages/protocol/src/account-display.ts';
+import type { ServerMessage } from '../../../packages/protocol/src/account-display.ts';
 import { createProxyServer } from '../src/server.ts';
 import { SessionStore } from '../src/store.ts';
 import { serviceVersion } from '../src/updates.ts';
@@ -121,6 +123,52 @@ test('requires authentication, rejects wrong token/version/origin and accepts he
   const denied = new Client(f.url, 'https://untrusted.example');
   f.clients.push(denied);
   await assert.rejects(denied.open(), /403/);
+});
+
+test('desktop account login, code submission, cancellation and logout are server-managed', async (t) => {
+  const f = await fixture(t);
+  const client = await f.connect();
+  for (const command of [
+    { type: 'account.login' },
+    { type: 'account.code', code: 'test-code' },
+    { type: 'account.cancel' },
+    { type: 'account.logout' },
+  ]) {
+    const response = await client.request(command);
+    assert.ok(response.type === 'response' && !response.ok);
+    assert.equal(response.code, 'account_server_managed');
+    assert.match(response.message!, /Ubuntu/);
+  }
+});
+
+test('replayed account metadata is numbered before it leaves the server', async (t) => {
+  const f = await fixture(t);
+  const client = await f.connect();
+  const sessionId = await f.create(client);
+  const history = new SessionStore(f.directory);
+  const stored = history.append(sessionId, randomUUID(), {
+    type: 'native.capabilities',
+    models: [],
+    commands: [],
+    account: { email: 'private@example.invalid', subscriptionType: 'pro' },
+  });
+  history.close();
+  client.messages = [];
+  const response = await client.request({
+    type: 'session.history',
+    sessionId,
+    beforeSequence: stored.sequence + 1,
+  });
+  assert.ok(response.type === 'response' && response.ok);
+  const snapshot = await client.wait((message) => message.type === 'session.snapshot');
+  assert.ok(snapshot.type === 'session.snapshot');
+  const identity = snapshot.events.find(
+    (event) => event.payload.type === 'native.capabilities',
+  )?.payload;
+  assert.ok(identity?.type === 'native.capabilities');
+  assert.match(identity.account.accountNumber!, /^CC-/);
+  assert.equal(identity.account.email, undefined);
+  assert.ok(!JSON.stringify(snapshot).includes('private@example.invalid'));
 });
 
 test('repeated wrong tokens block the address; an outdated client with the right token is not counted', async (t) => {

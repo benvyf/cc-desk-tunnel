@@ -45,7 +45,7 @@ import type {
 import { runClaude, nativeDirectory, prepareNativeDirectory, readNativeStatus } from './claude.ts';
 import type { ClaudeOptions } from './claude.ts';
 import { DomainError } from './errors.ts';
-import type { NativeLogin } from './native-account.ts';
+import { accountMessageForClient } from './account-presentation.ts';
 import { NativeInput } from './native-input.ts';
 import { completeOnboarding } from './native-onboarding.ts';
 import { readNativeSettings, updateNativeSettings } from './native-settings.ts';
@@ -121,7 +121,6 @@ type Seat = {
   opening?: Promise<void>;
   away?: NodeJS.Timeout;
 };
-type Login = { process: NativeLogin; owner: Peer; url?: string };
 type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
 export type ServerOptions = {
   managed?: {
@@ -230,7 +229,6 @@ export function createProxyServer(options: ServerOptions) {
   const terminals = new Map<string, Terminal>();
   const seats = new Map<string, Seat>();
   const graceMs = options.graceMs ?? (options.claude ? 300_000 : 0);
-  let login: Login | undefined;
   // Each run or terminal is a CLI process that keeps some 250 MB; more of them than the memory holds would
   // take the machine down, and every one of them with it.
   const capacity =
@@ -248,7 +246,6 @@ export function createProxyServer(options: ServerOptions) {
       if (
         runs.size ||
         terminals.size ||
-        login ||
         mutations.size ||
         reviewing.size ||
         inputQueues.size ||
@@ -408,7 +405,8 @@ export function createProxyServer(options: ServerOptions) {
   });
 
   function send(peer: Peer, message: ServerMessage) {
-    if (peer.socket.readyState === WebSocket.OPEN) peer.socket.send(JSON.stringify(message));
+    if (peer.socket.readyState === WebSocket.OPEN)
+      peer.socket.send(JSON.stringify(accountMessageForClient(message)));
   }
   function broadcast(message: ServerMessage, sessionId?: string) {
     for (const peer of peers) {
@@ -668,77 +666,23 @@ export function createProxyServer(options: ServerOptions) {
     }
   }
 
-  async function publishAccount(target?: Peer, notice?: string) {
+  async function publishAccount(target: Peer) {
     const { accountStatus } = await import('./native-account.ts');
     const state: AccountState = {
       ...(await accountStatus(options.claude!.executable)),
-      login: login?.url ? { url: login.url } : null,
-      notice,
+      login: null,
     };
     accountMonitor?.observe({ type: 'account.state', ...state });
-    if (target) send(target, { type: 'account.state', ...state });
-    else broadcast({ type: 'account.state', ...state });
+    send(target, { type: 'account.state', ...state });
   }
   async function account(peer: Peer, command: CommandOf<`account.${string}` & Command['type']>) {
+    if (command.type !== 'account.status')
+      throw new DomainError(
+        'account_server_managed',
+        '账号由服务端管理，请在 Ubuntu 终端使用官方 Claude Code 登录、退出或换号。',
+      );
     if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有原生账号。');
-    if (command.type === 'account.status') {
-      await publishAccount(peer);
-      return;
-    }
-    if (command.type === 'account.code') {
-      if (!login?.url) throw new DomainError('login_inactive', '登录流程已结束，请重新获取链接。');
-      login.process.submit(command.code);
-      return;
-    }
-    if (command.type === 'account.cancel') {
-      login?.process.cancel();
-      return;
-    }
-    if (terminals.size || runs.size || mutations.size)
-      throw new DomainError('native_busy', '请先结束原生运行或终端，再管理账号。');
-    const { NativeLogin, accountLogout } = await import('./native-account.ts');
-    if (command.type === 'account.logout') {
-      login?.process.cancel();
-      try {
-        await accountLogout(options.claude.executable);
-      } catch {
-        throw new DomainError('logout_failed', '退出登录失败，请在原生终端执行 /logout 确认。');
-      }
-      await publishAccount();
-      return;
-    }
-    if (!login) {
-      const current: Login = {
-        owner: peer,
-        process: new NativeLogin(
-          options.claude.executable,
-          (succeeded) => {
-            if (login === current) login = undefined;
-            if (closing) return;
-            if (succeeded) completeOnboarding();
-            track(
-              publishAccount(
-                undefined,
-                succeeded || current.process.cancelled
-                  ? undefined
-                  : '登录未完成；请重新获取链接后再试。',
-              ).catch(() => {}),
-            );
-          },
-          (text) => {
-            if (closing || login !== current) return;
-            track(publishAccount(undefined, text).catch(() => {}));
-          },
-        ),
-      };
-      login = current;
-      try {
-        current.url = await current.process.url;
-      } catch {
-        throw new DomainError('login_failed', '官方登录命令没有给出授权链接，请检查 CLI 与网络。');
-      }
-    }
-    await publishAccount();
+    await publishAccount(peer);
   }
 
   // Starts the CLI without a prompt to read its account, model and quota state.
@@ -1612,12 +1556,11 @@ export function createProxyServer(options: ServerOptions) {
     if (seat.door) track(seat.door.close(), tunnelTasks);
     announce();
   }
-  // What belongs to the connection itself ends with it: its terminal, a sign-in it began, its tunnel. The runs
+  // What belongs to the connection itself ends with it: its terminal and its tunnel. The runs
   // of its computer go on. If no other connection of that computer is here they are given `graceMs` for one
   // to come back, unless the client said it was leaving; nothing is replayed for a later connection either way.
   function release(peer: Peer) {
     peers.delete(peer);
-    if (login?.owner === peer) login.process.cancel();
     for (const terminal of terminals.values())
       if (terminal.owner === peer) {
         const task = terminal.process?.close();
@@ -1852,7 +1795,6 @@ export function createProxyServer(options: ServerOptions) {
       closing = true;
       accountMonitor?.close();
       web.close();
-      login?.process.cancel();
       const terminalCleanup = Promise.all(
         [...terminals.values()].map((terminal) => terminal.process?.close()),
       );

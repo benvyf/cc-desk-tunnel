@@ -322,13 +322,16 @@ function renderMonitor() {
   const container = $('monitor-nodes');
   container.replaceChildren();
   const nodes = new Map(data.nodes.map((row) => [row.nodeId, row]));
+  const accountNumbers = new Map(
+    data.accounts.map((account) => [account.id, account.accountNumber]),
+  );
   $('monitor-node-status').replaceChildren();
   for (const nodeId of data.configuredNodes) {
     const row = nodes.get(nodeId);
     const state = !row
       ? '等待首次上报'
       : row.account
-        ? `最近账号 ${row.account.email ?? row.account.id.slice(0, 12)}`
+        ? `最近账号 ${accountNumbers.get(row.account.id) ?? row.account.id.slice(0, 12)} · ${row.account.email ?? '邮箱待上报'}`
         : row.identity?.state === 'signed_out'
           ? '最近确认已退出登录'
           : '最近身份未知（不能据此认定未登录）';
@@ -342,6 +345,7 @@ function renderMonitor() {
   const accounts = data.accounts.filter((account) =>
     JSON.stringify([
       account.id,
+      account.accountNumber,
       account.note,
       account.snapshots.map((row) => [row.nodeId, row.account]),
     ])
@@ -364,9 +368,7 @@ function renderMonitor() {
     const card = element('article', undefined, 'card');
     const latest = [...account.snapshots].sort((a, b) => b.observedAt.localeCompare(a.observedAt));
     const identity = latest.find((row) => row.account?.email)?.account ?? latest[0]?.account;
-    card.append(
-      element('h3', identity?.email ?? `历史账号 ${account.id.slice(0, 12)}（等待邮箱上报）`),
-    );
+    card.append(element('h3', `${account.accountNumber} · ${identity?.email ?? '等待邮箱上报'}`));
     card.append(
       element(
         'p',

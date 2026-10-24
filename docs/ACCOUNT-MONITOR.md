@@ -1,8 +1,8 @@
-> 当前进度：首台 Ubuntu 已由用户安装被动监控，但 VPS 最近核对仍无自然上报；其他五台暂停。服务端受管升级首次接入尚未执行，与监控安装是两回事。以[当前交接文档](../DEVELOPMENT-HANDOFF.md)为准；本文下方部署阶段描述保留作配置参考。
+> 当前进度（2026-10-24）：首台 Ubuntu 被动监控和受管首次接入已完成，用户确认最新客户端连接/会话正常；VPS 缓存已收到1节点1账号自然上报，身份/邮箱/Pro套餐、两个额度窗口及会话usage有数据。其他五台暂停。以[当前交接文档](../DEVELOPMENT-HANDOFF.md)为准；本文下方部署阶段描述保留作配置参考。
 
 # Claude 账号数据被动同步
 
-2026-10-23，Asia/Hong_Kong。初版实现位于 `codex/account-monitor-sync`；与线上审核/密码登录合并后的 `codex/account-monitor-production` 已部署 VPS。首台 Ubuntu 被动监控已由用户安装成功，其余五台暂停；VPS 尚无自然上报，完整状态及备份见 [生产部署记录](ACCOUNT-MONITOR-DEPLOYMENT.md)。本文件描述配置方法，不能据此认为节点已经上报。
+2026-10-23，Asia/Hong_Kong。初版实现位于 `codex/account-monitor-sync`；与线上审核/密码登录合并后的 `codex/account-monitor-production` 已部署 VPS。2026-10-24 首台 Ubuntu 安装及首次自然上报已确认，其余五台暂停；完整状态及备份见[当前交接文档](../DEVELOPMENT-HANDOFF.md)。本文件下方主要描述配置方法。
 
 ## 工作方式
 

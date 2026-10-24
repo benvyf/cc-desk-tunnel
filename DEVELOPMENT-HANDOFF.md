@@ -2,6 +2,44 @@
 
 这是本项目当前工作状态与跨电脑续做的权威入口。旧文档中的 Build 2/3、未接入客户端、没有续期等陈述属于历史阶段；遇到冲突以本文件及 VPS 实际签名索引为准。生产状态是检查时的快照，后续 revision／有效期会自动续期。
 
+### 2026-10-24 新需求：服务端登录、客户端编号（源码已实现，未发布）
+
+用户要求客户端不再管理 Claude 登录、客户端不显示邮箱，控制中心显示编号与邮箱对应；已明确选择在 Ubuntu 终端通过官方 Claude Code 登录。工作区已实现移除客户端登录/退出/授权码入口、服务端拒绝对应远程账号操作、账号身份元数据发送前转为稳定编号（含历史回放），控制中心并列显示/搜索编号和邮箱。编号基于既有完整账号 ID，示例 `CC-7A3F-91C2-6B8D-4E50`，无需新增请求、编号分配服务或数据库迁移。原始监控仍保留邮箱。
+
+后续 review 的两项发布问题已修复：控制中心运行包补入编号依赖；编号解析扩展独立到 `packages/protocol/src/account-display.ts`，保持 `index.ts`、`native-account.ts` 与 Build 2 原始字节一致，旧登录实现保留但账号入口不调用。不修改受管升级白名单和校验规则，可沿用现有程序升级路径；离线回归以已发布 Build 2 摘要为基线，检查模拟新 Build 的兼容性准入、实际运行包完整性及编号往返解析。当前仍未发布生产或生成新的正式安装包。
+
+review 修复后重新通过 Node24 TypeScript、前端生产构建、单次74项相关回归及模拟数据的真实 React/Edge 账号页面检查；没有启动真实 Claude/SDK 会话、调用 JEV/额度接口或改变线上。具体设计、将来登录操作及范围见 `docs/SERVER-MANAGED-ACCOUNTS.md`，验证见 `docs/evidence/server-managed-accounts-2026-10-24.json`，本地界面预览 `.local/account-mode-preview/account-number.png`。本轮未生成/签名/发布新的正式安装包；线上仍是下面已验收的 Windows Build 5、Linux Build 2。后续打包必须提交干净源码并使用新 Build，预计客户端6/服务端3，以实际登记为准，控制中心也需配套部署。不要把源码/UI 预览当成生产已修改。
+
+### 2026-10-24 首台受管接入、正常会话与被动上报成功（当前状态）
+
+用户在 `ubuntu-cc` 执行带进度的首次接入命令后，回传 `Managed server installed. Local readiness passed; no Claude/provider queries made.`，并正常返回 shell。首次受管接入已完成：目标 0.3.6／Linux Build 2／协议 20，安装器通过新容器健康、受管状态及发布描述文件摘要检查后写入 installed.json。此结论依据用户节点安装器成功输出，不是开发机直接 SSH 验收；没有进行真实 Claude／额度／JEV 会话测试。
+
+本次完整冷备份及回滚脚本位于 `/var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3`；离线回滚命令为 `sudo python3 /var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3/rollback.py --rollback /var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3`，仅在需要回滚时使用，当前不执行。保留此前 CLI 异常文件备份及手动中断备份。脱敏证据 `docs/evidence/bootstrap-production-success-2026-10-24.json`。
+
+用户随后确认“已经安装最新的安装包、已经连接上、会话也正常”。这是用户实际使用反馈，未由开发工具主动启动客户端或 Claude 会话，也未独立读取本机客户端构建号。只读核对 VPS 监控缓存于香港时间 2026-10-24 11:14:37 完成：配置节点6、已上报节点1、账号1；首台 `ubuntu-cc` 为 schema 2，identity=identified，邮箱存在，套餐 Claude Pro，quotaStatus=ok，两个额度窗口，已有会话 usage。最新观察香港时间11:13:30，接收11:13:30，额度采集11:13:29。本次读取仅访问 VPS loopback 管理缓存 API，不触发节点或供应商请求，脱敏证据 `docs/evidence/natural-monitor-cache-verification-2026-10-24.json`。
+
+用户在收到管理页核对建议后确认“都正常”。首台的受管安装、用户客户端连接/正常会话、自然被动上报和管理页日常查看基础流程验收通过。此反馈未细分备注保存/刷新持久化，不能扩大为所有边界场景已验收。后续仍需正常使用中确认备注持久化、换号/多节点隔离、未知/过期/错误状态，以及主机重启和后续升级/回滚的实机行为。其余五台继续暂缓，不为填充管理页数据主动调用 Claude／额度／JEV。以下各节保留历史排障过程，旧的“尚未接入/无自然上报”描述以本节为准。
+
+### 2026-10-24 首次接入手动中断与重试准备
+
+官方 CLI 恢复后，用户执行首次受管接入，因终端长时间无输出而按 Ctrl+C，再运行只读诊断。故此前“进程已结束”不能解释为安装自行失败。备份 `/var/lib/cc-server-bootstrap/backup-20261024T025834Z-a7e5958b` 有 `data.tar.gz`、`snapshot-id` 和 `offline-build.log`，无 replacement intent/record/id，也无 installed.json；说明已进入备份后离线构建/验收阶段，尚未记录新容器创建。
+
+用户进一步回传当前容器与原记录的 ID、镜像、名称、Config、HostConfig、Mounts 均一致，网络名称集合一致，running=true、paused=false、health=healthy。因此原服务已恢复，可在保持任务空闲和客户端关闭后重试；无需再运行回滚脚本，也不删除现有备份。只读结果见 `docs/evidence/bootstrap-interruption-recovery-2026-10-24.json`。
+
+本机 `.local/server-bootstrap-next-command.txt` 改为带进度的单行启动命令：保留管理 API 原始启动代码、同一安装器和制品摘要，外层每15秒显示等待时间及 preflight/新备份的文件大小；不读取日志内容，不部署新安装器，也不发起 Claude/JEV/额度请求。本地仅用 sleep/print 合成流程核验进度显示和结束清理。用户随后重试成功，见顶部成功记录；无需重复执行首次接入。
+
+### 2026-10-24 实际 CLI 单字节差异与恢复完成
+
+首台用户重试 bootstrap 后，运行环境校验拒绝继续。只读检查确认 Node v24.21.0、SDK 0.3.286、四个审核 hook、账号数据路径、节点配置格式及只读策略挂载符合要求；实际 CLI 摘要不符。用户节点缓存的官方 2.1.295 包 SHA256 为 `d45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95`，包内文件 SHA256 为 `4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358`；容器文件为 `f66a66b89fa1c229ff9edce0065277a2d0897ebd6710f6d3e8b722c6e1d9ec2e`。用户完整逐字节比对证实仅 offset 194437468 从官方 `9f` 变为 `f5`，两文件均为 256113848 字节。VPS 独立重现此改动得到相同摘要，差异位于 ELF `.bun` 节；原因未知，不能认定恶意或无害，也不能再称实际节点 CLI 已验真且原样。
+
+已准备 `scripts/restore-reviewed-claude-cli.py`：只接受本次异常摘要，验证本地官方缓存包和完整官方文件，在暂停后的空闲检查通过后，备份异常文件、原子替换完整同版本文件并核验 root/0755 与 SHA256；替换后校验失败会恢复旧文件，普通异常、Ctrl+C/SIGTERM 会尝试解除暂停。强制 SIGKILL 或宿主故障无法执行清理，运行时会显示手工解除暂停命令。它不执行 Claude，不读取账号文件、不改审核策略、SDK、网络配置或安装器白名单；备份位于 `/var/lib/cc-cli-official-restore/`。
+
+在 VPS 无网络、无账号挂载、入口仅 `/bin/sleep` 的临时 Docker overlay 容器验证 5/5 通过：真实完整官方文件恢复与备份、重复执行无修改、activeRun 拒绝并解除暂停、替换后注入失败原子回滚、暂存时中断保留旧文件并解除暂停。证据 `docs/evidence/cli-restoration-integration-2026-10-24.json`。本机 `.local/cli-official-restore-commands.txt` 提供两条独立单行命令，避免终端长行截断及 heredoc 粘贴问题；第二条校验源码摘要后执行。
+
+**用户已在真实 Ubuntu 执行 CLI 恢复成功。** 用户回传 `SUCCESS`、官方完整 SHA256 `4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358`、root/0755 校验通过及 `containerRunning: true`，暂停已解除；备份 `/var/lib/cc-cli-official-restore/20261024T025442Z-hi6k94xg`。此为用户节点执行输出，非开发机直接连接验收。差异原因仍未知。生产恢复证据见 `docs/evidence/cli-production-restoration-2026-10-24.json`。后续受管接入亦已成功，见顶部记录。
+
+接入前已只读核对管理中心认证 API 和公网 bootstrap：Linux Build 2 发布有效，制品摘要为 `19f4a60538b1fea67a9f4438d13c4cf75a821bed0b9973d93af7d5c69d852f11`，安装器摘要为 `270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0`。本机 `.local/server-bootstrap-next-command.txt` 保留管理 API 原始启动代码，增加本地进度显示并编码为单行，避免 heredoc/多行粘贴。CLI 恢复和受管接入是两次独立执行，现均有用户成功回传；未新增启动 Claude、JEV 或额度请求。
+
 ### 2026-10-24 首次接入挂载修复补充
 
 用户执行首台 bootstrap 时，在停服前收到 `Expected data and read-only policy bind mounts.`。回传只读 inspect 确认容器仍 running，数据源为 `/srv/cc-desk-tunnel`，审核源为历史正式激活目录 `/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed`，后者正确地只读挂载到容器内 `/etc/claude-code`。安装器此前只允许宿主源 `/etc/claude-code`，遗漏了这个已审查的历史路径。
@@ -46,9 +84,9 @@ VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下
 | 签名下载 | pilot 客户端 Build 5、Linux 服务端 Build 2；版本 0.3.6，协议 20；stable 保持空通道 |
 | 续期 | Windows 与 Linux 各有独立 systemd timer，登记精确源码／制品身份；不会自动推进 Build 或同步上游 |
 | 被动监控代码 | schema 2、邮箱／备注、身份／额度时效、重试与缓存已实现 |
-| 第一台监控接入 | 用户已在 Ubuntu 控制台安装成功；备份见下文。VPS 最近核对仍是 0 个账号、0 个已上报节点，不能声称已自然上报 |
-| 第一台服务端受管升级接入 | 尚未在真实 Ubuntu 执行首次 bootstrap。离线测试和隔离镜像验证不等于实际节点已迁移 |
-| 本机桌面安装 | 新包已提供；本轮未自动给用户电脑安装或升级 |
+| 第一台监控接入 | 用户安装成功，VPS 缓存已收到 ubuntu-cc 自然上报：1账号、1节点，身份/邮箱/Pro套餐、额度和会话usage有数据；备份见下文 |
+| 第一台服务端受管升级接入 | 用户实机首次 bootstrap 成功，Build 2／协议 20，本地就绪通过；用户确认客户端连接和会话正常，主机重启及后续升级/回滚尚待验收 |
+| 本机桌面安装 | 用户确认已安装最新包并成功连接、正常会话；开发工具未自动安装或启动客户端，未独立读取实际客户端构建号 |
 | 其余五台 Ubuntu | 暂缓，只有首台有 Claude 账号；未自动接入、登录、迁移或批量升级 |
 | 大规模账号运营 | 基础字段与账号／节点关系已铺好；真实多账号持续数据、容量和日常操作验收尚待后续 |
 
@@ -157,7 +195,7 @@ Python 测试文件名含点，使用上面的直接执行方式；不要用普�
 - Docker 29.9.1／API 1.56；进程检查用 `docker top CONTAINER -eo pid,args`。缺 PID 的 `-eo comm` 曾导致 daemon HTTP 500。
 - 数据 `/srv/cc-desk-tunnel`，管理员策略 `/etc/claude-code` 只读挂载。
 - 用户已执行的被动监控备份：`/var/lib/cc-monitor-install/backup-20261023T164726Z`。该目录 `rollback.py` 是监控安装回滚，与服务端 bootstrap 回滚不同。
-- 受管服务端 bootstrap 首次尚未执行。仅支持已审查的首台 profile；使用管理中心最新动态生成的命令，不复用聊天中的旧 hash／一次性代码。
+- 受管服务端首次 bootstrap 已成功，Build 2／协议 20。备份 `/var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3`；后续程序升级走 CC 确认流程，首次接入无需重跑。bootstrap 仍仅支持已审查的首台 profile。
 - 已审查官方 CLI 原始 SHA256：`4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358`。原试点没有 CLI stamp，脚本按原始字节、root 所有权和权限验证，不执行 `claude --version`。
 
 首次 bootstrap 会验证已有源码、运行环境和只读审核策略，隔离无网预检后保存冷备份，替换容器时保留配置／挂载／网络／数据。既有镜像可能派生于此前审核镜像，不得因为与老 base ID 不同就直接替换。依赖、持久化、审核 hook 或固定运行环境不兼容时明确要求人工镜像升级；程序更新不自动升级 CLI／SDK。监督程序属于不可变镜像，修它需要对应镜像／首次接入，不能把普通业务程序包视为自动更新了旧镜像监督器。
@@ -165,12 +203,12 @@ Python 测试文件名含点，使用上面的直接执行方式；不要用普�
 ## 8. 接下来按什么顺序做
 
 1. 在新电脑恢复交接 bundle，先看工作树和本文档，核对线上签名索引／CURRENT-RELEASE；不要重复历史发布。
-2. 用户方便操作首台 Ubuntu 时，结束所有任务、关闭 CC，按管理中心“客户端更新 → 配套服务端 → 首次接入命令”执行一次最新 bootstrap。保留本机打印的私有备份路径；失败按实际日志诊断，不读／打印账号文件。
-3. 用户选择安装最新完整桌面包。正常使用 CC，观察已有身份／额度事件是否被动上报；在 VPS 核对邮箱、节点、账号备注、身份／额度状态与时间，确认缓存滞后、退出、未知、错误等状态区分正确。没有自然数据就标为待验证，不为演示主动调用第三方接口。
+2. 首台 Ubuntu 的首次 bootstrap 已完成，保留顶部记录的私有备份与离线回滚命令，无需重跑接入或再次恢复 CLI。
+3. 用户已确认最新完整桌面包连接、会话及管理页查看正常；VPS 已核对到首台真实自然上报的身份/邮箱/套餐、额度及usage，基础流程验收通过。后续在正常使用中核对备注持久化、缓存滞后、退出、未知和错误状态，尚未观察到的状态标为待验证，不为演示主动调用第三方接口。
 4. 在首台完成真实安装、重启、正常使用及失败恢复演练后，再决定其他节点接入；每台先核实真实镜像／源码／版本，独立审核与上报身份，不共用秘密、不自动登录 Claude。
 5. 多账号后续工作：在真实自然样本下核验同账号多节点归并、换号后归属、未知字段和额度缓存隔离、备注持久化；现有邮箱／备注／节点／套餐／组织搜索已实现，再按规模完善筛选、分页、保留策略、容量测试和运维备份。未在此轮实现账号池自动调度、自动换号、批量登录或对第三方额度的主动轮询。
 6. 试点验收后再决定 stable 推广和把完整工作分支推到 GitHub；当前 bundle 是跨电脑继续开发的可用源码来源。
 
 ## 9. 可直接给下一台电脑 Codex 的提示词
 
-> 请继续 CC Desk Tunnel 定制管理中心开发。先完整阅读根目录 DEVELOPMENT-HANDOFF.md，核对分支 codex/account-monitor-production、git status、最近提交以及 VPS 实际发布身份。当前源码通过交接 Git bundle 恢复，不要 reset 到较旧的 GitHub 分支。产品目标是独立页面的账号监控／客户端更新／审核，以及很多账号的清晰管理；只把 Ubuntu 正常使用中已得到的数据被动同步给 VPS，VPS 页面只读缓存。首台监控安装已成功但自然上报待验，服务端受管升级首次 bootstrap 尚未在真实 Ubuntu 执行，其余五台暂停。不要主动调用 Claude／额度／JEV，不启动真实原生终端，不升级 CLI／SDK，不重登／换出口。当前发布 Build 与哈希以本文档、签名索引和 CURRENT-RELEASE 为准，任何新包用新 Build。生产私钥／令牌仅在 VPS 使用，保留审核策略与数据，不执行旧宿主源码重建或历史 .local 激活脚本。请先说明你核对的状态和将处理的下一项，再在现有授权范围继续；无需再次询问已授权的实现方案。
+> 请继续 CC Desk Tunnel 定制管理中心开发。先完整阅读根目录 DEVELOPMENT-HANDOFF.md，核对分支 codex/account-monitor-production、git status、最近提交以及 VPS 实际发布身份。当前源码通过交接 Git bundle 恢复，不要 reset 到较旧的 GitHub 分支。产品目标是独立页面的账号监控／客户端更新／审核，以及很多账号的清晰管理；只把 Ubuntu 正常使用中已得到的数据被动同步给 VPS，VPS 页面只读缓存。首台监控安装和服务端受管首次 bootstrap 均已在真实 Ubuntu 成功（Build 2／协议 20），用户确认最新客户端连接和会话正常；VPS 已收到1节点1账号自然上报，身份/邮箱/Claude Pro套餐、额度及usage有数据。主机重启、特殊状态、多账号及后续升级/回滚尚待实机验收，其余五台暂停。此前 CLI 单字节差异已恢复完整同版本官方文件，原因未知，不要重跑修复或首次接入。不要主动调用 Claude／额度／JEV，不启动真实原生终端，不升级 CLI／SDK，不重登／换出口。当前发布 Build 与哈希以本文档、签名索引和 CURRENT-RELEASE 为准，任何新包用新 Build。生产私钥／令牌仅在 VPS 使用，保留审核策略与数据，不执行旧宿主源码重建或历史 .local 激活脚本。请先说明你核对的状态和将处理的下一项，再在现有授权范围继续；无需再次询问已授权的实现方案。

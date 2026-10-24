@@ -34,6 +34,7 @@ export type MonitorReport = {
 export type MonitorSnapshot = MonitorReport & { receivedAt: string };
 export type MonitorAccountRecord = {
   id: string;
+  accountNumber: string;
   note: string;
   firstSeenAt: string;
   lastSeenAt: string;

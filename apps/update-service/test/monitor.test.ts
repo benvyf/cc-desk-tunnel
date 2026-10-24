@@ -10,6 +10,7 @@ import { createUpdateServer } from '../src/http.ts';
 import { UpdateStore } from '../src/store.ts';
 import { AccountMonitor } from '../../server/src/account-monitor.ts';
 import { MonitorStore } from '../src/monitor.ts';
+import { accountNumberFromId } from '../../../packages/protocol/src/account-number.ts';
 
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
 const admin = 'test_admin_123456789012345678901234';
@@ -135,6 +136,7 @@ test('account registry preserves switches, node associations and administrator n
   assert.deepEqual(data.configuredNodes, ['node-1', 'node-2']);
   assert.equal(data.accounts.length, 2);
   const account = data.accounts.find((row: any) => row.id === a.account.id);
+  assert.equal(account.accountNumber, accountNumberFromId(a.account.id));
   assert.equal(account.note, '主账号 <img src=x>');
   assert.equal(account.snapshots.length, 2);
   assert.deepEqual(
@@ -148,6 +150,10 @@ test('account registry preserves switches, node associations and administrator n
   await f.restart();
   data = await (await f.get()).json();
   assert.equal(data.accounts.find((row: any) => row.id === a.account.id).note, account.note);
+  assert.equal(
+    data.accounts.find((row: any) => row.id === a.account.id).accountNumber,
+    account.accountNumber,
+  );
   assert.equal(data.accounts.length, 2);
 });
 

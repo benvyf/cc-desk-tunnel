@@ -38,7 +38,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     name: '账号与额度',
     group: 'Claude Code',
     icon: UserRound,
-    words: '登录 退出 订阅 用量 调用日志 重置',
+    words: '编号 服务端管理 订阅 用量 调用日志 重置',
   },
   {
     id: 'claude',

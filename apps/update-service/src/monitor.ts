@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import { join } from 'node:path';
+import { accountNumberFromId } from '../../../packages/protocol/src/account-number.ts';
 import {
   validateMonitorReport,
   type MonitorReport,
@@ -161,6 +162,7 @@ export class MonitorStore {
         .all()
         .map((row) => ({
           id: String(row.account_id),
+          accountNumber: accountNumberFromId(String(row.account_id)),
           note: String(row.note),
           firstSeenAt: String(row.first_seen_at),
           lastSeenAt: String(row.last_seen_at),
