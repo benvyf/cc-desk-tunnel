@@ -13,7 +13,6 @@ import {
   ArrowDown,
   ArrowUpToLine,
   Bot,
-  Spark,
   Check,
   ChevronRight,
   FileCode,
@@ -38,7 +37,7 @@ import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import { conversation } from './transcript.ts';
 import { usePrefs } from './prefs.ts';
-import { thinkingPreview } from './transcriptView.ts';
+import ThinkingAccordion from './ThinkingAccordion.tsx';
 import type { TranscriptItem, Turn, Work } from './transcript.ts';
 import { CopyButton, copyText } from './copy.tsx';
 import { messageTime } from './messageTime.ts';
@@ -207,44 +206,33 @@ function WorkItems({
   active,
   live,
   preview,
+  until,
 }: {
   work: Work;
   active: boolean;
   live: Live;
   preview?: boolean;
+  until?: string;
 }) {
   return (
     <>
-      {work.items.map((item) =>
-        item.kind === 'tool' ? (
+      {work.items.map((item, index) => {
+        const running = active && index === work.items.length - 1 && !until;
+        return item.kind === 'tool' ? (
           <ToolRow key={item.id} tool={item} active={active} live={live} />
         ) : (
-          <Fold
-            key={item.id}
-            className="tool thinking-block"
-            summary={
-              <span className="tool-heading">
-                <Spark />
-                <span className="tool-verb">思考</span>
-                {preview && (
-                  <span className="thinking-preview" data-search-ignore>
-                    {thinkingPreview(item.text)}
-                  </span>
-                )}
-              </span>
-            }
-          >
+          <ThinkingAccordion key={item.id} text={item.text} running={running} preview={preview}>
             {() => (
               <div
-                className={`message-content tool-detail${active ? ' streaming' : ''}`}
+                className={`message-content tool-detail${running ? ' streaming' : ''}`}
                 data-search-content
               >
-                <Rich text={item.text} streaming={active} />
+                <Rich text={item.text} streaming={running} />
               </div>
             )}
-          </Fold>
-        ),
-      )}
+          </ThinkingAccordion>
+        );
+      })}
     </>
   );
 }
@@ -254,11 +242,13 @@ function WorkGroup({
   active,
   latest,
   live,
+  until,
 }: {
   work: Work;
   active: boolean;
   latest: boolean;
   live: Live;
+  until?: string;
 }) {
   const { label, waiting, running, started, ended } = summarize(work, active, latest);
   return (
@@ -273,7 +263,7 @@ function WorkGroup({
         </span>
       }
     >
-      {() => <WorkItems work={work} active={active} live={live} />}
+      {() => <WorkItems work={work} active={active} live={live} until={until} />}
     </Fold>
   );
 }
@@ -387,11 +377,13 @@ function TurnView({
   const expanded = usePrefs().view.mode === 'expanded';
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
   const steps = () =>
-    turn.steps.map((step, index) =>
-      step.kind === 'work' ? (
+    turn.steps.map((step, index) => {
+      const next = turn.steps[index + 1] ?? turn.answer;
+      const until = (next?.kind === 'work' ? next.items[0].at : next?.at) ?? turn.endedAt;
+      return step.kind === 'work' ? (
         expanded ? (
           <div key={step.id} className="work-flat">
-            <WorkItems work={step} active={active} live={live} preview />
+            <WorkItems work={step} active={active} live={live} until={until} preview />
           </div>
         ) : (
           <WorkGroup
@@ -400,12 +392,13 @@ function TurnView({
             active={active}
             latest={index === turn.steps.length - 1}
             live={live}
+            until={until}
           />
         )
       ) : (
         <Message key={step.id} item={step} native={native} streaming={active} />
-      ),
-    );
+      );
+    });
   return (
     <>
       {turn.question?.continued ? (

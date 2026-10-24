@@ -238,8 +238,9 @@ test('streaming prose uses ordinary wrapping until the turn completes', async ({
   );
   await page.locator('.thinking-block > summary').click();
   const thinking = page.locator('.thinking-block .message-content');
+  // The answer has already begun in this fixture; only the trailing live stage streams.
   expect(await thinking.locator('p').evaluate((node) => getComputedStyle(node).textWrapStyle)).toBe(
-    'auto',
+    'pretty',
   );
   finish();
   await expect(content).not.toHaveClass(/streaming/);

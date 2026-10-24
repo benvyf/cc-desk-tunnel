@@ -83,6 +83,8 @@
   --cds-dur-slow: 450ms;
   --cds-stream-reveal: 90ms;
   --cds-stream-stagger: 30ms;
+  --cds-thinking-cycle: 1200ms;
+  --cds-thinking-stagger: 150ms;
   --cds-ease-out: cubic-bezier(0.165, 0.84, 0.44, 1);
   --cds-ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
   --cds-ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
@@ -2301,14 +2303,127 @@ details[open] > summary > .fold-chevron {
   overflow-wrap: anywhere;
   word-break: normal;
 }
-.thinking-block:has(.thinking-preview):not([open]) > summary,
-.thinking-block:has(.thinking-preview):not([open]) .tool-heading {
+.thinking-block {
+  margin: 6px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: var(--surface-1);
+  color: var(--muted);
+  overflow: clip;
+}
+.thinking-block > summary {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: inherit;
+  justify-content: space-between;
+}
+.thinking-block > summary:hover {
+  background: var(--hover);
+}
+.thinking-block > summary:focus-visible {
+  outline-offset: -3px;
+}
+.thinking-block > summary .tool-heading {
+  flex: 1;
+  flex-wrap: wrap;
   align-items: flex-start;
   line-height: var(--leading-caption);
+  column-gap: 7px;
+  row-gap: 0;
 }
-.thinking-block:has(.thinking-preview):not([open]) > summary > svg.app-icon,
-.thinking-block:has(.thinking-preview):not([open]) .tool-heading > svg.app-icon {
-  margin-top: calc((1lh - var(--icon-xs)) / 2);
+.thinking-block .thinking-preview {
+  flex-basis: 100%;
+  height: auto;
+  interpolate-size: allow-keywords;
+  margin-top: 4px;
+  margin-left: 25px;
+  color: var(--muted);
+  transition:
+    height var(--cds-dur-sheet) var(--cds-ease-snap),
+    margin-top var(--cds-dur-sheet) var(--cds-ease-snap),
+    opacity var(--cds-dur-sheet) var(--cds-ease-snap);
+}
+.thinking-block .thinking-indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  width: 18px;
+  height: calc(1em * var(--leading-caption));
+  flex: none;
+}
+.thinking-indicator > span {
+  width: 3px;
+  height: 3px;
+  border-radius: var(--radius-full);
+  background: currentColor;
+}
+.thinking-block[data-thinking='active'] > summary .tool-heading {
+  color: var(--accent);
+}
+.thinking-block[data-thinking='active'] .thinking-indicator > span {
+  animation-name: motion-thinking-wave;
+  animation-duration: var(--cds-thinking-cycle);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+}
+.thinking-indicator > span:nth-child(2) {
+  animation-delay: var(--cds-thinking-stagger);
+}
+.thinking-indicator > span:nth-child(3) {
+  animation-delay: calc(2 * var(--cds-thinking-stagger));
+}
+.thinking-block > summary > .fold-chevron {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
+  align-self: flex-start;
+  margin-top: calc((1em * var(--leading-caption) - var(--icon-xs)) / 2);
+  transform: rotate(90deg);
+}
+.thinking-block[open] > summary > .fold-chevron {
+  transform: rotate(-90deg);
+}
+.thinking-block::details-content {
+  transition: content-visibility var(--cds-dur-sheet) allow-discrete;
+}
+.thinking-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--cds-dur-sheet) var(--cds-ease-snap);
+}
+.thinking-block[open] .thinking-grid {
+  grid-template-rows: 1fr;
+}
+@starting-style {
+  .thinking-block[open] .thinking-grid {
+    grid-template-rows: 0fr;
+  }
+}
+.thinking-content {
+  min-height: 0;
+  overflow: hidden;
+}
+.thinking-content > .tool-detail.message-content {
+  margin: 0;
+  max-width: none;
+  padding: 10px 12px;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
+}
+@keyframes motion-thinking-wave {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
 }
 .turn-process > summary .failed {
   color: var(--fail);
@@ -2318,7 +2433,9 @@ details[open] > summary > .fold-chevron {
   white-space: nowrap;
 }
 .thinking-block[open] .thinking-preview {
-  display: none;
+  height: 0;
+  margin-top: 0;
+  opacity: 0;
 }
 .tool-heading > svg.app-icon {
   color: var(--tool-icon);
@@ -4420,7 +4537,15 @@ dialog:has(.web-settings-form) {
   .settings-workspace,
   .stream-reveal,
   .stream-grapheme,
+  .thinking-indicator > span,
   .background-tasks li {
     animation: none !important;
+  }
+  /* Zero durations affect future transitions; remove running thinking transitions as well. */
+  .thinking-block::details-content,
+  .thinking-grid,
+  .thinking-block .thinking-preview,
+  .thinking-block > summary > .fold-chevron {
+    transition: none;
   }
 }
