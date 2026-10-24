@@ -6,8 +6,9 @@ import { test } from 'node:test';
 import { questions } from '../src/jev.ts';
 import { ModerationStore } from '../src/moderation.ts';
 import { NodeReviews } from '../src/moderation-nodes.ts';
+import { nativeReviewText } from '../../server/src/native-moderation-hook.ts';
 
-test('unchanged native input reuses approval across hooks; new input, policy and session require review', async (t) => {
+test('exact input shares approval across entry points; new input, policy and session require review', async (t) => {
   const root = await mkdtemp(join(tmpdir(), 'cc-native-dedup-'));
   await mkdir(join(root, 'private'));
   const store = await ModerationStore.open(root);
@@ -70,7 +71,11 @@ test('unchanged native input reuses approval across hooks; new input, policy and
   const changed = { ...value, text: value.text + '\nnew user answer', requestId: 'new-prompt' };
   const concurrent = await Promise.all([
     reviews.check('node-1', changed, store),
-    reviews.check('node-1', { ...changed, requestId: 'new-batch', kind: 'approval.reply' }, store),
+    reviews.check(
+      'node-1',
+      { ...changed, requestId: 'new-batch', deviceId: 'desktop', kind: 'approval.reply' },
+      store,
+    ),
   ]);
   assert.deepEqual(concurrent[0], concurrent[1]);
   assert.equal(calls, 2);
@@ -81,6 +86,15 @@ test('unchanged native input reuses approval across hooks; new input, policy and
   );
   await reviews.check('node-2', { ...changed, nodeId: 'node-2', requestId: 'node-2' }, store);
   assert.equal(calls, 4);
+  assert.deepEqual(
+    await reviews.check(
+      'node-1',
+      { ...value, requestId: 'return-first', deviceId: 'desktop' },
+      store,
+    ),
+    first,
+  );
+  assert.equal(calls, 4, 'A -> B -> A retains the earlier exact approval');
   store.save({ ...edit(), apiKey: null }, 'fixture');
   // Reusing the exact request ID cannot retain an approval across a policy revision.
   await reviews.check('node-1', changed, store);
@@ -95,7 +109,7 @@ test('unchanged native input reuses approval across hooks; new input, policy and
     { ...changed, requestId: 'ordinary-2', deviceId: 'desktop' },
     store,
   );
-  assert.equal(calls, 7, 'Ordinary user requests keep their existing audit behavior');
+  assert.equal(calls, 5, 'Ordinary and native entry points share the same exact approval');
   mode = 'deny';
   const denied = { ...changed, text: 'synthetic denied input', requestId: 'denied-1' };
   assert.equal((await reviews.check('node-1', denied, store)).allowed, false);
@@ -103,7 +117,7 @@ test('unchanged native input reuses approval across hooks; new input, policy and
     (await reviews.check('node-1', { ...denied, requestId: 'denied-2' }, store)).allowed,
     false,
   );
-  assert.equal(calls, 9, 'Denied inputs never become reusable approvals');
+  assert.equal(calls, 7, 'Denied inputs never become reusable approvals');
   mode = 'error';
   const failure = { ...changed, text: 'synthetic unavailable input', requestId: 'error-1' };
   assert.equal((await reviews.check('node-1', failure, store)).allowed, false);
@@ -112,5 +126,152 @@ test('unchanged native input reuses approval across hooks; new input, policy and
     (await reviews.check('node-1', { ...failure, requestId: 'error-2' }, store)).allowed,
     true,
   );
-  assert.equal(calls, 11, 'Errors cannot be cached as approvals');
+  assert.equal(calls, 9, 'Errors cannot be cached as approvals');
+});
+
+test('desktop input and native hooks share exact content, while extra history and feedback require review', async () => {
+  const reviews = new NodeReviews();
+  let calls = 0;
+  const store = {
+    config: () => ({ revision: 6 }),
+    review: async () => ({ id: `fixture-${++calls}`, allowed: true }),
+  } as unknown as ModerationStore;
+  const value = {
+    nodeId: 'node',
+    requestId: 'desktop',
+    sessionId: 'session',
+    deviceId: 'desktop',
+    kind: 'message.send',
+    text: 'Current question',
+  };
+  const first = await reviews.check('node', value, store);
+  const hook = {
+    session_id: 'session',
+    transcript_path: '/unused',
+    hook_event_name: 'UserPromptSubmit',
+    prompt: value.text,
+  };
+  assert.deepEqual(
+    await reviews.check(
+      'node',
+      { ...value, ...nativeReviewText(hook, ''), requestId: 'native', deviceId: 'native-terminal' },
+      store,
+    ),
+    first,
+  );
+  assert.equal(calls, 1);
+  const history = JSON.stringify({ type: 'user', message: { content: 'Earlier context' } });
+  await reviews.check(
+    'node',
+    {
+      ...value,
+      ...nativeReviewText(hook, history),
+      requestId: 'with-history',
+      deviceId: 'native-terminal',
+    },
+    store,
+  );
+  assert.equal(calls, 2, 'A single-message approval cannot authorize a larger history');
+  const row = (type: string, content: unknown) => JSON.stringify({ type, message: { content } });
+  const answers = [
+    history,
+    row('assistant', [
+      { type: 'tool_use', id: 'a', name: 'AskUserQuestion' },
+      { type: 'tool_use', id: 'b', name: 'AskUserQuestion' },
+    ]),
+    row('user', [
+      { type: 'tool_result', tool_use_id: 'a', content: 'Answer A' },
+      { type: 'tool_result', tool_use_id: 'b', content: 'Answer B' },
+    ]),
+  ].join('\n');
+  const batch = {
+    ...hook,
+    hook_event_name: 'PostToolBatch',
+    tool_calls: [
+      { tool_use_id: 'a', tool_name: 'AskUserQuestion', tool_response: 'Answer A' },
+      { tool_use_id: 'b', tool_name: 'AskUserQuestion', tool_response: 'Answer B' },
+    ],
+  };
+  const checked = await reviews.check(
+    'node',
+    {
+      ...value,
+      ...nativeReviewText(batch, answers),
+      requestId: 'answers',
+      deviceId: 'native-terminal',
+    },
+    store,
+  );
+  const after =
+    answers +
+    '\n' +
+    row('user', [{ type: 'tool_result', tool_use_id: 'c', content: 'ordinary output' }]);
+  const ordinary = {
+    ...batch,
+    tool_calls: [{ tool_use_id: 'c', tool_name: 'Read', tool_response: 'ordinary output' }],
+  };
+  assert.deepEqual(
+    await reviews.check(
+      'node',
+      {
+        ...value,
+        ...nativeReviewText(ordinary, after),
+        requestId: 'after-answers',
+        deviceId: 'native-terminal',
+      },
+      store,
+    ),
+    checked,
+  );
+  assert.equal(calls, 3, 'Persisted answers and the following tool batch pay for one review');
+  const amended = after + '\n' + row('user', 'New permission amendment');
+  await reviews.check(
+    'node',
+    {
+      ...value,
+      ...nativeReviewText(ordinary, amended),
+      requestId: 'amended',
+      deviceId: 'native-terminal',
+    },
+    store,
+  );
+  assert.equal(calls, 4, 'New user permission text must still be reviewed');
+});
+
+test('content approvals are bounded and keep recently used entries', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
+  const reviews = new NodeReviews();
+  let calls = 0;
+  const store = {
+    config: () => ({ revision: 1 }),
+    review: async () => ({ id: `fixture-${++calls}`, allowed: true }),
+  } as unknown as ModerationStore;
+  let request = 0;
+  const check = (text: string) => {
+    t.mock.timers.tick(300001); // Expire request-ID entries, independently of the content cache.
+    return reviews.check(
+      'node',
+      {
+        nodeId: 'node',
+        sessionId: 'session',
+        deviceId: 'desktop',
+        kind: 'message.send',
+        requestId: `request-${++request}`,
+        text,
+      },
+      store,
+    );
+  };
+  const first = await check('text-0');
+  for (let n = 1; n < 512; n++) await check(`text-${n}`);
+  assert.equal(calls, 512);
+  assert.deepEqual(await check('text-0'), first);
+  await check('text-512');
+  assert.deepEqual(
+    await check('text-0'),
+    first,
+    'A recently used approval survives capacity eviction',
+  );
+  await check('text-1');
+  assert.equal(calls, 514, 'The oldest approval is evicted and reviewed again');
 });

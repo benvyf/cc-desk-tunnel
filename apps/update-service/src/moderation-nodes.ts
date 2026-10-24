@@ -59,11 +59,11 @@ export class NodeReviews {
       result: Promise<{ id: string; allowed: boolean }>;
     }
   >();
-  // Native hooks are separate processes and generate a fresh request ID for every tool batch.
-  // Keep the last approved input per native session, not a writable approval file on Ubuntu.
-  private nativeContent = new Map<
+  // All entry points review text using the same policy. Share exact approvals within a
+  // node/session, retaining a bounded set so A -> B -> A does not review A again.
+  private content = new Map<
     string,
-    { hash: string; revision: number; result: Promise<{ id: string; allowed: boolean }> }
+    { revision: number; result: Promise<{ id: string; allowed: boolean }> }
   >();
   async check(nodeId: string, value: unknown, store: ModerationStore) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -94,10 +94,10 @@ export class NodeReviews {
       if (previous.revision === revision) return previous.result;
     }
     if (!previous && this.recent.size >= 512) throw new UpdateError(429, 'Review service busy.');
-    const context = v.deviceId === 'native-terminal' ? `${nodeId}:${v.sessionId}` : undefined;
     const textHash = createHash('sha256').update(v.text).digest('hex');
-    const cached = context ? this.nativeContent.get(context) : undefined;
-    const reuse = cached?.revision === revision && cached.hash === textHash;
+    const context = `${nodeId}:${v.sessionId}:${textHash}`;
+    const cached = this.content.get(context);
+    const reuse = cached?.revision === revision;
     const result = reuse
       ? cached.result
       : store
@@ -108,13 +108,15 @@ export class NodeReviews {
             inputKind: v.kind,
           })
           .then(({ id, allowed }) => ({ id, allowed }));
-    if (context && !reuse) {
-      const entry = { hash: textHash, revision, result };
-      this.nativeContent.set(context, entry);
-      if (this.nativeContent.size > 512)
-        this.nativeContent.delete(this.nativeContent.keys().next().value!);
+    if (reuse) {
+      this.content.delete(context);
+      this.content.set(context, cached);
+    } else {
+      const entry = { revision, result };
+      this.content.set(context, entry);
+      if (this.content.size > 512) this.content.delete(this.content.keys().next().value!);
       const forget = () => {
-        if (this.nativeContent.get(context) === entry) this.nativeContent.delete(context);
+        if (this.content.get(context) === entry) this.content.delete(context);
       };
       void result.then((decision) => {
         if (!decision.allowed) forget();

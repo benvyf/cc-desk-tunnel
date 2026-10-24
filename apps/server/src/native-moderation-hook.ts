@@ -62,6 +62,7 @@ export function nativeReviewText(input: HookInput, transcript: string) {
   const parts: string[] = [];
   const failures = new Set<string>();
   const results = new Set<string>();
+  const reviewedResults = new Map<string, string>();
   for (const row of rows) {
     const blocks = row.message?.content;
     if (row.type === 'assistant' && Array.isArray(blocks)) {
@@ -78,8 +79,11 @@ export function nativeReviewText(input: HookInput, transcript: string) {
       else if (block.type === 'tool_result' && block.tool_use_id) {
         results.add(block.tool_use_id);
         if (block.is_error) failures.add(block.tool_use_id);
-        if (block.is_error || interactive.has(tools.get(block.tool_use_id) ?? ''))
-          parts.push(text(block.content));
+        if (block.is_error || interactive.has(tools.get(block.tool_use_id) ?? '')) {
+          const content = text(block.content);
+          if (reviewedResults.get(block.tool_use_id) !== content) parts.push(content);
+          reviewedResults.set(block.tool_use_id, content);
+        }
       } else throw new Error('Unsupported native user content');
     }
   }
@@ -96,7 +100,13 @@ export function nativeReviewText(input: HookInput, transcript: string) {
     // Permission-dialog amendments can add a new user message after a successful tool result,
     // without UserPromptSubmit or an error/interactive tool. Review user history at every batch.
     // Ordinary file/tool output itself remains outside this text-input gate.
-    for (const reply of replies) parts.push(text(reply.tool_response));
+    for (const reply of replies) {
+      const content = text(reply.tool_response);
+      // The persisted result is already in parts. Retain differing hook content:
+      // it can contain user feedback that must not be silently omitted.
+      if (reviewedResults.get(reply.tool_use_id) !== content) parts.push(content);
+      reviewedResults.set(reply.tool_use_id, content);
+    }
   }
   if (['UserPromptSubmit', 'UserPromptExpansion'].includes(input.hook_event_name)) {
     if (typeof input.prompt !== 'string' || !input.prompt.trim())

@@ -174,6 +174,77 @@ test('native batch waits for its persisted result and amendment; stale history c
   }
 });
 
+test('a batch reviews each persisted reply once and preserves different hook feedback', () => {
+  const row = (type: string, content: unknown) => JSON.stringify({ type, message: { content } });
+  const history = [
+    row('user', 'User question'),
+    row('assistant', [
+      { type: 'tool_use', id: 'answer-a', name: 'AskUserQuestion' },
+      { type: 'tool_use', id: 'answer-b', name: 'AskUserQuestion' },
+      { type: 'tool_use', id: 'failure-c', name: 'Bash' },
+    ]),
+    row('user', [
+      { type: 'tool_result', tool_use_id: 'answer-a', content: 'First answer' },
+      { type: 'tool_result', tool_use_id: 'answer-b', content: 'Second answer' },
+      {
+        type: 'tool_result',
+        tool_use_id: 'failure-c',
+        content: 'Permission feedback',
+        is_error: true,
+      },
+    ]),
+  ].join('\n');
+  const batch = {
+    ...input,
+    hook_event_name: 'PostToolBatch',
+    tool_calls: [
+      { tool_use_id: 'answer-a', tool_name: 'AskUserQuestion', tool_response: 'First answer' },
+      {
+        tool_use_id: 'answer-b',
+        tool_name: 'AskUserQuestion',
+        tool_response: [{ type: 'text', text: 'Second answer' }],
+      },
+      { tool_use_id: 'failure-c', tool_name: 'Bash', tool_response: 'Permission feedback' },
+    ],
+  };
+  const approved = 'User question\n\nFirst answer\n\nSecond answer\n\nPermission feedback';
+  assert.equal(nativeReviewText(batch, history).text, approved);
+  const after =
+    history +
+    '\n' +
+    row('user', [{ type: 'tool_result', tool_use_id: 'read-d', content: 'Ordinary file output' }]);
+  assert.equal(
+    nativeReviewText(
+      {
+        ...batch,
+        tool_calls: [
+          { tool_use_id: 'read-d', tool_name: 'Read', tool_response: 'Ordinary file output' },
+        ],
+      },
+      after,
+    ).text,
+    approved,
+    'A later ordinary batch must retain the exact reviewed text',
+  );
+  assert.equal(
+    nativeReviewText(
+      {
+        ...batch,
+        tool_calls: [
+          ...batch.tool_calls,
+          {
+            tool_use_id: 'answer-a',
+            tool_name: 'AskUserQuestion',
+            tool_response: 'BLOCK_NEW_FEEDBACK',
+          },
+        ],
+      },
+      history,
+    ).text,
+    approved + '\n\nBLOCK_NEW_FEEDBACK',
+  );
+});
+
 test('native prompt expansion stays restricted; compaction is reviewed and invalid or oversized history refuses', () => {
   assert.throws(
     () =>
