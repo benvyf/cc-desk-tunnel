@@ -690,12 +690,14 @@ function About({
   service,
   adapterName,
   updates,
+  serverUpdate,
   showNotes,
 }: {
   version: string;
   service: string | null;
   adapterName: string;
   updates: MenuItem[];
+  serverUpdate?: MenuItem;
   showNotes: (version: string) => void;
 }) {
   return (
@@ -744,6 +746,24 @@ function About({
                 ))}
                 {updates.length === 0 && <span className="setting-value">没有可用的更新操作</span>}
               </span>
+            </Row>
+          </div>
+        )}
+        {serverUpdate && (
+          <div className="card">
+            <Row
+              title="配套服务端更新"
+              detail="协议相同也可按 Build 升级。检查前先断开当前连接，确认目标后安装；升级完成后手动连接。"
+            >
+              <button
+                type="button"
+                className="button"
+                disabled={serverUpdate.disabled}
+                onClick={serverUpdate.run}
+              >
+                {serverUpdate.icon}
+                {serverUpdate.label}
+              </button>
             </Row>
           </div>
         )}
@@ -805,6 +825,7 @@ export default function SettingsPage({
   service,
   adapterName,
   updates,
+  serverUpdate,
   showNotes,
   back,
   browser = false,
@@ -826,6 +847,7 @@ export default function SettingsPage({
   service: string | null;
   adapterName: string;
   updates: MenuItem[];
+  serverUpdate?: MenuItem;
   showNotes: (version: string) => void;
 }) {
   const [search, setSearch] = useState('');
@@ -912,6 +934,7 @@ export default function SettingsPage({
             service={service}
             adapterName={adapterName}
             updates={updates}
+            serverUpdate={serverUpdate}
             showNotes={showNotes}
           />
         )}

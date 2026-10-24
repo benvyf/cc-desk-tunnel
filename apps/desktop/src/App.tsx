@@ -164,6 +164,8 @@ export function App({
   // One request at a time from this window; `refreshing` is the slower native status read.
   const [busy, setBusy] = useState(false);
   const [serverUpgradeWorking, setServerUpgradeWorking] = useState(false);
+  const [serverUpgradeRequested, setServerUpgradeRequested] = useState(false);
+  const serverUpgradeChecked = useCallback(() => setServerUpgradeRequested(false), []);
   const [refreshing, setRefreshing] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
   // Which of this computer's settings is open on the login page.
@@ -612,6 +614,7 @@ export function App({
     });
   }
   function disconnect() {
+    setServerUpgradeRequested(false);
     if (browser) {
       void act(browser.logout);
       return;
@@ -619,6 +622,23 @@ export function App({
     client.disconnect();
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
+  }
+  function openServerUpgrade() {
+    if (
+      !window.confirm(
+        '检查服务端更新需要先断开当前连接。请结束任务并关闭其他 CC 连接；升级完成后手动连接。继续？',
+      )
+    )
+      return;
+    void act(async () => {
+      // Keep credentials only in this window for the upgrade. Ordinary disconnect still clears
+      // unremembered credentials; no additional login information is saved to disk here.
+      signedIn.current = false;
+      setServerUpgradeRequested(true);
+      client.disconnect();
+      setLocalSettings(null);
+      await window.desktop!.disconnectProxy();
+    });
   }
   // Moves the window to a place and remembers it; going back or forward revisits without adding to the trail.
   function visit(next: Place, record = true) {
@@ -1104,6 +1124,20 @@ export function App({
     ...(upgradeItem ? [upgradeItem] : []),
     ...(serviceUpdate ? [serviceUpdate] : []),
   ];
+  const managedServerUpdate: MenuItem | undefined =
+    window.desktop?.managedServer && form.mode === 'remote' && nativeMode
+      ? {
+          label: '检查服务端更新',
+          icon: <Download />,
+          disabled:
+            !connected ||
+            busy ||
+            refreshing ||
+            !!terminalSessionId ||
+            state.sessions.some((item) => !!item.activeRun),
+          run: openServerUpgrade,
+        }
+      : undefined;
   // The rail shows its button only for an update that exists, not for the standing offer to look for one.
   const pendingUpdate = upgrade
     ? `客户端可升级到 ${upgrade}`
@@ -1136,6 +1170,7 @@ export function App({
       run: () => open('settings', nativeMode && host.nativeSettings ? 'claude' : 'general'),
     },
     { label: '帮助', icon: <CircleHelp />, run: () => open('settings', 'help') },
+    ...(managedServerUpdate ? [managedServerUpdate] : []),
     {
       label: browser ? '退出登录' : '断开连接',
       icon: <LogOut />,
@@ -1365,11 +1400,13 @@ export function App({
               : currentError
           }
           managedServer={
-            window.desktop && form.mode === 'remote' && state.mismatch ? (
+            window.desktop?.managedServer && form.mode === 'remote' ? (
               <ManagedServerUpgrade
                 form={form}
                 disabled={state.status === 'connecting' || proxyConnecting || busy}
                 activity={setServerUpgradeWorking}
+                autoCheck={serverUpgradeRequested}
+                checked={serverUpgradeChecked}
               />
             ) : undefined
           }
@@ -1488,6 +1525,7 @@ export function App({
           service={state.service}
           adapterName={adapterName}
           updates={host.serviceManagement ? updates : []}
+          serverUpdate={managedServerUpdate}
           showNotes={setNotes}
           account={
             <AccountPanel

@@ -12,7 +12,7 @@ const bootstrap =
   '旧服务端需首次接入：打开 CC管理中心的客户端更新页，在 Ubuntu 控制台运行一次接入命令；之后可从客户端升级。';
 const explanations: Record<ServerCheck['reason'], string> = {
   available: '',
-  current: '服务端已是当前可用构建。协议仍不匹配时，请安装最新客户端；不能降级服务端。',
+  current: '服务端已是当前可用构建，无需升级。若连接时仍提示协议不匹配，请安装匹配的最新客户端。',
   'protocol-unavailable':
     '没有更高且匹配本客户端协议的服务端构建。请从 CC管理中心获取最新客户端；不能降级服务端。',
   'manual-image-upgrade': '此版本涉及运行环境或数据兼容性变更，需要管理员在 Ubuntu 升级配套镜像。',
@@ -35,10 +35,14 @@ export default function ManagedServerUpgrade({
   form,
   disabled,
   activity,
+  autoCheck = false,
+  checked,
 }: {
   form: ConnectionForm;
   disabled: boolean;
   activity: (working: boolean) => void;
+  autoCheck?: boolean;
+  checked?: () => void;
 }) {
   const [candidate, setCandidate] = useState<ServerCheck['candidate']>(null);
   const [working, setWorking] = useState(false);
@@ -81,8 +85,7 @@ export default function ManagedServerUpgrade({
       setHelp(
         result.reason === 'disabled' ||
           result.reason === 'manual-image-upgrade' ||
-          result.reason === 'protocol-unavailable' ||
-          result.reason === 'current',
+          result.reason === 'protocol-unavailable',
       );
     } catch (error) {
       if (own !== generation.current) return;
@@ -95,6 +98,12 @@ export default function ManagedServerUpgrade({
       }
     }
   }
+  useEffect(() => {
+    if (autoCheck && !disabled) {
+      checked?.();
+      void check();
+    }
+  }, [autoCheck, disabled]);
   async function install() {
     if (!candidate) return;
     const own = ++generation.current,
@@ -148,14 +157,18 @@ export default function ManagedServerUpgrade({
         disabled={disabled || working}
         onClick={() => void check()}
       >
-        升级配套服务端
+        检查服务端更新
       </button>
+      <p className="muted">
+        按构建号检查配套服务端；协议相同也可升级。先结束任务并关闭其他 CC 连接，确认目标后才安装。
+      </p>
       {text && <p role="status">{text}</p>}
       {candidate && (
         <>
           <p>
             目标版本 {candidate.appVersion} · Build {candidate.build} · 协议 {candidate.protocol}
           </p>
+          <p className="muted">SHA256：{candidate.sha256}</p>
           <p>升级需要重启服务。确认后才会安装，完成后请手动连接。</p>
           <button
             className="button login-submit"
