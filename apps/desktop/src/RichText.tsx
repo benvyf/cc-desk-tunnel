@@ -8,6 +8,7 @@ import { isValidElement, memo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { FileCode, Eye } from './icons.tsx';
 import { CopyButton } from './copy.tsx';
+import { revealStreaming } from './streaming.ts';
 
 // A finished drawing in a block of `svg` is shown as the picture it is, its source one click away. As an image
 // it runs no script and loads nothing from elsewhere.
@@ -54,6 +55,9 @@ function CodeBlock({ children }: { children?: ReactNode }) {
 
 const components: Components = {
   pre: CodeBlock,
+  span: ({ node, ...props }) => (
+    <span key={String(node?.properties['data-reveal-key'] ?? '')} {...props} />
+  ),
   a: ({ children, ...props }) => (
     <a {...props} target="_blank" rel="noopener noreferrer">
       {children}
@@ -125,15 +129,31 @@ const rehypePlugins: [typeof rehypeKatex, { strict: boolean }][] = [
   [rehypeKatex, { strict: false }],
 ];
 
-export default memo(function RichText({ text }: { text: string }) {
+export default memo(function RichText({
+  text,
+  streaming = false,
+}: {
+  text: string;
+  streaming?: boolean;
+}) {
+  const source = dollars(text);
+  const [frame, setFrame] = useState({ source, streaming, start: source.length, revision: 0 });
+  if (frame.source !== source || frame.streaming !== streaming) {
+    setFrame({
+      source,
+      streaming,
+      start: streaming && source.startsWith(frame.source) ? frame.source.length : source.length,
+      revision: frame.revision + 1,
+    });
+  }
   return (
     <Markdown
       remarkPlugins={remarkPlugins}
-      rehypePlugins={rehypePlugins}
+      rehypePlugins={streaming ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins}
       skipHtml
       components={components}
     >
-      {dollars(text)}
+      {source}
     </Markdown>
   );
 });

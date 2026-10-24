@@ -46,11 +46,12 @@ import TurnStats from './TurnStats.tsx';
 import ConversationFind, { SearchExpanded } from './ConversationFind.tsx';
 import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
+import Presence from './Presence.tsx';
 
 const RichText = lazy(() => import('./RichText.tsx'));
-const Rich = ({ text }: { text: string }) => (
+const Rich = ({ text, streaming = false }: { text: string; streaming?: boolean }) => (
   <Suspense fallback={<p>{text}</p>}>
-    <RichText text={text} />
+    <RichText text={text} streaming={streaming} />
   </Suspense>
 );
 
@@ -238,7 +239,7 @@ function WorkItems({
                 className={`message-content tool-detail${active ? ' streaming' : ''}`}
                 data-search-content
               >
-                <Rich text={item.text} />
+                <Rich text={item.text} streaming={active} />
               </div>
             )}
           </Fold>
@@ -324,7 +325,7 @@ function Message({
         data-search-content
         data-copy-text={item.text}
       >
-        {user ? <p>{item.text}</p> : <Rich text={item.text} />}
+        {user ? <p>{item.text}</p> : <Rich text={item.text} streaming={streaming} />}
       </div>
       {user && (
         <div className="message-footer">
@@ -919,9 +920,11 @@ export default function Conversation({
           </div>
         )}
       </div>
-      {contextMenu && (
-        <Menu label="对话文字操作" {...contextMenu} onClose={() => setContextMenu(null)} />
-      )}
+      <Presence>
+        {contextMenu && (
+          <Menu label="对话文字操作" {...contextMenu} onClose={() => setContextMenu(null)} />
+        )}
+      </Presence>
     </SearchExpanded.Provider>
   );
 }

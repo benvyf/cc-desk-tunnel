@@ -847,6 +847,7 @@ function About({
 // Settings in one place, sorted by whose they are: Claude Code's own (kept on the cloud host) and this
 // client's (kept on this computer).
 export default function SettingsPage({
+  sideOpen = true,
   client,
   section,
   go,
@@ -865,6 +866,7 @@ export default function SettingsPage({
   back,
   browser = false,
 }: {
+  sideOpen?: boolean;
   // Given before a connection exists: only this computer's own settings are shown, and this leaves them.
   back?: () => void;
   browser?: boolean;
@@ -895,7 +897,7 @@ export default function SettingsPage({
   );
   return (
     <>
-      <aside className="sidebar">
+      <aside className="sidebar" inert={!sideOpen}>
         <div className="sidebar-brand">
           {back && (
             <IconButton title="返回登录" onClick={back}>
@@ -933,7 +935,7 @@ export default function SettingsPage({
           {shown.length === 0 && <p className="list-empty">没有匹配的设置</p>}
         </nav>
       </aside>
-      <main className="workspace">
+      <main className="workspace settings-workspace">
         {section === 'account' ? (
           account
         ) : section === 'claude' ? (

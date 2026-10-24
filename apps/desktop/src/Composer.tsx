@@ -1,3 +1,4 @@
+import Presence from './Presence.tsx';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
@@ -238,29 +239,31 @@ export default function Composer({
   }
   return (
     <div className="composer-area">
-      {menuShown && (
-        <div className="slash-menu" role="listbox" aria-label="会话命令" ref={menu}>
-          {items.map((item, index) => (
-            <button
-              key={item.key}
-              type="button"
-              role="option"
-              aria-selected={index === at}
-              disabled={item.disabled}
-              // The message box keeps the focus, and with it the keys.
-              onMouseDown={(event) => event.preventDefault()}
-              onMouseEnter={() => setPick(index)}
-              onClick={() => (item.fill ? fill(item.fill) : item.run())}
-            >
-              {item.icon}
-              <span>
-                {item.title}
-                <small>{item.detail}</small>
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
+      <Presence kind="popup">
+        {menuShown && (
+          <div className="slash-menu" role="listbox" aria-label="会话命令" ref={menu}>
+            {items.map((item, index) => (
+              <button
+                key={item.key}
+                type="button"
+                role="option"
+                aria-selected={index === at}
+                disabled={item.disabled}
+                // The message box keeps the focus, and with it the keys.
+                onMouseDown={(event) => event.preventDefault()}
+                onMouseEnter={() => setPick(index)}
+                onClick={() => (item.fill ? fill(item.fill) : item.run())}
+              >
+                {item.icon}
+                <span>
+                  {item.title}
+                  <small>{item.detail}</small>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </Presence>
       <div className="composer-context">
         <button
           type="button"

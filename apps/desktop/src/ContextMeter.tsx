@@ -1,3 +1,4 @@
+import Presence from './Presence.tsx';
 import { useEffect, useRef, useState } from 'react';
 import type { NativeMetrics } from '@cc-desk-tunnel/protocol';
 import { usePopover } from './usePopover.ts';
@@ -111,31 +112,38 @@ export default function ContextMeter({
           {ring}
           {context && <span>{context.percentage}%</span>}
         </button>
-        {popover.open && (
-          <div className="turn-stats-card" role="dialog" aria-label="上下文窗口" ref={popover.card}>
-            <header>
-              {ring}
-              <strong>上下文窗口</strong>
-              {context && <b>{context.percentage}%</b>}
-            </header>
-            {context ? (
-              <>
-                <dl>
-                  {rows.map(([label, value]) => (
-                    <div key={label}>
-                      <dt>{label}</dt>
-                      <dd>{value}</dd>
-                    </div>
-                  ))}
-                </dl>
-                <ContextBreakdown context={context} />
-                <p>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} · 原生摘要</p>
-              </>
-            ) : (
-              <p>{metrics?.errors?.context ?? '等待原生状态'}</p>
-            )}
-          </div>
-        )}
+        <Presence>
+          {popover.open && (
+            <div
+              className="turn-stats-card"
+              role="dialog"
+              aria-label="上下文窗口"
+              ref={popover.card}
+            >
+              <header>
+                {ring}
+                <strong>上下文窗口</strong>
+                {context && <b>{context.percentage}%</b>}
+              </header>
+              {context ? (
+                <>
+                  <dl>
+                    {rows.map(([label, value]) => (
+                      <div key={label}>
+                        <dt>{label}</dt>
+                        <dd>{value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                  <ContextBreakdown context={context} />
+                  <p>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} · 原生摘要</p>
+                </>
+              ) : (
+                <p>{metrics?.errors?.context ?? '等待原生状态'}</p>
+              )}
+            </div>
+          )}
+        </Presence>
       </div>
     );
   }
@@ -160,25 +168,27 @@ export default function ContextMeter({
       >
         {ring}
       </button>
-      {hovered && (
-        <div className="context-tooltip" role="tooltip">
-          <strong>上下文窗口</strong>
-          {context ? (
-            <>
-              <span>
-                {context.percentage}% 已用（剩余 {Math.max(0, 100 - context.percentage)}%）
-              </span>
-              <span>
-                {context.usedTokens.toLocaleString()} / {context.windowTokens.toLocaleString()}{' '}
-                tokens
-              </span>
-              <small>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} · 原生摘要</small>
-            </>
-          ) : (
-            <span>{metrics?.errors?.context ?? '等待原生状态'}</span>
-          )}
-        </div>
-      )}
+      <Presence>
+        {hovered && (
+          <div className="context-tooltip" role="tooltip">
+            <strong>上下文窗口</strong>
+            {context ? (
+              <>
+                <span>
+                  {context.percentage}% 已用（剩余 {Math.max(0, 100 - context.percentage)}%）
+                </span>
+                <span>
+                  {context.usedTokens.toLocaleString()} / {context.windowTokens.toLocaleString()}{' '}
+                  tokens
+                </span>
+                <small>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} · 原生摘要</small>
+              </>
+            ) : (
+              <span>{metrics?.errors?.context ?? '等待原生状态'}</span>
+            )}
+          </div>
+        )}
+      </Presence>
     </div>
   );
 }

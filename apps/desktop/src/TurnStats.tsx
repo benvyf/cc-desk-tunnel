@@ -1,3 +1,4 @@
+import Presence from './Presence.tsx';
 import { Database } from './icons.tsx';
 import type { TurnStats as Stats } from '@cc-desk-tunnel/protocol';
 import { usePrefs } from './prefs.ts';
@@ -22,26 +23,28 @@ export default function TurnStats({ stats }: { stats: Stats }) {
         <Database />
         {summary || '用量明细'}
       </button>
-      {open && (
-        <div className="turn-stats-card" role="dialog" aria-label="本轮用量" ref={card}>
-          <header>
-            <Database />
-            <strong>本轮用量</strong>
-            {total && <b>{total.value}</b>}
-          </header>
-          <dl>
-            {rows
-              .filter((row) => row !== total)
-              .map(({ field, value }) => (
-                <div key={field.key}>
-                  <dt>{field.label}</dt>
-                  <dd>{value}</dd>
-                </div>
-              ))}
-          </dl>
-          {stats.partial && <p>部分模型请求的记录还没有到达，以上数字可能偏小。</p>}
-        </div>
-      )}
+      <Presence>
+        {open && (
+          <div className="turn-stats-card" role="dialog" aria-label="本轮用量" ref={card}>
+            <header>
+              <Database />
+              <strong>本轮用量</strong>
+              {total && <b>{total.value}</b>}
+            </header>
+            <dl>
+              {rows
+                .filter((row) => row !== total)
+                .map(({ field, value }) => (
+                  <div key={field.key}>
+                    <dt>{field.label}</dt>
+                    <dd>{value}</dd>
+                  </div>
+                ))}
+            </dl>
+            {stats.partial && <p>部分模型请求的记录还没有到达，以上数字可能偏小。</p>}
+          </div>
+        )}
+      </Presence>
     </div>
   );
 }

@@ -9,6 +9,8 @@ export function usePopover() {
   // The room above ends where the conversation's scrolling area begins, under the title bar, not at the top of the
   // window.
   useLayoutEffect(() => {
+    // Presence retains the last card while closing; preserve its fitted position through the fade.
+    if (!open) return;
     const element = card.current;
     if (!element) return;
     const top = element.closest('.conversation')?.getBoundingClientRect().top ?? 0;

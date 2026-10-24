@@ -171,6 +171,14 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
       .getByRole('button', { name: '常规', exact: true })
       .click();
     await page.getByRole('radio', { name, exact: true }).click();
+    await page.locator('.shell').evaluate(async (shell) => {
+      await Promise.allSettled(
+        shell
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished),
+      );
+    });
     const palette = await colors();
     expect(new Set(palette).size).toBe(3);
     for (const button of [
@@ -194,6 +202,7 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
     await page.setViewportSize({ width: 390, height: 600 });
     await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
     await expect(page.locator('.sidebar')).toBeVisible();
+    await expect.poll(async () => (await page.locator('.sidebar').boundingBox())?.x).toBe(44);
     const panel = (await page.locator('.sidebar').boundingBox())!;
     expect(panel.x).toBe(44);
     expect(panel.y).toBe(40);

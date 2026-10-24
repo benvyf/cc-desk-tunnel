@@ -75,6 +75,15 @@
   --icon-md: 20px;
   --icon-lg: 24px;
   --icon-xl: 32px;
+  /* Motion reference: feedback, selection, floating surfaces, sheets, then ambient colour. */
+  --cds-dur-fast: 60ms;
+  --cds-dur-snap: 120ms;
+  --cds-dur-base: 200ms;
+  --cds-dur-sheet: 300ms;
+  --cds-dur-slow: 450ms;
+  --cds-ease-out: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --cds-ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
+  --cds-ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
   /* Single-line controls share these heights; multiline content can grow. */
   --control-xs: 20px;
   --control-sm: 24px;
@@ -192,6 +201,16 @@ select {
 }
 button {
   color: inherit;
+  transition:
+    color var(--cds-dur-fast) var(--cds-ease-out),
+    background-color var(--cds-dur-fast) var(--cds-ease-out),
+    border-color var(--cds-dur-fast) var(--cds-ease-out),
+    scale var(--cds-dur-fast) var(--cds-ease-out);
+}
+.button:active:not(:disabled),
+.icon-button:active:not(:disabled),
+.send-button:active:not(:disabled) {
+  scale: 0.98;
 }
 button:disabled {
   opacity: 0.45;
@@ -333,7 +352,7 @@ label {
   border: 0;
   border-radius: var(--radius-full);
   background: var(--line-strong);
-  transition: background 0.15s;
+  transition: background-color var(--cds-dur-snap) var(--cds-ease-out);
 }
 .switch::after {
   content: '';
@@ -345,7 +364,7 @@ label {
   border-radius: 50%;
   background: white;
   box-shadow: 0 1px 2px #0003;
-  transition: transform 0.15s;
+  transition: transform var(--cds-dur-snap) var(--cds-ease-overshoot);
 }
 .switch[aria-checked='true'] {
   background: var(--accent);
@@ -555,12 +574,37 @@ button.chip.danger:hover:not(:disabled) {
 .shell.side-closed {
   grid-template-columns: 52px 0 minmax(0, 1fr);
 }
-.side-closed .sidebar {
-  display: none;
+.shell > .sidebar {
+  width: 284px;
+  z-index: 12;
+  opacity: 1;
+  /* `none` releases fixed tooltip coordinates once the slide finishes. */
+  translate: none;
+  visibility: visible;
+  transition:
+    opacity var(--cds-dur-sheet) var(--cds-ease-out),
+    translate var(--cds-dur-sheet) var(--cds-ease-snap),
+    visibility var(--cds-dur-sheet),
+    background-color var(--cds-dur-slow) var(--cds-ease-out);
+}
+.shell.side-closed > .sidebar {
+  opacity: 0;
+  translate: -16px 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+.shell,
+.workspace,
+.titlebar {
+  transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
 }
 .titlebar,
 .rail {
   --hover: light-dark(#e1dfd8, #20201e);
+}
+.rail {
+  position: relative;
+  z-index: 13;
 }
 .titlebar {
   grid-column: 1 / -1;
@@ -1946,7 +1990,7 @@ kbd {
 }
 .fold-chevron {
   color: var(--faint);
-  transition: transform 0.12s;
+  transition: transform var(--cds-dur-snap) var(--cds-ease-snap);
 }
 details[open] > summary > .fold-chevron {
   transform: rotate(90deg);
@@ -1982,7 +2026,7 @@ details[open] > summary > .fold-chevron {
 }
 .message-footer > * {
   opacity: 0;
-  transition: opacity 0.12s;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
 }
 .message.latest .message-footer > *,
 .message:hover .message-footer > *,
@@ -2437,7 +2481,7 @@ details[open] > summary > .fold-chevron {
   font-size: 13px;
 }
 .background-tasks li {
-  animation: appear 0.2s ease-out;
+  animation: appear var(--cds-dur-base) var(--cds-ease-out);
 }
 .background-tasks li small {
   display: block;
@@ -2558,8 +2602,8 @@ details[open] > summary > .fold-chevron {
   stroke: var(--accent);
   stroke-linecap: round;
   transition:
-    stroke-dasharray 0.4s ease,
-    stroke 0.4s ease;
+    stroke-dasharray var(--cds-dur-base) var(--cds-ease-out),
+    stroke var(--cds-dur-base) var(--cds-ease-out);
 }
 .context-ring.unknown .context-ring-used {
   stroke: none;
@@ -3527,6 +3571,10 @@ dialog {
   border: 1px solid var(--line);
   border-radius: var(--radius-xl);
   width: min(460px, calc(100vw - 32px));
+  /* Keep the same bounds when a closed dialog finishes its visual exit outside the top layer. */
+  max-width: calc(100vw - 32px);
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
   padding: 24px;
   color: var(--text);
   background: var(--raised);
@@ -3608,7 +3656,7 @@ dialog::backdrop {
   .shell.side-closed {
     grid-template-columns: 44px 0 minmax(0, 1fr);
   }
-  .sidebar {
+  .shell > .sidebar {
     position: fixed;
     left: 44px;
     top: var(--bar);
@@ -3616,6 +3664,9 @@ dialog::backdrop {
     width: min(284px, calc(100vw - 60px));
     z-index: 12;
     box-shadow: var(--shadow);
+  }
+  .shell.side-closed > .sidebar {
+    translate: -100% 0;
   }
   .sidebar-shade {
     display: block;
@@ -4240,4 +4291,120 @@ dialog:has(.web-settings-form) {
 .web-proxy-trust > p,
 .web-proxy-trust > pre {
   margin-top: 10px;
+}
+
+/* Floating surfaces keep their viewport-fitting transforms; only opacity changes here. */
+.motion-presence {
+  display: contents;
+}
+.motion-presence > * {
+  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-state='exit'] > * {
+  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  pointer-events: none;
+}
+.motion-presence[data-kind='dialog'] > dialog {
+  animation: motion-dialog-in var(--cds-dur-base) var(--cds-ease-snap) both;
+}
+.motion-presence[data-kind='dialog'][data-state='exit'] > dialog {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  animation: motion-dialog-out var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-kind='dialog'][data-state='exit']::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 39;
+  background: var(--backdrop);
+  pointer-events: none;
+  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-kind='dialog'] > dialog::backdrop {
+  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-kind='dialog'][data-state='exit'] > dialog::backdrop {
+  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-kind='shade'] > * {
+  animation-duration: var(--cds-dur-sheet);
+}
+.connection-modes button,
+.rail button,
+.side-action,
+.theme-option {
+  transition:
+    color var(--cds-dur-snap) var(--cds-ease-out),
+    background-color var(--cds-dur-snap) var(--cds-ease-out),
+    border-color var(--cds-dur-snap) var(--cds-ease-out);
+}
+.settings-workspace {
+  animation: motion-fade-in var(--cds-dur-sheet) var(--cds-ease-snap);
+}
+.stream-reveal {
+  animation: motion-stream-in var(--cds-dur-snap) var(--cds-ease-out) both;
+}
+@keyframes motion-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes motion-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes motion-dialog-in {
+  from {
+    opacity: 0;
+    translate: 0 6px;
+  }
+  to {
+    opacity: 1;
+    translate: 0;
+  }
+}
+@keyframes motion-dialog-out {
+  from {
+    opacity: 1;
+    translate: 0;
+  }
+  to {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+@keyframes motion-stream-in {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --cds-dur-fast: 0ms;
+    --cds-dur-snap: 0ms;
+    --cds-dur-base: 0ms;
+    --cds-dur-sheet: 0ms;
+    --cds-dur-slow: 0ms;
+  }
+  .motion-presence > *,
+  .motion-presence > dialog::backdrop,
+  .motion-presence::before,
+  .settings-workspace,
+  .stream-reveal,
+  .background-tasks li {
+    animation: none !important;
+  }
 }

@@ -130,12 +130,17 @@ test('capture typography on desktop and a narrow viewport', async ({ page }) => 
   mkdirSync(folder, { recursive: true });
   for (const width of [1280, 390]) {
     await page.setViewportSize({ width, height: 1000 });
+    if (width === 390) {
+      await expect(page.locator('.sidebar')).toHaveCSS('visibility', 'hidden');
+      await expect(page.locator('.sidebar-shade')).toHaveCount(0);
+    }
     await page.mouse.move(5, 5);
     await page.locator('.conversation').evaluate((node) => {
       node.scrollTop = 0;
     });
     await page.screenshot({
       path: resolve(folder, `${process.env.TYPOGRAPHY_CAPTURE ?? 'after'}-${width}.png`),
+      animations: 'disabled',
     });
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
       width,
@@ -394,6 +399,9 @@ test('successive text and thinking chunks survive search and completion without 
   const thinking = page.locator('.thinking-block .tool-detail');
   await expect(thinking).toContainText('追加思考12');
   await expect(page.locator('.message.assistant')).toContainText('追加正文12');
+  await expect(page.locator('.message.assistant .stream-reveal').last()).toContainText(
+    '追加正文12',
+  );
   await page.keyboard.press('Control+f');
   const find = page.getByLabel('查找对话内容', { exact: true });
   await find.fill('追加思考12');

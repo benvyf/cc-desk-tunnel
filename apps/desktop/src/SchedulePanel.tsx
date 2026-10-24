@@ -309,11 +309,13 @@ function Editor({
 
 // The tasks are listed in the side column; the main area holds the editor, or says what the page is for.
 export default function SchedulePanel({
+  sideOpen = true,
   schedules,
   sessions,
   projects,
   capabilities,
 }: {
+  sideOpen?: boolean;
   schedules: Schedules;
   sessions: Session[];
   projects: string[];
@@ -333,7 +335,7 @@ export default function SchedulePanel({
   };
   return (
     <>
-      <aside className="sidebar">
+      <aside className="sidebar" inert={!sideOpen}>
         <div className="sidebar-brand">
           <span className="brand">定时任务</span>
         </div>

@@ -209,6 +209,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
 });
 
 test('a project lists its latest five sessions until it is listed in full', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 500 });
   await page.goto('/');
   await login(page);
   const folder = `D:\\工作\\多会话 ${Date.now()}`;
@@ -227,6 +228,17 @@ test('a project lists its latest five sessions until it is listed in full', asyn
   }
   await group.getByRole('button', { name: '展开显示（还有 7 个）', exact: true }).click();
   await expect(rows).toHaveCount(12);
+  const list = page.getByRole('navigation', { name: '会话列表', exact: true });
+  const scroll = await list.evaluate((node) => {
+    node.scrollTop = node.scrollHeight;
+    return node.scrollTop;
+  });
+  expect(scroll).toBeGreaterThan(0);
+  await page.getByRole('banner').getByRole('button', { name: '收起侧栏', exact: true }).click();
+  await expect(page.locator('.sidebar')).toHaveCSS('visibility', 'hidden');
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
+  await expect(rows).toHaveCount(12);
+  expect(await list.evaluate((node) => node.scrollTop)).toBeCloseTo(scroll, 2);
   // The open session stays listed, in its place, when the project shows its latest five again.
   const oldest = await rows.last().locator('strong').textContent();
   await rows.last().locator('.session-select').click();
@@ -681,6 +693,13 @@ test('Electron: frameless window, the project branch, files by path and window s
       .click();
     await page.getByRole('button', { name: '打开开发者工具', exact: true }).click();
     await expect.poll(tools).toBe(true);
+    if (await page.evaluate(() => !!window.desktop?.managedUpdate)) {
+      await expect(page.getByRole('button', { name: '这一版的更新内容', exact: true })).toHaveCount(
+        0,
+      );
+      await expect(page.getByLabel('定制客户端更新', { exact: true })).toBeVisible();
+      return;
+    }
     // What this version changed is read here, from the notes the program carries.
     await page.getByRole('button', { name: '这一版的更新内容', exact: true }).click();
     const notes = page.getByRole('dialog');
