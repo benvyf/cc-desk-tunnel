@@ -320,10 +320,16 @@ test('a session forks whole, and an earlier message is edited in a fork that lea
   const questions = page.locator('.message.user .message-content');
   const box = page.getByRole('textbox', { name: '消息' });
   await questions.nth(1).hover();
-  await page.getByRole('button', { name: '编辑重发', exact: true }).nth(1).click();
+  const edit = page.getByRole('button', { name: '编辑重发', exact: true }).nth(1);
+  await edit.focus();
+  await edit.press('Enter');
   await expect(page.locator('.session-row.selected strong')).toHaveText(`${title}（分叉）`);
   await expect(questions).toHaveText(['第一问']);
   await expect(box).toHaveValue('第二问');
+  await expect(box).toBeFocused();
+  expect(await box.evaluate((input: HTMLTextAreaElement) => input.selectionStart)).toBe(
+    '第二问'.length,
+  );
   await box.fill('改过的第二问');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   await settled(page);
@@ -337,6 +343,138 @@ test('a session forks whole, and an earlier message is edited in a fork that lea
     .filter({ has: page.getByText(title, { exact: true }) })
     .click();
   await expect(questions).toHaveText(['第一问', '第二问']);
+});
+
+test('a delayed edit preserves subsequent navigation and the forked draft', async ({ page }) => {
+  let forkRequest = '';
+  let release: (() => void) | undefined;
+  await page.routeWebSocket(connection().serverUrl, (route) => {
+    const server = route.connectToServer();
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'session.fork') forkRequest = message.requestId;
+      server.send(raw);
+    });
+    server.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (forkRequest && message.type === 'response' && message.requestId === forkRequest) {
+        release = () => route.send(raw);
+      } else route.send(raw);
+    });
+  });
+  await page.goto('/');
+  await login(page);
+  const other = await createSession(page, '编辑期间切换');
+  const title = await createSession(page, '延迟编辑');
+  await send(page, '等待编辑的消息');
+  await settled(page);
+  await page.getByRole('button', { name: '编辑重发', exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  const otherRow = page.locator('.session-row').filter({ hasText: other });
+  await otherRow.locator('.session-select').click();
+  // Going away and back still expresses a new navigation intent.
+  await page
+    .locator('.session-select')
+    .filter({ has: page.getByText(title, { exact: true }) })
+    .click();
+  release!();
+  const box = page.getByRole('textbox', { name: '消息' });
+  await expect(box).toBeEnabled();
+  await expect(page.locator('.session-row.selected strong')).toHaveText(title);
+  await expect(box).toHaveValue('');
+  await expect(box).not.toBeFocused();
+  await page
+    .locator('.session-select')
+    .filter({ hasText: `${title}（分叉）` })
+    .click();
+  await expect(box).toHaveValue('等待编辑的消息');
+  await expect(box).not.toBeFocused();
+});
+
+test('loading an edited draft respects focus moved to conversation search', async ({ page }) => {
+  let forkRequest = '';
+  let forkSession = '';
+  let historyRequest = '';
+  const held: (string | Buffer)[] = [];
+  let release: (() => void) | undefined;
+  await page.routeWebSocket(connection().serverUrl, (route) => {
+    const server = route.connectToServer();
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'session.fork') forkRequest = message.requestId;
+      server.send(raw);
+    });
+    server.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (forkRequest && message.type === 'response' && message.requestId === forkRequest)
+        forkSession = message.sessionId;
+      if (
+        forkSession &&
+        message.type === 'session.snapshot' &&
+        message.session.id === forkSession
+      ) {
+        historyRequest = message.requestId;
+        held.push(raw);
+      } else if (
+        historyRequest &&
+        message.type === 'response' &&
+        message.requestId === historyRequest
+      ) {
+        held.push(raw);
+        release = () => held.forEach((frame) => route.send(frame));
+      } else route.send(raw);
+    });
+  });
+  await page.goto('/');
+  await login(page);
+  await createSession(page, '编辑时查找');
+  await send(page, '待编辑的原始消息');
+  await settled(page);
+  await page.getByRole('button', { name: '编辑重发', exact: true }).click();
+  await expect.poll(() => !!release).toBe(true);
+  const box = page.getByRole('textbox', { name: '消息', exact: true });
+  await expect(box).toBeDisabled();
+  await page.keyboard.press('Control+f');
+  const searchBox = page.getByRole('textbox', { name: '查找对话内容', exact: true });
+  await searchBox.fill('搜索中');
+  release!();
+  await expect(box).toBeEnabled();
+  await expect(searchBox).toBeFocused();
+  await page.keyboard.type('继续');
+  await expect(searchBox).toHaveValue('搜索中继续');
+  await expect(box).toHaveValue('待编辑的原始消息');
+  await searchBox.press('Escape');
+  await expect(searchBox).toHaveCount(0);
+  await expect(box).not.toBeFocused();
+});
+
+test('a sent question can be copied while awaiting approval and edited after stopping', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  const title = await createSession(page, '停止后编辑');
+  const original = '请检查代码\n第二行保留 👋';
+  await page.evaluate(() =>
+    Object.defineProperty(navigator.clipboard, 'writeText', {
+      value: async (text: string) => Object.assign(window, { copiedQuestion: text }),
+    }),
+  );
+  await send(page, original, 'tool');
+  await expect(page.getByRole('button', { name: '允许', exact: true })).toBeVisible();
+  const question = page.locator('.message.user');
+  await expect(question.getByRole('button', { name: '编辑重发', exact: true })).toHaveCount(0);
+  await question.getByRole('button', { name: '复制消息', exact: true }).click();
+  expect(
+    await page.evaluate(() => (window as unknown as { copiedQuestion: string }).copiedQuestion),
+  ).toBe(original);
+  await page.getByRole('button', { name: '停止运行', exact: true }).click();
+  await settled(page);
+  await question.getByRole('button', { name: '编辑重发', exact: true }).click();
+  await expect(page.locator('.session-row.selected strong')).toHaveText(`${title}（分叉）`);
+  await expect(page.getByRole('textbox', { name: '消息' })).toHaveValue(original);
+  await expect(page.getByRole('textbox', { name: '消息' })).toBeFocused();
+  await expect(page.locator('.message.user')).toHaveCount(0);
 });
 
 test('a scheduled task is edited, sent to its session when due, and can open a session of its own', async ({

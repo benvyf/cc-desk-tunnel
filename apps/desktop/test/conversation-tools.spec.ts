@@ -21,7 +21,7 @@ test('message dates, selection menu, code copy and conversation find work togeth
   await send(page, '阅读唯一词 阅读唯一词');
   await settled(page);
   const time = page.locator('.message.user time');
-  await expect(time).toContainText(/今天 \d\d:\d\d/);
+  await expect(time).toHaveText(/\d\d:\d\d/);
   await expect(time).toHaveAttribute('datetime', /T/);
   await expect(time).toHaveAttribute('title', /\d{4}.*\d\d:\d\d:\d\d/);
   const user = page.locator('.message.user .message-content');

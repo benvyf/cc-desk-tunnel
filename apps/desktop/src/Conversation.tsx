@@ -271,7 +271,7 @@ function WorkGroup({
 }
 
 // No message has a heading; what belongs to it is in a line under it, shown while the pointer is over the message. Under
-// a question: how it was delivered, its time, editing and copy, at the right like the question. Under the reply that
+// a question: how it was delivered, its time, copy and editing, always shown at the right like the question. Under the reply that
 // closes a turn: copy, the turn's figures and the time, always shown on the latest. Replies said along the way have
 // nothing under them. A delivery that did not plainly arrive stays in sight. Replies of the simulated service keep the
 // heading, which says they are not real.
@@ -300,7 +300,7 @@ function Message({
   const attached = user ? splitAttachmentMessage(item.text) : null;
   const stamp = time && (
     <time className="message-time" dateTime={item.at} title={time.full}>
-      {time.short}
+      {user ? time.compact : time.short}
     </time>
   );
   return (
@@ -337,6 +337,7 @@ function Message({
             </span>
           )}
           {stamp}
+          <CopyButton text={item.text} />
           {edit && (
             <button
               type="button"
@@ -348,7 +349,6 @@ function Message({
               <Pencil />
             </button>
           )}
-          <CopyButton text={item.text} />
         </div>
       )}
       {!user && native && closing && (
@@ -563,9 +563,27 @@ export default function Conversation({
     if (findRequest !== lastFindRequest.current) openFind();
     lastFindRequest.current = findRequest;
   }, [findRequest]);
-  // Running timers tick once a second, and only while something runs.
+  // Date labels refresh at local midnight and when the window resumes.
   const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      clearTimeout(timer);
+      const current = new Date();
+      setNow(current.getTime());
+      const nextDay = new Date(current);
+      nextDay.setHours(24, 0, 0, 0);
+      timer = setTimeout(refresh, nextDay.getTime() - current.getTime());
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
   const running = !!session?.activeRun;
+  // Running timers tick once a second, and only while something runs.
   useEffect(() => {
     if (!running) return;
     setNow(Date.now());

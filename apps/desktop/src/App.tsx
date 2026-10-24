@@ -184,6 +184,7 @@ export function App({
   // The folders that hold sessions without a project; new ones are made in the first.
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
   const [drafts, setDraft, attachmentDrafts, setAttachments] = useDrafts();
+  const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
   // The side column is shown beside the page on a wide window and laid over it on a narrow one.
@@ -205,6 +206,7 @@ export function App({
   });
   // Places visited, for the title bar's way back and forward.
   const trail = useRef<{ places: Place[]; at: number }>({ places: [place], at: 0 });
+  const navigation = useRef(0);
   const [, setTrailAt] = useState(0);
   const accountOpen = place.page === 'settings' && place.section === 'account';
   const prefs = usePrefs();
@@ -648,6 +650,8 @@ export function App({
   }
   // Moves the window to a place and remembers it; going back or forward revisits without adding to the trail.
   function visit(next: Place, record = true) {
+    navigation.current++;
+    setFocusDraftSession(null);
     if (next.sessionId && next.sessionId !== client.state.selectedId) client.select(next.sessionId);
     setPlace(next);
     closeSide();
@@ -831,6 +835,7 @@ export function App({
   // A fork continues from the same context in a session of its own. Forking before a message brings that
   // message back as a draft, which is how an earlier message is edited and sent again.
   async function fork(session: Session, before?: { id: string; text: string }) {
+    const startedAt = navigation.current;
     await act(async () => {
       // The copy of a session that is on another computer needs a directory on this one.
       const projectPath = onThis(session) ? undefined : await placeHere(session);
@@ -847,7 +852,11 @@ export function App({
         setDraft(response.sessionId, attached.text);
         setAttachments(response.sessionId, () => attached.files);
       }
-      show(response.sessionId);
+      // A slow fork must not take the reader away from a page they have since chosen.
+      if (navigation.current === startedAt) {
+        show(response.sessionId);
+        if (before) setFocusDraftSession(response.sessionId);
+      }
     });
   }
   async function send(override?: string) {
@@ -1785,6 +1794,8 @@ export function App({
                     : (position) => setMenu({ kind: 'move', sessionId: selected.id, ...position })
                 }
                 draft={draft}
+                focusDraft={focusDraftSession === selected.id}
+                onDraftFocusHandled={() => setFocusDraftSession(null)}
                 setDraft={(text) => setDraft(selected.id, text)}
                 attachments={attachmentDrafts[selected.id] ?? []}
                 setAttachments={setAttachments}

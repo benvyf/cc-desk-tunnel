@@ -66,6 +66,8 @@ export default function Composer({
   projectName,
   chooseProject,
   draft,
+  focusDraft = false,
+  onDraftFocusHandled,
   setDraft,
   attachments = [],
   setAttachments,
@@ -99,6 +101,8 @@ export default function Composer({
   // Opens the list of projects the session can be moved to; absent while it cannot be moved.
   chooseProject?: (position: MenuPosition) => void;
   draft: string;
+  focusDraft?: boolean;
+  onDraftFocusHandled?: () => void;
   setDraft: (text: string) => void;
   attachments?: Attachment[];
   setAttachments?: SetAttachments;
@@ -229,6 +233,18 @@ export default function Composer({
     // Grow with the draft; the stylesheet's max-height decides when scrolling takes over.
     fitDraft(input.current);
   }, [draft, session.id]);
+  useEffect(() => {
+    // An edit is ready only once its fork/history has loaded and the input is enabled.
+    const box = input.current;
+    if (!focusDraft || inputDisabled || !box) return;
+    // Loading may take long enough for the reader to start searching or use another control.
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused === box) {
+      box.focus();
+      box.setSelectionRange(box.value.length, box.value.length);
+    }
+    onDraftFocusHandled?.();
+  }, [focusDraft, inputDisabled, onDraftFocusHandled]);
   useLayoutEffect(() => {
     const box = input.current;
     if (!box) return;

@@ -83,6 +83,16 @@ test('Electron chooses real files, generates bounded previews, restores and send
     await expect(message.getByAltText('附件图片.png')).toBeVisible();
     await expect(message).not.toContainText(directory);
     await expect(message).toHaveAttribute('data-copy-text', `"${photo}"`);
+    await page
+      .locator('.message.user')
+      .last()
+      .getByRole('button', { name: '编辑重发', exact: true })
+      .click();
+    await expect(composer.locator('.attachment-tile')).toHaveCount(1);
+    await expect(composer.getByAltText('附件图片.png')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
+    await expect(page.locator('.message.user')).toHaveCount(0);
     expect(errors).toEqual([]);
     expect(
       await page.evaluate((file) => window.desktop!.attachmentPreview(file), document),
