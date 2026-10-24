@@ -7,6 +7,7 @@ import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
 import { MonitorStore } from './monitor.ts';
 import { EnrollmentStore } from './enrollment.ts';
+import { FreshNodes } from './fresh-nodes.ts';
 import { validateMonitorReport } from '../../../packages/protocol/src/account-monitor.ts';
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
@@ -64,6 +65,8 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['server-bootstrap.py', 'text/plain'],
     ['server-upgrade.cjs', 'text/plain'],
     ['server-download.js', 'text/javascript'],
+    ['fresh-install.py', 'text/plain'],
+    ['fresh-nodes.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -75,8 +78,10 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     assets.set(`${base}/${page}`, assets.get(base + '/')!);
   const expectedTokenHash = Buffer.from(config.adminTokenSha256, 'hex');
   const distribution = new ServerDistribution(config.dataDir, config.trustedKeys);
-  const monitor = config.monitorNodes
-    ? new MonitorStore(config.dataDir, Object.keys(config.monitorNodes))
+  const freshNodes = new FreshNodes(config);
+  const nodeHashes = () => ({ ...config.monitorNodes, ...freshNodes.monitorNodes() });
+  let monitor = Object.keys(nodeHashes()).length
+    ? new MonitorStore(config.dataDir, Object.keys(nodeHashes()))
     : undefined;
   const passwordAuth = new PasswordAuth(join(config.dataDir, 'private'));
   const enrollment = new EnrollmentStore(config);
@@ -186,6 +191,19 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         if (!path.startsWith(api + '/')) throw new UpdateError(404, 'Not found.');
+        if (path === `${api}/fresh-nodes/redeem` && request.method === 'POST') {
+          if (request.headers.origin !== undefined)
+            throw new UpdateError(403, 'Browser redemption is not accepted.');
+          contentType(request, 'application/json');
+          if ((await body(request, 16)).toString('utf8') !== '{}')
+            throw new UpdateError(400, 'Expected empty JSON object.');
+          const auth = request.headers.authorization ?? '';
+          const bundle = freshNodes.redeem(auth.startsWith('Bearer ') ? auth.slice(7) : '');
+          monitor ??= new MonitorStore(config.dataDir, Object.keys(nodeHashes()));
+          monitor.addNode(bundle.nodeId);
+          respond(response, 200, bundle);
+          return;
+        }
         if (path === `${api}/monitor/enrollment/redeem` && request.method === 'POST') {
           if (request.headers.origin !== undefined)
             throw new UpdateError(403, 'Browser redemption is not accepted.');
@@ -221,8 +239,8 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
               ? (input as Record<string, unknown>).nodeId
               : undefined;
           const expected =
-            typeof nodeId === 'string' && Object.hasOwn(config.monitorNodes!, nodeId)
-              ? config.monitorNodes![nodeId]
+            typeof nodeId === 'string' && Object.hasOwn(nodeHashes(), nodeId)
+              ? nodeHashes()[nodeId]
               : undefined;
           const auth = request.headers.authorization ?? '';
           const token = auth.startsWith('Bearer ') ? auth.slice(7) : '';
@@ -295,6 +313,17 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         authenticated(request);
+        if (path === `${api}/fresh-nodes` && request.method === 'POST') {
+          contentType(request, 'application/json');
+          let input;
+          try {
+            input = JSON.parse((await body(request, 1024)).toString('utf8'));
+          } catch {
+            throw new UpdateError(400, 'Invalid node JSON.');
+          }
+          respond(response, 201, freshNodes.issue(input, distribution));
+          return;
+        }
         if (path === `${api}/server` && request.method === 'GET') {
           const status = distribution.status();
           respond(response, 200, {

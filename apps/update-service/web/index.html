@@ -41,6 +41,13 @@
       <div class="section-heading"><div><p class="eyebrow">DOWNLOADS</p><h2>下载安装包</h2></div></div>
       <p class="muted">Windows x64 完整定制客户端，包含随包运行组件。退出 CC 后运行安装包，可覆盖安装并保留连接配置。账号监控与内容审核由配套 Ubuntu／VPS 提供；安装客户端不会自动升级 Ubuntu。</p>
       <div id="downloads" class="channels" aria-live="polite"></div>
+      <section class="card" aria-labelledby="fresh-heading">
+        <h2 id="fresh-heading">新建 Ubuntu 一键部署</h2>
+        <p class="muted">适用于空白 Ubuntu 24.04 LTS x64 虚拟机。自动安装 Docker、最新已发布服务端及独立监控和审核配置；完成后显示客户端连接地址、证书指纹和服务凭据。建议 2 核、4 GB 内存、至少 6 GB 可用磁盘，安装可能需要数分钟。</p>
+        <form id="fresh-form"><label for="fresh-node">新节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-2" autocomplete="off"><button type="submit">生成新虚拟机安装命令</button></form>
+        <div id="fresh-result" hidden><p id="fresh-expiry" class="muted" aria-live="polite"></p><label for="fresh-command">在新 Ubuntu 控制台执行</label><textarea id="fresh-command" readonly rows="6" spellcheck="false" autocomplete="off"></textarea><button id="fresh-copy" class="quiet">复制新虚拟机安装命令</button></div>
+        <p class="muted">每台虚拟机使用不同名称和命令。命令含一次性安装码，十分钟内领取，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。已有服务使用客户端更新，不要重新安装；安装不会覆盖已有数据，也不会修改网络转发规则。</p>
+      </section>
       <section class="card" aria-labelledby="server-download-heading"><h2 id="server-download-heading">配套 Linux 服务端</h2><div id="server-download" aria-live="polite"></div></section>
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>
       <div id="channels" class="channels"></div>

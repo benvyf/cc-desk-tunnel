@@ -3,6 +3,7 @@ import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { UpdateError } from './store.ts';
 import type { ModerationStore } from './moderation.ts';
+import { readFreshNodes } from './fresh-nodes.ts';
 
 export const moderationPath = '/cc-updates/v1/moderation/check';
 const kinds = [
@@ -31,10 +32,11 @@ export async function authenticateNode(root: string, authorization: string | und
   try {
     registry = JSON.parse(await readFile(join(root, 'private/moderation-nodes.json'), 'utf8'));
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT')
-      throw new UpdateError(401, 'Node authentication required.');
-    throw error;
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    registry = {};
   }
+  for (const [id, node] of Object.entries(readFreshNodes(root)))
+    if (node.moderationHash) registry[id] = node.moderationHash;
   const hash = createHash('sha256').update(token).digest();
   for (const [id, expected] of Object.entries(registry)) {
     if (

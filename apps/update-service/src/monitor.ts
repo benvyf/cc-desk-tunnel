@@ -12,6 +12,9 @@ import {
 export class MonitorStore {
   private db: DatabaseSync;
   private nodes: Set<string>;
+  addNode(id: string): void {
+    this.nodes.add(id);
+  }
   constructor(root: string, nodeIds: string[]) {
     this.nodes = new Set(nodeIds);
     this.db = new DatabaseSync(join(root, 'private', 'monitor.sqlite'));
