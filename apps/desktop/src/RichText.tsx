@@ -21,11 +21,37 @@ function drawing(children: ReactNode) {
 
 function CodeBlock({ children }: { children?: ReactNode }) {
   const block = useRef<HTMLPreElement>(null);
+  const language = isValidElement<{ className?: string }>(children)
+    ? (/\blanguage-([^\s]+)/.exec(children.props.className ?? '')?.[1] ?? 'text')
+    : 'text';
   const svg = drawing(children);
   const [shown, setShown] = useState<'picture' | 'source' | 'broken'>('picture');
   const picture = svg !== null && shown === 'picture';
   return (
     <div className="code-block">
+      <div className="code-header" data-search-ignore>
+        <span className="code-language" title={language}>
+          <FileCode />
+          {language}
+        </span>
+        <span className="code-actions">
+          {svg !== null && shown !== 'broken' && (
+            <button
+              type="button"
+              className="copy-button"
+              onClick={() => setShown(picture ? 'source' : 'picture')}
+            >
+              {picture ? <FileCode /> : <Eye />}
+              <span>{picture ? '查看源码' : '查看图像'}</span>
+            </button>
+          )}
+          <CopyButton
+            text={() => svg ?? block.current?.textContent ?? ''}
+            label="复制代码"
+            variant="code"
+          />
+        </span>
+      </div>
       {picture ? (
         <img
           className="code-picture"
@@ -36,19 +62,6 @@ function CodeBlock({ children }: { children?: ReactNode }) {
       ) : (
         <pre ref={block}>{children}</pre>
       )}
-      <span className="code-actions" data-search-ignore>
-        {svg !== null && shown !== 'broken' && (
-          <button
-            type="button"
-            className="copy-button"
-            onClick={() => setShown(picture ? 'source' : 'picture')}
-          >
-            {picture ? <FileCode /> : <Eye />}
-            <span>{picture ? '查看源码' : '查看图像'}</span>
-          </button>
-        )}
-        <CopyButton text={() => svg ?? block.current?.textContent ?? ''} label="复制代码" />
-      </span>
     </div>
   );
 }

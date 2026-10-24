@@ -43,3 +43,44 @@ Final review reproduced a message-length boundary: a valid 16000-character body 
 - [x] Existing product typography, tokens and composer layout retained.
 
 final result: passed
+
+# Code block and copy visual QA
+
+Source visual truth (normal and copied states, light and dark):
+
+- `C:/Users/benben/AppData/Local/Temp/codex-clipboard-8c20911c-dca9-48d0-a001-0b041b1e4a7d.png`
+- `C:/Users/benben/AppData/Local/Temp/codex-clipboard-fec8b0e4-e610-4fc4-b3ad-e02c6561ca5b.png`
+- `C:/Users/benben/AppData/Local/Temp/codex-clipboard-5c8bfe5b-8965-4855-a713-1cd8df126f2d.png`
+- `C:/Users/benben/AppData/Local/Temp/codex-clipboard-3b406b34-b356-4c18-b640-18cd60a9f70f.png`
+
+Evidence under `.local/screenshots/`:
+
+- `code-block-page-light.png`, `code-block-page-dark.png`: 1280×900 CSS viewport at density 1.
+- `code-block-light.png`, `code-block-dark.png`, `code-block-light-copied.png`, `code-block-dark-copied.png`: 672×105 component captures.
+- `code-comparison-light.png`, `code-comparison-dark.png`, `code-comparison-light-copied.png`, `code-comparison-dark-copied.png`: reference crop above implementation, at 1:1 density without scaling.
+- `code-block-narrow.png`: 320×600 viewport, header wrapping and horizontal code scrolling.
+
+## Findings
+
+- Typography: 13px monospace code with 1.5 line height, 12px monospace header, and aligned language/action icons. Initial 12px code was too small; post-fix comparisons use 13px.
+- Layout: 12px corners, 32px minimum header, 16px body inset and a distinct header divider match the component reference. Narrow headers wrap without overlapping the code or actions.
+- Colors: dark code surfaces remain consistent in both application themes. Light mode adds a subtle shadow; dark mode keeps the border. Moving `color-scheme: dark` onto the code body corrected the initially missing light-mode shadow. Success and failure feedback use legible semantic colors.
+- Icons/assets: reused the existing file-code, copy, check and preview glyphs; no new raster assets. This is an intentional difference from the reference glyph shapes.
+- Content: Chinese labels “复制代码” and “已复制” retain product language. Unlabelled blocks display `text`. The surrounding demonstration canvas and headings are excluded from the product UI.
+- Interaction: exact source text including trailing newline is copied. Success remains for 2500ms, fades during the last 20%, then restores the copy label without width changes. Repeat clicks restart feedback; stale clipboard promises cannot overwrite the latest result. Failure/retry, independent blocks and unmount cleanup are covered.
+- Compatibility/accessibility: streaming and safe SVG preview/source switching remain functional. Keyboard focus remains on the button; accessible feedback updates politely. Reduced motion shows static success until reset. Forced colors preserve borders and focus. Header metadata is excluded from conversation search.
+- Errors: focused browser tests collect page errors and recorded none. In-app browser clipboard interaction also showed the success state and returned to the normal state.
+
+## Validation
+
+Six focused browser tests passed. The broader 50-test run passed across code blocks, composer reveal, conversation tools, Electron app smoke, themes and typography. TypeScript and production build passed; the existing Vite chunk-size advisory remains. Independent code review found no actionable issue.
+
+Detail review added keyboard Enter/Space coverage: focus stays on the copy control through success and reset, and reduced-motion feedback remains visible until exactly 2500ms. A second regression covers long language labels and nested SVG controls at 320px. All eight focused tests passed without page errors. Manual layout probes at 240px, 320px and 672px found no document overflow or actions outside the header. TypeScript, formatting and repository checks passed again. No production-code correction was required by this review.
+
+The second detail review found and corrected a slow-clipboard repeat regression: starting a new request cancelled the existing reset before that request settled, leaving the old accessible status stale indefinitely. The previous feedback timer now remains active until the latest clipboard result replaces it. New regressions reproduced the failure for both the default 2000ms control and the code 2500ms control before the fix, then passed after it. They also verify a prolonged pending interval and a full fresh feedback interval after resolution. All ten focused tests passed; independent re-review confirmed the correction and found no remaining actionable issue. Production build, TypeScript, formatting and repository checks passed after the fix.
+
+The complete post-fix regression run passed all 54 tests across code blocks, streaming/composer, conversation tools, Electron app smoke, themes and typography (2.6 minutes).
+
+Final paired comparisons were inspected after typography/shadow corrections and non-hover success captures. No actionable visual mismatch remains in the implemented component; intentional integration differences are documented above.
+
+final result: passed

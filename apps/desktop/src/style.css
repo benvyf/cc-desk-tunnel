@@ -109,6 +109,17 @@
   --composer-shadow-focus:
     0 6px 24px light-dark(#20201e12, #00000050), 0 2px 6px light-dark(#20201e12, #00000038);
   --user-bubble: light-dark(#f0f4f8, #242a30);
+  /* Code retains the reference's dark canvas in either app theme. */
+  --code-bg: #171716;
+  --code-header-bg: #0e0e0d;
+  --code-text: #efeee9;
+  --code-muted: #b5b3ad;
+  --code-line: #2c2c29;
+  --code-hover: #292927;
+  --code-success: #4ade80;
+  --code-error: #f08a93;
+  --code-shadow: 0 2px 6px light-dark(#00000026, #00000000);
+  --cds-copy-feedback: 2500ms;
   --bar: 40px;
   --font-body: 14px;
   --font-title: 16px;
@@ -1743,16 +1754,124 @@ kbd {
 }
 .code-block {
   position: relative;
+  min-width: 0;
+  margin: 12px 0;
+  overflow: hidden;
+  border: 1px solid var(--code-line);
+  border-radius: 12px;
+  background: var(--code-bg);
+  color: var(--code-text);
+  box-shadow: var(--code-shadow);
+}
+.code-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px 12px;
+  min-height: 32px;
+  padding: 3px 16px;
+  border-bottom: 1px solid var(--code-line);
+  background: var(--code-header-bg);
+  color: var(--code-muted);
+  font-family: Consolas, 'Cascadia Code', monospace;
+  font-size: 12px;
+  line-height: 20px;
+}
+.code-language {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.code-language svg.app-icon {
+  flex: none;
+  width: 12px;
+  height: 12px;
 }
 .code-actions {
-  position: absolute;
-  right: 7px;
-  top: 7px;
   display: flex;
-  gap: 4px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
 }
 .code-actions > .copy-button {
-  background: var(--surface-2);
+  min-height: 24px;
+  padding: 2px 0;
+  background: transparent;
+  color: var(--code-muted);
+  font: inherit;
+  line-height: 20px;
+}
+.code-actions > .copy-button:hover {
+  background: var(--code-hover);
+  color: var(--code-text);
+}
+.code-actions > .copy-button:focus-visible {
+  outline-color: var(--code-muted);
+}
+.code-copy .copy-content {
+  display: grid;
+}
+.code-copy .copy-label,
+.code-copy .copy-feedback {
+  display: inline-flex;
+  grid-area: 1 / 1;
+  align-items: center;
+  justify-content: end;
+  gap: 4px;
+}
+.code-copy[data-status] .copy-label {
+  opacity: 0;
+}
+.code-copy[data-status='copied'] .copy-feedback {
+  color: var(--code-success);
+  animation: code-copy-feedback var(--cds-copy-feedback) var(--cds-ease-out) both;
+}
+.code-copy[data-status='copied'] .copy-label {
+  animation: code-copy-return var(--cds-copy-feedback) var(--cds-ease-out) both;
+}
+.code-copy[data-status='error'] .copy-feedback {
+  color: var(--code-error);
+}
+@keyframes code-copy-feedback {
+  0%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+@keyframes code-copy-return {
+  0%,
+  80% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .code-copy[data-status='copied'] :is(.copy-label, .copy-feedback) {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .code-block {
+    border-color: CanvasText;
+  }
+  .code-header {
+    border-bottom-color: CanvasText;
+  }
+  .code-actions > .copy-button:focus-visible {
+    outline-color: Highlight;
+  }
 }
 /* A drawing takes the place of its source, on the same ground as the code would have. */
 .code-picture {
@@ -1760,10 +1879,8 @@ kbd {
   box-sizing: border-box;
   max-width: 100%;
   max-height: 520px;
-  margin: 10px 0;
-  padding: 38px 14px 14px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-md);
+  margin: 0;
+  padding: 16px;
   background: white;
 }
 .message-content .katex-display {
@@ -1772,7 +1889,16 @@ kbd {
   padding: 2px 0;
 }
 .message-content .code-block > pre {
-  padding-top: 38px;
+  margin: 0;
+  padding: 16px;
+  border: 0;
+  border-radius: 0;
+  background: var(--code-bg);
+  color: var(--code-text);
+  color-scheme: dark;
+  font-family: Consolas, 'Cascadia Code', monospace;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .transcript {
   max-width: 820px;
