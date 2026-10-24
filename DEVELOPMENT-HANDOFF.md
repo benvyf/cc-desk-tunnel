@@ -12,7 +12,7 @@ review 修复后通过 Node24 TypeScript、前端生产构建、74项相关回�
 
 用户升级客户端后看到“账号编号尚未读取”，随后确认 Ubuntu 执行的是首次接入命令，输出 already installed，因此当时未升级程序。改用受管升级命令后，用户回传 `SUCCESS: Linux Build 3 / protocol 20 is installed and committed.`，确认首台服务端已安装提交 Build 3。Windows 新账号页已经显示，精确客户端构建号未经开发机独立读取；重新连接后编号显示仍待用户反馈。不要重跑首次 bootstrap 或为此重新登录 Claude。VPS 备份 `/var/backups/cc-update-service/account-display-20261024T041203Z`，旧运行目录 `/opt/cc-update-service.previous-account-224d7bc`。本次发布源码及历史提交已保存 VPS Git bundle，尚未推送 GitHub。
 
-用户进一步指出控制中心缺少服务端升级指令。现已补充独立的“已接入服务端升级”与“首次接入”命令，绑定当前发布的精确 Build／协议／摘要，可整行复制并显示进度；过期不提供命令，忙碌不绕过现有准入。只需更新控制中心运行包，不重发 Windows6／Linux3。部署结果另见本轮发布证据。
+用户进一步指出控制中心缺少服务端升级指令。已从源码 `d63607d1401bd84c0d1724488533190913031e64` 部署独立的“已接入服务端升级”与“首次接入”命令，绑定当前发布的精确 Build／协议／摘要，可整行复制并显示进度；过期不提供命令，忙碌不绕过现有准入。仅更新控制中心44文件运行包，不重发 Windows6／Linux3，两套续期登记与签名索引原字节不变，timer active。备份 `/var/backups/cc-update-service/server-upgrade-ui-20261024T060655Z`，旧运行目录 `/opt/cc-update-service.previous-upgrade-ui-d63607d`。14项相关测试通过，1项POSIX权限测试在Windows跳过；TypeScript、真实管理接口合成升级、真实浏览器复制/过期/390px检查、实际运行归档及公网资源核验通过。证据见 [控制中心升级入口部署](docs/evidence/control-center-server-upgrade-2026-10-24.json)。
 
 ### 2026-10-24 首台受管接入、正常会话与被动上报成功（当前状态）
 

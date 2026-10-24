@@ -18,7 +18,9 @@
 
 stable 空通道保持原字节。Windows/Linux 续期登记均绑定上述源码与精确制品，两 timer 已恢复 active，续期 oneshot 各执行一次成功并返回 not-due。发布时 revision 是快照，后续续期可递增 revision。
 
-## 用户还需完成
+## 用户操作与后续结果
+
+以下为发布时交付的安装步骤。用户随后回传 `SUCCESS: Linux Build 3 / protocol 20 is installed and committed.`，首台 Ubuntu 已完成升级，无需重复执行；重新连接后的编号显示待反馈。控制中心后续已上线独立的“已接入服务端升级”命令，今后从“客户端更新”页复制即可，当前运行源码为 `d63607d1401bd84c0d1724488533190913031e64`。Windows6／Linux3的制品源码仍为本文开头的 `224d7bc…`；部署证据见 [升级入口](evidence/control-center-server-upgrade-2026-10-24.json)。
 
 1. 安装 Windows Build 6。
 2. 结束任务，完全退出所有 CC 连接，包括托盘连接。
@@ -26,7 +28,7 @@ stable 空通道保持原字节。Windows/Linux 续期登记均绑定上述源�
 4. 保持终端打开，每15秒显示等待进度；等待 `SUCCESS: Linux Build 3 / protocol 20 is installed and committed.`。HTTP 409 表示忙碌或未通过安装准入，保留输出定位，不绕过保护。异常时先核对受管状态，不重复执行首次安装器。
 5. 重新连接客户端，确认账号编号和控制中心邮箱对应。现有 Claude 登录应继续使用，不为验收重新登录或主动发测试会话。
 
-开发环境无该 Ubuntu 的 SSH 管理入口，尚未执行实机升级，也未替用户安装 Windows 客户端。首台已确认的实机版本仍是 Build 2；上述操作成功前，不视为两端功能已经在用户机器生效。其余五台保持暂缓。
+开发环境无该 Ubuntu 的 SSH 管理入口，实机升级由用户在控制台执行并回传成功，开发工具没有直接操作该节点或替用户安装 Windows 客户端。其余五台保持暂缓。
 
 ## 验证与恢复依据
 
