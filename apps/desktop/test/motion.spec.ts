@@ -242,7 +242,7 @@ test('streaming reveals appended prose without fading history or changing Markdo
   ).toHaveCount(0);
   await expect(paragraph.first().locator('.stream-reveal')).toHaveText('追加第二段。');
   await page.emulateMedia({ reducedMotion: 'reduce' });
-  await expect(page.locator('.stream-reveal').first()).toHaveCSS('animation-name', 'none');
+  await expect(page.locator('.stream-reveal')).toHaveCount(0);
   await page.emulateMedia({ reducedMotion: 'no-preference' });
   await render('连续追加：', true);
   await expect(paragraph).toHaveText('连续追加：');

@@ -399,9 +399,10 @@ test('successive text and thinking chunks survive search and completion without 
   const thinking = page.locator('.thinking-block .tool-detail');
   await expect(thinking).toContainText('追加思考12');
   await expect(page.locator('.message.assistant')).toContainText('追加正文12');
-  await expect(page.locator('.message.assistant .stream-reveal').last()).toContainText(
-    '追加正文12',
-  );
+  // A coalesced burst paints all text immediately but animates only a bounded set of graphemes.
+  const graphemes = page.locator('.message.assistant .stream-grapheme');
+  expect(await graphemes.count()).toBeGreaterThan(0);
+  expect(await graphemes.count()).toBeLessThanOrEqual(24);
   await page.keyboard.press('Control+f');
   const find = page.getByLabel('查找对话内容', { exact: true });
   await find.fill('追加思考12');

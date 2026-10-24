@@ -30,6 +30,12 @@ export type Scenario = 'chat' | 'tool' | 'question' | 'error';
 // A draft that is only a slash and an optional command name opens the command menu.
 const slashDraft = /^[/\\][^ \n]*$/;
 
+function fitDraft(box: HTMLTextAreaElement | null) {
+  if (!box) return;
+  box.style.height = 'auto';
+  box.style.height = `${box.scrollHeight}px`;
+}
+
 // The branch the project's working tree is on, read from the project by the desktop; it is looked at again
 // whenever the window comes back to the front or a run ends, the moments it may have changed.
 function useBranch(path: string, running: boolean) {
@@ -198,10 +204,28 @@ export default function Composer({
   }
   useLayoutEffect(() => {
     // Grow with the draft; the stylesheet's max-height decides when scrolling takes over.
-    if (!input.current) return;
-    input.current.style.height = 'auto';
-    input.current.style.height = `${input.current.scrollHeight}px`;
+    fitDraft(input.current);
   }, [draft, session.id]);
+  useLayoutEffect(() => {
+    const box = input.current;
+    if (!box) return;
+    let width = box.getBoundingClientRect().width;
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      const next = box.getBoundingClientRect().width;
+      // Height changes from typing must not retrigger measurement (or form a resize loop).
+      if (next === width) return;
+      width = next;
+      // Write on the next frame, outside the observer's resize-notification delivery.
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(() => fitDraft(box));
+    });
+    observer.observe(box, { box: 'border-box' });
+    return () => {
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, []);
   // A file reaches Claude as its Windows path in the message: Claude reads it through the execution channel,
   // the same way it reads the project.
   function attach(paths: string[]) {

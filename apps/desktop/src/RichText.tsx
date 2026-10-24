@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { isValidElement, memo, useRef, useState } from 'react';
+import { isValidElement, memo, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
 import { FileCode, Eye } from './icons.tsx';
 import { CopyButton } from './copy.tsx';
@@ -128,6 +128,15 @@ const remarkPlugins = [remarkGfm, remarkMath];
 const rehypePlugins: [typeof rehypeKatex, { strict: boolean }][] = [
   [rehypeKatex, { strict: false }],
 ];
+const motionPreference =
+  typeof matchMedia === 'function' ? matchMedia('(prefers-reduced-motion: reduce)') : null;
+const reducedMotion = () => motionPreference?.matches ?? true;
+const motionOff = () => true;
+const noMotionSubscription = () => () => {};
+function subscribeMotion(listener: () => void) {
+  motionPreference?.addEventListener('change', listener);
+  return () => motionPreference?.removeEventListener('change', listener);
+}
 
 export default memo(function RichText({
   text,
@@ -136,20 +145,33 @@ export default memo(function RichText({
   text: string;
   streaming?: boolean;
 }) {
+  // Static history adds no media listeners. Live preference changes discard old reveal spans,
+  // so re-enabling motion cannot replay already displayed text.
+  const reduced = useSyncExternalStore(
+    streaming ? subscribeMotion : noMotionSubscription,
+    streaming ? reducedMotion : motionOff,
+    motionOff,
+  );
+  const reveal = streaming && !reduced;
   const source = dollars(text);
-  const [frame, setFrame] = useState({ source, streaming, start: source.length, revision: 0 });
-  if (frame.source !== source || frame.streaming !== streaming) {
+  const [frame, setFrame] = useState({
+    source,
+    streaming: reveal,
+    start: source.length,
+    revision: 0,
+  });
+  if (frame.source !== source || frame.streaming !== reveal) {
     setFrame({
       source,
-      streaming,
-      start: streaming && source.startsWith(frame.source) ? frame.source.length : source.length,
+      streaming: reveal,
+      start: reveal && source.startsWith(frame.source) ? frame.source.length : source.length,
       revision: frame.revision + 1,
     });
   }
   return (
     <Markdown
       remarkPlugins={remarkPlugins}
-      rehypePlugins={streaming ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins}
+      rehypePlugins={reveal ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins}
       skipHtml
       components={components}
     >
