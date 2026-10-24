@@ -52,7 +52,18 @@ export async function authenticateNode(root: string, authorization: string | und
 export class NodeReviews {
   private recent = new Map<
     string,
-    { hash: string; at: number; result: Promise<{ id: string; allowed: boolean }> }
+    {
+      hash: string;
+      revision: number;
+      at: number;
+      result: Promise<{ id: string; allowed: boolean }>;
+    }
+  >();
+  // Native hooks are separate processes and generate a fresh request ID for every tool batch.
+  // Keep the last approved input per native session, not a writable approval file on Ubuntu.
+  private nativeContent = new Map<
+    string,
+    { hash: string; revision: number; result: Promise<{ id: string; allowed: boolean }> }
   >();
   async check(nodeId: string, value: unknown, store: ModerationStore) {
     if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -74,23 +85,42 @@ export class NodeReviews {
       .update(JSON.stringify([v.sessionId, v.deviceId, v.kind, v.text]))
       .digest('hex');
     const key = `${nodeId}:${v.requestId}`;
+    const revision = store.config().revision;
     for (const [id, entry] of this.recent)
       if (Date.now() - entry.at > 300000) this.recent.delete(id);
     const previous = this.recent.get(key);
     if (previous) {
       if (previous.hash !== hash) throw new UpdateError(409, 'Review request ID conflict.');
-      return previous.result;
+      if (previous.revision === revision) return previous.result;
     }
-    if (this.recent.size >= 512) throw new UpdateError(429, 'Review service busy.');
-    const result = store
-      .review(v.text, nodeId, 'node.review', {
-        requestId: v.requestId,
-        sessionId: v.sessionId,
-        deviceId: v.deviceId,
-        inputKind: v.kind,
-      })
-      .then(({ id, allowed }) => ({ id, allowed }));
-    this.recent.set(key, { hash, at: Date.now(), result });
+    if (!previous && this.recent.size >= 512) throw new UpdateError(429, 'Review service busy.');
+    const context = v.deviceId === 'native-terminal' ? `${nodeId}:${v.sessionId}` : undefined;
+    const textHash = createHash('sha256').update(v.text).digest('hex');
+    const cached = context ? this.nativeContent.get(context) : undefined;
+    const reuse = cached?.revision === revision && cached.hash === textHash;
+    const result = reuse
+      ? cached.result
+      : store
+          .review(v.text, nodeId, 'node.review', {
+            requestId: v.requestId,
+            sessionId: v.sessionId,
+            deviceId: v.deviceId,
+            inputKind: v.kind,
+          })
+          .then(({ id, allowed }) => ({ id, allowed }));
+    if (context && !reuse) {
+      const entry = { hash: textHash, revision, result };
+      this.nativeContent.set(context, entry);
+      if (this.nativeContent.size > 512)
+        this.nativeContent.delete(this.nativeContent.keys().next().value!);
+      const forget = () => {
+        if (this.nativeContent.get(context) === entry) this.nativeContent.delete(context);
+      };
+      void result.then((decision) => {
+        if (!decision.allowed) forget();
+      }, forget);
+    }
+    this.recent.set(key, { hash, revision, at: Date.now(), result });
     return result;
   }
 }
