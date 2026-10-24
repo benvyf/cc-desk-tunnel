@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { thisDevice } from './device.ts';
 import { GithubMark, openProject, project } from './project.tsx';
 import { useConnectionName } from './shared.ts';
+import { Button } from './ui.tsx';
 
 export type ConnectionForm = {
   url: string;
@@ -196,35 +197,38 @@ export default function LoginPage({
           )}
           {managedServer}
           {upgrade && (
-            <button
-              className="button login-submit"
+            <Button
+              size="lg"
+              className="login-submit"
               type="button"
               disabled={connecting}
               onClick={() => install()}
             >
               <Download />
               升级客户端到 {upgrade}
-            </button>
+            </Button>
           )}
           {older && serviceUpgrade?.phase !== 'done' && (
-            <button
-              className="button login-submit"
+            <Button
+              size="lg"
+              className="login-submit"
               type="button"
               disabled={connecting || serviceUpgrade?.phase === 'running'}
               onClick={() => upgradeService(older)}
             >
               <Download />
               {serviceUpgrade?.phase === 'running' ? serviceUpgrade.text : '升级服务端'}
-            </button>
+            </Button>
           )}
           {newer && (
-            <button className="button login-submit" type="button" onClick={() => showNotes(newer)}>
+            <Button size="lg" className="login-submit" onClick={() => showNotes(newer)}>
               查看 {newer} 的更新内容
-            </button>
+            </Button>
           )}
           {direct && (
-            <button
-              className="button login-submit"
+            <Button
+              size="lg"
+              className="login-submit"
               type="button"
               disabled={connecting}
               onClick={() => install(direct)}
@@ -235,12 +239,18 @@ export default function LoginPage({
                 : upgrade
                   ? `改从 GitHub 发布页下载 ${direct}`
                   : `从 GitHub 发布页下载并升级到 ${direct}`}
-            </button>
+            </Button>
           )}
-          <button className="button primary login-submit" disabled={connecting}>
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            className="login-submit"
+            disabled={connecting}
+          >
             <Unplug />
             {connecting ? '连接中…' : '连接'}
-          </button>
+          </Button>
         </form>
         <div className="login-links">
           <button className="project-link" type="button" onClick={openSettings}>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { setPrefs, usePrefs } from './prefs.ts';
 import { actions, comboOf, keyFor, show, usable } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
-import { Switch } from './ui.tsx';
+import { Button, Switch } from './ui.tsx';
 
 export default function ShortcutSettings() {
   const prefs = usePrefs();
@@ -103,16 +103,15 @@ export default function ShortcutSettings() {
             );
           })}
         </div>
-        <button
-          type="button"
-          className="button"
+        <Button
+          variant="ghost"
           onClick={() => {
             stop();
             setPrefs((value) => ({ ...value, shortcuts: { ...value.shortcuts, keys: {} } }));
           }}
         >
           恢复默认组合键
-        </button>
+        </Button>
       </div>
     </section>
   );

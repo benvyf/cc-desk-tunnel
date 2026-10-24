@@ -4,7 +4,7 @@ import type { Effort, NativeCapabilities, Session } from '@cc-desk-tunnel/protoc
 import { folderName } from './paths.ts';
 import { describeSchedule, parseTasks, stamp } from './schedules.ts';
 import type { Schedule, Schedules, Task } from './schedules.ts';
-import { IconButton } from './ui.tsx';
+import { Button, IconButton } from './ui.tsx';
 
 // The editor's fields: every kind of rule and target keeps its own input, so switching kinds loses nothing.
 type Form = {
@@ -386,9 +386,9 @@ export default function SchedulePanel({
                       <Pencil />
                     </IconButton>
                     {removing === task.id ? (
-                      <button
-                        type="button"
-                        className="button danger"
+                      <Button
+                        variant="danger"
+                        size="xs"
                         onClick={() => {
                           setRemoving(null);
                           if (editing?.id === task.id) setEditing(undefined);
@@ -396,7 +396,7 @@ export default function SchedulePanel({
                         }}
                       >
                         确认删除
-                      </button>
+                      </Button>
                     ) : (
                       <IconButton title={`删除 ${task.name}`} onClick={() => setRemoving(task.id)}>
                         <Trash2 />

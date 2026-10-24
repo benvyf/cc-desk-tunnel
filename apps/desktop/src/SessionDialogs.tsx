@@ -3,7 +3,7 @@ import { Check, Plus, Trash2 } from './icons.tsx';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { isMac } from './platform.ts';
-import { Modal } from './ui.tsx';
+import { Button, Modal } from './ui.tsx';
 
 // The dialogs share the window's busy flag and error line, so a failed request stays visible in the open dialog.
 type DialogProps = { busy: boolean; connected: boolean; error: string | null; close: () => void };
@@ -49,13 +49,13 @@ export function AddProjectDialog({
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" className="button secondary" disabled={busy} onClick={close}>
+          <Button disabled={busy} onClick={close}>
             取消
-          </button>
-          <button className="button primary" disabled={busy || !connected}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !connected}>
             <Plus />
             {action}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -94,18 +94,13 @@ export function DeleteSessionDialog({
         </p>
       )}
       <div className="dialog-actions">
-        <button type="button" className="button secondary" disabled={busy} onClick={close}>
+        <Button disabled={busy} onClick={close}>
           取消
-        </button>
-        <button
-          type="button"
-          className="button danger"
-          disabled={busy || !connected}
-          onClick={confirm}
-        >
+        </Button>
+        <Button variant="danger" disabled={busy || !connected} onClick={confirm}>
           <Trash2 />
           删除
-        </button>
+        </Button>
       </div>
     </Modal>
   );
@@ -153,13 +148,13 @@ export function RenameSessionDialog({
           </p>
         )}
         <div className="dialog-actions">
-          <button type="button" className="button secondary" disabled={busy} onClick={close}>
+          <Button disabled={busy} onClick={close}>
             取消
-          </button>
-          <button className="button primary" disabled={busy || !connected}>
+          </Button>
+          <Button type="submit" variant="primary" disabled={busy || !connected}>
             <Check />
             保存
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
@@ -201,13 +196,11 @@ export function RenameProjectDialog({
           只改变这台电脑上列表里的名字，不改动文件夹 <code>{path}</code>；留空恢复文件夹名。
         </p>
         <div className="dialog-actions">
-          <button type="button" className="button secondary" onClick={close}>
-            取消
-          </button>
-          <button className="button primary">
+          <Button onClick={close}>取消</Button>
+          <Button type="submit" variant="primary">
             <Check />
             保存
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>
