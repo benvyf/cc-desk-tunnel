@@ -334,3 +334,111 @@ test('composer popups stay reachable with long drafts and while resizing', async
     await expect(popup).toBeHidden();
   }
 });
+
+test('a long draft keeps native send and stop actions reachable in a short window', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 280 });
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const reactPath = '/node_modules/.vite/deps/react.js';
+    const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+    const composerPath = '/src/Composer.tsx';
+    const React = (await import(reactPath)).default;
+    const { createRoot } = (await import(domPath)).default;
+    const { default: Composer } = await import(composerPath);
+    const h = React.createElement;
+    const root = document.createElement('div');
+    document.body.replaceChildren(root);
+    const actions: string[] = [];
+    Object.assign(window, { sizingActions: actions });
+    createRoot(root).render(
+      h(
+        'div',
+        { className: 'shell side-closed' },
+        h('header', { className: 'titlebar' }),
+        h('nav', { className: 'rail' }),
+        h(
+          'main',
+          { className: 'workspace' },
+          h(
+            'div',
+            { className: 'conversation-tools' },
+            h('button', { className: 'icon-button', 'aria-label': '打开对话查找' }, '⌕'),
+          ),
+          h('div', { className: 'conversation' }),
+          h(Composer, {
+            session: {
+              id: 'sizing-fixture',
+              projectPath: '/fixture',
+              model: 'sonnet',
+              effort: 'high',
+              permissionMode: 'default',
+              activeRun: { waiting: null },
+            },
+            projectName: '用于检查窄窗口布局的长项目名称',
+            draft: '保留输入内容并让草稿区内部滚动\n'.repeat(30),
+            setDraft() {},
+            native: true,
+            connected: true,
+            busy: false,
+            refreshing: false,
+            canRefreshModels: false,
+            ownsRun: true,
+            inputDisabled: false,
+            controlsDisabled: false,
+            slashOpen: false,
+            setSlashOpen() {},
+            canCompact: true,
+            scenario: 'chat',
+            setScenario() {},
+            capabilities: {
+              models: [
+                {
+                  value: 'sonnet',
+                  displayName: 'Sonnet-用于核对尺寸的较长模型名称',
+                  supportedEffortLevels: ['low', 'medium', 'high'],
+                },
+              ],
+            },
+            nativeSession: null,
+            metrics: null,
+            openAccount() {},
+            send() {
+              actions.push('send');
+            },
+            stop() {
+              actions.push('stop');
+            },
+            compact() {},
+            refresh() {},
+            async configure() {},
+          }),
+        ),
+      ),
+    );
+  });
+  const stop = page.getByRole('button', { name: '停止运行', exact: true });
+  const send = page.getByRole('button', { name: '发送消息', exact: true });
+  for (const viewport of [
+    { width: 320, height: 280 },
+    { width: 390, height: 400 },
+  ]) {
+    await page.setViewportSize(viewport);
+    for (const button of [stop, send]) {
+      await expect(button).toBeVisible();
+      const box = (await button.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(40);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+      await button.click();
+    }
+    expect(
+      await page
+        .locator('.composer textarea')
+        .evaluate((input) => input.scrollHeight > input.clientHeight),
+    ).toBe(true);
+  }
+  expect(
+    await page.evaluate(() => (window as unknown as { sizingActions: string[] }).sizingActions),
+  ).toEqual(['stop', 'send', 'stop', 'send']);
+});

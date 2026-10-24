@@ -69,6 +69,12 @@
   --radius-xl: 14px;
   --radius-2xl: 20px;
   --radius-full: 999px;
+  /* Single-line controls share these heights; multiline content can grow. */
+  --control-xs: 20px;
+  --control-sm: 24px;
+  --control-compact: 28px;
+  --control-md: 32px;
+  --control-lg: 40px;
   --shadow: 0 8px 28px light-dark(#20201e18, #00000066), 0 1px 3px light-dark(#20201e0d, #00000040);
   --bar: 40px;
   font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
@@ -78,6 +84,9 @@
   font-synthesis: none;
   line-height: 1.5;
   letter-spacing: 0;
+}
+:root[data-platform='darwin'] {
+  --bar: 46px;
 }
 :root[data-theme='light'] {
   color-scheme: light;
@@ -93,8 +102,10 @@
   flex: 1;
   border: 0;
   border-bottom: 2px solid transparent;
-  padding: 8px;
+  padding: 5px 8px;
   background: transparent;
+  min-height: var(--control-md);
+  line-height: 20px;
 }
 .connection-modes button[aria-pressed='true'] {
   border-bottom-color: var(--accent);
@@ -219,12 +230,18 @@ code,
 }
 input {
   width: 100%;
-  padding: 10px 12px;
+  padding: 5px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-3);
   color: var(--text);
   min-width: 0;
+}
+input:where(:not([type='checkbox']):not([type='radio']):not([type='range'])),
+select {
+  height: var(--control-md);
+  min-height: var(--control-md);
+  line-height: 20px;
 }
 label {
   display: flex;
@@ -238,8 +255,9 @@ label {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 36px;
-  padding: 7px 15px;
+  min-height: var(--control-md);
+  padding: 5px 15px;
+  line-height: 20px;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   font-weight: 500;
@@ -270,8 +288,8 @@ label {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control-md);
+  height: var(--control-md);
   flex-shrink: 0;
   padding: 0;
   border: 0;
@@ -287,7 +305,7 @@ label {
   position: relative;
   flex: none;
   width: 40px;
-  height: 24px;
+  height: var(--control-sm);
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -317,13 +335,14 @@ label {
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  height: 30px;
+  height: var(--control-sm);
   padding: 0 10px;
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
   font-size: 12.5px;
   color: var(--muted);
+  line-height: 18px;
 }
 .chip > span {
   overflow: hidden;
@@ -336,6 +355,7 @@ label {
 }
 button.chip {
   border-radius: var(--radius-md);
+  height: var(--control-md);
 }
 button.chip:hover:not(:disabled) {
   background: var(--hover);
@@ -380,11 +400,13 @@ button.chip.danger:hover:not(:disabled) {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  padding: 2px 7px;
+  padding: 1px 7px;
   border-radius: var(--radius-xs);
   font-size: 11px;
   font-weight: 500;
   border: 1px solid;
+  min-height: var(--control-xs);
+  line-height: 16px;
 }
 .simulation {
   color: var(--warn-text);
@@ -449,6 +471,8 @@ button.chip.danger:hover:not(:disabled) {
   font-size: 12px;
   opacity: 0.6;
   cursor: pointer;
+  min-height: var(--control-sm);
+  line-height: 16px;
 }
 .project-link:hover {
   opacity: 1;
@@ -485,8 +509,16 @@ button.chip.danger:hover:not(:disabled) {
   margin: 0;
   padding: 0;
 }
-.login-submit {
+.login-submit,
+.web-login-body .button.primary {
   margin-top: 5px;
+  min-height: var(--control-lg);
+  padding-block: 9px;
+}
+.connection-form input:not([type='checkbox']),
+.web-login-body input {
+  min-height: var(--control-lg);
+  padding-block: 9px;
 }
 /* The window: a title bar across the top, then the rail of pages, the side column and the page itself. */
 .shell {
@@ -526,8 +558,8 @@ html[data-platform='darwin'] .titlebar {
   -webkit-app-region: no-drag;
 }
 .titlebar .icon-button {
-  width: 30px;
-  height: 28px;
+  width: var(--control-compact);
+  height: var(--control-compact);
 }
 .titlebar .icon-button svg {
   width: 16px;
@@ -538,13 +570,14 @@ html[data-platform='darwin'] .titlebar {
   margin-left: 8px;
 }
 .titlebar-menus button {
-  height: 28px;
+  height: var(--control-compact);
   padding: 0 10px;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
   font-size: 13px;
   color: var(--muted);
+  line-height: 20px;
 }
 .titlebar-menus button:hover {
   background: var(--hover);
@@ -613,6 +646,8 @@ html[data-platform='darwin'] .titlebar {
   color: var(--faint);
   font-size: 12px;
   white-space: nowrap;
+  min-height: var(--control-sm);
+  line-height: 20px;
 }
 .quota-note:hover {
   background: var(--hover);
@@ -658,8 +693,8 @@ dialog:has(.release-notes) {
 .rail button {
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: var(--control-md);
+  height: var(--control-md);
   padding: 0;
   border: 0;
   border-radius: var(--radius-md);
@@ -682,8 +717,8 @@ dialog:has(.release-notes) {
   flex: 1;
 }
 .rail .rail-update {
-  width: 30px;
-  height: 30px;
+  width: var(--control-compact);
+  height: var(--control-compact);
   border-radius: 50%;
   background: var(--ink);
   color: var(--ink-text);
@@ -726,12 +761,14 @@ dialog:has(.release-notes) {
   gap: 10px;
   width: calc(100% - 20px);
   margin: 0 10px 2px;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
   font-size: 13.5px;
   text-align: left;
+  min-height: var(--control-md);
+  line-height: 20px;
 }
 .side-action svg {
   width: 16px;
@@ -752,13 +789,14 @@ dialog:has(.release-notes) {
 .session-search > svg {
   position: absolute;
   left: 11px;
-  top: 10px;
+  top: 50%;
   color: var(--faint);
   width: 15px;
   height: 15px;
+  transform: translateY(-50%);
 }
 .session-search input {
-  height: 35px;
+  height: var(--control-md);
   padding: 6px 12px 6px 34px;
   font-size: 13px;
   border: 0;
@@ -823,8 +861,8 @@ dialog:has(.release-notes) {
   height: 14px;
 }
 .list-heading .icon-button {
-  width: 24px;
-  height: 24px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   margin: -4px 0;
 }
 .list-heading .icon-button svg {
@@ -835,7 +873,7 @@ dialog:has(.release-notes) {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: 34px;
+  min-height: var(--control-md);
   margin: 2px 0;
   padding: 0 4px 0 9px;
   border-radius: var(--radius-md);
@@ -930,11 +968,12 @@ dialog:has(.release-notes) {
   gap: 8px;
   min-width: 0;
   flex: 1;
-  height: 34px;
+  height: var(--control-md);
   padding: 0 6px 0 9px;
   border: 0;
   background: transparent;
   text-align: left;
+  line-height: 20px;
 }
 .session-select strong {
   flex: 1;
@@ -954,8 +993,8 @@ dialog:has(.release-notes) {
   color: var(--text-2);
 }
 .row-action {
-  width: 24px;
-  height: 26px;
+  width: var(--control-sm);
+  height: var(--control-sm);
   display: none;
 }
 .row-action svg {
@@ -1052,6 +1091,9 @@ dialog:has(.release-notes) {
   background: none;
   color: var(--accent);
   font-size: 12px;
+  min-height: var(--control-xs);
+  line-height: 16px;
+  padding: 2px 6px;
 }
 .notice {
   display: grid;
@@ -1123,11 +1165,13 @@ dialog:has(.release-notes) {
   width: 100%;
   border: 0;
   border-radius: var(--radius-md);
-  padding: 7px 10px;
+  padding: 6px 10px;
   background: transparent;
   font-size: 13px;
   text-align: left;
   color: var(--text);
+  min-height: var(--control-md);
+  line-height: 20px;
 }
 .menu button:hover:not(:disabled),
 .menu button:focus-visible,
@@ -1343,7 +1387,7 @@ dialog:has(.release-notes) {
 .settings-list input {
   flex: none;
   width: 150px;
-  padding: 7px 10px;
+  padding: 5px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface-3);
@@ -1389,11 +1433,13 @@ kbd {
 .key-button {
   flex: none;
   min-width: 120px;
-  padding: 6px 12px;
+  padding: 4px 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
   background: var(--surface-2);
   font-size: 13px;
+  min-height: var(--control-compact);
+  line-height: 18px;
 }
 .key-button:hover:not(:disabled) {
   background: var(--hover);
@@ -1443,17 +1489,18 @@ kbd {
   margin: 2px 0 0 -6px;
 }
 .schedule-row-actions .icon-button {
-  width: 28px;
-  height: 26px;
+  width: var(--control-sm);
+  height: var(--control-sm);
 }
 .schedule-row-actions svg {
   width: 15px;
   height: 15px;
 }
 .schedule-row-actions .button {
-  min-height: 26px;
+  min-height: var(--control-sm);
   padding: 2px 10px;
   font-size: 12px;
+  line-height: 18px;
 }
 .history-load {
   display: flex;
@@ -1505,7 +1552,7 @@ kbd {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  min-height: 30px;
+  min-height: var(--control-md);
   padding: 0 20px;
   color: var(--muted);
   font-size: 12px;
@@ -1559,7 +1606,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 3px 6px;
+  padding: 2px 6px;
   border: 0;
   border-radius: var(--radius-xs);
   background: transparent;
@@ -1568,6 +1615,8 @@ kbd {
   font: inherit;
   font-size: 11px;
   user-select: none;
+  min-height: var(--control-xs);
+  line-height: 16px;
 }
 .copy-button:hover {
   background: var(--hover);
@@ -1680,10 +1729,13 @@ kbd {
   display: inline-flex;
   border: 0;
   border-radius: var(--radius-xs);
-  padding: 3px 6px;
+  padding: 2px 6px;
   background: none;
   color: var(--muted);
   cursor: pointer;
+  min-height: var(--control-xs);
+  line-height: 16px;
+  align-items: center;
 }
 .message-action:hover {
   background: var(--hover);
@@ -1768,6 +1820,11 @@ kbd {
   color: inherit;
   font: inherit;
   min-width: 0;
+}
+.schedule-form input:not([type='checkbox']),
+.schedule-form select {
+  padding: 5px 9px;
+  line-height: 20px;
 }
 .schedule-form textarea {
   resize: vertical;
@@ -1943,6 +2000,8 @@ details[open] > summary > .fold-chevron {
   color: inherit;
   font: inherit;
   cursor: pointer;
+  min-height: var(--control-compact);
+  line-height: 20px;
 }
 .turn-stats > button:hover,
 .turn-stats > button[aria-expanded='true'],
@@ -2218,7 +2277,7 @@ details[open] > summary > .fold-chevron {
   border-top: 1px solid var(--line-soft);
 }
 .approval-actions .button {
-  min-height: 31px;
+  min-height: var(--control-md);
   font-size: 12px;
 }
 .run-notice {
@@ -2286,7 +2345,10 @@ details[open] > summary > .fold-chevron {
 .composer-area {
   position: relative;
   padding: 6px 28px 22px;
-  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex-shrink: 1;
 }
 .composer-context {
   display: flex;
@@ -2294,12 +2356,19 @@ details[open] > summary > .fold-chevron {
   max-width: 820px;
   margin: 0 auto 8px;
   min-width: 0;
+  align-items: center;
+  width: 100%;
+  flex-shrink: 0;
 }
 .composer-context .chip {
   min-width: 0;
 }
 .composer {
   position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 0;
   max-width: 820px;
   margin: 0 auto;
   border: 1px solid var(--line);
@@ -2339,6 +2408,7 @@ details[open] > summary > .fold-chevron {
   flex-wrap: wrap;
   min-height: 48px;
   padding: 4px 9px 8px 10px;
+  flex-shrink: 0;
 }
 .toolbar-space {
   flex: 1;
@@ -2361,8 +2431,8 @@ details[open] > summary > .fold-chevron {
   min-width: 0;
 }
 .context-button {
-  width: 30px;
-  height: 30px;
+  width: var(--control-md);
+  height: var(--control-md);
   border-radius: 50%;
 }
 /* The ring starts at the top and fills clockwise. */
@@ -2431,13 +2501,14 @@ details[open] > summary > .fold-chevron {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 30px;
+  height: var(--control-md);
   max-width: 230px;
   padding: 0 10px;
   background: transparent;
   border: 0;
   border-radius: var(--radius-md);
   font-size: 12.5px;
+  line-height: 20px;
 }
 .model-trigger:hover:not(:disabled) {
   background: var(--hover);
@@ -2469,16 +2540,17 @@ details[open] > summary > .fold-chevron {
   display: flex;
   justify-content: center;
   align-items: center;
-  min-height: 26px;
+  min-height: var(--control-compact);
   font-size: 15px;
   color: var(--accent);
 }
 .effort-heading .icon-button {
   position: absolute;
   right: -4px;
-  top: 0;
-  width: 26px;
-  height: 26px;
+  top: 50%;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  transform: translateY(-50%);
 }
 .effort-heading .icon-button svg {
   width: 15px;
@@ -2496,6 +2568,8 @@ details[open] > summary > .fold-chevron {
   background: transparent;
   font-size: 12.5px;
   color: var(--muted);
+  min-height: var(--control-sm);
+  line-height: 20px;
 }
 .model-back {
   margin: 0 0 6px -4px;
@@ -2553,20 +2627,22 @@ details[open] > summary > .fold-chevron {
    from 15px to 15px short of the other end. */
 .effort-ticks {
   position: relative;
-  height: 26px;
+  height: var(--control-compact);
   margin-top: 4px;
 }
 .effort-ticks button {
   position: absolute;
   left: calc(15px + (100% - 30px) * var(--at));
   transform: translateX(-50%);
-  padding: 4px 6px;
+  padding: 3px 6px;
   border: 0;
   background: none;
   color: var(--muted);
   font-size: 12px;
   cursor: pointer;
   white-space: nowrap;
+  min-height: var(--control-sm);
+  line-height: 18px;
 }
 .effort-ticks button.current {
   color: var(--text);
@@ -2585,9 +2661,11 @@ details[open] > summary > .fold-chevron {
   text-align: left;
   border: 0;
   background: transparent;
-  padding: 8px 10px;
+  padding: 6px 10px;
   border-radius: var(--radius-md);
   font-size: 13px;
+  min-height: var(--control-md);
+  line-height: 20px;
 }
 .model-options button:hover {
   background: var(--hover);
@@ -2629,12 +2707,14 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   width: 100%;
   gap: 10px;
-  padding: 9px 10px;
+  padding: 6px 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
   text-align: left;
   font-size: 13px;
+  min-height: var(--control-md);
+  line-height: 20px;
 }
 .slash-menu button:hover,
 .slash-menu button[aria-selected='true'] {
@@ -2658,13 +2738,14 @@ details[open] > summary > .fold-chevron {
   background: transparent;
   color: var(--muted);
   border: 0;
-  padding: 3px 4px;
+  padding: 2px 4px;
   font-size: 12.5px;
+  min-height: var(--control-sm);
 }
 .send-button,
 .stop-button {
-  width: 34px;
-  height: 34px;
+  width: var(--control-md);
+  height: var(--control-md);
   border-radius: 50%;
   margin-left: 4px;
 }
@@ -2859,9 +2940,10 @@ details[open] > summary > .fold-chevron {
 }
 .account-section-title .button {
   margin-left: auto;
-  min-height: 28px;
+  min-height: var(--control-compact);
   font-size: 12px;
   font-weight: 400;
+  padding: 3px 12px;
 }
 .quota-period {
   display: block;
@@ -2889,7 +2971,7 @@ details[open] > summary > .fold-chevron {
 .usage-filters select,
 .usage-custom input {
   width: auto;
-  padding: 6px 9px;
+  padding: 5px 9px;
   border-radius: var(--radius-md);
   font-size: 12px;
 }
@@ -2913,11 +2995,13 @@ details[open] > summary > .fold-chevron {
   flex-shrink: 0;
   border: 0;
   border-right: 1px solid var(--line);
-  padding: 6px 11px;
+  padding: 5px 11px;
   background: var(--surface);
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
+  min-height: calc(var(--control-md) - 2px);
+  line-height: 20px;
 }
 .segmented button:focus-visible {
   outline-offset: -3px;
@@ -3417,10 +3501,6 @@ dialog::backdrop {
   .shell.side-closed {
     grid-template-columns: 44px 0 minmax(0, 1fr);
   }
-  .rail button {
-    width: 34px;
-    height: 34px;
-  }
   .sidebar {
     position: fixed;
     left: 44px;
@@ -3512,6 +3592,18 @@ dialog::backdrop {
   }
   .empty-state {
     min-height: 220px;
+  }
+}
+/* Give wrapped composer actions room when zoom or the keyboard leaves a short viewport. */
+@media (max-height: 400px) {
+  .conversation {
+    padding-block: 0;
+  }
+  .composer-area {
+    padding-block: 4px 8px;
+  }
+  .composer textarea {
+    min-height: 48px;
   }
 }
 /* The frameless desktop window is moved by its top edge, also before signing in. */
@@ -3624,7 +3716,7 @@ dialog::backdrop {
   color: var(--accent);
 }
 .question-card input {
-  padding: 8px 12px;
+  padding: 5px 12px;
   border-radius: var(--radius-md);
   font-size: 13.5px;
 }
@@ -3657,6 +3749,8 @@ dialog::backdrop {
   font: inherit;
   font-size: 12px;
   cursor: pointer;
+  min-height: var(--control-compact);
+  line-height: 18px;
 }
 .stat-chip[aria-pressed='true'],
 .stat-chip[aria-checked='true'] {
@@ -3931,8 +4025,8 @@ dialog:has(.web-settings-form) {
 .web-totp-secret-row .copy-button {
   flex: none;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: var(--control-md);
+  height: var(--control-md);
   padding: 0;
 }
 .web-totp-secret-row .copy-button svg {
