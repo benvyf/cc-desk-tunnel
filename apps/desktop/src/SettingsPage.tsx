@@ -11,7 +11,7 @@ import {
   Settings2,
   SlidersHorizontal,
   UserRound,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { ProxyClient } from './client.ts';
 import WebAccessSettings from './WebAccessSettings.tsx';
 import Help from './Help.tsx';
@@ -925,7 +925,7 @@ export default function SettingsPage({
                 aria-current={item.id === section ? 'page' : undefined}
                 onClick={() => go(item.id)}
               >
-                <item.icon />
+                <item.icon weight={item.id === section ? 'bold' : 'regular'} />
                 {item.name}
               </button>
             </div>

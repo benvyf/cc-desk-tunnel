@@ -266,7 +266,7 @@ test('inline icon sizing preserves stretchy formulas and code controls inside li
     expect(size.container).toBeGreaterThan(0);
     expect(size.width).toBeCloseTo(size.container, 0);
   }
-  await expect(page.locator('.message.assistant li .copy-button svg')).toHaveCSS('width', '13px');
+  await expect(page.locator('.message.assistant li .copy-button svg')).toHaveCSS('width', '12px');
   await page.locator('.conversation').evaluate((node) => {
     node.scrollTop = 0;
   });

@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
-import { Check, X } from 'lucide-react';
+import { Check, X } from './icons.tsx';
 
 export function IconButton({
   title,

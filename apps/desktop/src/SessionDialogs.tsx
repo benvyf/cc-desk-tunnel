@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Check, Plus, Trash2 } from 'lucide-react';
+import { Check, Plus, Trash2 } from './icons.tsx';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { isMac } from './platform.ts';

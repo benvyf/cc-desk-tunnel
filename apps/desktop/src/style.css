@@ -69,6 +69,12 @@
   --radius-xl: 14px;
   --radius-2xl: 20px;
   --radius-full: 999px;
+  /* Application glyph sizes; charts and formula SVGs keep their own geometry. */
+  --icon-xs: 12px;
+  --icon-sm: 16px;
+  --icon-md: 20px;
+  --icon-lg: 24px;
+  --icon-xl: 32px;
   /* Single-line controls share these heights; multiline content can grow. */
   --control-xs: 20px;
   --control-sm: 24px;
@@ -207,11 +213,10 @@ summary:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 3px;
 }
-svg {
-  width: 18px;
-  height: 18px;
+.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   flex-shrink: 0;
-  stroke-width: 1.8;
   /* Only inline formatting uses this offset; flex controls keep their existing centering. */
   vertical-align: -0.125em;
 }
@@ -367,9 +372,9 @@ label {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chip svg {
-  width: 15px;
-  height: 15px;
+.chip svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 button.chip {
   border-radius: var(--radius-md);
@@ -409,9 +414,9 @@ button.chip.danger:hover:not(:disabled) {
 .setting-name {
   width: 150px;
 }
-.brand > svg {
-  width: 24px;
-  height: 24px;
+.brand > svg.app-icon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
   color: var(--accent);
 }
 .badge {
@@ -496,8 +501,8 @@ button.chip.danger:hover:not(:disabled) {
   opacity: 1;
 }
 .project-link svg {
-  width: 14px;
-  height: 14px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .login-title {
   display: flex;
@@ -579,9 +584,9 @@ html[data-platform='darwin'] .titlebar {
   width: var(--control-compact);
   height: var(--control-compact);
 }
-.titlebar .icon-button svg {
-  width: 16px;
-  height: 16px;
+.titlebar .icon-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .titlebar-menus {
   display: flex;
@@ -727,9 +732,9 @@ dialog:has(.release-notes) {
   background: var(--accent-soft);
   color: var(--accent);
 }
-.rail svg {
-  width: 19px;
-  height: 19px;
+.rail svg.app-icon {
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 .rail-space {
   flex: 1;
@@ -745,9 +750,9 @@ dialog:has(.release-notes) {
   background: var(--ink-hover);
   color: var(--ink-text);
 }
-.rail .rail-update svg {
-  width: 16px;
-  height: 16px;
+.rail .rail-update svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .sidebar {
   position: relative;
@@ -788,9 +793,9 @@ dialog:has(.release-notes) {
   min-height: var(--control-md);
   line-height: 20px;
 }
-.side-action svg {
-  width: 16px;
-  height: 16px;
+.side-action svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--muted);
 }
 .side-action:hover:not(:disabled) {
@@ -804,13 +809,13 @@ dialog:has(.release-notes) {
   display: block;
   margin: 0 12px 8px;
 }
-.session-search > svg {
+.session-search > svg.app-icon {
   position: absolute;
   left: 11px;
   top: 50%;
   color: var(--faint);
-  width: 15px;
-  height: 15px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   transform: translateY(-50%);
 }
 .session-search input {
@@ -873,19 +878,19 @@ dialog:has(.release-notes) {
 .elsewhere-project > .project-toggle {
   gap: 6px;
 }
-.list-heading > .project-toggle > svg,
-.elsewhere-project > .project-toggle > svg {
-  width: 14px;
-  height: 14px;
+.list-heading > .project-toggle > svg.app-icon,
+.elsewhere-project > .project-toggle > svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .list-heading .icon-button {
   width: var(--control-sm);
   height: var(--control-sm);
   margin: -4px 0;
 }
-.list-heading .icon-button svg {
-  width: 15px;
-  height: 15px;
+.list-heading .icon-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .project-group > h2 {
   display: flex;
@@ -923,10 +928,10 @@ dialog:has(.release-notes) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-toggle > svg {
+.project-toggle > svg.app-icon {
   flex: none;
-  width: 16px;
-  height: 16px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--muted);
 }
 .project-toggle > small {
@@ -1015,9 +1020,9 @@ dialog:has(.release-notes) {
   height: var(--control-sm);
   display: none;
 }
-.row-action svg {
-  width: 15px;
-  height: 15px;
+.row-action svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .session-row:hover .row-action,
 .session-row:focus-within .row-action {
@@ -1060,9 +1065,9 @@ dialog:has(.release-notes) {
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.session-card svg {
-  width: 14px;
-  height: 14px;
+.session-card svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   margin-top: 2px;
 }
 .session-card small {
@@ -1206,7 +1211,7 @@ dialog:has(.release-notes) {
 .permission-menu button.danger small {
   color: var(--danger);
 }
-.permission-menu button.danger > svg {
+.permission-menu button.danger > svg.app-icon {
   color: inherit;
 }
 .permission-confirm {
@@ -1231,13 +1236,13 @@ dialog:has(.release-notes) {
   background: var(--danger-solid);
   color: white;
 }
-.menu button > svg,
-.permission-menu button > svg {
-  width: 16px;
-  height: 16px;
+.menu button > svg.app-icon,
+.permission-menu button > svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--muted);
 }
-.menu button.danger > svg {
+.menu button.danger > svg.app-icon {
   color: inherit;
 }
 .menu-label {
@@ -1510,9 +1515,9 @@ kbd {
   width: var(--control-sm);
   height: var(--control-sm);
 }
-.schedule-row-actions svg {
-  width: 15px;
-  height: 15px;
+.schedule-row-actions svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .schedule-row-actions .button {
   min-height: var(--control-sm);
@@ -1640,9 +1645,9 @@ kbd {
   background: var(--hover);
   color: var(--text);
 }
-.copy-button svg {
-  width: 13px;
-  height: 13px;
+.copy-button svg.app-icon {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
 }
 .message-label > .copy-button span,
 .message-footer > .copy-button span {
@@ -1694,9 +1699,9 @@ kbd {
   justify-content: center;
   gap: 12px;
 }
-.empty-state > svg {
-  width: 28px;
-  height: 28px;
+.empty-state > svg.app-icon {
+  width: var(--icon-xl);
+  height: var(--icon-xl);
   color: var(--faint);
   margin-bottom: 4px;
 }
@@ -1761,9 +1766,9 @@ kbd {
   background: var(--hover);
   color: var(--text);
 }
-.message-action svg {
-  width: 13px;
-  height: 13px;
+.message-action svg.app-icon {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
 }
 .user .message-content {
   background: var(--surface-2);
@@ -1792,11 +1797,11 @@ kbd {
   text-wrap: wrap;
 }
 /* Size direct inline icons, preserving KaTeX's stretchy SVGs and nested button icons. */
-.message-content :is(p, li, h1, h2, h3, h4) > svg.lucide {
+.message-content :is(p, li, h1, h2, h3, h4) > svg.app-icon {
   width: 1em;
   height: 1em;
 }
-.message-content small > svg.lucide {
+.message-content small > svg.app-icon {
   vertical-align: -0.075em;
 }
 .message-content > :last-child {
@@ -1933,10 +1938,10 @@ kbd {
   font-size: 14px;
   color: var(--text);
 }
-.turn-process svg,
-.work svg {
-  width: 13px;
-  height: 13px;
+.turn-process svg.app-icon,
+.work svg.app-icon {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
   flex: none;
 }
 .fold-chevron {
@@ -2048,10 +2053,10 @@ details[open] > summary > .fold-chevron {
 .session-bar-part > button[aria-expanded='true'] {
   background: var(--hover, rgba(0, 0, 0, 0.05));
 }
-.turn-stats svg,
-.session-bar-part svg {
-  width: 14px;
-  height: 14px;
+.turn-stats svg.app-icon,
+.session-bar-part svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   flex: none;
 }
 /* The strip under the input box: two buttons, each with a card like a reply's. */
@@ -2251,9 +2256,9 @@ details[open] > summary > .fold-chevron {
   align-items: flex-start;
   line-height: var(--leading-caption);
 }
-.thinking-block:has(.thinking-preview):not([open]) > summary > svg,
-.thinking-block:has(.thinking-preview):not([open]) .tool-heading > svg {
-  margin-top: calc((1lh - 13px) / 2);
+.thinking-block:has(.thinking-preview):not([open]) > summary > svg.app-icon,
+.thinking-block:has(.thinking-preview):not([open]) .tool-heading > svg.app-icon {
+  margin-top: calc((1lh - var(--icon-xs)) / 2);
 }
 .turn-process > summary .failed {
   color: var(--fail);
@@ -2265,7 +2270,7 @@ details[open] > summary > .fold-chevron {
 .thinking-block[open] .thinking-preview {
   display: none;
 }
-.tool-heading > svg {
+.tool-heading > svg.app-icon {
   color: var(--tool-icon);
 }
 .tool.failed .tool-verb {
@@ -2626,9 +2631,9 @@ details[open] > summary > .fold-chevron {
   color: var(--muted);
   flex-shrink: 0;
 }
-.model-trigger svg {
-  width: 14px;
-  height: 14px;
+.model-trigger svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--muted);
 }
 .model-menu {
@@ -2655,9 +2660,9 @@ details[open] > summary > .fold-chevron {
   height: var(--control-sm);
   transform: translateY(-50%);
 }
-.effort-heading .icon-button svg {
-  width: 15px;
-  height: 15px;
+.effort-heading .icon-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .model-current,
 .model-back {
@@ -2684,10 +2689,10 @@ details[open] > summary > .fold-chevron {
   background: var(--hover);
   color: var(--text);
 }
-.model-current svg,
-.model-back svg {
-  width: 14px;
-  height: 14px;
+.model-current svg.app-icon,
+.model-back svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 /* The effort slider: a pill filled up to a large round handle. */
 .model-menu input[type='range'] {
@@ -2786,9 +2791,9 @@ details[open] > summary > .fold-chevron {
   color: var(--muted);
   margin-top: 2px;
 }
-.model-options svg {
-  width: 15px;
-  height: 15px;
+.model-options svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .slash-menu {
   bottom: calc(100% - 44px);
@@ -2869,10 +2874,9 @@ details[open] > summary > .fold-chevron {
   background: var(--hover);
   color: var(--text);
 }
-.stop-button svg {
-  width: 13px;
-  height: 13px;
-  fill: currentColor;
+.stop-button svg.app-icon {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
 }
 .account-page {
   display: flex;
@@ -2914,9 +2918,9 @@ details[open] > summary > .fold-chevron {
   background: var(--ok-soft);
   color: var(--ok-text);
 }
-.account-avatar svg {
-  width: 25px;
-  height: 25px;
+.account-avatar svg.app-icon {
+  width: var(--icon-lg);
+  height: var(--icon-lg);
 }
 .account-identity > div {
   min-width: 0;
@@ -3507,10 +3511,10 @@ details[open] > summary > .fold-chevron {
   font-size: 13px;
   line-height: 1.6;
 }
-.elsewhere-bar > svg {
+.elsewhere-bar > svg.app-icon {
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: var(--icon-md);
+  height: var(--icon-md);
 }
 .elsewhere-bar p {
   flex: 1 1 320px;
@@ -3734,7 +3738,7 @@ dialog::backdrop {
 .account-heading h1 {
   font-size: 26px;
 }
-.account-heading h1 > svg {
+.account-heading h1 > svg.app-icon {
   display: none;
 }
 .account-body {
@@ -3813,9 +3817,9 @@ dialog::backdrop {
   font-size: 12.5px;
   color: var(--muted);
 }
-.question-option svg {
-  width: 16px;
-  height: 16px;
+.question-option svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--accent);
 }
 .question-card input {
@@ -3943,9 +3947,9 @@ dialog::backdrop {
   padding: 8px 3px 3px;
   font-size: 12px;
 }
-.theme-option-label svg {
-  width: 14px;
-  height: 14px;
+.theme-option-label svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--accent);
 }
 @container (max-width: 360px) {
@@ -4005,10 +4009,10 @@ dialog::backdrop {
   border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
-.web-trust-warning svg {
+.web-trust-warning svg.app-icon {
   flex-shrink: 0;
-  width: 17px;
-  height: 17px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--warn);
 }
 .shell.web-self-signed {
@@ -4132,9 +4136,9 @@ dialog:has(.web-settings-form) {
   height: var(--control-md);
   padding: 0;
 }
-.web-totp-secret-row .copy-button svg {
-  width: 16px;
-  height: 16px;
+.web-totp-secret-row .copy-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .web-totp-secret-row .copy-button span {
   display: none;
@@ -4170,11 +4174,11 @@ dialog:has(.web-settings-form) {
   align-items: center;
   gap: 8px;
 }
-.web-sessions summary svg {
-  width: 14px;
-  height: 14px;
+.web-sessions summary svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
-.web-sessions[open] summary svg {
+.web-sessions[open] summary svg.app-icon {
   transform: rotate(90deg);
 }
 
@@ -4193,11 +4197,11 @@ dialog:has(.web-settings-form) {
 .web-proxy-help > summary::-webkit-details-marker {
   display: none;
 }
-.web-proxy-help > summary svg {
-  width: 14px;
-  height: 14px;
+.web-proxy-help > summary svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
-.web-proxy-help[open] > summary svg {
+.web-proxy-help[open] > summary svg.app-icon {
   transform: rotate(90deg);
 }
 .web-proxy-fields {

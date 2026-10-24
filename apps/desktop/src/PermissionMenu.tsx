@@ -2,12 +2,12 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   ChevronDown,
-  FilePen,
+  FileCode,
   Hand,
   ListChecks,
   ShieldCheck,
   ShieldOff,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { PermissionMode } from '@cc-desk-tunnel/protocol';
 import { usePrefs } from './prefs.ts';
 import { usePopupBounds } from './usePopupBounds.ts';
@@ -26,7 +26,7 @@ const modes: Mode[] = [
     value: 'acceptEdits',
     name: '接受编辑',
     detail: '文件编辑直接通过，执行命令仍先询问',
-    icon: FilePen,
+    icon: FileCode,
   },
   { value: 'plan', name: '计划模式', detail: '只调研并给出计划，不做改动', icon: ListChecks },
 ];

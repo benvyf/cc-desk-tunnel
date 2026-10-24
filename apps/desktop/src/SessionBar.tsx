@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Activity, Database } from 'lucide-react';
+import { Activity, Database } from './icons.tsx';
 import type { NativeMetrics } from '@cc-desk-tunnel/protocol';
 import ContextMeter from './ContextMeter.tsx';
 import { usePrefs } from './prefs.ts';

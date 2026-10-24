@@ -13,10 +13,10 @@ import {
   ArrowDown,
   ArrowUpToLine,
   Bot,
-  Brain,
+  Spark,
   Check,
   ChevronRight,
-  FilePen,
+  FileCode,
   FileText,
   Globe,
   LoaderCircle,
@@ -27,7 +27,7 @@ import {
   SquareTerminal,
   Wrench,
   X,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 import { describe, duration, summarize } from './activity.ts';
 import type { Category } from './activity.ts';
@@ -70,7 +70,7 @@ type Live = {
 };
 const icons: Record<Category, typeof Wrench> = {
   command: SquareTerminal,
-  edit: FilePen,
+  edit: FileCode,
   read: FileText,
   search: Search,
   web: Globe,
@@ -223,7 +223,7 @@ function WorkItems({
             className="tool thinking-block"
             summary={
               <span className="tool-heading">
-                <Brain />
+                <Spark />
                 <span className="tool-verb">思考</span>
                 {preview && (
                   <span className="thinking-preview" data-search-ignore>

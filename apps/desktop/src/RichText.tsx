@@ -6,7 +6,7 @@ import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
 import { isValidElement, memo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Code, Image } from 'lucide-react';
+import { FileCode, Eye } from './icons.tsx';
 import { CopyButton } from './copy.tsx';
 
 // A finished drawing in a block of `svg` is shown as the picture it is, its source one click away. As an image
@@ -42,7 +42,7 @@ function CodeBlock({ children }: { children?: ReactNode }) {
             className="copy-button"
             onClick={() => setShown(picture ? 'source' : 'picture')}
           >
-            {picture ? <Code /> : <Image />}
+            {picture ? <FileCode /> : <Eye />}
             <span>{picture ? '查看源码' : '查看图像'}</span>
           </button>
         )}

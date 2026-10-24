@@ -1,4 +1,4 @@
-import { Download, Settings, SquareTerminal, Unplug } from 'lucide-react';
+import { Download, Settings, SquareTerminal, Unplug } from './icons.tsx';
 import { useState } from 'react';
 import { thisDevice } from './device.ts';
 import { GithubMark, openProject, project } from './project.tsx';

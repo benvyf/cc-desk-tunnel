@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  ArrowUp,
+  ArrowRight,
   Folder,
   GitBranch,
   Play,
@@ -10,7 +10,7 @@ import {
   Shrink,
   Square,
   SquareSlash,
-} from 'lucide-react';
+} from './icons.tsx';
 import type {
   Effort,
   NativeCapabilities,
@@ -426,7 +426,7 @@ export default function Composer({
                 title="发送消息"
                 disabled={!draft.trim() || inputDisabled}
               >
-                <ArrowUp />
+                <ArrowRight />
               </button>
             )
           )}

@@ -30,7 +30,7 @@ import {
   Unplug,
   UserRound,
   X,
-} from 'lucide-react';
+} from './icons.tsx';
 import { GithubMark, openProject, project } from './project.tsx';
 import type {
   Effort,

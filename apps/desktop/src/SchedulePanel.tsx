@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { CalendarClock, Pencil, Play, Plus, Trash2 } from 'lucide-react';
+import { CalendarClock, Pencil, Play, Plus, Trash2 } from './icons.tsx';
 import type { Effort, NativeCapabilities, Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { describeSchedule, parseTasks, stamp } from './schedules.ts';

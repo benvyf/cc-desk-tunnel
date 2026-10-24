@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronRight, Copy, ExternalLink, RotateCcw, Trash2 } from 'lucide-react';
+import { ChevronRight, Copy, ExternalLink, RotateCcw, Trash2 } from './icons.tsx';
 import type {
   WebCertificateState,
   WebProof,

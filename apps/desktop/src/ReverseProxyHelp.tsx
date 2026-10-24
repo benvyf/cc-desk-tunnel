@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { ChevronRight, Copy } from 'lucide-react';
+import { ChevronRight, Copy } from './icons.tsx';
 import type { WebCertificateState } from '@cc-desk-tunnel/protocol';
 import { IconButton } from './ui.tsx';
 import { copyText } from './copy.tsx';

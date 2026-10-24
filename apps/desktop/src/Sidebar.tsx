@@ -12,7 +12,7 @@ import {
   Search,
   SquarePen,
   X,
-} from 'lucide-react';
+} from './icons.tsx';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import type { ConnectedDevice } from './client.ts';
 import NoticeBell from './NoticeBell.tsx';

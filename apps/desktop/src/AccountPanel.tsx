@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { UserRound, RefreshCw, Activity, ShieldCheck, ListOrdered } from 'lucide-react';
+import { UserRound, RefreshCw, Activity, ShieldCheck, ListOrdered } from './icons.tsx';
 import type { NativeMetrics, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type {
   AccountState,

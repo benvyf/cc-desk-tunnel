@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from './icons.tsx';
 import type { UsagePage, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import { IconButton } from './ui.tsx';

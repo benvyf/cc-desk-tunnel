@@ -1,4 +1,4 @@
-import { Database } from 'lucide-react';
+import { Database } from './icons.tsx';
 import type { TurnStats as Stats } from '@cc-desk-tunnel/protocol';
 import { usePrefs } from './prefs.ts';
 import { statFields, summaryText } from './turnStats.ts';

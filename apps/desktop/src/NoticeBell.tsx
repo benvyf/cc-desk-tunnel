@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Bell } from 'lucide-react';
+import { Bell } from './icons.tsx';
 import type { Notifications } from './notifications.ts';
 import { ago } from './paths.ts';
 

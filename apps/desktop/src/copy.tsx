@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy } from './icons.tsx';
 
 export async function copyText(text: string) {
   if (window.desktop) await window.desktop.copyText(text);

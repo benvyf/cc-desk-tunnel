@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ArrowLeft, ChevronDown, ChevronRight, Check, RotateCcw } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, Check, RotateCcw } from './icons.tsx';
 import { usePrefs } from './prefs.ts';
 import { quotaFigures } from './quota.ts';
 import type {
