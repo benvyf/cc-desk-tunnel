@@ -1,0 +1,42 @@
+{
+  "phase": "complete",
+  "sourceCommit": "ac37b523fcd468f59127a973b8edf3bad4bc56ad",
+  "backup": "/var/backups/cc-update-service/native-review-dedup-20261024T082429Z",
+  "previousRuntime": "/opt/cc-update-service.previous-native-review-dedup-ac37b52",
+  "runtimeInventoryFiles": 48,
+  "changedRuntimeFiles": [
+    "apps/update-service/src/moderation-nodes.ts",
+    "docs/MODERATION-NODE-GATE.md"
+  ],
+  "configurationUnchanged": true,
+  "privateLoginUnchanged": true,
+  "moderationPolicyUnchanged": true,
+  "publicationIndexesUnchanged": true,
+  "renewalRegistrationsUnchanged": true,
+  "existingNodeListUnchanged": true,
+  "publicAssetsVerified": true,
+  "ubuntuNodesChanged": false,
+  "providerRequests": 0,
+  "bothRenewalTimersActive": true,
+  "diagnosis": {
+    "windowHkt": "2026-10-24 16:14-16:19",
+    "records": 8,
+    "uniqueTextDigests": 3,
+    "identicalHistoryReviewCount": 5,
+    "identicalHistoryBytes": 16161,
+    "secondIdenticalGroupCount": 2,
+    "userTextRead": false,
+    "reason": "PostToolBatch random request IDs bypassed request-only deduplication"
+  },
+  "validation": {
+    "focusedTestsPassed": 13,
+    "typescriptCleanCheckoutPassed": true,
+    "actualRuntimePackageImportPassed": true,
+    "syntheticPromptPlusEightHooksJevCalls": 1,
+    "changedTextPolicyNodeSessionIsolationPassed": true,
+    "denialAndErrorNotReusedAsApprovalPassed": true,
+    "concurrentContentDedupPassed": true,
+    "realJevOrClaudeRequestsMadeByAgent": 0,
+    "naturalUserFollowupPending": true
+  }
+}
