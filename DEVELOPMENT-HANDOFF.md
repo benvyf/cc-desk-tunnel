@@ -10,7 +10,9 @@
 
 review 修复后通过 Node24 TypeScript、前端生产构建、74项相关回归及模拟数据的真实 React/Edge 账号页面检查。随后用户授权“部署上线”：以干净源码 `224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a` 正式构建并部署控制中心，发布 Windows Build 6（pilot revision 11）和 Linux Build 3（pilot revision 5），版本0.3.6／协议20；stable 保持空通道。两套续期登记已更新、timer active。完整制品摘要、公网签名和管理页资源均核验通过；未启动真实 Claude/SDK 会话、JEV 或额度请求。发布详情与证据见 [正式发布记录](docs/ACCOUNT-MODE-RELEASE-2026-10-24.md)。
 
-**发布不等于用户节点已升级。** 首台 Ubuntu 当前已确认的实机版本仍为 Build 2；用户 Windows 客户端也未由开发工具安装 Build 6。下一步安装新的 Windows 包，并关闭所有 CC 连接后在 Ubuntu 执行 [Build 3 单行受管升级命令](docs/ubuntu-build3-upgrade-command.txt)，等待成功输出后重新连接验收。不要重跑首次 bootstrap 或为此重新登录 Claude。VPS 备份 `/var/backups/cc-update-service/account-display-20261024T041203Z`，旧运行目录 `/opt/cc-update-service.previous-account-224d7bc`。本次发布源码及历史提交已保存 VPS Git bundle，尚未推送 GitHub。
+用户升级客户端后看到“账号编号尚未读取”，随后确认 Ubuntu 执行的是首次接入命令，输出 already installed，因此当时未升级程序。改用受管升级命令后，用户回传 `SUCCESS: Linux Build 3 / protocol 20 is installed and committed.`，确认首台服务端已安装提交 Build 3。Windows 新账号页已经显示，精确客户端构建号未经开发机独立读取；重新连接后编号显示仍待用户反馈。不要重跑首次 bootstrap 或为此重新登录 Claude。VPS 备份 `/var/backups/cc-update-service/account-display-20261024T041203Z`，旧运行目录 `/opt/cc-update-service.previous-account-224d7bc`。本次发布源码及历史提交已保存 VPS Git bundle，尚未推送 GitHub。
+
+用户进一步指出控制中心缺少服务端升级指令。现已补充独立的“已接入服务端升级”与“首次接入”命令，绑定当前发布的精确 Build／协议／摘要，可整行复制并显示进度；过期不提供命令，忙碌不绕过现有准入。只需更新控制中心运行包，不重发 Windows6／Linux3。部署结果另见本轮发布证据。
 
 ### 2026-10-24 首台受管接入、正常会话与被动上报成功（当前状态）
 
@@ -83,7 +85,7 @@ VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下
 | 部分 | 当前状态与边界 |
 | --- | --- |
 | VPS 管理中心 | 已上线，独立账号监控／客户端更新／内容审核页面，统一顶部导航与登录 |
-| 签名下载 | pilot 客户端 Build 6、Linux 服务端 Build 3；版本 0.3.6，协议 20；stable 保持空通道；首台实机升级待执行 |
+| 签名下载 | pilot 客户端 Build 6、Linux 服务端 Build 3；版本 0.3.6，协议 20；stable 保持空通道；用户已回传首台 Build 3 升级成功 |
 | 续期 | Windows 与 Linux 各有独立 systemd timer，登记精确源码／制品身份；不会自动推进 Build 或同步上游 |
 | 被动监控代码 | schema 2、邮箱／备注、身份／额度时效、重试与缓存已实现 |
 | 第一台监控接入 | 用户安装成功，VPS 缓存已收到 ubuntu-cc 自然上报：1账号、1节点，身份/邮箱/Pro套餐、额度和会话usage有数据；备份见下文 |
@@ -205,7 +207,7 @@ Python 测试文件名含点，使用上面的直接执行方式；不要用普�
 ## 8. 接下来按什么顺序做
 
 1. 在新电脑恢复交接 bundle，先看工作树和本文档，核对线上签名索引／CURRENT-RELEASE；不要重复历史发布。
-2. VPS 已发布 Windows Build 6／Linux Build 3；首台 Ubuntu 的首次 bootstrap 已完成，关闭所有 CC 连接后执行顶部链接的受管升级命令。保留现有备份，无需重跑接入、再次恢复 CLI 或重新登录。等待用户回传升级结果，再确认新账号界面和正常使用。
+2. VPS 已发布 Windows Build 6／Linux Build 3；用户已回传首台受管升级成功。保留现有备份，无需重复升级、重跑接入、再次恢复 CLI 或重新登录。后续升级可从控制中心复制专用命令；等待用户反馈重新连接后的账号编号和正常使用。
 3. 用户已确认最新完整桌面包连接、会话及管理页查看正常；VPS 已核对到首台真实自然上报的身份/邮箱/套餐、额度及usage，基础流程验收通过。后续在正常使用中核对备注持久化、缓存滞后、退出、未知和错误状态，尚未观察到的状态标为待验证，不为演示主动调用第三方接口。
 4. 在首台完成真实安装、重启、正常使用及失败恢复演练后，再决定其他节点接入；每台先核实真实镜像／源码／版本，独立审核与上报身份，不共用秘密、不自动登录 Claude。
 5. 多账号后续工作：在真实自然样本下核验同账号多节点归并、换号后归属、未知字段和额度缓存隔离、备注持久化；现有邮箱／备注／节点／套餐／组织搜索已实现，再按规模完善筛选、分页、保留策略、容量测试和运维备份。未在此轮实现账号池自动调度、自动换号、批量登录或对第三方额度的主动轮询。

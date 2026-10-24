@@ -16,7 +16,7 @@ import {
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
-import { gunzipSync } from 'node:zlib';
+import { deflateSync, gunzipSync } from 'node:zlib';
 import {
   assertSafeDirectory,
   extractRelease,
@@ -253,4 +253,23 @@ export function bootstrapCommand(release: ServerRelease, installerHash: string) 
   );
   const program = `import hashlib,pathlib,subprocess,tempfile,urllib.request\nclass NoRedirect(urllib.request.HTTPRedirectHandler):\n def redirect_request(self,*args,**kwargs): return None\nwith urllib.request.build_opener(NoRedirect).open(${JSON.stringify(origin + BOOTSTRAP_PATH)},timeout=30) as r: b=r.read(262145)\nif len(b)>262144 or hashlib.sha256(b).hexdigest()!=${JSON.stringify(installerHash)}: raise SystemExit('Installer verification failed')\nwith tempfile.TemporaryDirectory(prefix='cc-server-bootstrap-') as d:\n p=pathlib.Path(d)/'bootstrap.py';p.write_bytes(b)\n subprocess.run(['python3',str(p),'--build',${JSON.stringify(String(release.build))},'--sha256',${JSON.stringify(release.sha256)}],check=True)\n`;
   return "sudo python3 -c '" + program.replaceAll("'", "'\"'\"'") + "'";
+}
+
+export function upgradeCommand(release: ServerRelease, script: Buffer) {
+  requireValue(
+    Number.isSafeInteger(release.build) &&
+      release.build > 0 &&
+      Number.isSafeInteger(release.protocol) &&
+      release.protocol > 0 &&
+      /^[a-f0-9]{64}$/.test(release.sha256),
+    'Invalid upgrade identity',
+  );
+  const target = { build: release.build, sha256: release.sha256, protocol: release.protocol };
+  const program = `const target = ${JSON.stringify(target)};\n${script.toString('utf8')}`;
+  const encoded = deflateSync(program).toString('base64');
+  return (
+    'sudo docker exec -i cc-desk-tunnel-ba938975-proxy-1 /opt/runtime/node/bin/node ' +
+    '--env-file=/data/config/service.env --input-type=commonjs -e ' +
+    `'eval(require("node:zlib").inflateSync(Buffer.from("${encoded}","base64")).toString())'`
+  );
 }

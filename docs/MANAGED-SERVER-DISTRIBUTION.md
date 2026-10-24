@@ -1,6 +1,8 @@
 # 配套 Linux 服务端发布与首次接入
 
-Linux 索引独立于 Windows 更新数据库、候选和通道，固定地址见 [冻结协议](MANAGED-SERVER-CONTRACT.md)。管理中心“客户端更新”页同时提供完整 Linux 包、Build／协议／SHA256，以及第一台 `ubuntu-cc` 的首次接入命令。未发布或签名过期时不生成安装命令。下载不会自动安装；后续程序升级仍须在 CC 中确认精确目标。
+Linux 索引独立于 Windows 更新数据库、候选和通道，固定地址见 [冻结协议](MANAGED-SERVER-CONTRACT.md)。管理中心“客户端更新”页同时提供完整 Linux 包、Build／协议／SHA256，以及第一台 `ubuntu-cc` 的“已接入服务端升级”和“首次接入”两种独立命令。未发布或签名过期时不生成命令，复制时也检查有效期。下载不会自动安装。
+
+已完成首次接入的节点使用“复制已接入服务端升级命令”，整行粘贴到 Ubuntu 控制台执行。命令自动绑定当前签名发布的精确 Build、协议和归档 SHA256；使用容器已有 env-file 和业务用户，在容器 loopback 管理 API 检查目标、明确确认安装并等待就绪提交，每15秒打印进度。忙碌时拒绝，原有兼容性、冷备份、签名和失败回滚仍由监督程序执行；无需再次 bootstrap 或重新登录 Claude。只读相同版本识别也不启动 Claude。HTTPS 使用现有 healthcheck 的证书信任策略，不关闭证书校验。完整可读脚本为 `apps/update-service/web/server-upgrade.cjs`，页面命令是该脚本加精确目标的压缩单行版，命令中不含服务令牌。
 
 `scripts/package-server.mjs` 只打包干净提交，重新构建配套 Web，生成完整 `SERVER-RELEASE.json`；文件采用 root／0644 的普通 USTAR 条目。包内无账号、环境配置、依赖、监控授权或私钥。`scripts/package-update-service.mjs` 包含 Linux 分发模块、共享严格文件校验器、管理页面、安装器、发布 CLI 和续期单元的完整运行依赖。
 

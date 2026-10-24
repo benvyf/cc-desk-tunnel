@@ -11,7 +11,12 @@ import { validateMonitorReport } from '../../../packages/protocol/src/account-mo
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
 import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
-import { ServerDistribution, SERVER_INDEX_PATH, bootstrapCommand } from './server-distribution.ts';
+import {
+  ServerDistribution,
+  SERVER_INDEX_PATH,
+  bootstrapCommand,
+  upgradeCommand,
+} from './server-distribution.ts';
 
 const base = '/cc-updates/admin';
 const api = base + '/api';
@@ -57,6 +62,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['enrollment.js', 'text/javascript'],
     ['monitor-install.py', 'text/plain'],
     ['server-bootstrap.py', 'text/plain'],
+    ['server-upgrade.cjs', 'text/plain'],
     ['server-download.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
@@ -300,6 +306,10 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
                     createHash('sha256')
                       .update(assets.get(base + '/server-bootstrap.py')!.bytes)
                       .digest('hex'),
+                  ),
+                  upgradeCommand: upgradeCommand(
+                    status.payload.release,
+                    assets.get(base + '/server-upgrade.cjs')!.bytes,
                   ),
                 }
               : {}),

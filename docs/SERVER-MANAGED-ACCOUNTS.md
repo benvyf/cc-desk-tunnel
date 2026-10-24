@@ -2,7 +2,7 @@
 
 2026-10-24。用户选择：在 Ubuntu 服务端终端通过官方 Claude Code 登录、退出和换号，客户端只使用服务端已经登录的账号。
 
-已从源码 `224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a` 正式构建并部署控制中心，发布 Windows Build 6、Linux Build 3（0.3.6／协议20）。用户 Ubuntu 当前已确认实机仍为 Build 2，需受管升级；Windows 新安装包也待用户安装。详见 [发布记录](ACCOUNT-MODE-RELEASE-2026-10-24.md) 与 [Ubuntu 单行升级命令](ubuntu-build3-upgrade-command.txt)。
+已从源码 `224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a` 正式构建并部署控制中心，发布 Windows Build 6、Linux Build 3（0.3.6／协议20）。用户已回传 Ubuntu `SUCCESS: Linux Build 3 / protocol 20 is installed and committed.`，首台升级完成；重新连接后的编号显示待反馈。后续可从控制中心“客户端更新”页复制专用服务端升级命令，首次接入与后续升级明确区分。详见 [发布记录](ACCOUNT-MODE-RELEASE-2026-10-24.md)。
 
 ## 操作与显示
 

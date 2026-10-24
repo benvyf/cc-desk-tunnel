@@ -31,6 +31,7 @@ export const runtimeFiles = [
   'apps/update-service/web/enrollment.js',
   'apps/update-service/web/monitor-install.py',
   'apps/update-service/web/server-bootstrap.py',
+  'apps/update-service/web/server-upgrade.cjs',
   'apps/update-service/web/server-download.js',
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',

@@ -22,6 +22,7 @@ import {
   bootstrapCommand,
   releaseFromArchive,
   renewalPayload,
+  upgradeCommand,
 } from '../src/server-distribution.ts';
 
 function fixture(t: { after(fn: () => void): void }) {
@@ -325,4 +326,8 @@ test('published Linux GET/HEAD and authenticated bootstrap command expose exact 
   assert.equal(status.payload.release.sha256, f.release.sha256);
   assert.equal(status.downloadPath, d.path(f.release));
   assert.match(status.command, /^sudo python3 -c '/);
+  assert.equal(
+    status.upgradeCommand,
+    upgradeCommand(f.release, readFileSync(new URL('../web/server-upgrade.cjs', import.meta.url))),
+  );
 });
