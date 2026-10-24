@@ -25,7 +25,7 @@ export function setupFreshNodes({ request, action, notice, date }) {
       expiresAt = Date.parse(result.expiresAt);
       $('fresh-command').value = result.command;
       $('fresh-expiry').textContent =
-        `${result.nodeId} · Build ${result.build} · ${date(result.expiresAt)} 前领取，仅一次。同名重新生成会撤销旧命令。`;
+        `${result.nodeId} · Build ${result.build} · ${date(result.expiresAt)} 前领取，仅限一台机器。同名重新生成会撤销旧命令。`;
       $('fresh-result').hidden = false;
       notice('请在新 Ubuntu 虚拟机控制台粘贴执行，安装期间保持终端打开。');
     });

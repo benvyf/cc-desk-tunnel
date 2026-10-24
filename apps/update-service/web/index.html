@@ -46,7 +46,7 @@
         <p class="muted">适用于空白 Ubuntu 24.04 LTS x64 虚拟机。自动安装 Docker、最新已发布服务端及独立监控和审核配置；完成后显示客户端连接地址、证书指纹和服务凭据。建议 2 核、4 GB 内存、至少 6 GB 可用磁盘，安装可能需要数分钟。</p>
         <form id="fresh-form"><label for="fresh-node">新节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-2" autocomplete="off"><button type="submit">生成新虚拟机安装命令</button></form>
         <div id="fresh-result" hidden><p id="fresh-expiry" class="muted" aria-live="polite"></p><label for="fresh-command">在新 Ubuntu 控制台执行</label><textarea id="fresh-command" readonly rows="6" spellcheck="false" autocomplete="off"></textarea><button id="fresh-copy" class="quiet">复制新虚拟机安装命令</button></div>
-        <p class="muted">每台虚拟机使用不同名称和命令。命令含一次性安装码，十分钟内领取，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。已有服务使用客户端更新，不要重新安装；安装不会覆盖已有数据，也不会修改网络转发规则。</p>
+        <p class="muted">每台虚拟机使用不同名称和命令。安装码十分钟内绑定一台机器，响应丢失时同机可在有效期内重试，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。已有服务使用客户端更新，不要重新安装；安装不会覆盖已有数据，也不会修改网络转发规则。</p>
       </section>
       <section class="card" aria-labelledby="server-download-heading"><h2 id="server-download-heading">配套 Linux 服务端</h2><div id="server-download" aria-live="polite"></div></section>
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, createHmac, randomBytes } from 'node:crypto';
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { UpdateConfig } from './config.ts';
@@ -11,6 +11,7 @@ type NodeRecord = {
   index: string;
   monitorHash?: string;
   moderationHash?: string;
+  installationHash?: string;
 };
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 export function readFreshNodes(root: string): Record<string, NodeRecord> {
@@ -93,26 +94,39 @@ export class FreshNodes {
       command: "sudo python3 -c '" + program.replaceAll("'", "'\"'\"'") + "'",
     };
   }
-  redeem(code: string) {
+  redeem(code: string, installationId: unknown) {
     if (Date.now() - this.window >= 60000) {
       this.window = Date.now();
       this.failures = 0;
     }
-    if (this.failures >= 30) throw new UpdateError(429, '安装码验证次数过多，请稍后重试。');
     const nodes = readFreshNodes(this.config.dataDir);
     const entry =
       /^[A-Za-z0-9_-]{43}$/.test(code) &&
       Object.entries(nodes).find(([, n]) => n.grantHash === hash(code));
-    if (!entry || entry[1].monitorHash || entry[1].expiresAt <= Date.now()) {
+    if (
+      !entry ||
+      entry[1].expiresAt <= Date.now() ||
+      typeof installationId !== 'string' ||
+      !/^[A-Za-z0-9_-]{43}$/.test(installationId) ||
+      (entry[1].monitorHash && entry[1].installationHash !== hash(installationId))
+    ) {
+      if (this.failures >= 30) throw new UpdateError(429, '安装码验证次数过多，请稍后重试。');
       this.failures++;
       throw new UpdateError(401, '安装码无效、已领取或已过期，请重新生成命令。');
     }
     const [nodeId, node] = entry;
-    const monitorToken = randomBytes(32).toString('base64url');
-    const moderationToken = randomBytes(32).toString('base64url');
+    // The random installation ID is persisted by Ubuntu before the request. Only that installation
+    // can recover a lost response during the grant window; another machine's ID cannot redeem it.
+    // Deterministic, purpose-separated credentials permit retries without storing plaintext secrets.
+    const monitorToken = createHmac('sha256', code)
+      .update('monitor:' + installationId)
+      .digest('base64url');
+    const moderationToken = createHmac('sha256', code)
+      .update('moderation:' + installationId)
+      .digest('base64url');
     node.monitorHash = hash(monitorToken);
     node.moderationHash = hash(moderationToken);
-    node.grantHash = '';
+    node.installationHash = hash(installationId);
     this.save(nodes);
     return { nodeId, origin: this.config.origin, index: node.index, monitorToken, moderationToken };
   }

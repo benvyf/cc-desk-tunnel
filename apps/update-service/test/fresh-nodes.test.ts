@@ -101,9 +101,14 @@ test('fresh deployment grants are private, single-use, node-bound; dynamic repor
   };
   const obsolete = await issue('new-1');
   const fresh = await issue('new-1');
-  assert.equal((await request('/fresh-nodes/redeem', obsolete.code, {}, false)).status, 401);
-  assert.equal((await request('/fresh-nodes/redeem', fresh.code, {}, true)).status, 403);
-  const redeemed = await request('/fresh-nodes/redeem', fresh.code, {}, false);
+  const installation = { installationId: 'i'.repeat(43) };
+  const otherInstallation = { installationId: 'j'.repeat(43) };
+  assert.equal(
+    (await request('/fresh-nodes/redeem', obsolete.code, installation, false)).status,
+    401,
+  );
+  assert.equal((await request('/fresh-nodes/redeem', fresh.code, installation, true)).status, 403);
+  const redeemed = await request('/fresh-nodes/redeem', fresh.code, installation, false);
   assert.equal(redeemed.status, 200);
   const bundle = await redeemed.json();
   assert.equal(bundle.nodeId, 'new-1');
@@ -112,7 +117,14 @@ test('fresh deployment grants are private, single-use, node-bound; dynamic repor
   const privateState = readFileSync(join(root, 'private/fresh-nodes.json'), 'utf8');
   for (const value of [fresh.code, bundle.monitorToken, bundle.moderationToken])
     assert(!privateState.includes(value));
-  assert.equal((await request('/fresh-nodes/redeem', fresh.code, {}, false)).status, 401);
+  assert.deepEqual(
+    await (await request('/fresh-nodes/redeem', fresh.code, installation, false)).json(),
+    bundle,
+  );
+  assert.equal(
+    (await request('/fresh-nodes/redeem', fresh.code, otherInstallation, false)).status,
+    401,
+  );
   assert.equal((await request('/fresh-nodes', admin, { nodeId: 'new-1' })).status, 409);
   assert.equal(await authenticateNode(root, 'Bearer ' + bundle.moderationToken), 'new-1');
   await assert.rejects(authenticateNode(root, 'Bearer ' + bundle.monitorToken));
@@ -145,7 +157,10 @@ test('fresh deployment grants are private, single-use, node-bound; dynamic repor
   const records = JSON.parse(readFileSync(path, 'utf8'));
   records['new-2'].expiresAt = Date.now() - 1;
   writeFileSync(path, JSON.stringify(records));
-  assert.equal((await request('/fresh-nodes/redeem', expired.code, {}, false)).status, 401);
+  assert.equal(
+    (await request('/fresh-nodes/redeem', expired.code, installation, false)).status,
+    401,
+  );
   await close();
   await open();
   const status = await (await request('/monitor')).json();
@@ -157,4 +172,19 @@ test('fresh deployment grants are private, single-use, node-bound; dynamic repor
   );
   assert.equal(new FreshNodes(config).monitorNodes()['new-1'], hash(bundle.monitorToken));
   assert.equal(await authenticateNode(root, 'Bearer ' + bundle.moderationToken), 'new-1');
+  // The original installation can recover a lost response after restart. Invalid requests cannot
+  // exhaust a global counter to prevent someone with a correct code from installing.
+  for (let i = 0; i < 30; i++)
+    assert.equal(
+      (await request('/fresh-nodes/redeem', 'wrong-code', installation, false)).status,
+      401,
+    );
+  assert.equal(
+    (await request('/fresh-nodes/redeem', 'wrong-code', installation, false)).status,
+    429,
+  );
+  assert.deepEqual(
+    await (await request('/fresh-nodes/redeem', fresh.code, installation, false)).json(),
+    bundle,
+  );
 });

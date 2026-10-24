@@ -74,6 +74,56 @@ class InstallerTests(unittest.TestCase):
             run.assert_not_called()
 
     @unittest.skipUnless(os.name == 'posix' and os.geteuid() == 0, 'isolated Linux root fixture')
+    def test_lost_enrollment_response_reuses_persisted_installation_identity(self):
+        import types
+        args = types.SimpleNamespace(node='fixture-retry', origin=fresh.ORIGIN, code='x' * 43)
+        requests = []
+        def disconnected(*args, **kwargs):
+            requests.append(json.loads(kwargs['data']))
+            raise OSError('synthetic connection dropped after redemption')
+        with patch.object(fresh.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': '24.04'}), \
+             patch.object(fresh.platform, 'machine', return_value='x86_64'), \
+             patch.object(fresh, 'check_empty_machine'), \
+             patch.object(fresh, 'download', side_effect=disconnected), \
+             contextlib.redirect_stdout(io.StringIO()):
+            for _ in range(2):
+                with self.assertRaises(OSError): fresh.install(args)
+        self.assertEqual(requests[0], requests[1])
+        self.assertEqual(len(requests[0]['installationId']), 43)
+        self.assertFalse((fresh.ROOT / 'enrollment.json').exists())
+
+    @unittest.skipUnless(os.name == 'posix' and os.geteuid() == 0, 'isolated Linux root fixture')
+    def test_interrupted_configuration_retries_and_publishes_without_resetting_data(self):
+        program = self.root / 'program'
+        (program / 'deploy/docker').mkdir(parents=True)
+        (program / 'deploy/docker/managed-settings.json').write_text('{}')
+        bundle = {'nodeId': 'config-retry', 'moderationToken': 'r' * 43, 'monitorToken': 'm' * 43}
+        actual_run = fresh.run
+        def run(args, **kwargs):
+            if args == ['hostname', '-I']: return '192.168.1.43'
+            return actual_run(args, **kwargs)
+        with patch.object(fresh, 'run', side_effect=fresh.InstallError('synthetic certificate failure')):
+            with self.assertRaises(fresh.InstallError): fresh.configure(bundle, program, 'fixture:image')
+        self.assertFalse(fresh.DATA.exists())
+        self.assertFalse((fresh.ROOT / 'configured.json').exists())
+        # Kill between the durable configuration marker and DATA rename, then resume publication.
+        with patch.object(fresh, 'run', side_effect=run), \
+             patch.object(fresh, 'publish_configuration', side_effect=KeyboardInterrupt):
+            with self.assertRaises(KeyboardInterrupt): fresh.configure(bundle, program, 'fixture:image')
+        self.assertFalse(fresh.DATA.exists())
+        record = json.loads((fresh.ROOT / 'configured.json').read_text())
+        stage = pathlib.Path(record['stage'])
+        before = (stage / 'config/service.env').read_bytes()
+        fresh.publish_configuration(record)
+        self.assertEqual((fresh.DATA / 'config/service.env').read_bytes(), before)
+        (fresh.DATA / 'home/keep-account-fixture').write_text('preserve')
+        fresh.publish_configuration(record)
+        self.assertEqual((fresh.DATA / 'home/keep-account-fixture').read_text(), 'preserve')
+        # An unrelated DATA directory is never replaced by a pending stage.
+        other = self.root / 'other-stage'; other.mkdir()
+        with self.assertRaises(fresh.InstallError): fresh.publish_configuration({'stage': str(other)})
+
+    @unittest.skipUnless(os.name == 'posix' and os.geteuid() == 0, 'isolated Linux root fixture')
     def test_full_install_orchestration_and_retry_use_cached_credentials_without_reset(self):
         import types
         release = {'build': 3, 'protocol': 20, 'appVersion': '0.3.6', 'sha256': 'b' * 64,
@@ -98,7 +148,8 @@ class InstallerTests(unittest.TestCase):
             if args[:2] == ['docker', 'inspect']: return bundle['nodeId']
             return ''
         actual_run = fresh.run
-        helper = types.SimpleNamespace(unpack=unpack, offline_preflight=unittest.mock.Mock(), live_status=unittest.mock.Mock())
+        helper = types.SimpleNamespace(unpack=unpack, offline_preflight=unittest.mock.Mock(),
+            live_status=unittest.mock.Mock(side_effect=[fresh.InstallError('synthetic readiness timeout'), None]))
         args = types.SimpleNamespace(node='fixture-2', origin=fresh.ORIGIN, code='x' * 43)
         with patch.object(fresh.platform, 'freedesktop_os_release', return_value={'ID': 'ubuntu', 'VERSION_ID': '24.04'}), \
              patch.object(fresh.platform, 'machine', return_value='x86_64'), \
@@ -110,8 +161,16 @@ class InstallerTests(unittest.TestCase):
              patch.object(fresh, 'run', side_effect=run), \
              patch.object(fresh.shutil, 'disk_usage', return_value=types.SimpleNamespace(free=10 * 1024 ** 3)), \
              contextlib.redirect_stdout(io.StringIO()):
-            fresh.install(args)
+            with self.assertRaises(fresh.InstallError): fresh.install(args)
             credentials = (fresh.DATA / 'config/service.env').read_bytes()
+            (fresh.DATA / 'home/keep-account-fixture').write_text('preserve')
+            # Readiness retries do not redownload/rebuild an already configured image or require
+            # another 6 GiB after the first build has used disk space.
+            with patch.object(fresh.shutil, 'disk_usage', return_value=types.SimpleNamespace(free=1024 ** 3)):
+                fresh.install(args)
+            self.assertEqual((fresh.DATA / 'home/keep-account-fixture').read_text(), 'preserve')
+            self.assertEqual(sum(cmd[:2] == ['docker', 'build'] for cmd in commands), 1)
+            self.assertEqual(sum(cmd == ['apt-get', 'update'] for cmd in commands), 1)
             self.assertIn(b'PROXY_MONITOR_TOKEN=' + b'm' * 43, credentials)
             self.assertIn(b'192.168.1.42', (fresh.ROOT / 'connection.txt').read_bytes())
             self.assertEqual(fresh.DATA.stat().st_uid, 1000)
@@ -119,7 +178,7 @@ class InstallerTests(unittest.TestCase):
             self.assertEqual((fresh.DATA / 'config/service.env').stat().st_mode & 0o777, 0o600)
             self.assertIn('readonly', next(arg for cmd in commands for arg in cmd if arg.endswith('/etc/claude-code,readonly')))
             helper.offline_preflight.assert_called_once()
-            helper.live_status.assert_called_once()
+            self.assertEqual(helper.live_status.call_count, 2)
             self.assertNotIn('claude" --version', fresh.DOCKERFILE)
             count = len(commands)
             fresh.install(args)

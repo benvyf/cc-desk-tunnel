@@ -17,6 +17,7 @@ import socket
 import subprocess
 import sys
 import tarfile
+import tempfile
 import time
 import urllib.request
 
@@ -208,13 +209,21 @@ def check_empty_machine():
             raise InstallError('Existing CC container detected; use its managed upgrade instead.')
 
 
-def configure(bundle, program):
-    DATA.mkdir(mode=0o755)
-    DATA.chmod(0o755)
-    os.chown(DATA, 1000, 1000)
+def publish_configuration(record):
+    stage = pathlib.Path(record['stage']) if 'stage' in record else None
+    if stage and stage.exists():
+        if DATA.exists(): raise InstallError('Existing data conflicts with pending configuration; no data was replaced.')
+        stage.rename(DATA)
+    if not DATA.is_dir(): raise InstallError('Configured data directory is missing; no data was reset.')
+
+
+def configure(bundle, program, image):
+    # Build private configuration beside DATA, so publishing it is one atomic same-filesystem rename.
+    # A crash before the marker leaves DATA absent; after the marker a retry finishes the rename.
+    data = pathlib.Path(tempfile.mkdtemp(prefix='.cc-desk-tunnel-install-', dir=DATA.parent))
     for name in ('config', 'tls', 'home', 'state', 'workspace'):
-        (DATA / name).mkdir(mode=0o700)
-        os.chown(DATA / name, 1000, 1000)
+        (data / name).mkdir(mode=0o700)
+        os.chown(data / name, 1000, 1000)
     policy = ROOT / 'policy'
     policy.mkdir(exist_ok=True, mode=0o755)
     policy.chmod(0o755)
@@ -227,7 +236,7 @@ def configure(bundle, program):
     run(['openssl', 'req', '-x509', '-newkey', 'rsa:3072', '-sha256', '-nodes', '-days', '365',
          '-subj', '/CN=cc-desk-tunnel.local', '-addext', 'subjectAltName=DNS:cc-desk-tunnel.local',
          '-addext', 'basicConstraints=critical,CA:FALSE',
-         '-keyout', str(DATA / 'tls/control.key'), '-out', str(DATA / 'tls/control.crt')])
+         '-keyout', str(data / 'tls/control.key'), '-out', str(data / 'tls/control.crt')])
     token = secrets.token_hex(32)
     env = {
         'PROXY_ADAPTER': 'claude-code', 'PROXY_TOKEN': token, 'PROXY_HOST': '0.0.0.0',
@@ -239,13 +248,13 @@ def configure(bundle, program):
         'PROXY_MONITOR_URL': ORIGIN + '/cc-updates/admin/api/monitor/report',
         'PROXY_MONITOR_NODE_ID': bundle['nodeId'], 'PROXY_MONITOR_TOKEN': bundle['monitorToken'],
     }
-    (DATA / 'config/service.env').write_text(''.join(k + '=' + v + '\n' for k, v in env.items()))
-    (DATA / 'config/provider.json').write_text('{}\n')
+    (data / 'config/service.env').write_text(''.join(k + '=' + v + '\n' for k, v in env.items()))
+    (data / 'config/provider.json').write_text('{}\n')
     for folder in ('config', 'tls'):
-        for path in (DATA / folder).iterdir():
+        for path in (data / folder).iterdir():
             path.chmod(0o600)
             os.chown(path, 1000, 1000)
-    fingerprint = run(['openssl', 'x509', '-in', str(DATA / 'tls/control.crt'), '-noout', '-fingerprint', '-sha256'], capture=True).split('=', 1)[1]
+    fingerprint = run(['openssl', 'x509', '-in', str(data / 'tls/control.crt'), '-noout', '-fingerprint', '-sha256'], capture=True).split('=', 1)[1]
     ips = run(['hostname', '-I'], capture=True).split()
     ips = [ip for ip in ips if re.fullmatch(r'[0-9]+(?:\.[0-9]+){3}', ip) and not ip.startswith(('127.', '172.17.'))]
     addresses = ['wss://' + ip + ':8787/ws' for ip in ips] or ['wss://<Ubuntu-IP>:8787/ws']
@@ -254,6 +263,11 @@ def configure(bundle, program):
                          '如沿用原虚拟机端口转发，请将转发目标改为这台 Ubuntu 的 IP:8787。']) + '\n'
     (ROOT / 'connection.txt').write_text(details)
     (ROOT / 'connection.txt').chmod(0o600)
+    os.chown(data, 1000, 1000)
+    data.chmod(0o755)
+    record = {'nodeId': bundle['nodeId'], 'image': image, 'stage': str(data)}
+    private_json(ROOT / 'configured.json', record)
+    publish_configuration(record)
 
 
 def show_connection():
@@ -283,8 +297,13 @@ def install(args):
         else:
             check_empty_machine()
             print('1/6 Redeeming this machine\'s one-time installation code...', flush=True)
+            attempt_path = ROOT / 'enrollment-attempt.json'
+            attempt = json.loads(attempt_path.read_text()) if attempt_path.exists() else {}
+            if attempt.get('nodeId') != args.node:
+                attempt = {'nodeId': args.node, 'installationId': secrets.token_urlsafe(32)}
+                private_json(attempt_path, attempt)
             bundle = json.loads(download(ORIGIN + '/cc-updates/admin/api/fresh-nodes/redeem',
-                                         262144, data=b'{}', token=args.code))
+                                         262144, data=json.dumps({'installationId': attempt['installationId']}).encode(), token=args.code))
             if bundle['nodeId'] != args.node or bundle['origin'] != ORIGIN:
                 raise InstallError('Enrollment identity mismatch.')
             private_json(cached, bundle)
@@ -294,40 +313,48 @@ def install(args):
             return
         # Once data exists, never reset it or roll back account/session state on a retry.
         initialized = (ROOT / 'configured.json').exists()
+        if initialized:
+            record = json.loads((ROOT / 'configured.json').read_text())
+            if record['nodeId'] != args.node: raise InstallError('Configuration belongs to another node.')
+            publish_configuration(record)
         if not initialized:
             check_empty_machine()
-        print('2/6 Installing Docker and prerequisites (first run can take several minutes)...', flush=True)
-        if shutil.disk_usage('/').free < 6 * 1024 ** 3:
-            raise InstallError('At least 6 GiB free disk space is required before building.')
-        run(['apt-get', 'update'])
-        run(['apt-get', 'install', '-y', '--no-install-recommends', 'docker.io', 'ca-certificates', 'openssl', 'xz-utils'])
-        run(['systemctl', 'enable', '--now', 'docker'])
-        if not initialized: check_empty_machine()
-        print('3/6 Verifying the signed server release and pinned official runtime...', flush=True)
-        release = verify_index(bundle['index'])
-        support = support_module()
-        work = ROOT / 'build'
-        work.mkdir(exist_ok=True, mode=0o755)
-        program = work / 'program'
-        if program.exists(): shutil.rmtree(program)
-        url = ORIGIN + '/cc-updates/server/v1/artifacts/%s/linux-x64/cc-desk-tunnel-server-%s-build%s.tar.gz' % (
-            release['build'], release['appVersion'], release['build'])
-        support.unpack(download(url, 64 * 1024 * 1024), program, release)
-        identity = json.loads((program / 'deploy/managed-server.json').read_text())
-        if identity['keys'] != KEYS or identity['origin'] != ORIGIN or identity['build'] != release['build']:
-            raise InstallError('Unexpected managed server trust identity.')
-        if hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() != release['packageLockSha256']:
-            raise InstallError('Dependency lockfile mismatch.')
-        provision_runtime(work)
-        (work / 'Dockerfile').write_text(DOCKERFILE)
-        image = 'cc-desk-tunnel:fresh-' + str(release['build'])
-        print('4/6 Building the service image; progress is printed every 15 seconds...', flush=True)
-        run(['docker', 'build', '-t', image, str(work)], timeout=3600)
-        print('5/6 Checking readiness offline, with no account data and no Claude execution...', flush=True)
-        support.offline_preflight(image, work, release, ROOT / 'install.log')
-        if not initialized:
-            configure(bundle, program)
-            private_json(ROOT / 'configured.json', {'nodeId': args.node, 'image': image})
+        if initialized:
+            release = verify_index(bundle['index'])
+            support = support_module()
+            image = record['image']
+            print('Resuming the configured installation; keeping the existing image and credentials.', flush=True)
+        else:
+            print('2/6 Installing Docker and prerequisites (first run can take several minutes)...', flush=True)
+            if shutil.disk_usage('/').free < 6 * 1024 ** 3:
+                raise InstallError('At least 6 GiB free disk space is required before building.')
+            run(['apt-get', 'update'])
+            run(['apt-get', 'install', '-y', '--no-install-recommends', 'docker.io', 'ca-certificates', 'openssl', 'xz-utils'])
+            run(['systemctl', 'enable', '--now', 'docker'])
+            check_empty_machine()
+            print('3/6 Verifying the signed server release and pinned official runtime...', flush=True)
+            release = verify_index(bundle['index'])
+            support = support_module()
+            work = ROOT / 'build'
+            work.mkdir(exist_ok=True, mode=0o755)
+            program = work / 'program'
+            if program.exists(): shutil.rmtree(program)
+            url = ORIGIN + '/cc-updates/server/v1/artifacts/%s/linux-x64/cc-desk-tunnel-server-%s-build%s.tar.gz' % (
+                release['build'], release['appVersion'], release['build'])
+            support.unpack(download(url, 64 * 1024 * 1024), program, release)
+            identity = json.loads((program / 'deploy/managed-server.json').read_text())
+            if identity['keys'] != KEYS or identity['origin'] != ORIGIN or identity['build'] != release['build']:
+                raise InstallError('Unexpected managed server trust identity.')
+            if hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() != release['packageLockSha256']:
+                raise InstallError('Dependency lockfile mismatch.')
+            provision_runtime(work)
+            (work / 'Dockerfile').write_text(DOCKERFILE)
+            image = 'cc-desk-tunnel:fresh-' + str(release['build'])
+            print('4/6 Building the service image; progress is printed every 15 seconds...', flush=True)
+            run(['docker', 'build', '-t', image, str(work)], timeout=3600)
+            print('5/6 Checking readiness offline, with no account data and no Claude execution...', flush=True)
+            support.offline_preflight(image, work, release, ROOT / 'install.log')
+            configure(bundle, program, image)
         names = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture=True).splitlines()
         if CONTAINER not in names:
             run(['docker', 'run', '-d', '--name', CONTAINER, '--restart', 'unless-stopped',

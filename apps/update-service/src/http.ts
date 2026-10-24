@@ -195,10 +195,24 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           if (request.headers.origin !== undefined)
             throw new UpdateError(403, 'Browser redemption is not accepted.');
           contentType(request, 'application/json');
-          if ((await body(request, 16)).toString('utf8') !== '{}')
-            throw new UpdateError(400, 'Expected empty JSON object.');
+          let input;
+          try {
+            input = JSON.parse((await body(request, 256)).toString('utf8'));
+          } catch {
+            throw new UpdateError(400, 'Invalid installation identity.');
+          }
+          if (
+            !input ||
+            Array.isArray(input) ||
+            Object.keys(input).length !== 1 ||
+            !Object.hasOwn(input, 'installationId')
+          )
+            throw new UpdateError(400, 'Expected installation identity.');
           const auth = request.headers.authorization ?? '';
-          const bundle = freshNodes.redeem(auth.startsWith('Bearer ') ? auth.slice(7) : '');
+          const bundle = freshNodes.redeem(
+            auth.startsWith('Bearer ') ? auth.slice(7) : '',
+            input.installationId,
+          );
           monitor ??= new MonitorStore(config.dataDir, Object.keys(nodeHashes()));
           monitor.addNode(bundle.nodeId);
           respond(response, 200, bundle);
