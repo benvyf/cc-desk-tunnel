@@ -1,0 +1,54 @@
+{
+  "phase": "complete",
+  "sourceCommit": "1c67bf1d5bac6dc6a9f304377ae3a5c4ce41e593",
+  "backup": "/var/backups/cc-update-service/fresh-ubuntu-20261024T074649Z",
+  "previousRuntime": "/opt/cc-update-service.previous-fresh-review-1c67bf1",
+  "runtimeInventoryFiles": 48,
+  "changedRuntimeFiles": [
+    "apps/update-service/src/fresh-nodes.ts",
+    "apps/update-service/src/http.ts",
+    "apps/update-service/web/fresh-install.py",
+    "apps/update-service/web/fresh-nodes.js",
+    "apps/update-service/web/index.html",
+    "docs/FRESH-UBUNTU-INSTALL.md"
+  ],
+  "configurationUnchanged": true,
+  "privateLoginUnchanged": true,
+  "moderationPolicyUnchanged": true,
+  "publicationIndexesUnchanged": true,
+  "renewalRegistrationsUnchanged": true,
+  "existingNodeListUnchanged": true,
+  "publicAssetsVerified": true,
+  "freshEndpointAuthVerified": true,
+  "productionInstallationGrantsCreated": 0,
+  "ubuntuNodesChanged": false,
+  "providerRequests": 0,
+  "fullFreshVmInstallVerified": false,
+  "bothRenewalTimersActive": true,
+  "reviewFindingsResolved": [
+    {
+      "priority": "P2",
+      "issue": "partial configuration prevented retries",
+      "fix": "private staging and atomic publication; preserve existing data and image"
+    },
+    {
+      "priority": "P2",
+      "issue": "lost redemption response permanently consumed the grant",
+      "fix": "persisted random installation identity; same-instance recovery within grant window; separate HMAC credentials with only hashes stored"
+    },
+    {
+      "priority": "P2",
+      "issue": "invalid-code flood also blocked valid grants",
+      "fix": "failure limiting applies only to invalid requests"
+    }
+  ],
+  "validation": {
+    "typescriptPassed": true,
+    "linuxInstallerTestsPassed": 6,
+    "httpGrantBindingRecoveryAndRestartPassed": true,
+    "realBrowserCopyExpiryClearMobilePassed": true,
+    "runtimeArchiveImportPassed": true,
+    "publicAssetMatches": 3,
+    "fullFreshVmInstallPending": true
+  }
+}
