@@ -23,17 +23,19 @@ The VPS policy constrains the listen address, not the client-side `-R` destinati
 
 - [x] Package the current restricted proxy with an independent generated token and WSS certificate. Use exact existing image identity with `--pull=never`, a Node entrypoint, no production mounts, read-only root, dropped capabilities, resource caps and bounded lifetime. Bind only Ubuntu `127.0.0.1:18789`.
 - [x] Test launcher validation and cleanup before distribution. Review the complete launch command and package contents. No production policy or native CLI entrypoint is used.
-- [ ] Stage a random owned HTTPS test prefix on `api.ghostapi.org`; validate nginx configuration and review rollback before reload. Keep request logs private and bounded, accept dummy content only, expose no generic proxy or filesystem routes.
-- [ ] Build a local harness around the actual proxy/view modules with a dedicated persistent test profile, certificate pin for lab control traffic and normal website certificate validation. Allow only the exact owned hostname on port 443, with normal remote DNS and public address validation; no injected lookup or dial overrides.
+- [x] Stage a random owned HTTPS test prefix on `api.ghostapi.org`; validate nginx configuration and review rollback before reload. Keep request logs private and bounded, accept dummy content only, expose no generic proxy or filesystem routes.
+- [x] Build a local harness around the actual proxy/view modules with a dedicated persistent test profile, certificate pin for lab control traffic and normal website certificate validation. Allow only the exact owned hostname on port 443, with normal remote DNS and public address validation; no injected lookup or dial overrides.
 
 The private bundle was transferred through the verified SSH route, verified/extracted by Ubuntu, and started successfully. Actual local-to-Ubuntu checks passed for pinned TLS, valid/invalid credentials, wrong certificate pin, local proxy authentication and rejected host/IP/port targets. No website connections were requested. Image environment names are blanked, known data paths are masked, and unexpected image-declared volumes refuse startup. This does not replace the remaining owned-site/browser checks.
 
 ## Checkpoint 3: Real observations
 
-- [ ] Compare request identifiers, owned-site source records, Ubuntu connection/capture evidence and local connection evidence. Matching public IPs alone do not prove remote routing.
+- [x] Compare request identifiers, owned-site source records, Ubuntu connection/capture evidence and local connection evidence. Matching public IPs alone do not prove remote routing.
 - [ ] Verify HTTPS, WSS, dummy upload/download, navigation, workers, certificate failure, invalid authentication and route loss. Check DNS, UDP/QUIC/WebRTC and IPv6 separately; mark unavailable cases unverified.
-- [ ] Verify no local target connections or automatic replays after disconnection. Reconnect through a fresh explicit action and verify cleanup.
-- [ ] Stop only named lab resources, remove only lab SSH authorization/configuration, validate and reload sshd, and verify existing business listeners again. Retain private diagnostic evidence locally.
+- [x] Verify no local target connections or automatic replays after disconnection. Reconnect through a fresh explicit action and verify cleanup.
+- [x] Stop only named lab resources, remove only lab SSH authorization/configuration, validate and reload sshd, and verify existing business listeners again. Retain private diagnostic evidence locally.
+
+Owned-site observations are recorded in `docs/claude-web-owned-site-validation-2026-10-26.md`. Completed connection/replay checks are scoped to Chromium NetLog and the finite recorded observation window. IPv6 route-probe UDP sockets appeared without UDP byte events; OS-level packet verification and full production-entrypoint coverage remain pending. The Ubuntu capture reached its packet limit during earlier functional runs and does not cover the final complete recovery run. Actual denied SSH session/forwarding attempts remain untested even though the temporary SSH access has now been removed.
 
 ## Acceptance boundary
 
