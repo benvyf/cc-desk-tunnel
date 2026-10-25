@@ -26,6 +26,12 @@ export default function ClaudeWebPage({
   latestVisible.current = visible;
   const heldKeys = useRef(new Map<string, number>());
   const heldPointer = useRef<{ x: number; y: number } | null>(null);
+  const heldGesture = useRef<{
+    target: HTMLCanvasElement;
+    type: string;
+    clientX: number;
+    clientY: number;
+  } | null>(null);
   const handshake = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const attempt = useRef(0);
   const [message, setMessage] = useState('点击连接远端网页');
@@ -42,6 +48,16 @@ export default function ClaudeWebPage({
     if (!remote) return;
     const pointer = heldPointer.current;
     heldPointer.current = null;
+    const gesture = heldGesture.current;
+    heldGesture.current = null;
+    if (gesture && !remote.viewOnly) {
+      gesture.target.dispatchEvent(
+        new CustomEvent('gestureend', {
+          bubbles: true,
+          detail: { type: gesture.type, clientX: gesture.clientX, clientY: gesture.clientY },
+        }),
+      );
+    }
     if (pointer && !remote.viewOnly) {
       // Use noVNC's ordinary DOM input path; no private RFB fields or website scripts.
       // Window dispatch also lets noVNC release its pointer-capture overlay.
@@ -81,14 +97,29 @@ export default function ClaudeWebPage({
     const hidden = () => {
       if (document.hidden) releaseInput();
     };
+    const unfocused = (event: FocusEvent) => {
+      if (event.target instanceof HTMLCanvasElement) releaseInput();
+    };
+    const rememberGesture = (event: Event) => {
+      const { type, clientX, clientY } = (event as CustomEvent).detail;
+      if (event.target instanceof HTMLCanvasElement && ['drag', 'longpress'].includes(type))
+        heldGesture.current =
+          event.type === 'gestureend' ? null : { target: event.target, type, clientX, clientY };
+    };
     for (const type of ['mousedown', 'mousemove', 'mouseup'])
       element.addEventListener(type, remember as EventListener, true);
+    for (const type of ['gesturestart', 'gesturemove', 'gestureend'])
+      element.addEventListener(type, rememberGesture, true);
     window.addEventListener('blur', releaseInput);
+    element.addEventListener('focusout', unfocused);
     document.addEventListener('visibilitychange', hidden);
     return () => {
       for (const type of ['mousedown', 'mousemove', 'mouseup'])
         element.removeEventListener(type, remember as EventListener, true);
+      for (const type of ['gesturestart', 'gesturemove', 'gestureend'])
+        element.removeEventListener(type, rememberGesture, true);
       window.removeEventListener('blur', releaseInput);
+      element.removeEventListener('focusout', unfocused);
       document.removeEventListener('visibilitychange', hidden);
     };
   }, []);
@@ -104,18 +135,24 @@ export default function ClaudeWebPage({
     if (!connected) {
       attempt.current++;
       clearHandshake();
+      releaseInput();
       rfb.current?.disconnect();
       rfb.current = null;
       setOnline(false);
       setLoading(false);
+      setMaintenance(false);
       setMessage(messages.disconnected);
       void window.desktop?.browser?.close();
-    }
+    } else
+      setMessage((previous) =>
+        previous === messages.disconnected ? '点击连接远端网页' : previous,
+      );
   }, [connected]);
   useEffect(
     () => () => {
       attempt.current++;
       clearHandshake();
+      releaseInput();
       rfb.current?.disconnect();
       void window.desktop?.browser?.close();
       void window.desktop?.browser?.mode(false);
@@ -186,7 +223,7 @@ export default function ClaudeWebPage({
       remote.addEventListener('disconnect', () => {
         if (generation === attempt.current) {
           clearHandshake();
-          heldPointer.current = null;
+          releaseInput();
           setOnline(false);
           setMessage('远端网页连接中断，请重新连接');
         }
@@ -208,7 +245,14 @@ export default function ClaudeWebPage({
   return (
     <section className="claude-web-page" hidden={!visible} aria-label="Claude网页">
       <header className="claude-web-toolbar">
-        <ModeSwitch mode="chat" change={changeMode} />
+        <ModeSwitch
+          mode="chat"
+          change={(mode) => {
+            // Release while the canvas still has its visible bounds.
+            if (mode !== 'chat') releaseInput();
+            changeMode(mode);
+          }}
+        />
         <span role="status">{window.desktop?.browser ? message : '仅桌面客户端可用'}</span>
         <button
           type="button"

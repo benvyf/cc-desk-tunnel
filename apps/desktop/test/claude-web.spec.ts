@@ -112,6 +112,12 @@ test('Electron renders remote pixels and forwards input through authenticated TL
     await expect.poll(() => rfb.keys.some((key) => key.down && key.symbol === 97)).toBe(true);
     await expect.poll(() => rfb.pointers.some((buttons) => buttons === 1)).toBe(true);
     await page.keyboard.down('Shift');
+    await page.getByRole('status').click();
+    await page.keyboard.up('Shift');
+    await expect.poll(() => rfb.keys.some((key) => !key.down && key.symbol === 65505)).toBe(true);
+    await canvas.click({ position: { x: 20, y: 20 } });
+    rfb.keys.length = 0;
+    await page.keyboard.down('Shift');
     await expect.poll(() => rfb.keys.some((key) => key.down && key.symbol === 65505)).toBe(true);
     await page.getByRole('tab', { name: 'Coding', exact: true }).click();
     await page.keyboard.up('Shift');
@@ -130,6 +136,29 @@ test('Electron renders remote pixels and forwards input through authenticated TL
     await expect(page.locator('#noVNC_mouse_capture_elem')).not.toBeVisible();
     await canvas.dispatchEvent('mousemove', { buttons: 0, clientX: 40, clientY: 205 });
     await expect.poll(() => rfb.pointers.at(-1)).toBe(0);
+    const touch = await page.context().newCDPSession(page);
+    await touch.send('Emulation.setTouchEmulationEnabled', { enabled: true });
+    const bounds = (await canvas.boundingBox())!;
+    const point = { x: bounds.x + 80, y: bounds.y + 80, id: 1 };
+    rfb.pointers.length = 0;
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ ...point, x: point.x + 60 }],
+    });
+    await expect.poll(() => rfb.pointers.at(-1)).toBe(1);
+    await page.getByRole('tab', { name: 'Coding', exact: true }).click();
+    await expect.poll(() => rfb.pointers.at(-1)).toBe(0);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+    rfb.pointers.length = 0;
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [point] });
+    await expect.poll(() => rfb.pointers.at(-1)).toBe(4); // noVNC long-press holds the right button.
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await expect.poll(() => rfb.pointers.at(-1)).toBe(0);
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    await touch.send('Emulation.setTouchEmulationEnabled', { enabled: false });
+    await touch.detach();
     const refusals = await page.evaluate(async () =>
       Promise.all([
         window.desktop!.openExternal('https://claude.ai/').then(
@@ -150,8 +179,12 @@ test('Electron renders remote pixels and forwards input through authenticated TL
     ).toBeVisible();
     await page.getByRole('button', { name: '连接远端网页', exact: true }).click();
     await expect(page.getByRole('status')).toHaveText('已连接远端网页');
+    // A peer can drop during a drag, before the user releases the mouse.
+    await canvas.dispatchEvent('mousedown', { button: 0, buttons: 1, clientX: 30, clientY: 200 });
+    await expect(page.locator('#noVNC_mouse_capture_elem')).toBeVisible();
     rfb.disconnect();
     await expect(page.getByRole('status')).toHaveText('远端网页连接中断，请重新连接');
+    await expect(page.locator('#noVNC_mouse_capture_elem')).not.toBeVisible();
     rfb.setMode('password');
     await page.getByRole('button', { name: '连接远端网页', exact: true }).click();
     await expect(page.getByRole('status')).toHaveText('远端浏览器需要管理员检查');

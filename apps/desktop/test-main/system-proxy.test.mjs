@@ -4,12 +4,14 @@ import { connect, createServer } from 'node:net';
 import { createServer as createHttpsServer } from 'node:https';
 import { execFile } from 'node:child_process';
 import { X509Certificate } from 'node:crypto';
+import { getCACertificates, setDefaultCACertificates } from 'node:tls';
 import { once } from 'node:events';
 import { promisify } from 'node:util';
 import { WebSocket, WebSocketServer } from 'ws';
 import { httpProxy, openSocket } from '../electron/system-proxy.mjs';
 import { openProxyBridge } from '../electron/proxy-bridge.mjs';
 import { connectService, serviceJson } from '../electron/secure-service.mjs';
+import { openBrowserBridge } from '../electron/browser-bridge.mjs';
 
 async function listen(handler) {
   const server = createServer(handler);
@@ -118,6 +120,73 @@ async function selfSigned() {
   );
   return JSON.parse(stdout);
 }
+
+test(
+  'CA verification matches the requested service IP through direct and CONNECT routes before sending credentials',
+  { skip: process.platform !== 'win32', timeout: 30000 },
+  async (t) => {
+    const certificate = await selfSigned(); // Trusted only by this process; valid for localhost, not 127.0.0.1.
+    assert.equal(new X509Certificate(certificate.cert).checkIP('127.0.0.1'), undefined);
+    const trusted = getCACertificates('default');
+    setDefaultCACertificates([...trusted, certificate.cert]);
+    t.after(() => setDefaultCACertificates(trusted));
+    let credentials = 0;
+    const service = createHttpsServer(certificate, (_req, res) => {
+      credentials++;
+      res.end(JSON.stringify({ ok: true }));
+    });
+    const wss = new WebSocketServer({ server: service });
+    wss.on('connection', (ws) =>
+      ws.once('message', () => {
+        credentials++;
+        ws.send(JSON.stringify({ type: 'ready' }));
+        ws.send(Buffer.from([5]));
+      }),
+    );
+    service.listen(0, '127.0.0.1');
+    await once(service, 'listening');
+    const proxy = await proxyServer([]);
+    t.after(async () => {
+      for (const ws of wss.clients) ws.terminate();
+      await new Promise((done) => wss.close(done));
+      service.closeAllConnections();
+      await new Promise((done) => service.close(done));
+      await new Promise((done) => proxy.close(done));
+    });
+    const config = {
+      url: `wss://127.0.0.1:${service.address().port}/ws`,
+      fingerprint: '',
+      token: 'offline-service-ip-identity-test-token',
+    };
+    for (const route of [undefined, () => `PROXY 127.0.0.1:${proxy.address().port}`]) {
+      await assert.rejects(serviceJson(config, 'GET', '/cc-browser/v1/status', undefined, route), {
+        code: 'ERR_TLS_CERT_ALTNAME_INVALID',
+      });
+      assert.equal(credentials, 0);
+      const refused = await openBrowserBridge(config, { resolveProxy: route });
+      try {
+        const local = new WebSocket(refused.url, { origin: 'file://' });
+        await once(local, 'open');
+        assert.equal((await once(local, 'close'))[0], 1011);
+        assert.equal(credentials, 0);
+      } finally {
+        await refused.close();
+      }
+    }
+    const matching = { ...config, url: config.url.replace('127.0.0.1', 'localhost') };
+    assert.deepEqual(await serviceJson(matching, 'GET', '/cc-browser/v1/status'), { ok: true });
+    const accepted = await openBrowserBridge(matching);
+    try {
+      const local = new WebSocket(accepted.url, { origin: 'file://' });
+      await once(local, 'open');
+      assert.deepEqual((await once(local, 'message'))[0], Buffer.from([5]));
+      assert.equal(credentials, 2);
+      local.terminate();
+    } finally {
+      await accepted.close();
+    }
+  },
+);
 
 test(
   'managed HTTPS POST uses system CONNECT proxy and validates pin before writing token; refuses redirects and oversized JSON',

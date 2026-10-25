@@ -60,6 +60,8 @@ export async function connectService(address, config, resolveProxy, route, signa
         socket.setKeepAlive(true, 30000);
         return connect({
           socket,
+          // With an existing socket, TLS still needs the target host for CA identity checks.
+          host: address.hostname,
           servername: isIP(address.hostname) ? undefined : address.hostname,
           ...controlTlsOptions(config),
         });
