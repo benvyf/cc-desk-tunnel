@@ -9,8 +9,11 @@ export async function offlineFramebuffer() {
   const keys: { down: boolean; symbol: number }[] = [];
   const pointers: number[] = [];
   let connections = 0;
+  let mode: 'none' | 'password' | 'silent' = 'none';
   server.on('connection', (ws) => {
     connections++;
+    const security = mode;
+    if (security === 'silent') return;
     let phase = 0,
       bytes = Buffer.alloc(0),
       sent = false;
@@ -23,11 +26,15 @@ export async function offlineFramebuffer() {
         if (phase === 0) {
           length = 12;
           if (bytes.length < length) return;
-          ws.send(Buffer.from([1, 1])); // Security type None, only inside the authenticated test transport.
+          ws.send(Buffer.from([1, security === 'password' ? 2 : 1]));
           phase++;
         } else if (phase === 1) {
           length = 1;
           if (bytes.length < length) return;
+          if (security === 'password') {
+            ws.send(Buffer.alloc(16, 1));
+            return;
+          }
           ws.send(Buffer.alloc(4));
           phase++;
         } else if (phase === 2) {
@@ -82,6 +89,9 @@ export async function offlineFramebuffer() {
     keys,
     pointers,
     connections: () => connections,
+    setMode: (value: typeof mode) => {
+      mode = value;
+    },
     disconnect: () => {
       for (const socket of server.clients) socket.close();
     },

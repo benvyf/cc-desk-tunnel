@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { once } from 'node:events';
 import { createServer } from 'node:https';
 import { X509Certificate } from 'node:crypto';
+import { connect } from 'node:net';
 import { WebSocketServer, WebSocket } from 'ws';
 import { defaultCertificate } from '../../server/test/fixtures/web-certificates.ts';
 import { openBrowserBridge, browserAddress } from '../electron/browser-bridge.mjs';
@@ -122,4 +123,55 @@ test('a silent browser channel closes even if the separate control channel is he
   await response;
   const closed = await once(ws, 'close');
   assert.equal(closed[0], 1011);
+});
+
+test('bridge shutdown releases rejected upgrades and incomplete HTTP requests', async (t) => {
+  for (const request of [
+    'GET /wrong-nonce HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n',
+    'GET /unfinished HTTP/1.1\r\nHost:',
+  ]) {
+    const f = await fixture(t);
+    const socket = connect({
+      host: '127.0.0.1',
+      port: Number(new URL(f.bridge.url).port),
+      allowHalfOpen: true,
+    });
+    await once(socket, 'connect');
+    socket.resume();
+    try {
+      socket.write(request);
+      // Let the HTTP parser accept either the incomplete request or the rejected upgrade.
+      await new Promise((done) => setTimeout(done, 25));
+      const closed = f.bridge.close().then(() => true);
+      assert.equal(
+        await Promise.race([closed, new Promise((done) => setTimeout(() => done(false), 500))]),
+        true,
+      );
+      assert.deepEqual(f.received, []);
+    } finally {
+      socket.destroy();
+    }
+  }
+});
+
+test('bridge shutdown also rejects TCP connections queued during an active display close', async (t) => {
+  const f = await fixture(t);
+  const ws = new WebSocket(f.bridge.url, { origin: 'file://' });
+  await once(ws, 'open');
+  const socket = connect({ host: '127.0.0.1', port: Number(new URL(f.bridge.url).port) });
+  socket.on('error', () => {}); // Refused/reset is the expected shutdown result.
+  socket.on('connect', () => socket.write('GET /unfinished HTTP/1.1\r\nHost:'));
+  try {
+    const closing = f.bridge.close();
+    assert.equal(
+      await Promise.race([
+        Promise.all([closing, f.bridge.close()]).then(() => true),
+        new Promise((done) => setTimeout(() => done(false), 500)),
+      ]),
+      true,
+    );
+  } finally {
+    socket.destroy();
+    ws.terminate();
+  }
 });

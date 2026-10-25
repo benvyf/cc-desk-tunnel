@@ -160,7 +160,10 @@ export function App({
   const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('coding');
   const [webVisited, setWebVisited] = useState(false);
   const changeMode = (mode: WorkspaceMode) => {
-    if (mode === 'chat') setWebVisited(true);
+    if (mode === 'chat') {
+      setWebVisited(true);
+      if (narrow()) setSideOpen(false);
+    }
     setWorkspaceMode(mode);
   };
   const managedUpdate = useManagedUpdate();

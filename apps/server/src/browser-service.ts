@@ -34,11 +34,14 @@ export function createBrowserService(options: BrowserOptions) {
     typeof value === 'string' &&
     value.length <= 4096 &&
     timingSafeEqual(expected, createHash('sha256').update(value).digest());
-  const wss = new WebSocketServer({
+  // ws supports closeTimeout; its separately versioned type declarations do not yet expose it.
+  const socketOptions = {
     noServer: true,
     maxPayload: 8 * 1024 * 1024,
     perMessageDeflate: false,
-  });
+    closeTimeout: 1000,
+  };
+  const wss = new WebSocketServer(socketOptions);
   let owner: WebSocket | undefined;
   let closed = false;
   const remotes = new Set<WebSocket>();
@@ -58,7 +61,10 @@ export function createBrowserService(options: BrowserOptions) {
     const leave = pending.get(request)!;
     watch(client);
     client.on('error', () => {});
-    const timeout = setTimeout(() => client.terminate(), 5000);
+    const timeout = setTimeout(() => {
+      throttle.fail(address);
+      client.terminate();
+    }, 5000);
     timeout.unref();
     client.once('close', () => {
       leave();
@@ -70,8 +76,11 @@ export function createBrowserService(options: BrowserOptions) {
       leave();
       let auth: { type?: string; token?: unknown } = {};
       try {
-        const text = data.toString();
-        if (!binary && text.length <= 8192) {
+        const size = Array.isArray(data)
+          ? data.reduce((sum, part) => sum + part.length, 0)
+          : data.byteLength;
+        if (!binary && size <= 8192) {
+          const text = data.toString();
           const parsed = JSON.parse(text);
           if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) auth = parsed;
         }
@@ -166,11 +175,13 @@ export function createBrowserService(options: BrowserOptions) {
         closed ||
         request.url !== '/cc-browser/v1/display' ||
         request.headers.origin !== undefined ||
-        wss.clients.size >= 4
+        wss.clients.size >= 8
       ) {
-        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+        socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n', () => socket.destroy());
       } else if (throttle.blocked(address) || !throttle.enter(address)) {
-        socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+        socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n', () =>
+          socket.destroy(),
+        );
       } else {
         let waiting = true;
         const leave = () => {

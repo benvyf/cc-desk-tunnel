@@ -34,6 +34,24 @@ test('Chat/Coding occupies the old logo area and preserves the Coding draft with
   await page.screenshot({ path: '.local/screenshots/claude-web-coding.png' });
 });
 
+test('narrow Chat releases the Coding sidebar shade and keeps notices below its wrapped toolbar', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 500, height: 800 });
+  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
+  await page.getByRole('tab', { name: 'Chat', exact: true }).click();
+  await expect(page.locator('.sidebar-shade')).not.toBeVisible({ timeout: 1500 });
+  await page.setViewportSize({ width: 380, height: 560 });
+  const toolbar = await page.locator('.claude-web-toolbar').boundingBox();
+  const notice = await page.locator('.claude-web-notice').boundingBox();
+  expect(notice!.y).toBeGreaterThanOrEqual(toolbar!.y + toolbar!.height);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole('tab', { name: 'Coding', exact: true }).click({ timeout: 2000 });
+  await expect(page.getByRole('region', { name: 'Claude网页' })).not.toBeVisible();
+});
+
 test('Electron renders remote pixels and forwards input through authenticated TLS, without local website access', async () => {
   test.skip(process.platform !== 'win32', 'Windows desktop acceptance');
   test.slow();
@@ -102,6 +120,16 @@ test('Electron renders remote pixels and forwards input through authenticated TL
     await expect(page.getByRole('status')).toHaveText('已连接远端网页');
     expect(rfb.connections()).toBe(1);
     await expect.poll(async () => (await canvas.boundingBox())?.width ?? 0).toBeGreaterThan(100);
+    rfb.pointers.length = 0;
+    await canvas.dispatchEvent('mousedown', { button: 0, buttons: 1, clientX: 30, clientY: 200 });
+    await expect.poll(() => rfb.pointers.includes(1)).toBe(true);
+    await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].hide());
+    await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].show());
+    await expect.poll(() => rfb.pointers.at(-1)).toBe(0);
+    await expect(page.locator('#noVNC_mouse_capture_elem')).not.toBeVisible();
+    await canvas.dispatchEvent('mousemove', { buttons: 0, clientX: 40, clientY: 205 });
+    await expect.poll(() => rfb.pointers.at(-1)).toBe(0);
     const refusals = await page.evaluate(async () =>
       Promise.all([
         window.desktop!.openExternal('https://claude.ai/').then(
@@ -124,6 +152,20 @@ test('Electron renders remote pixels and forwards input through authenticated TL
     await expect(page.getByRole('status')).toHaveText('已连接远端网页');
     rfb.disconnect();
     await expect(page.getByRole('status')).toHaveText('远端网页连接中断，请重新连接');
+    rfb.setMode('password');
+    await page.getByRole('button', { name: '连接远端网页', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('远端浏览器需要管理员检查');
+    await expect(
+      page.getByText('已暂停网页操作，请联系管理员检查远端浏览器，再手动重新连接。'),
+    ).toBeVisible();
+    rfb.setMode('silent');
+    await page.getByRole('button', { name: '连接远端网页', exact: true }).click();
+    await expect(page.getByRole('status')).toHaveText('远端画面连接超时，请联系管理员检查', {
+      timeout: 20000,
+    });
+    await expect(
+      page.getByText('已暂停网页操作，请联系管理员检查远端浏览器，再手动重新连接。'),
+    ).toBeVisible();
     expect(targets.length).toBeGreaterThan(0);
     expect(targets.every((value) => new URL(value).hostname === '127.0.0.1')).toBe(true);
   } finally {

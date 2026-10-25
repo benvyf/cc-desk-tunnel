@@ -25,25 +25,85 @@ export default function ClaudeWebPage({
   const latestVisible = useRef(visible);
   latestVisible.current = visible;
   const heldKeys = useRef(new Map<string, number>());
+  const heldPointer = useRef<{ x: number; y: number } | null>(null);
+  const handshake = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const attempt = useRef(0);
   const [message, setMessage] = useState('点击连接远端网页');
   const [loading, setLoading] = useState(false);
   const [online, setOnline] = useState(false);
   const [maintenance, setMaintenance] = useState(false);
+  const [adminNotice, setAdminNotice] = useState('');
+  function clearHandshake() {
+    clearTimeout(handshake.current);
+    handshake.current = undefined;
+  }
+  function releaseInput() {
+    const remote = rfb.current;
+    if (!remote) return;
+    const pointer = heldPointer.current;
+    heldPointer.current = null;
+    if (pointer && !remote.viewOnly) {
+      // Use noVNC's ordinary DOM input path; no private RFB fields or website scripts.
+      // Window dispatch also lets noVNC release its pointer-capture overlay.
+      window.dispatchEvent(
+        new MouseEvent('mouseup', {
+          bubbles: true,
+          buttons: 0,
+          clientX: pointer.x,
+          clientY: pointer.y,
+        }),
+      );
+    }
+    for (const [code, symbol] of heldKeys.current) remote.sendKey(symbol, code, false);
+    heldKeys.current.clear();
+    remote.blur();
+  }
+  function pause(message: string, notice: string) {
+    attempt.current++;
+    clearHandshake();
+    releaseInput();
+    rfb.current?.disconnect();
+    rfb.current = null;
+    setOnline(false);
+    setLoading(false);
+    setMaintenance(true);
+    setMessage(message);
+    setAdminNotice(notice);
+    void window.desktop?.browser?.close();
+  }
+  useEffect(() => {
+    const element = screen.current!;
+    const remember = (event: MouseEvent) => {
+      if (event.target instanceof HTMLCanvasElement) {
+        heldPointer.current = event.buttons ? { x: event.clientX, y: event.clientY } : null;
+      }
+    };
+    const hidden = () => {
+      if (document.hidden) releaseInput();
+    };
+    for (const type of ['mousedown', 'mousemove', 'mouseup'])
+      element.addEventListener(type, remember as EventListener, true);
+    window.addEventListener('blur', releaseInput);
+    document.addEventListener('visibilitychange', hidden);
+    return () => {
+      for (const type of ['mousedown', 'mousemove', 'mouseup'])
+        element.removeEventListener(type, remember as EventListener, true);
+      window.removeEventListener('blur', releaseInput);
+      document.removeEventListener('visibilitychange', hidden);
+    };
+  }, []);
   useEffect(() => {
     void window.desktop?.browser?.mode(visible);
     if (rfb.current) {
       // noVNC's viewOnly setter suppresses its own held-key releases. Send them before changing it.
-      if (!visible) {
-        for (const [code, symbol] of heldKeys.current) rfb.current.sendKey(symbol, code, false);
-        rfb.current.blur();
-      }
+      if (!visible) releaseInput();
       rfb.current.viewOnly = !visible;
     }
   }, [visible, connected]);
   useEffect(() => {
     if (!connected) {
       attempt.current++;
+      clearHandshake();
       rfb.current?.disconnect();
       rfb.current = null;
       setOnline(false);
@@ -55,6 +115,7 @@ export default function ClaudeWebPage({
   useEffect(
     () => () => {
       attempt.current++;
+      clearHandshake();
       rfb.current?.disconnect();
       void window.desktop?.browser?.close();
       void window.desktop?.browser?.mode(false);
@@ -64,6 +125,8 @@ export default function ClaudeWebPage({
   async function connect() {
     if (!window.desktop?.browser || !connected || loading) return;
     const generation = ++attempt.current;
+    clearHandshake();
+    releaseInput();
     rfb.current?.disconnect();
     rfb.current = null;
     setOnline(false);
@@ -93,6 +156,13 @@ export default function ClaudeWebPage({
       if (generation !== attempt.current) return;
       const remote = new RemoteFramebuffer(screen.current!, url.href);
       rfb.current = remote;
+      handshake.current = setTimeout(() => {
+        if (generation === attempt.current)
+          pause(
+            '远端画面连接超时，请联系管理员检查',
+            '已暂停网页操作，请联系管理员检查远端浏览器，再手动重新连接。',
+          );
+      }, 15000);
       remote.scaleViewport = true;
       remote.resizeSession = false;
       remote.viewOnly = !latestVisible.current;
@@ -108,20 +178,25 @@ export default function ClaudeWebPage({
       };
       remote.addEventListener('connect', () => {
         if (generation === attempt.current) {
+          clearHandshake();
           setOnline(true);
           setMessage('已连接远端网页');
         }
       });
       remote.addEventListener('disconnect', () => {
         if (generation === attempt.current) {
+          clearHandshake();
+          heldPointer.current = null;
           setOnline(false);
           setMessage('远端网页连接中断，请重新连接');
         }
       });
       remote.addEventListener('credentialsrequired', () => {
         if (generation === attempt.current) {
-          remote.disconnect();
-          setMessage('远端浏览器需要管理员检查');
+          pause(
+            '远端浏览器需要管理员检查',
+            '已暂停网页操作，请联系管理员检查远端浏览器，再手动重新连接。',
+          );
         }
       });
     } catch {
@@ -148,33 +223,29 @@ export default function ClaudeWebPage({
           className="button"
           disabled={!online}
           onClick={() => {
-            attempt.current++;
-            rfb.current?.disconnect();
-            rfb.current = null;
-            setOnline(false);
-            setMaintenance(true);
-            setMessage('登录需要管理员处理');
-            void window.desktop?.browser?.close();
+            pause('登录需要管理员处理', '已暂停网页操作，请联系管理员处理登录，再手动重新连接。');
           }}
         >
           登录需要处理
         </button>
       </header>
-      <div className="claude-web-screen" ref={screen} hidden={maintenance} />
-      {(!online || maintenance) && (
-        <div className="claude-web-notice">
-          <p>
-            {maintenance
-              ? '已暂停网页操作，请联系管理员处理登录，再手动重新连接。'
-              : window.desktop?.browser
-                ? message
-                : '请在桌面客户端连接远端网页'}
-          </p>
-          <p>
-            网页和附件访问由远端浏览器完成。当前为远端交互试验版；中文输入及本地附件传输尚未接入。
-          </p>
-        </div>
-      )}
+      <div className="claude-web-body">
+        <div className="claude-web-screen" ref={screen} hidden={maintenance} />
+        {(!online || maintenance) && (
+          <div className="claude-web-notice">
+            <p>
+              {maintenance
+                ? adminNotice
+                : window.desktop?.browser
+                  ? message
+                  : '请在桌面客户端连接远端网页'}
+            </p>
+            <p>
+              网页和附件访问由远端浏览器完成。当前为远端交互试验版；中文输入及本地附件传输尚未接入。
+            </p>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

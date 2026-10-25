@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import type { BrowserOptions } from '../src/browser-service.ts';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
+import { connect } from 'node:net';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createBrowserService, browserEndpoint } from '../src/browser-service.ts';
 import { Throttle } from '../src/throttle.ts';
@@ -43,7 +44,7 @@ async function fixture(t: TestContext, options: Partial<BrowserOptions> = {}) {
     await response;
     return ws;
   };
-  return { browser, origin, dial, connections: () => connections };
+  return { browser, server, origin, dial, connections: () => connections };
 }
 
 test('browser upstream accepts only an administrator private endpoint, never target-site URLs', () => {
@@ -75,13 +76,22 @@ test('status requires authentication, rejects web origins, and never contacts th
   assert.equal(f.connections(), 0);
 });
 
-test('disabled and moderation-constrained nodes do not dial a browser', async (t) => {
-  for (const options of [{ endpoint: undefined }, { blocked: () => 'moderation-required' }]) {
+test('disabled, moderation-constrained and maintenance nodes reject authenticated display without dialing', async (t) => {
+  for (const options of [
+    { endpoint: undefined },
+    { blocked: () => 'moderation-required' },
+    { blocked: () => 'maintenance' },
+  ]) {
     const f = await fixture(t, options);
     const response = await fetch(f.origin + '/cc-browser/v1/status', {
       headers: { authorization: `Bearer ${token}` },
     });
     assert.equal((await response.json()).enabled, false);
+    const ws = new WebSocket(f.origin.replace('http', 'ws') + '/cc-browser/v1/display');
+    await once(ws, 'open');
+    const closed = once(ws, 'close');
+    ws.send(JSON.stringify({ type: 'authenticate', token }));
+    assert.equal((await closed)[0], 1013);
     assert.equal(f.connections(), 0);
   }
 });
@@ -141,4 +151,74 @@ test('browser HTTP and display share token throttling and release pending-auth p
   throttle.succeed('offline-client');
   await f.dial();
   assert.equal(f.connections(), 1);
+});
+
+test('one address with four pending sign-ins does not block another controller', async (t) => {
+  const f = await fixture(t, {
+    address: (req) => String(req.headers['x-offline-client'] ?? 'owner'),
+  });
+  for (let i = 0; i < 4; i++) {
+    const ws = new WebSocket(f.origin.replace('http', 'ws') + '/cc-browser/v1/display', {
+      headers: { 'x-offline-client': 'silent-peer' },
+    });
+    await once(ws, 'open');
+    t.after(() => ws.terminate());
+  }
+  await f.dial();
+  assert.equal(f.connections(), 1);
+});
+
+test('rejected peers cannot hold the service busy by ignoring its close handshake', async (t) => {
+  const f = await fixture(t);
+  const ws = new WebSocket(f.origin.replace('http', 'ws') + '/cc-browser/v1/display');
+  await once(ws, 'open');
+  ws.pause();
+  try {
+    ws.send('null');
+    await new Promise((done) => setTimeout(done, 1500));
+    assert.equal(f.browser.busy(), false);
+    assert.equal(f.connections(), 0);
+  } finally {
+    ws.terminate();
+  }
+});
+
+test('sign-in deadlines count as failures and eventually throttle silent peers', async (t) => {
+  const throttle = new Throttle();
+  const f = await fixture(t, { throttle, address: () => 'silent-peer' });
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  for (let i = 0; i < 6; i++) {
+    const ws = new WebSocket(f.origin.replace('http', 'ws') + '/cc-browser/v1/display');
+    await once(ws, 'open');
+    const closed = once(ws, 'close');
+    t.mock.timers.tick(5001);
+    await closed;
+  }
+  assert.ok(throttle.blocked('silent-peer') > 0);
+  assert.equal(f.connections(), 0);
+});
+
+test('rejecting an upgrade releases its TCP socket even if the peer keeps its write half open', async (t) => {
+  const f = await fixture(t);
+  const socket = connect({
+    host: '127.0.0.1',
+    port: Number(new URL(f.origin).port),
+    allowHalfOpen: true,
+  });
+  await once(socket, 'connect');
+  socket.resume();
+  try {
+    const ended = once(socket, 'end');
+    socket.write(
+      'GET /cc-browser/wrong HTTP/1.1\r\nHost: localhost\r\nConnection: Upgrade\r\nUpgrade: websocket\r\n\r\n',
+    );
+    await ended;
+    const closed = new Promise<boolean>((done) => f.server.close(() => done(true)));
+    assert.equal(
+      await Promise.race([closed, new Promise((done) => setTimeout(() => done(false), 500))]),
+      true,
+    );
+  } finally {
+    socket.destroy();
+  }
 });

@@ -1,6 +1,7 @@
 This application includes unmodified noVNC 1.7.0 core JavaScript, bundled/minified for display of a remote browser.
 Copyright (C) the noVNC authors. Licensed under the Mozilla Public License 2.0.
-Its incorporated components include pako (MIT) and DES code (BSD); see the accompanying notices and source headers.
+Its incorporated components include pako (MIT) and DES code; see the accompanying notices and source headers.
+DES-LICENSE.txt reproduces the complete attribution, permissions and disclaimers from core/crypto/des.js.
 
 Exact, unmodified source package (including all copyright and license headers):
 https://registry.npmjs.org/@novnc/novnc/-/novnc-1.7.0.tgz

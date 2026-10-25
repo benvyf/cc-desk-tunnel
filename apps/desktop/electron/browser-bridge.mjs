@@ -16,6 +16,15 @@ export async function openBrowserBridge(config, { resolveProxy, heartbeatMs = 15
   controlTlsOptions(config);
   const nonce = randomBytes(32).toString('hex');
   const server = createServer((_req, res) => res.writeHead(404).end());
+  const sockets = new Set();
+  server.on('connection', (socket) => {
+    if (closed) {
+      socket.destroy();
+      return;
+    }
+    sockets.add(socket);
+    socket.once('close', () => sockets.delete(socket));
+  });
   const wss = new WebSocketServer({
     noServer: true,
     maxPayload: 8 * 1024 * 1024,
@@ -23,6 +32,7 @@ export async function openBrowserBridge(config, { resolveProxy, heartbeatMs = 15
   });
   let remote;
   let closed = false;
+  let closing;
   server.on('upgrade', (request, socket, head) => {
     if (
       closed ||
@@ -30,7 +40,7 @@ export async function openBrowserBridge(config, { resolveProxy, heartbeatMs = 15
       request.url !== `/browser/${nonce}` ||
       !['null', 'file://'].includes(request.headers.origin)
     ) {
-      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n', () => socket.destroy());
       return;
     }
     wss.handleUpgrade(request, socket, head, (ws) => wss.emit('connection', ws));
@@ -126,13 +136,15 @@ export async function openBrowserBridge(config, { resolveProxy, heartbeatMs = 15
   });
   return {
     url: `ws://127.0.0.1:${server.address().port}/browser/${nonce}`,
-    async close() {
-      if (closed) return;
+    close() {
+      if (closing) return closing;
       closed = true;
+      const stopped = new Promise((r) => server.close(r));
       for (const client of wss.clients) client.terminate();
       remote?.terminate();
-      await new Promise((r) => wss.close(r));
-      await new Promise((r) => server.close(r));
+      for (const socket of sockets) socket.destroy();
+      closing = Promise.all([stopped, new Promise((r) => wss.close(r))]).then(() => {});
+      return closing;
     },
   };
 }
