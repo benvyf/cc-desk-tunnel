@@ -47,7 +47,7 @@ test(
           'Service-Worker-Allowed': '/',
         });
         res.end(
-          "self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('message',e=>e.waitUntil(fetch('/worker-fetch').then(()=>e.source.postMessage('worker-ok'))));",
+          "const workerId=crypto.randomUUID();self.addEventListener('install',e=>self.skipWaiting());self.addEventListener('activate',e=>e.waitUntil(clients.claim()));self.addEventListener('message',e=>{if(e.data==='start-background'){setInterval(()=>fetch('/worker-tick?'+workerId,{method:'POST',body:'old-operation'}).catch(()=>{}),50);return;}e.waitUntil(fetch('/worker-fetch').then(()=>e.source.postMessage('worker-ok')))});",
         );
       } else {
         res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
@@ -172,6 +172,63 @@ test(
       'worker-ok',
     );
     assert.ok(requests.includes('/worker-fetch'));
+    await contents("navigator.serviceWorker.controller.postMessage('start-background')");
+    for (
+      let index = 0;
+      index < 100 && !requests.some((path) => path.startsWith('/worker-tick?'));
+      index++
+    )
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.ok(requests.some((path) => path.startsWith('/worker-tick?')));
+    await application.evaluate(async () => {
+      const first = global.testView;
+      await global.testStart('/', 'persist:other-web-test');
+      global.otherView = global.testView;
+      global.testView = first;
+      await global.otherView.contents.executeJavaScript(
+        "new Promise(async resolve=>{await navigator.serviceWorker.register('/sw.js');const registration=await navigator.serviceWorker.ready;navigator.serviceWorker.onmessage=e=>resolve(e.data);registration.active.postMessage('test')})",
+      );
+    });
+    const otherWorkers = await application.evaluate(({ session }) =>
+      session.fromPartition('persist:other-web-test').serviceWorkers.getAllRunning(),
+    );
+    assert.equal(Object.keys(otherWorkers).length, 1);
+    await application.evaluate(() => global.testClose());
+    assert.deepEqual(
+      await application.evaluate(({ session }) =>
+        session.fromPartition('persist:owned-web-test').serviceWorkers.getAllRunning(),
+      ),
+      {},
+      'closing must stop old worker execution',
+    );
+    assert.deepEqual(
+      await application.evaluate(({ session }) =>
+        session.fromPartition('persist:other-web-test').serviceWorkers.getAllRunning(),
+      ),
+      otherWorkers,
+      'cleanup must leave another session running',
+    );
+    await application.evaluate(() => global.otherView.close());
+    const oldOperations = requests.filter((path) => path.startsWith('/worker-tick?')).length;
+    await application.evaluate(() => global.testStart());
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    assert.equal(
+      requests.filter((path) => path.startsWith('/worker-tick?')).length,
+      oldOperations,
+      'reopening must not revive old worker operations',
+    );
+    assert.match(await contents('document.cookie'), /owned_login=reused/);
+    assert.equal(await contents("localStorage.getItem('owned')"), 'persistent');
+    assert.equal(
+      await contents('navigator.serviceWorker.getRegistrations().then(list=>list.length)'),
+      1,
+    );
+    assert.equal(
+      await contents(
+        "new Promise(async resolve=>{const registration=await navigator.serviceWorker.ready;navigator.serviceWorker.onmessage=e=>resolve(e.data);registration.active.postMessage('test')})",
+      ),
+      'worker-ok',
+    );
     const before = requests.length;
     const beforeConnections = siteConnections;
     assert.equal(
@@ -322,9 +379,21 @@ test(
       ),
     );
     assert.ok(!requests.includes('/after-disconnect'));
+    await application.evaluate(() => {
+      global.testFailWorkerCleanup = true;
+    });
     await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].destroy());
-    const closing = application.evaluate(() => global.testClose());
-
-    await closing;
+    await assert.rejects(
+      application.evaluate(() => global.testClose()),
+      /owned cleanup failure/,
+    );
+    assert.equal(await application.evaluate(() => global.testFailedHelper.isDestroyed()), true);
+    await application.evaluate(() => {
+      global.testFailWorkerCleanup = false;
+    });
+    await assert.rejects(
+      application.evaluate(() => global.testStart()),
+      /owned cleanup failure/,
+    );
   },
 );

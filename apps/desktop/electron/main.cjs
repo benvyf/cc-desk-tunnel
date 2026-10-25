@@ -375,7 +375,7 @@ handle('proxy:connect', async (event, config) => {
       () => {
         if (bridge !== connection) return;
         bridge = null;
-        void closeBrowser();
+        void closeBrowser().catch(() => log('Browser cleanup failed; its session remains closed.'));
         keepAwake(false);
         if (!event.sender.isDestroyed()) event.sender.send('proxy:closed');
       },

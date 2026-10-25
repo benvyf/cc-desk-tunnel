@@ -66,6 +66,74 @@ test('management cancellation bounds a pending system proxy resolver before sock
   finish('DIRECT');
 });
 
+test(
+  'cancellation destroys a socket waiting for the system proxy CONNECT response',
+  { timeout: 3000 },
+  async (t) => {
+    let received;
+    const entered = new Promise((resolve) => {
+      received = resolve;
+    });
+    const sockets = new Set();
+    const proxy = await listen((socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      socket.once('data', received);
+    });
+    t.after(() => {
+      for (const socket of sockets) socket.destroy();
+      proxy.close();
+    });
+    const controller = new AbortController();
+    const pending = connectService(
+      new URL('wss://owned.example:443/ws'),
+      { fingerprint: '' },
+      () => `PROXY 127.0.0.1:${proxy.address().port}`,
+      undefined,
+      controller.signal,
+    );
+    await entered;
+    controller.abort();
+    await assert.rejects(pending, /取消/);
+    for (let index = 0; sockets.size && index < 50; index++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(sockets.size, 0, 'cancellation must close the actual upstream socket');
+  },
+);
+
+test(
+  'absolute connection deadline closes a proxy that keeps trickling response bytes',
+  { timeout: 7000 },
+  async (t) => {
+    const sockets = new Set();
+    const proxy = await listen((socket) => {
+      sockets.add(socket);
+      const trickle = setInterval(() => socket.write('x'), 100);
+      socket.on('error', () => {});
+      socket.once('close', () => {
+        clearInterval(trickle);
+        sockets.delete(socket);
+      });
+      socket.resume();
+    });
+    t.after(() => {
+      for (const socket of sockets) socket.destroy();
+      proxy.close();
+    });
+    await assert.rejects(
+      connectService(
+        new URL('wss://owned.example:443/ws'),
+        { fingerprint: '', waits: { connect: 5 } },
+        () => `PROXY 127.0.0.1:${proxy.address().port}`,
+      ),
+      /超时/,
+    );
+    for (let index = 0; sockets.size && index < 50; index++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(sockets.size, 0, 'the absolute deadline must close the actual upstream socket');
+  },
+);
+
 test('a connection through the proxy reaches the target; without one it goes direct', async (t) => {
   const requests = [];
   const echo = await listen((socket) => socket.pipe(socket));

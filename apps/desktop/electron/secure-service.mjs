@@ -30,16 +30,19 @@ export async function connectService(address, config, resolveProxy, route, signa
   controlTlsOptions(config);
   const port = Number(address.port || 443),
     timeout = connectionWaits(config.waits).connect;
+  const dialing = new AbortController();
   let cancelled = false,
     timer,
     abort;
   const interruption = new Promise((_, reject) => {
     abort = () => {
       cancelled = true;
+      dialing.abort();
       reject(new Error('服务连接已取消。'));
     };
     timer = setTimeout(() => {
       cancelled = true;
+      dialing.abort();
       reject(new Error('服务连接超时。'));
     }, timeout);
     signal?.addEventListener('abort', abort, { once: true });
@@ -52,7 +55,7 @@ export async function connectService(address, config, resolveProxy, route, signa
         const proxy = httpProxy(await resolveProxy?.(`https://${address.hostname}:${port}`));
         if (cancelled) throw new Error('服务连接已取消。');
         if (route) route.proxy = proxy;
-        const socket = await openSocket(proxy, address.hostname, port, timeout);
+        const socket = await openSocket(proxy, address.hostname, port, timeout, dialing.signal);
         if (cancelled) {
           socket.destroy();
           throw new Error('服务连接已取消。');

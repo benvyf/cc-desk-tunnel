@@ -4,7 +4,7 @@ import { once } from 'node:events';
 import { X509Certificate } from 'node:crypto';
 import { request, get } from 'node:http';
 import { createServer } from 'node:https';
-import { connect } from 'node:net';
+import { connect, createServer as createTcpServer } from 'node:net';
 import { connect as connectTls, createServer as createTlsServer } from 'node:tls';
 import { WebSocketServer } from 'ws';
 import { createBrowserProxy } from '../../server/src/browser-proxy.ts';
@@ -246,6 +246,43 @@ test('closing is idempotent and releases incomplete HTTP and established connect
   await ended;
   incomplete.destroy();
 });
+
+test(
+  'closing a browser proxy releases its pending upstream HTTP CONNECT socket',
+  { timeout: 3000 },
+  async (t) => {
+    let entered;
+    const received = new Promise((resolve) => {
+      entered = resolve;
+    });
+    const sockets = new Set();
+    const upstream = createTcpServer((socket) => {
+      sockets.add(socket);
+      socket.once('close', () => sockets.delete(socket));
+      socket.once('data', entered);
+    });
+    upstream.listen(0, '127.0.0.1');
+    await once(upstream, 'listening');
+    t.after(() => {
+      for (const socket of sockets) socket.destroy();
+      upstream.close();
+    });
+    const f = await fixture(t, {
+      resolveProxy: () => `PROXY 127.0.0.1:${upstream.address().port}`,
+    });
+    const pending = tunnel(f.proxy).catch(() => null);
+    await received;
+    await f.proxy.close();
+    (await pending)?.socket.destroy();
+    for (let index = 0; sockets.size && index < 50; index++)
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.equal(
+      sockets.size,
+      0,
+      'closing the browser must reclaim the upstream socket before its timeout',
+    );
+  },
+);
 
 test('browser-origin CONNECT is refused even with valid local credentials', async (t) => {
   const f = await fixture(t);

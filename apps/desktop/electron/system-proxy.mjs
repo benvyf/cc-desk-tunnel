@@ -7,20 +7,25 @@ export function httpProxy(answer) {
   return match ? { host: match[1], port: Number(match[2]) } : null;
 }
 // A TCP connection to the target, tunnelled through the proxy's CONNECT method when there is one.
-export function openSocket(proxy, host, port, timeoutMs = 15000) {
+export function openSocket(proxy, host, port, timeoutMs = 15000, signal) {
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('Connection cancelled'));
     const socket = connect(proxy ?? { host, port });
+    const abort = () => fail(new Error('Connection cancelled'));
     const fail = (error) => {
+      signal?.removeEventListener('abort', abort);
       socket.destroy();
       reject(error);
     };
     const ready = () => {
+      signal?.removeEventListener('abort', abort);
       socket.setTimeout(0);
       socket.off('error', fail);
       resolve(socket);
     };
     socket.setTimeout(timeoutMs, () => fail(new Error('Connection timed out')));
     socket.once('error', fail);
+    signal?.addEventListener('abort', abort, { once: true });
     socket.once('connect', () => {
       if (!proxy) return ready();
       socket.write(`CONNECT ${host}:${port} HTTP/1.1\r\nHost: ${host}:${port}\r\n\r\n`);

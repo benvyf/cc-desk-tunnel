@@ -1,4 +1,27 @@
 // Website content gets its own persistent session, never CC's preload or IPC.
+const sessionCleanup = new WeakMap();
+
+async function stopSessionWorkers(WebContentsView, ses) {
+  // A separate blank target also works after the website renderer/window dies.
+  // Stop execution without deleting registrations, cookies or other login data.
+  const cleanup = new WebContentsView({
+    webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false },
+  }).webContents;
+  try {
+    cleanup.debugger.attach('1.3');
+    await cleanup.debugger.sendCommand('ServiceWorker.enable');
+    await cleanup.debugger.sendCommand('ServiceWorker.stopAllWorkers');
+  } finally {
+    if (!cleanup.isDestroyed()) {
+      if (cleanup.debugger.isAttached()) cleanup.debugger.detach();
+      await new Promise((resolve) => {
+        cleanup.once('destroyed', resolve);
+        cleanup.close();
+      });
+    }
+  }
+}
+
 function secureWebsite(value) {
   try {
     const url = new URL(value);
@@ -25,6 +48,8 @@ async function createBrowserView({
   if (!secureWebsite(url) || !url.startsWith('https:')) throw new Error('Invalid website entry');
   const { session, WebContentsView } = electron;
   const ses = session.fromPartition(partition);
+  // Failed cleanup must leave this session closed, including on the next open.
+  await sessionCleanup.get(ses);
   let closed = false;
   let closing;
   let view;
@@ -46,14 +71,18 @@ async function createBrowserView({
     closed = true;
     signal?.removeEventListener('abort', abort);
     for (const item of downloads) item.cancel();
+    let destroyed = Promise.resolve();
     if (view && !view.webContents.isDestroyed()) {
       if (!window.isDestroyed()) window.contentView.removeChildView(view);
+      destroyed = new Promise((resolve) => view.webContents.once('destroyed', resolve));
       view.webContents.close();
     }
     ses.removeListener('will-download', download);
-    closing = Promise.allSettled([ses.closeAllConnections(), proxy.close()]).then(() =>
-      ses.flushStorageData(),
-    );
+    closing = Promise.all([
+      Promise.allSettled([ses.closeAllConnections(), proxy.close()]),
+      destroyed.then(() => stopSessionWorkers(WebContentsView, ses)),
+    ]).then(() => ses.flushStorageData());
+    sessionCleanup.set(ses, closing);
     return closing;
   };
   const download = (event, item, contents) => {
@@ -68,7 +97,7 @@ async function createBrowserView({
     item.setSaveDialogOptions({ title: '保存附件' });
   };
   const abort = () => {
-    void close();
+    void close().catch(() => {});
   };
   signal?.addEventListener('abort', abort, { once: true });
   try {
@@ -130,7 +159,7 @@ async function createBrowserView({
     contents.on('render-process-gone', () => {
       if (!closed) {
         onState('unavailable');
-        void close();
+        void close().catch(() => {});
       }
     });
     ses.on('will-download', download);
