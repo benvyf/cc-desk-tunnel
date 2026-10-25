@@ -25,7 +25,7 @@ export {
 } from './secure-service.mjs';
 export { createManagedServerClient } from './managed-server-client.mjs';
 import { channelFailure, controlFailure, passing } from './connect-errors.mjs';
-import { openBrowserBridge } from './browser-bridge.mjs';
+import { openBrowserNetworkProxy } from './browser-network-proxy.mjs';
 // Loaded by the main process from here, so that the package's bundle of this module holds it.
 export { upgradeService } from './service-upgrade.mjs';
 
@@ -369,14 +369,30 @@ export async function openProxyBridge(
       return serviceJson(
         { ...config, token },
         'GET',
-        '/cc-browser/v1/status',
+        '/cc-browser/v2/status',
         undefined,
         binaries.resolveProxy,
       );
     },
     openBrowser: async () => {
       if (closed || !token) throw new Error('请先连接CC服务。');
-      return openBrowserBridge({ ...config, token }, { resolveProxy: binaries.resolveProxy });
+      const proxy = await openBrowserNetworkProxy(
+        { ...config, token },
+        { resolveProxy: binaries.resolveProxy },
+      );
+      if (closed) {
+        await proxy.close();
+        throw new Error('CC连接已关闭。');
+      }
+      return {
+        ...proxy,
+        partition:
+          'persist:claude-web-' +
+          createHash('sha256')
+            .update(address.origin + ':' + (config.fingerprint || ''))
+            .digest('hex')
+            .slice(0, 24),
+      };
     },
     // The installer the service last announced, if any.
     release: () => release,

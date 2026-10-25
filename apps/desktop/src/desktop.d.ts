@@ -44,9 +44,16 @@ declare global {
       openExternal: (url: string) => Promise<void>;
       openWeb: (url: string) => Promise<void>;
       browser: {
-        open: () => Promise<{ enabled: boolean; url?: string; reason?: string }>;
+        open: () => Promise<{ enabled: boolean; reason?: string }>;
         close: () => Promise<void>;
         mode: (active: boolean) => Promise<void>;
+        bounds: (rectangle: {
+          x: number;
+          y: number;
+          width: number;
+          height: number;
+        }) => Promise<void>;
+        onState: (callback: (state: string) => void) => () => void;
       };
       // The folders holding sessions without a project; new ones are made in the first.
       workspaceRoots: () => Promise<string[]>;

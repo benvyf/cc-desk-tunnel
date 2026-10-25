@@ -35,6 +35,12 @@ contextBridge.exposeInMainWorld('desktop', {
     open: () => ipcRenderer.invoke('browser:open'),
     close: () => ipcRenderer.invoke('browser:close'),
     mode: (active) => ipcRenderer.invoke('browser:mode', active),
+    bounds: (rectangle) => ipcRenderer.invoke('browser:bounds', rectangle),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('browser:state', listener);
+      return () => ipcRenderer.removeListener('browser:state', listener);
+    },
   },
   workspaceRoots: () => ipcRenderer.invoke('workspace:roots'),
   chooseWorkspace: (reset) => ipcRenderer.invoke('workspace:choose', reset),

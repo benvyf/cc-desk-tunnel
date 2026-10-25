@@ -1,6 +1,7 @@
 const {
   app,
   BrowserWindow,
+  WebContentsView,
   Menu,
   Notification,
   Tray,
@@ -39,9 +40,33 @@ const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
-const browserSession = require('./browser-session.cjs').createBrowserSession(() => bridge);
+const browserSession = require('./browser-session.cjs').createBrowserSession(
+  () => bridge,
+  (proxy, onState, signal) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (!window) throw new Error('客户端窗口已关闭。');
+    return require('./browser-view.cjs').createBrowserView({
+      electron: { session, WebContentsView, dialog },
+      window,
+      proxy,
+      partition: proxy.partition,
+      onState,
+      signal,
+    });
+  },
+  (state) => {
+    const window = BrowserWindow.getAllWindows()[0];
+    if (window && !window.webContents.isDestroyed())
+      window.webContents.send('browser:state', state);
+  },
+);
 let browserModeActive = false;
 const closeBrowser = browserSession.close;
+// Website transports use the fixed session proxy. Unsupported UDP paths stay
+// disabled; these switches must be applied before Chromium starts.
+app.commandLine.appendSwitch('disable-quic');
+app.commandLine.appendSwitch('dns-prefetch-disable');
+app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
 let connectionGeneration = 0;
 let proxyOpening = 0;
 let serverClient;
@@ -368,6 +393,15 @@ handle('proxy:connect', async (event, config) => {
 });
 handle('browser:mode', (_event, active) => {
   browserModeActive = active === true;
+  browserSession.mode(browserModeActive);
+});
+handle('browser:bounds', (event, rectangle) => {
+  const scale = event.sender.getZoomFactor();
+  if (!rectangle || !['x', 'y', 'width', 'height'].every((key) => Number.isFinite(rectangle[key])))
+    return;
+  browserSession.bounds(
+    Object.fromEntries(['x', 'y', 'width', 'height'].map((key) => [key, rectangle[key] * scale])),
+  );
 });
 handle('browser:close', () => closeBrowser());
 handle('browser:open', () => browserSession.open());

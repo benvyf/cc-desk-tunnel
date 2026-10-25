@@ -2,61 +2,174 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
 const { createBrowserSession } = createRequire(import.meta.url)('../electron/browser-session.cjs');
-function deferred() {
+const deferred = () => {
   let resolve;
   const promise = new Promise((done) => {
     resolve = done;
   });
   return { promise, resolve };
-}
-test('a delayed display close cannot reopen after a later close or overwrite a later open', async () => {
-  for (const action of ['close', 'open']) {
-    const stop = deferred();
-    let opened = 0,
-      closedLatest = 0;
-    // Use a stable control identity, as main.cjs does.
+};
+const tick = () => new Promise((resolve) => setImmediate(resolve));
+
+test(
+  'close aborts a pending website load instead of waiting for the website timeout',
+  { timeout: 1000 },
+  async () => {
+    const entered = deferred();
+    let aborted = false;
     const control = {
-      browserStatus: async () => ({ schema: 1, enabled: true }),
-      openBrowser: async () => {
-        const index = ++opened;
-        return {
-          url: `display-${index}`,
-          close: () => (index === 1 ? stop.promise : ++closedLatest),
-        };
-      },
+      browserStatus: async () => ({ schema: 2, enabled: true }),
+      openBrowser: async () => ({ close: async () => {} }),
     };
-    const displays = createBrowserSession(() => control);
-    assert.equal((await displays.open()).url, 'display-1');
-    const stale = displays.open();
-    if (action === 'open') assert.equal((await displays.open()).url, 'display-2');
-    else await displays.close();
-    stop.resolve();
-    assert.equal((await stale).enabled, false);
-    assert.equal(opened, action === 'open' ? 2 : 1);
-    await displays.close();
-    assert.equal(closedLatest, action === 'open' ? 1 : 0);
-    assert.equal(displays.busy(), false);
+    const manager = createBrowserSession(
+      () => control,
+      async (_proxy, _notify, signal) => {
+        entered.resolve();
+        await new Promise((resolve) =>
+          signal?.addEventListener(
+            'abort',
+            () => {
+              aborted = true;
+              resolve();
+            },
+            { once: true },
+          ),
+        );
+        throw new Error('cancelled');
+      },
+    );
+    const opened = manager.open();
+    await entered.promise;
+    const closed = manager.close();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(aborted, true);
+    assert.equal((await opened).enabled, false);
+    await closed;
+  },
+);
+
+test('v2 status gates view creation and never returns main-process credentials', async () => {
+  for (const status of [
+    { schema: 1, enabled: true },
+    { schema: 2, enabled: false, reason: 'moderation-required' },
+    { schema: 2, enabled: true },
+  ]) {
+    let opened = 0;
+    const control = {
+      browserStatus: async () => status,
+      openBrowser: async () => ({ password: 'private', close: async () => {} }),
+    };
+    const manager = createBrowserSession(
+      () => control,
+      async (proxy) => {
+        opened++;
+        assert.equal(proxy.password, 'private');
+        return { close: proxy.close, setVisible() {}, setBounds() {} };
+      },
+    );
+    const result = await manager.open();
+    assert.equal(result.enabled, status.schema === 2 && status.enabled);
+    assert.equal(opened, status.schema === 2 && status.enabled ? 1 : 0);
+    assert.equal(result.password, undefined);
+    assert.equal(result.url, undefined);
+    await manager.close();
   }
 });
-test('an opening display is closed if the authenticated control connection changes', async () => {
+
+test('an opening proxy is closed when the control connection changes', async () => {
   const opening = deferred();
-  let closes = 0;
+  let closes = 0,
+    views = 0;
   let control = {
-    browserStatus: async () => ({ schema: 1, enabled: true }),
+    browserStatus: async () => ({ schema: 2, enabled: true }),
     openBrowser: () => opening.promise,
   };
-  const session = createBrowserSession(() => control);
-  const result = session.open();
-  // Let the status and open awaits run before replacing the control connection.
-  await new Promise((done) => setImmediate(done));
+  const manager = createBrowserSession(
+    () => control,
+    async () => {
+      views++;
+    },
+  );
+  const result = manager.open();
+  await tick();
   control = { ...control };
   opening.resolve({
-    url: 'late-display',
     close: async () => {
       closes++;
     },
   });
   assert.equal((await result).enabled, false);
   assert.equal(closes, 1);
-  assert.equal(session.busy(), false);
+  assert.equal(views, 0);
+  assert.equal(manager.busy(), false);
+});
+
+test('view construction is serialized and late views cannot overwrite a new generation', async () => {
+  const opening = deferred();
+  let closes = 0,
+    built = 0;
+  const control = {
+    browserStatus: async () => ({ schema: 2, enabled: true }),
+    openBrowser: async () => ({ close: async () => {} }),
+  };
+  const manager = createBrowserSession(
+    () => control,
+    async () => {
+      const index = ++built;
+      if (index === 1) await opening.promise;
+      return {
+        close: async () => {
+          closes++;
+        },
+        setVisible() {},
+        setBounds() {},
+      };
+    },
+  );
+  const first = manager.open();
+  await tick();
+  const second = manager.open();
+  await tick();
+  assert.equal(built, 1);
+  opening.resolve();
+  assert.equal((await first).enabled, false);
+  assert.equal((await second).enabled, true);
+  assert.equal(closes, 1);
+  await manager.close();
+  assert.equal(closes, 2);
+});
+
+test('mode and bounds apply without reopening; close invalidates late status notifications', async () => {
+  const notices = [],
+    visible = [],
+    bounds = [];
+  let report;
+  const control = {
+    browserStatus: async () => ({ schema: 2, enabled: true }),
+    openBrowser: async () => ({ close: async () => {} }),
+  };
+  const manager = createBrowserSession(
+    () => control,
+    async (_proxy, notify) => {
+      report = notify;
+      return {
+        close: async () => {},
+        setVisible: (v) => visible.push(v),
+        setBounds: (v) => bounds.push(v),
+      };
+    },
+    (state) => notices.push(state),
+  );
+  manager.mode(true);
+  manager.bounds({ x: 0, y: 80, width: 800, height: 500 });
+  assert.deepEqual(await manager.open(), { enabled: true });
+  assert.equal(visible.at(-1), true);
+  assert.equal(bounds.at(-1).y, 80);
+  manager.mode(false);
+  assert.equal(visible.at(-1), false);
+  report('unavailable');
+  assert.deepEqual(notices, ['unavailable']);
+  await manager.close();
+  report('unavailable');
+  assert.deepEqual(notices, ['unavailable']);
 });
