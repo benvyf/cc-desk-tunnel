@@ -1,3 +1,11 @@
+// Packaged helpers enter before website DNS rules, profiles and UI initialize.
+if (
+  process.argv.includes('--cc-update-network') ||
+  process.argv.includes('--cc-system-proxy-network')
+) {
+  require('./managed-fetch-child.cjs');
+  return;
+}
 const {
   app,
   BrowserWindow,
@@ -14,7 +22,6 @@ const {
   shell,
   clipboard,
   nativeTheme,
-  net,
 } = require('electron');
 const path = require('node:path');
 const { name: productName, appId, legacyProfileName, configureBrand } = require('./branding.cjs');
@@ -37,6 +44,7 @@ const { openLog } = require('./client-log.cjs');
 const { hostname } = require('node:os');
 const { randomUUID } = require('node:crypto');
 const { spawn } = require('node:child_process');
+const resolveSystemProxy = require('./managed-fetch.cjs').createSystemProxyResolver({ app });
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
@@ -67,6 +75,11 @@ const closeBrowser = browserSession.close;
 app.commandLine.appendSwitch('disable-quic');
 app.commandLine.appendSwitch('dns-prefetch-disable');
 app.commandLine.appendSwitch('force-webrtc-ip-handling-policy', 'disable_non_proxied_udp');
+// Fixed HTTP proxy rules do not cover Chromium's RTC/prefetch DNS paths.
+// Only numeric loopback IPC/proxy endpoints may resolve locally. Website
+// CONNECT hostnames are resolved by Ubuntu; unsupported paths fail closed.
+// Service connections use Node; updates have an isolated network helper.
+app.commandLine.appendSwitch('host-resolver-rules', 'MAP * ~NOTFOUND, EXCLUDE 127.0.0.1');
 let connectionGeneration = 0;
 let proxyOpening = 0;
 let serverClient;
@@ -370,7 +383,7 @@ handle('proxy:connect', async (event, config) => {
         environment: { CC_DESK_TUNNEL_SCHEDULES: schedulesPath() },
         log,
         // The system's proxy settings (manual, script or automatic detection) as Chromium reads them.
-        resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+        resolveProxy: resolveSystemProxy,
       },
       () => {
         if (bridge !== connection) return;
@@ -410,7 +423,6 @@ const managedUpdates = require('./managed-updates.cjs');
 managedUpdates.registerManagedUpdates(handle);
 const managedClient = managedUpdates.createManagedRuntime({
   app,
-  net,
   log,
   isBusy: () => !!bridge || proxyOpening > 0 || serverManagementBusy(),
   notify: (state) => {
@@ -443,7 +455,7 @@ require('./managed-server-ipc.cjs').registerManagedServerUpdates(
       pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
     ).then(({ createManagedServerClient }) => {
       serverClient = createManagedServerClient({
-        resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+        resolveProxy: resolveSystemProxy,
         isBlocked: () => !!bridge || proxyOpening > 0 || managedClient.frozen(),
         readReplay: () =>
           readSettings(path.join(app.getPath('userData'), 'managed-server-replay.json')).replay,

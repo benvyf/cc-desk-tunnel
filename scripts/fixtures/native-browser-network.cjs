@@ -7,6 +7,9 @@ const { X509Certificate } = require('node:crypto');
 const assert = require('node:assert/strict');
 const settings = JSON.parse(readFileSync(process.env.CC_NETWORK_CHECK_SETTINGS, 'utf8'));
 const directory = process.env.CC_NETWORK_CHECK_OUTPUT;
+// A direct .cjs launch otherwise reports this wrapper directory as the app.
+// Helpers must restart the real application entrypoint, as normal startup does.
+app.setAppPath(resolve(__dirname, '../../apps/desktop'));
 app.setPath('userData', join(directory, 'profile'));
 const checks = [];
 const say = (marker, value = {}) =>
@@ -67,11 +70,13 @@ app.whenReady().then(async () => {
       quicDisabled: app.commandLine.hasSwitch('disable-quic'),
       dnsPrefetchDisabled: app.commandLine.hasSwitch('dns-prefetch-disable'),
       rtcPolicy: app.commandLine.getSwitchValue('force-webrtc-ip-handling-policy'),
+      resolverRules: app.commandLine.getSwitchValue('host-resolver-rules'),
       playwrightBackgroundFlag: app.commandLine.hasSwitch('disable-background-networking'),
     };
     assert.equal(result.flags.quicDisabled, true);
     assert.equal(result.flags.dnsPrefetchDisabled, true);
     assert.equal(result.flags.rtcPolicy, 'disable_non_proxied_udp');
+    assert.equal(result.flags.resolverRules, 'MAP * ~NOTFOUND, EXCLUDE 127.0.0.1');
     assert.equal(result.flags.playwrightBackgroundFlag, false);
     observe('NATIVE_MAIN_FLAGS');
     // Authenticate the real control bridge through the real preload IPC. The
@@ -182,6 +187,32 @@ app.whenReady().then(async () => {
     await netLog.stopLogging().catch((error) => {
       failed ||= error;
     });
+    try {
+      const logged = JSON.parse(readFileSync(join(directory, 'netlog.json'), 'utf8'));
+      const eventNames = Object.fromEntries(
+        Object.entries(logged.constants.logEventTypes).map(([name, id]) => [id, name]),
+      );
+      result.localDnsQueries = logged.events
+        .filter(
+          (event) =>
+            eventNames[event.type] === 'DNS_TRANSACTION_QUERY' &&
+            event.params?.qname?.includes(settings.nonce),
+        )
+        .map((event) => event.params.qname);
+      assert.deepEqual(
+        result.localDnsQueries,
+        [],
+        'Website probe names must not enter local DNS transactions',
+      );
+      result.udpSentEvents = logged.events.filter(
+        (event) => eventNames[event.type] === 'UDP_BYTES_SENT',
+      ).length;
+      assert.equal(result.udpSentEvents, 0, 'Chromium must not send UDP outside the fixed proxy');
+      observe('NO_LOCAL_WEBSITE_DNS');
+    } catch (error) {
+      failed ||= error;
+      result.dnsError = String(error);
+    }
     result.ok = !failed;
     writeFileSync(join(directory, 'native-result.json'), JSON.stringify(result, null, 2));
     say('NATIVE_FINISHED', { ok: result.ok });

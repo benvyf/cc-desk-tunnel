@@ -15,7 +15,7 @@ exports.registerClientUpdates = (handle, runtime) => {
   handle('managed-update:activity', (_event, activity) => runtime.report(activity));
 };
 
-exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => false }) => {
+exports.createManagedRuntime = ({ app, notify, quit, log, isBusy = () => false }) => {
   const fs = require('node:fs');
   const path = require('node:path');
   const { execFile } = require('node:child_process');
@@ -34,6 +34,7 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
       try {
         const { ManagedController } = require('./managed-controller.cjs');
         const { createNetwork } = require('./managed-network.cjs');
+        const { createManagedFetch } = require('./managed-fetch.cjs');
         const identity = JSON.parse(fs.readFileSync(file, 'utf8'));
         if (identity.appVersion !== app.getVersion()) throw new Error('内嵌版本与程序不符');
         const pwsh = path.join(process.resourcesPath, 'vendor/pwsh/pwsh.exe');
@@ -66,7 +67,10 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
           executable,
           localAppData: process.env.LOCALAPPDATA,
           contract: require('./managed-contract.cjs'),
-          network: createNetwork(net.fetch.bind(net), identity.origin),
+          network: createNetwork(
+            createManagedFetch({ app, origin: identity.origin }),
+            identity.origin,
+          ),
           notify,
           quit,
           processes,

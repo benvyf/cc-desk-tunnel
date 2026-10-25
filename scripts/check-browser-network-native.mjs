@@ -7,8 +7,8 @@ import { resolve, join } from 'node:path';
 import { randomBytes, randomUUID, X509Certificate } from 'node:crypto';
 import { createSocket } from 'node:dgram';
 import { networkInterfaces } from 'node:os';
-import { lookup } from 'node:dns/promises';
-import { spawn, execFileSync } from 'node:child_process';
+import { spawn, execFile, execFileSync } from 'node:child_process';
+import { promisify } from 'node:util';
 import { createInterface } from 'node:readline';
 import { once } from 'node:events';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
@@ -121,20 +121,22 @@ try {
     } finally {
       sender.close();
     }
-    let dnsTimer;
-    try {
-      report.positiveDnsResult = await Promise.race([
-        lookup(report.positiveDnsName).then(
-          () => 'resolved',
-          (error) => error.code,
-        ),
-        new Promise((_, reject) => {
-          dnsTimer = setTimeout(() => reject(new Error('DNS control timed out')), 8000);
-        }),
-      ]);
-    } finally {
-      clearTimeout(dnsTimer);
-    }
+    // Exercise the Windows DNS client explicitly: Node lookup did not produce
+    // a visible DNS ETW positive control in the baseline capture.
+    const dnsControl = await promisify(execFile)(
+      'powershell.exe',
+      [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        "try { Resolve-DnsName -Name '" +
+          report.positiveDnsName +
+          "' -Type A -DnsOnly -NoHostsFile -QuickTimeout -ErrorAction Stop | Out-Null; 'resolved' } catch { $_.FullyQualifiedErrorId }",
+      ],
+      { encoding: 'utf8', windowsHide: true, timeout: 10000 },
+    );
+    report.positiveDnsResult = dnsControl.stdout.trim();
+    report.positiveDnsMethod = 'Windows Resolve-DnsName A DnsOnly NoHostsFile QuickTimeout';
     await pause(500);
     report.positiveEndedAt = new Date().toISOString();
   }

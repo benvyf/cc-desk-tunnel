@@ -1,7 +1,8 @@
 const { open, stat, rm } = require('node:fs/promises');
 const { setTimeout: delay } = require('node:timers/promises');
 
-// net.fetch is supplied by Electron's main process: Chromium honours the system proxy.
+// The isolated update helper preserves Chromium's system proxy/CA behavior.
+// This layer owns redirect policy, independently of website DNS restrictions.
 function createNetwork(fetch, origin) {
   async function request(url, { signal, headers = {}, metadata = false } = {}) {
     for (let hops = 0; hops <= 4; hops++) {

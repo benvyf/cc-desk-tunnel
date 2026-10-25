@@ -52,7 +52,9 @@ export async function connectService(address, config, resolveProxy, route, signa
     return await Promise.race([
       interruption,
       (async () => {
-        const proxy = httpProxy(await resolveProxy?.(`https://${address.hostname}:${port}`));
+        const proxy = httpProxy(
+          await resolveProxy?.(`https://${address.hostname}:${port}`, dialing.signal),
+        );
         if (cancelled) throw new Error('服务连接已取消。');
         if (route) route.proxy = proxy;
         const socket = await openSocket(proxy, address.hostname, port, timeout, dialing.signal);
