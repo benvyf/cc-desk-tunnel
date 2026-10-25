@@ -1,0 +1,73 @@
+{
+  "phase": "complete",
+  "date": "2026-10-25",
+  "verifiedAt": "2026-10-25T10:36:06.663Z",
+  "windowsBuild": 9,
+  "sourceCommit": "8b01c740b8513c73b621b378990a5db7025d4795",
+  "release": {
+    "filename": "CC-Desk-Tunnel-Setup-0.3.6-x64.exe",
+    "build": 9,
+    "appVersion": "0.3.6",
+    "protocol": 20,
+    "sourceCommit": "8b01c740b8513c73b621b378990a5db7025d4795",
+    "notes": "Build 9：CC SPACE 品牌与新图标，完善登录页布局及高级连接选项展开动效；新增默认模型与推理强度设置、完整模型名称、字体大小调节及消息悬停操作，并优化消息背景、附件和控件交互。配套服务端协议仍为 20。",
+    "size": 201152867,
+    "sha256": "a20041d9c69329eb6c3d9c69a491e9489404a53f3e4c71b52d4c40fd71e0bef6"
+  },
+  "revision": 16,
+  "expiresAt": "2026-10-28T10:35:58.344Z",
+  "stableUnchanged": true,
+  "linuxUnchanged": true,
+  "candidates": 0,
+  "automaticRenewalVerified": true,
+  "artifactUrl": "https://api.ghostapi.org/cc-updates/v1/artifacts/9/win32-x64/CC-Desk-Tunnel-Setup-0.3.6-x64.exe",
+  "packageSmokePassed": true,
+  "packagedIdentityAndSourceModulesVerified": true,
+  "packagedBrandAndFrontendResourcesVerified": true,
+  "cleanup": {
+    "removedPublicBuilds": [8],
+    "removedInstallers": 2,
+    "removedUploadCopies": 1,
+    "removedBytes": 402191526,
+    "retainedPublicBuild": 9,
+    "historicalIdentityLedgerPreserved": true,
+    "completedAt": "2026-10-25T10:36:55.656Z"
+  },
+  "publicVerification": {
+    "verifiedAt": "2026-10-25T10:43:58.431Z",
+    "build": 9,
+    "sourceCommit": "8b01c740b8513c73b621b378990a5db7025d4795",
+    "revision": 16,
+    "size": 201152867,
+    "sha256": "a20041d9c69329eb6c3d9c69a491e9489404a53f3e4c71b52d4c40fd71e0bef6",
+    "publicSignatureVerified": true,
+    "fullDownloadVerifiedOnVps": true,
+    "externalFullDownload": "not-run; VPS full download and local range bytes verified",
+    "externalRangeChecks": [
+      {
+        "start": 0,
+        "end": 1048575,
+        "exactBytesMatch": true
+      },
+      {
+        "start": 100576433,
+        "end": 101625008,
+        "exactBytesMatch": true
+      },
+      {
+        "start": 200104291,
+        "end": 201152866,
+        "exactBytesMatch": true
+      }
+    ],
+    "headVerified": true,
+    "rangeVerified": true,
+    "oldBuildsReturn404": [2, 3, 4, 5, 6, 7, 8]
+  },
+  "bothRenewalTimersActive": true,
+  "windowsRenewalResult": "success",
+  "vpsEvidenceDirectory": "/root/.cc-update-admin/client-build-9",
+  "providerRequests": 0,
+  "ubuntuUpgradeExecuted": false,
+  "localClientInstalled": false
+}

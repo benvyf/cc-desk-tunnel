@@ -2,6 +2,14 @@
 
 这是本项目当前工作状态与跨电脑续做的权威入口。旧文档中的 Build 2/3、未接入客户端、没有续期等陈述属于历史阶段；遇到冲突以本文件及 VPS 实际签名索引为准。生产状态是检查时的快照，后续 revision／有效期会自动续期。
 
+### 2026-10-25 CC SPACE Windows Build 9
+
+最新客户端已从干净源码 `8b01c740b8513c73b621b378990a5db7025d4795` 打包并发布到 VPS pilot：版本 0.3.6／Build 9／协议 20，包含 CC SPACE 品牌与图标、默认模型与推理强度、完整模型名称、字体大小、消息悬停操作，以及登录页布局和高级连接选项的稳定展开动效。源码位于 `codex/login-layout` 分支。安装包 201152867 字节，SHA256 `a20041d9c69329eb6c3d9c69a491e9489404a53f3e4c71b52d4c40fd71e0bef6`；实际打包 EXE 的隔离启动测试、包内身份、全部 CommonJS 模块、品牌资源与前端资源逐字节核对通过。
+
+发布及自动续期验收后的 pilot revision 16，有效至 `2026-10-28T10:35:58.344Z`，以后由 VPS 续期。公开完整下载/hash 校验在 VPS 通过；本机独立验签、HEAD 及首部／中部／尾部各 1 MiB Range 字节核对通过，未进行本机完整下载。新包验证后删除旧 Build 8 公开安装包及上传副本，共 402191526 字节；旧 Build 2–8 地址均返回 404，历史构建身份与审计保留。
+
+Windows 续期登记已切换至 `/root/.cc-update-admin/source-build-9` 和 `/root/.cc-update-admin/client-build-9/`，强制续签及 systemd 检查成功，两套续期 timer 均 active。stable 和 Linux 索引保持；未安装本机客户端、未升级 Ubuntu、未发起 Claude/JEV 请求。发布与清理证据见 [Build 9 发布证据](docs/evidence/windows-client-build9-2026-10-25.json)，VPS 原始记录在 `/root/.cc-update-admin/client-build-9/`。
+
 ### 2026-10-25 Windows Build 8 与旧客户端清理
 
 全部十项桌面 UI 改进已合入并推送 `main`；Windows Build 8 从干净源码 `d4241207606dde316e5b02bb17d4e795217b159d` 打包，版本 0.3.6／协议 20。实际打包 EXE 的隔离离线启动测试、包内身份与源码模块核对通过。安装包 201095763 字节，SHA256 `cd38fa53c6acec2161ce143b90a72ec8caaf6fa8160a25fb1dff42bc86bc3719`。生产签名 pilot revision 14，发布时有效至香港时间 2026-10-28 01:49:07；自动续期已登记、强制续签与 systemd 服务验证通过。
@@ -137,7 +145,7 @@ VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下
 | 部分 | 当前状态与边界 |
 | --- | --- |
 | VPS 管理中心 | 已上线，独立账号监控／客户端更新／内容审核页面，统一顶部导航与登录 |
-| 签名下载 | pilot 客户端 Build 8、Linux 服务端 Build 3；版本 0.3.6，协议 20；旧 Windows Build 2–7 安装包已清理；stable 保持空通道；用户已回传首台 Build 3 升级成功 |
+| 签名下载 | pilot 客户端 Build 9、Linux 服务端 Build 3；版本 0.3.6，协议 20；旧 Windows Build 2–8 安装包已清理；stable 保持空通道；用户已回传首台 Build 3 升级成功 |
 | 续期 | Windows 与 Linux 各有独立 systemd timer，登记精确源码／制品身份；不会自动推进 Build 或同步上游 |
 | 被动监控代码 | schema 2、邮箱／备注、身份／额度时效、重试与缓存已实现 |
 | 第一台监控接入 | 用户安装成功，VPS 缓存已收到 ubuntu-cc 自然上报：1账号、1节点，身份/邮箱/Pro套餐、额度和会话usage有数据；备份见下文 |
