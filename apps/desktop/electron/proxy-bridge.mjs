@@ -80,10 +80,11 @@ export async function openProxyBridge(
   wss.on('connection', (local) => {
     // CA verification completes at TLS handshake; explicit pins are checked before sending credentials.
     const route = { proxy: null };
+    const controller = new AbortController();
     const remote = new WebSocket(address, {
       // Node's HTTP client also takes the connection through this callback once it is ready.
       createConnection: (_options, created) => {
-        connectService(address, config, binaries.resolveProxy, route).then(
+        connectService(address, config, binaries.resolveProxy, route, controller.signal).then(
           (socket) => created(null, socket),
           created,
         );
@@ -92,7 +93,7 @@ export async function openProxyBridge(
     pair = {
       local,
       remote,
-      controller: new AbortController(),
+      controller,
       ssh: null,
       channels: null,
       preparing: null,
@@ -132,10 +133,13 @@ export async function openProxyBridge(
           // SSH traffic is already encrypted and does not compress.
           perMessageDeflate: false,
           createConnection: (_options, created) => {
-            connectService(address, config, binaries.resolveProxy).then(
-              (socket) => created(null, socket),
-              created,
-            );
+            connectService(
+              address,
+              config,
+              binaries.resolveProxy,
+              undefined,
+              controller.signal,
+            ).then((socket) => created(null, socket), created);
           },
         });
         channel.once('error', (error) => {

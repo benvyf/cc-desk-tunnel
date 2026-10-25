@@ -11,6 +11,8 @@ import { mkdtemp, readdir, rm, access } from 'node:fs/promises';
 import { custom } from '../../server/test/fixtures/web-certificates.ts';
 import { connectService } from '../electron/secure-service.mjs';
 import { openBrowserNetworkProxy } from '../electron/browser-network-proxy.mjs';
+import { openProxyBridge } from '../electron/proxy-bridge.mjs';
+import { WebSocket } from 'ws';
 const require = createRequire(import.meta.url);
 const { createManagedFetch, createSystemProxyResolver } = require('../electron/managed-fetch.cjs');
 const executable = require('electron');
@@ -403,6 +405,28 @@ test('closing the browser proxy terminates its actual stalled PAC helper', async
   } finally {
     await proxy.close();
     socket.destroy();
+  }
+  await f.noProfiles();
+  assert.deepEqual(f.requests, []);
+});
+
+test('closing the Coding bridge terminates its actual stalled PAC helper', async (t) => {
+  const f = await fixture(t);
+  environment(t, 'CC_TEST_UPDATE_STALL_PROXY', '1');
+  const bridge = await openProxyBridge(
+    { url: f.origin.replace('https:', 'wss:') + '/ws' },
+    {
+      resolveProxy: createSystemProxyResolver({ app, executable }),
+    },
+  );
+  const local = new WebSocket(bridge.url);
+  local.on('error', () => {});
+  try {
+    await once(local, 'open');
+    await waitProxyEvaluations(1);
+  } finally {
+    await bridge.close();
+    local.terminate();
   }
   await f.noProfiles();
   assert.deepEqual(f.requests, []);
