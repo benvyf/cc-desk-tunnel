@@ -3,8 +3,8 @@ import type { AddressInfo } from 'node:net';
 import { WebSocketServer } from 'ws';
 
 // An ordinary RFB 3.8 peer: solid pixels and recorded human key/pointer events, no website or browser.
-export async function offlineFramebuffer() {
-  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+export async function offlineFramebuffer(options = { host: '127.0.0.1', port: 0 }) {
+  const server = new WebSocketServer(options);
   await once(server, 'listening');
   const keys: { down: boolean; symbol: number }[] = [];
   const pointers: number[] = [];
