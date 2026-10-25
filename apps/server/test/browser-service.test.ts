@@ -6,9 +6,13 @@ import type { BrowserOptions } from '../src/browser-service.ts';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { connect } from 'node:net';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createBrowserService, browserEndpoint } from '../src/browser-service.ts';
 import { Throttle } from '../src/throttle.ts';
+import { createProxyServer } from '../src/server.ts';
 
 const token = 'offline-browser-test-service-token';
 async function fixture(t: TestContext, options: Partial<BrowserOptions> = {}) {
@@ -93,6 +97,77 @@ test('disabled, moderation-constrained and maintenance nodes reject authenticate
     ws.send(JSON.stringify({ type: 'authenticate', token }));
     assert.equal((await closed)[0], 1013);
     assert.equal(f.connections(), 0);
+  }
+});
+
+test('complete CC server keeps browser admission closed under moderation and managed maintenance', async (t) => {
+  const upstream = new WebSocketServer({ port: 0, host: '127.0.0.1' });
+  await once(upstream, 'listening');
+  let browserConnections = 0,
+    reviews = 0;
+  upstream.on('connection', () => browserConnections++);
+  t.after(() => new Promise<void>((done) => upstream.close(() => done())));
+  for (const maintenance of [false, true]) {
+    const directory = mkdtempSync(join(tmpdir(), 'cc-browser-admission-'));
+    const unused = async (): Promise<never> => {
+      throw new Error('No management operation expected');
+    };
+    const server = createProxyServer({
+      token,
+      dataDir: directory,
+      browserEndpoint: `ws://127.0.0.1:${(upstream.address() as AddressInfo).port}/`,
+      moderation: {
+        endpoint: 'https://review.example.invalid/cc-updates/v1/moderation/check',
+        nodeId: 'offline-browser-gate',
+        token: 'offline-browser-review-token-12345678901234567',
+        fetcher: async () => {
+          reviews++;
+          throw new Error('No review request expected');
+        },
+      },
+      managed: maintenance
+        ? {
+            initialMaintenance: true,
+            backend: {
+              check: unused,
+              status: unused,
+              prepare: unused,
+              activate: () => {
+                throw new Error('No install expected');
+              },
+            },
+          }
+        : undefined,
+    });
+    try {
+      const origin = await server.listen(0);
+      const status = async () =>
+        (
+          await fetch(origin + '/cc-browser/v1/status', {
+            headers: { authorization: `Bearer ${token}` },
+          })
+        ).json();
+      assert.deepEqual(await status(), {
+        schema: 1,
+        enabled: false,
+        reason: maintenance ? 'maintenance' : 'moderation-required',
+      });
+      const ws = new WebSocket(origin.replace('http', 'ws') + '/cc-browser/v1/display');
+      await once(ws, 'open');
+      const closed = once(ws, 'close');
+      ws.send(JSON.stringify({ type: 'authenticate', token }));
+      assert.equal((await closed)[0], 1013);
+      assert.equal((await fetch(origin + '/health')).status, 200);
+      if (maintenance) {
+        server.managedMaintenance!.release();
+        assert.equal((await status()).reason, 'moderation-required');
+      }
+      assert.equal(browserConnections, 0);
+      assert.equal(reviews, 0);
+    } finally {
+      await server.close();
+      rmSync(directory, { recursive: true, force: true });
+    }
   }
 });
 

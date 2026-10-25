@@ -50,3 +50,5 @@ PROXY_BROWSER_ENDPOINT=ws://cc-claude-web-trial:6080/
 noVNC 固定 1.7.0，按连接时加载，字体与代码均本地打包，无 CDN。未修改其源码；版权、许可证及确切源码获取地址随包位于 `dist/third-party/noVNC/`。
 
 本轮独立复核、缺陷修复和发布阻塞详见[复核报告](claude-web-review-2026-10-25.md)。测试通过仅作为离线实现验收；当前受管 Ubuntu 节点仍不能启用真实网页登录画面的客户端操作。
+
+接下来的实际检查见 [Ubuntu 只读预检](claude-web-ubuntu-preflight.md)，先取得当前容器、网络和资源状态，再准备隔离联调。
