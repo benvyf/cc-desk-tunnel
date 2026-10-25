@@ -1,5 +1,7 @@
 # Ubuntu 隔离画面联调
 
+> 已暂停：用户已选择[本地内嵌网页与 Ubuntu 出口](superpowers/specs/2026-10-25-local-browser-remote-egress-design.md)。本页仅保留历史试验说明，不再要求传输或启动本联调包，不能作为新代理方案的验收。
+
 这一步只验证测试客户端到完整 CC 服务、再到独立合成 RFB 的显示和人手输入。蓝色 320×180 画面不是 Claude。两个容器在新建的 Docker internal 网络中，不挂载生产 `/data`、Docker socket、`/etc/claude-code` 或浏览器 `/config`。不连接已有浏览器，不改变生产配置或其强制审核；没有真实账号、原生 CLI 或模型调用。
 
 本地源码准备和测试不能证明 Ubuntu 或远端客户端已通过联调。当前本机没有 Docker，真实容器启动仍待管理员执行。网页原始键鼠输入尚无等价审核覆盖，生产真实 Chat 继续被门禁阻止；通过本试验也不改变这一点。

@@ -1,5 +1,7 @@
 # Ubuntu 网页联调：只读预检
 
+> 2026-10-25 用户已改选[本地内嵌网页与 Ubuntu 出口](superpowers/specs/2026-10-25-local-browser-remote-egress-design.md)。下文保留已完成的管理员查看器预检记录；原合成画面联调暂停，无需传输旧测试包。
+
 下一步先收集当前 `ubuntu-cc` 的实际状态，不启用真实网页通道，不重启浏览器或 CC，不改 Docker 网络，不读取 profile 或访问 Claude。现有本地测试不能代替此步骤。
 
 在已打开的 Ubuntu 管理员终端运行 [check-claude-web-ubuntu.sh](../scripts/check-claude-web-ubuntu.sh)。可以把文件完整内容直接复制到 Ubuntu 的 Bash 终端执行；外层子 shell 避免修改当前终端的 shell 设置。脚本需要 `sudo` 的 Docker 读取权限和 Ubuntu 自带的 Python 3。不要重新运行试验浏览器的安装脚本。
