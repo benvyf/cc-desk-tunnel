@@ -1,5 +1,7 @@
 # 本地内嵌网页：代理通道
 
+> 2026-10-26 验收阻塞：原生启动中 WebRTC 与 DNS 预取仍产生本机 DNS 查询，固定代理及现有开关不足以保证所有网页流量经远端。详情见 [本机网络验证](claude-web-native-network-validation-2026-10-26.md)。真实 Claude 功能保持未验收、未启用。
+
 2026-10-25。用户已选择本地浏览器显示与操作、Ubuntu网络出口，以及管理员在客户端首次登录。完整设计见[选定方案](superpowers/specs/2026-10-25-local-browser-remote-egress-design.md)。已实现服务端、本机代理与客户端本地网页接线，尚未部署或连接真实Claude。旧蓝色画面包不用于新代理验收。
 
 ## 已实现的基础

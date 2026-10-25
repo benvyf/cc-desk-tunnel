@@ -10,7 +10,11 @@ import { custom, defaultCertificate } from '../../../server/test/fixtures/web-ce
 
 // Everything is loopback-owned. The facade combines real Coding with an
 // independently authenticated v2 proxy using only test-local DNS/dial injection.
-export async function ownedBrowserService(directory: string, token: string) {
+export async function ownedBrowserService(
+  directory: string,
+  token: string,
+  host = 'default.example.test',
+) {
   const coding = createProxyServer({ token, dataDir: directory });
   const internal = new URL(await coding.listen(0));
   const sockets = new Set<Duplex>();
@@ -31,7 +35,7 @@ export async function ownedBrowserService(directory: string, token: string) {
   await once(site, 'listening');
   const browser = createBrowserProxy({
     token,
-    hosts: ['default.example.test'],
+    hosts: [host],
     lookup: async () => [{ address: '1.1.1.1', family: 4 }],
     dial: (target) => {
       assert.equal(target.address, '1.1.1.1');
@@ -93,6 +97,7 @@ export async function ownedBrowserService(directory: string, token: string) {
       holdingStatus = true;
     },
     pendingBrowserStatus: () => pendingStatus.size,
+    stopBrowserProxy: () => browser.close(),
     releaseBrowserStatus,
     async close() {
       releaseBrowserStatus();

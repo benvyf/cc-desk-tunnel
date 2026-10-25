@@ -40,3 +40,12 @@ Owned-site observations are recorded in `docs/claude-web-owned-site-validation-2
 ## Acceptance boundary
 
 No Claude login, messaging or automated requests occur in this plan. No installer is published. Production JEV moderation remains enforced and is not bypassed; successful owned-site transport tests do not authorize Claude Chat on a moderated production node. Account-area hiding, real login and full production-entrypoint acceptance remain separate, unverified work.
+
+## Checkpoint 4: Native entrypoint and local OS capture — blocked
+
+- [x] Use the actual main.cjs entrypoint, ordinary process privileges, fresh profile and owned offline TLS fixture without Playwright network flags.
+- [x] Capture from a separate administrator PktMon helper, preserve existing filters, confirm capture ownership, stop/export and keep raw evidence private.
+- [x] Correlate a unique RTC DNS label with an outbound packet and DNS ETW Network Service PID; retain NetLog evidence for RTC and prefetch transactions.
+- [ ] Fix local DNS escape paths and repeat native and remote validation before enabling real Claude.
+
+The observed run confirms a DNS isolation defect despite successful functional checks and proxy-loss blocking. UDP positive control was visible; independent DNS positive control was absent, so no absence/zero-leakage certification is made. This local fixture does not replace the previous Ubuntu route or a production endpoint run. See docs/claude-web-native-network-validation-2026-10-26.md.
