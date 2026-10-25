@@ -8,10 +8,12 @@
 
 **Tech Stack:** Existing Node 24 image, current proxy/view modules, OpenSSH, Electron, owned HTTPS site, tcpdump.
 
+**Current status (2026-10-26):** The DNS fix and scoped native/Ubuntu retest are complete; the final evidence and cleanup record are in [Ubuntu egress validation](../../claude-web-ubuntu-egress-validation-2026-10-26.md). Earlier observations below retain their original scope. Full Chat/Coding UI integration, public IPv6 coverage and production admission remain unverified; the system-capture verdict remains `REVIEW_REQUIRED`.
+
 ## Checkpoint 1: Restricted test tunnel
 
 - [x] Record Ubuntu resource/runtime/port preflight and receive a dedicated public key. Keep its private key exclusively on Ubuntu.
-- [x] Prepare a dedicated `cc-egress-lab` SSH account. Restrict it to remote TCP forwarding on `127.0.0.1:38789`, no local forwarding, shell, subsystem, agent, X11, TUN, Unix socket forwarding, password or interactive authentication. Authorize only the received key for 48 hours according to VPS UTC.
+- [x] Prepare a dedicated `cc-egress-lab` SSH account. Restrict it to remote TCP forwarding on `127.0.0.1:38789`, no local forwarding, shell, subsystem, agent, X11, TUN, Unix socket forwarding, password or interactive authentication. The final retest authorized only the received key for 2 hours according to VPS UTC; the administrator's foreground SSH command separately bounded the session to 45 minutes. The authorization and account have since been removed.
 - [x] Validate a staged sshd configuration, compare effective configurations for every existing Unix account, and request independent review before applying. Back up the exact original configuration; append a single lab include at the end rather than inserting a Match block into a global include directory. Validate again before reload; use reload rather than restart.
 - [x] Verify the installed restrictions, existing 8443/28787–28792 listeners and new root SSH access. Prepare rollback which refuses to overwrite concurrent sshd configuration changes.
 - [x] Give the administrator an Ubuntu command using the pinned VPS host key, `BatchMode=yes`, `IdentitiesOnly=yes`, `ExitOnForwardFailure=yes`, keepalives and a 45-minute foreground timeout. It forwards `127.0.0.1:38789` to Ubuntu `127.0.0.1:18789`; it never opens a new public listening port.
@@ -35,17 +37,17 @@ The private bundle was transferred through the verified SSH route, verified/extr
 - [x] Verify no local target connections or automatic replays after disconnection. Reconnect through a fresh explicit action and verify cleanup.
 - [x] Stop only named lab resources, remove only lab SSH authorization/configuration, validate and reload sshd, and verify existing business listeners again. Retain private diagnostic evidence locally.
 
-Owned-site observations are recorded in `docs/claude-web-owned-site-validation-2026-10-26.md`. Completed connection/replay checks are scoped to Chromium NetLog and the finite recorded observation window. IPv6 route-probe UDP sockets appeared without UDP byte events; OS-level packet verification and full production-entrypoint coverage remain pending. The Ubuntu capture reached its packet limit during earlier functional runs and does not cover the final complete recovery run. Actual denied SSH session/forwarding attempts remain untested even though the temporary SSH access has now been removed.
+Earlier owned-site observations are recorded in `docs/claude-web-owned-site-validation-2026-10-26.md`. Those connection/replay checks are scoped to Chromium NetLog and their finite observation window; that earlier Ubuntu capture reached its packet limit before the complete recovery run. The later retest linked above adds Windows system capture and Ubuntu terminal capture covering its recovery run, with the documented capture-loss and attribution limits. Full production-entrypoint coverage and public IPv6 validation remain pending. Actual denied SSH session/forwarding attempts remain untested even though the temporary SSH access has now been removed.
 
 ## Acceptance boundary
 
 No Claude login, messaging or automated requests occur in this plan. No installer is published. Production JEV moderation remains enforced and is not bypassed; successful owned-site transport tests do not authorize Claude Chat on a moderated production node. Account-area hiding, real login and full production-entrypoint acceptance remain separate, unverified work.
 
-## Checkpoint 4: Native entrypoint and local OS capture — blocked
+## Checkpoint 4: Native entrypoint and local OS capture — DNS fix retested
 
 - [x] Use the actual main.cjs entrypoint, ordinary process privileges, fresh profile and owned offline TLS fixture without Playwright network flags.
 - [x] Capture from a separate administrator PktMon helper, preserve existing filters, confirm capture ownership, stop/export and keep raw evidence private.
 - [x] Correlate a unique RTC DNS label with an outbound packet and DNS ETW Network Service PID; retain NetLog evidence for RTC and prefetch transactions.
-- [ ] Fix local DNS escape paths and repeat native and remote validation before enabling real Claude.
+- [x] Fix the reproduced local DNS escape paths and repeat scoped native and remote validation. This does not enable real Claude or complete full Chat/Coding UI acceptance.
 
-The observed run confirms a DNS isolation defect despite successful functional checks and proxy-loss blocking. UDP positive control was visible; independent DNS positive control was absent, so no absence/zero-leakage certification is made. This local fixture does not replace the previous Ubuntu route or a production endpoint run. See docs/claude-web-native-network-validation-2026-10-26.md.
+The initial run confirmed a DNS isolation defect despite successful functional checks and proxy-loss blocking. Its UDP positive control was visible; independent DNS positive control was absent. See docs/claude-web-native-network-validation-2026-10-26.md for that historical failure. The later fix and Ubuntu retest are recorded in the final report linked above; the new capture has DNS and UDP packet controls, but DNS ETW missed its control and the interface drop counter is nonzero. No absence/zero-leakage certification is made.
