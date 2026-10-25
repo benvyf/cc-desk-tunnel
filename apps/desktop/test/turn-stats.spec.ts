@@ -185,14 +185,14 @@ test('the line is off until the setting is switched on', async ({ page }) => {
   await open(page, stats, false);
   await expect(page.locator('.turn-stats')).toHaveCount(0);
   await page.reload();
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   await expect(page.getByRole('switch', { name: '显示回复小结' })).not.toBeChecked();
 });
 
 test('the settings choose which figures the line shows, or hide it', async ({ page }) => {
   await switchOn(page);
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   const choice = (name: string) =>
     page.getByRole('group', { name: '小结里显示' }).getByRole('button', { name, exact: true });
   await expect(choice('平均首字')).toHaveAttribute('aria-pressed', 'true');

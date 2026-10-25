@@ -96,11 +96,11 @@ test('Claude Code settings load from the service and save each change at once', 
   await page.screenshot({ path: resolve('.local/screenshots/settings.png') });
 });
 
-test('the settings of this computer open from the login page without a connection', async ({
+test('the settings of this computer open by keyboard from login without a connection', async ({
   page,
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   await expect(page.getByRole('navigation', { name: '设置分类' }).getByRole('button')).toHaveText([
     '常规',
     '通知',

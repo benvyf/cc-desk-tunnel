@@ -6,7 +6,7 @@ test('narrow standalone settings remain interactive while connected settings fol
 }) => {
   await page.setViewportSize({ width: 390, height: 900 });
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   await expect(page.locator('.settings-only .sidebar')).not.toHaveAttribute('inert');
   await page
     .getByRole('navigation', { name: '设置分类' })

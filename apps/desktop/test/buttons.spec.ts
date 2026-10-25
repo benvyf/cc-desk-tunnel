@@ -263,7 +263,7 @@ test('real login and dialog use large and default actions without changing submi
 }) => {
   await page.goto('/');
   const connect = page.getByRole('button', { name: '连接', exact: true });
-  expect((await connect.boundingBox())!.height).toBe(40);
+  expect((await connect.boundingBox())!.height).toBe(44);
   await expect(connect).toHaveCSS('color', 'rgb(255, 255, 255)');
   for (const theme of ['light', 'dark']) {
     await page.evaluate((theme) => {
@@ -297,7 +297,7 @@ test('real settings, account and schedule actions preserve their contextual tier
   page,
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   await page.getByRole('button', { name: '快捷键', exact: true }).click();
   const reset = page.getByRole('button', { name: '恢复默认组合键', exact: true });
   await expect(reset).toHaveCSS('border-top-color', 'rgba(0, 0, 0, 0)');

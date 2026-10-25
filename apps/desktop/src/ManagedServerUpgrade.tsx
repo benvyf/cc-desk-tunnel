@@ -150,7 +150,7 @@ export default function ManagedServerUpgrade({
     }
   }
   return (
-    <section aria-label="配套服务端升级">
+    <section className="managed-server-upgrade" aria-label="配套服务端升级">
       <button
         className="button login-submit"
         type="button"

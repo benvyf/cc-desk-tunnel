@@ -5,7 +5,7 @@ import { createSession, login } from './helpers.ts';
 
 async function settings(page: Page) {
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
 }
 
 async function samples(page: Page) {

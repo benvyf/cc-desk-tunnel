@@ -39,7 +39,7 @@ test('theme previews fit narrow windows and preserve radio keyboard navigation',
   page,
 }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   const choices = page.getByRole('radiogroup', { name: '主题', exact: true });
   for (const theme of ['浅色', '深色', '跟随系统']) {
     await choices.getByRole('radio', { name: theme, exact: true }).click();

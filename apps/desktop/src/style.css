@@ -566,17 +566,20 @@ button.chip.danger:hover:not(:disabled) {
 .login-page {
   min-height: 100dvh;
   display: grid;
-  align-items: center;
-  padding: 32px 22px;
+  align-items: start;
+  /* Keep the brand and fields anchored while advanced options grow below them. */
+  padding: clamp(calc(var(--bar) + 36px), 18dvh, 168px) 20px 56px;
 }
 .login-content {
   width: 100%;
   min-width: 0;
-  max-width: 400px;
+  max-width: 448px;
   margin: 0 auto;
 }
 .login-content > .brand {
-  margin-bottom: 42px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0 auto 28px;
   font-size: calc(24rem / 14);
 }
 .login-content > .brand,
@@ -594,11 +597,13 @@ button.chip.danger:hover:not(:disabled) {
   margin-bottom: 24px;
   font-size: calc(24rem / 14);
 }
-.login-links {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  margin-top: 28px;
+.login-card {
+  min-width: 0;
+  padding: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-2xl);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-sm);
 }
 .settings-only {
   display: grid;
@@ -614,33 +619,22 @@ button.chip.danger:hover:not(:disabled) {
   width: 76px;
   text-align: right;
 }
-.project-link {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 8px;
-  border: 0;
-  background: none;
-  color: inherit;
-  font-size: calc(12rem / 14);
-  opacity: 0.6;
-  cursor: pointer;
-  min-height: var(--control-sm);
-  line-height: 16px;
-}
-.project-link:hover {
-  opacity: 1;
-}
-.project-link svg {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
-}
 .login-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 24px;
+  margin-bottom: 7px;
   gap: 12px;
+}
+.login-title h1 {
+  font-size: calc(22rem / 14);
+  line-height: 1.4;
+  text-wrap: pretty;
+}
+.login-subtitle {
+  margin-bottom: 28px;
+  color: var(--muted);
+  font-size: calc(13rem / 14);
 }
 .connection-form {
   display: flex;
@@ -649,7 +643,105 @@ button.chip.danger:hover:not(:disabled) {
 }
 .login-options {
   display: flex;
-  gap: 20px;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.login-advanced {
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.login-advanced > summary {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  min-height: var(--control-sm);
+  color: var(--muted);
+  font-size: calc(13rem / 14);
+  cursor: pointer;
+  list-style: none;
+}
+.login-advanced > summary::-webkit-details-marker {
+  display: none;
+}
+.login-advanced > summary .app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  transition: transform var(--cds-dur-snap) var(--cds-ease-out);
+}
+.login-advanced::details-content {
+  transition: content-visibility var(--cds-dur-base) allow-discrete;
+}
+.login-advanced[open]::details-content {
+  /* Make keyboard access immediate; only closing needs to delay hiding the native subtree. */
+  content-visibility: visible;
+  transition: none;
+}
+.login-advanced-grid {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows var(--cds-dur-base) var(--cds-ease-out),
+    opacity var(--cds-dur-base) var(--cds-ease-out);
+}
+.login-advanced[open] .login-advanced-grid {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+@starting-style {
+  .login-advanced[open] .login-advanced-grid {
+    grid-template-rows: 0fr;
+    opacity: 0;
+  }
+}
+.login-advanced-content {
+  min-height: 0;
+  overflow: hidden;
+  /* Leave room for the 2px focus outline and its 3px offset without moving the field. */
+  margin-inline: -5px;
+  padding-inline: 5px;
+}
+.login-advanced-content > label {
+  padding-top: 16px;
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-advanced::details-content,
+  .login-advanced-grid,
+  .login-advanced > summary .app-icon {
+    transition: none;
+  }
+}
+.login-advanced[open] > summary .app-icon {
+  transform: rotate(90deg);
+}
+.login-hint {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.7;
+}
+.login-card .login-submit,
+.login-card .connection-form input:not([type='checkbox']) {
+  min-height: 44px;
+}
+.login-card input:not([type='checkbox']) {
+  background: var(--surface-1);
+}
+@media (max-width: 480px) {
+  .login-page {
+    padding: clamp(calc(var(--bar) + 24px), 18dvh, 168px) 16px 32px;
+  }
+  .login-card {
+    padding: 24px 20px;
+    border-radius: var(--radius-xl);
+  }
+  .login-content > .brand {
+    margin-bottom: 24px;
+  }
+  .login-subtitle {
+    margin-bottom: 24px;
+  }
 }
 .login-options label {
   flex-direction: row;
@@ -4252,6 +4344,9 @@ dialog::backdrop {
 }
 .dialog-heading h2 {
   margin: 0;
+}
+.managed-server-upgrade {
+  overflow-wrap: anywhere;
 }
 .dialog-form {
   display: flex;

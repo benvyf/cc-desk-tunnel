@@ -95,6 +95,8 @@ test('official subscription: account metrics, Windows execution, running input, 
     await page.getByRole('button', { name: '远程代理', exact: true }).click();
     async function connect() {
       await page.getByLabel('服务地址', { exact: true }).fill(connection.url);
+      if (await page.getByLabel('服务证书指纹', { exact: true }).isHidden())
+        await page.getByText('高级连接选项', { exact: true }).click();
       await page.getByLabel('服务证书指纹', { exact: true }).fill(connection.fingerprint ?? '');
       await page.getByLabel('服务凭据', { exact: true }).fill(connection.token);
       await page.getByRole('button', { name: '连接', exact: true }).click();

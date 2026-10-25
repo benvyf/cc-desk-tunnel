@@ -1,8 +1,7 @@
-import { Download, Globe, Laptop, Settings, Unplug } from './icons.tsx';
+import { ChevronRight, Download, Globe, Laptop, Unplug } from './icons.tsx';
 import Brand from './Brand.tsx';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { thisDevice } from './device.ts';
-import { GithubMark, openProject, project } from './project.tsx';
 import { useConnectionName } from './shared.ts';
 import { Button } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
@@ -29,9 +28,8 @@ export default function LoginPage({
   older,
   newer,
   showNotes,
+  recover,
   submit,
-  openSettings,
-  managedServer,
 }: {
   form: ConnectionForm;
   change: (values: Partial<ConnectionForm>) => void;
@@ -51,12 +49,15 @@ export default function LoginPage({
   newer: string | null;
   // Shows what a version changed.
   showNotes: (version: string) => void;
+  recover?: () => void;
   submit: () => void;
-  // This computer's own settings, which need no connection.
-  openSettings: () => void;
-  managedServer?: React.ReactNode;
 }) {
   const connectionName = useConnectionName();
+  const hasFingerprint = !!form.fingerprint;
+  const [advancedOpen, setAdvancedOpen] = useState(hasFingerprint);
+  useEffect(() => {
+    if (hasFingerprint) setAdvancedOpen(true);
+  }, [hasFingerprint]);
   const [serviceUpgrade, setServiceUpgrade] = useState<{
     phase: 'running' | 'done' | 'failed';
     text: string;
@@ -95,167 +96,198 @@ export default function LoginPage({
       <div className="window-drag" />
       <div className="login-content">
         <Brand connectionName={connectionName} />
-        <div className="login-title">
-          <h1>连接代理服务</h1>
-          {form.mode === 'local' && <span className="badge simulation">离线模拟</span>}
-        </div>
-        <form
-          onSubmit={(event) => {
-            event.preventDefault();
-            setServiceUpgrade(null);
-            submit();
-          }}
-          className="connection-form"
-        >
-          {window.desktop?.dev && (
-            <SegmentedControl
-              className="connection-modes"
-              label="连接方式"
-              value={form.mode}
-              options={[
-                { value: 'local', label: '本地模拟', icon: <Laptop /> },
-                { value: 'remote', label: '远程代理', icon: <Globe /> },
-              ]}
-              onChange={(mode) => change({ mode })}
-            />
-          )}
-          <label>
-            服务地址
-            <input
-              autoFocus
-              type="url"
-              value={form.url}
-              onChange={(event) => change({ url: event.target.value })}
-              required
-              spellCheck={false}
-            />
-          </label>
-          {form.mode === 'remote' && (
+        <section className="login-card" aria-labelledby="login-heading">
+          <div className="login-title">
+            <h1 id="login-heading">连接代理服务</h1>
+            {form.mode === 'local' && <span className="badge simulation">离线模拟</span>}
+          </div>
+          <p className="login-subtitle">连接你的工作空间，继续创作与开发。</p>
+          <form
+            onSubmit={(event) => {
+              event.preventDefault();
+              setServiceUpgrade(null);
+              submit();
+            }}
+            className="connection-form"
+          >
+            {window.desktop?.dev && (
+              <SegmentedControl
+                className="connection-modes"
+                label="连接方式"
+                value={form.mode}
+                options={[
+                  { value: 'local', label: '本地模拟', icon: <Laptop /> },
+                  { value: 'remote', label: '远程代理', icon: <Globe /> },
+                ]}
+                onChange={(mode) => change({ mode })}
+              />
+            )}
             <label>
-              服务证书指纹（可选）
+              服务地址
               <input
-                aria-label="服务证书指纹"
-                value={form.fingerprint}
-                onChange={(event) => change({ fingerprint: event.target.value })}
-                placeholder="留空使用 CA 验证"
+                autoFocus
+                type="url"
+                value={form.url}
+                onChange={(event) => change({ url: event.target.value })}
+                required
                 spellCheck={false}
+                placeholder="wss://your-server:8443/ws"
               />
             </label>
-          )}
-          <label>
-            服务凭据
-            <input
-              type="password"
-              value={form.token}
-              onChange={(event) => change({ token: event.target.value })}
-              required
-              autoComplete="off"
-            />
-          </label>
-          {window.desktop && (
-            <div className="login-options">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={form.remember}
-                  onChange={(event) =>
-                    change({
-                      remember: event.target.checked,
-                      autoLogin: event.target.checked && form.autoLogin,
-                    })
-                  }
-                />
-                记住凭据
-              </label>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={form.autoLogin}
-                  onChange={(event) =>
-                    change({
-                      autoLogin: event.target.checked,
-                      remember: event.target.checked || form.remember,
-                    })
-                  }
-                />
-                自动登录
-              </label>
-            </div>
-          )}
-          {shownError && (
-            <p className="error-text" role="alert">
-              {shownError}
-            </p>
-          )}
-          {managedServer}
-          {upgrade && (
+            <label>
+              服务凭据
+              <input
+                type="password"
+                value={form.token}
+                onChange={(event) => change({ token: event.target.value })}
+                required
+                autoComplete="off"
+                placeholder="输入服务凭据"
+              />
+            </label>
+            {form.mode === 'remote' && (
+              <details
+                className="login-advanced"
+                open={advancedOpen}
+                onToggle={(event) => setAdvancedOpen(event.currentTarget.open)}
+              >
+                <summary
+                  onClick={(event) => {
+                    // Native toggle is deferred; update visibility and keyboard access together.
+                    event.preventDefault();
+                    setAdvancedOpen((value) => !value);
+                  }}
+                >
+                  <ChevronRight />
+                  高级连接选项
+                </summary>
+                <div
+                  className="login-advanced-grid"
+                  inert={!advancedOpen}
+                  aria-hidden={!advancedOpen}
+                >
+                  <div className="login-advanced-content">
+                    <label>
+                      服务证书指纹（可选）
+                      <input
+                        aria-label="服务证书指纹"
+                        aria-describedby="login-certificate-hint"
+                        value={form.fingerprint}
+                        onChange={(event) => change({ fingerprint: event.target.value })}
+                        placeholder="留空使用 CA 验证"
+                        spellCheck={false}
+                      />
+                    </label>
+                    <p id="login-certificate-hint" className="login-hint">
+                      使用自签名证书时，填写服务端提供的指纹。
+                    </p>
+                  </div>
+                </div>
+              </details>
+            )}
+            {window.desktop && (
+              <div className="login-options">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.remember}
+                    onChange={(event) =>
+                      change({
+                        remember: event.target.checked,
+                        autoLogin: event.target.checked && form.autoLogin,
+                      })
+                    }
+                  />
+                  记住凭据
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={form.autoLogin}
+                    onChange={(event) =>
+                      change({
+                        autoLogin: event.target.checked,
+                        remember: event.target.checked || form.remember,
+                      })
+                    }
+                  />
+                  自动登录
+                </label>
+              </div>
+            )}
+            {shownError && (
+              <p className="error-text" role="alert">
+                {shownError}
+              </p>
+            )}
+            {recover && (
+              <Button
+                size="lg"
+                className="login-submit"
+                type="button"
+                disabled={connecting}
+                onClick={recover}
+              >
+                处理连接版本不匹配
+              </Button>
+            )}
+            {upgrade && (
+              <Button
+                size="lg"
+                className="login-submit"
+                type="button"
+                disabled={connecting}
+                onClick={() => install()}
+              >
+                <Download />
+                升级客户端到 {upgrade}
+              </Button>
+            )}
+            {older && serviceUpgrade?.phase !== 'done' && (
+              <Button
+                size="lg"
+                className="login-submit"
+                type="button"
+                disabled={connecting || serviceUpgrade?.phase === 'running'}
+                onClick={() => upgradeService(older)}
+              >
+                <Download />
+                {serviceUpgrade?.phase === 'running' ? serviceUpgrade.text : '升级服务端'}
+              </Button>
+            )}
+            {newer && (
+              <Button size="lg" className="login-submit" onClick={() => showNotes(newer)}>
+                查看 {newer} 的更新内容
+              </Button>
+            )}
+            {direct && (
+              <Button
+                size="lg"
+                className="login-submit"
+                type="button"
+                disabled={connecting}
+                onClick={() => install(direct)}
+              >
+                <Download />
+                {downloaded !== null
+                  ? `正在从 GitHub 下载 ${Math.floor(downloaded * 100)}%`
+                  : upgrade
+                    ? `改从 GitHub 发布页下载 ${direct}`
+                    : `从 GitHub 发布页下载并升级到 ${direct}`}
+              </Button>
+            )}
             <Button
+              type="submit"
+              variant="primary"
               size="lg"
               className="login-submit"
-              type="button"
               disabled={connecting}
-              onClick={() => install()}
             >
-              <Download />
-              升级客户端到 {upgrade}
+              <Unplug />
+              {connecting ? '连接中…' : '连接'}
             </Button>
-          )}
-          {older && serviceUpgrade?.phase !== 'done' && (
-            <Button
-              size="lg"
-              className="login-submit"
-              type="button"
-              disabled={connecting || serviceUpgrade?.phase === 'running'}
-              onClick={() => upgradeService(older)}
-            >
-              <Download />
-              {serviceUpgrade?.phase === 'running' ? serviceUpgrade.text : '升级服务端'}
-            </Button>
-          )}
-          {newer && (
-            <Button size="lg" className="login-submit" onClick={() => showNotes(newer)}>
-              查看 {newer} 的更新内容
-            </Button>
-          )}
-          {direct && (
-            <Button
-              size="lg"
-              className="login-submit"
-              type="button"
-              disabled={connecting}
-              onClick={() => install(direct)}
-            >
-              <Download />
-              {downloaded !== null
-                ? `正在从 GitHub 下载 ${Math.floor(downloaded * 100)}%`
-                : upgrade
-                  ? `改从 GitHub 发布页下载 ${direct}`
-                  : `从 GitHub 发布页下载并升级到 ${direct}`}
-            </Button>
-          )}
-          <Button
-            type="submit"
-            variant="primary"
-            size="lg"
-            className="login-submit"
-            disabled={connecting}
-          >
-            <Unplug />
-            {connecting ? '连接中…' : '连接'}
-          </Button>
-        </form>
-        <div className="login-links">
-          <button className="project-link" type="button" onClick={openSettings}>
-            <Settings />
-            本机设置
-          </button>
-          {project.url && (
-            <button className="project-link" type="button" onClick={openProject}>
-              <GithubMark />
-              {project.name}
-            </button>
-          )}
-        </div>
+          </form>
+        </section>
       </div>
     </main>
   );

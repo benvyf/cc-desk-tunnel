@@ -6,24 +6,32 @@ async function setup(
   page: import('@playwright/test').Page,
   reason = 'available',
   terminal = 'committed',
-  mode = 'mismatch',
+  mode = 'connected',
 ) {
   await page.addInitScript(
     ({ reason, terminal, protocol, mode }) => {
       let installed = false,
         checks = 0,
+        cancellations = 0,
         disconnected = false,
         installInput: unknown;
+      let finishCheck: (() => void) | undefined;
       const candidate = { build: 2, appVersion: '0.3.6', protocol, sha256: 'b'.repeat(64) };
       const noOp = () => {};
       const api = {
         dev: false,
         platform: 'win32',
         boot: { connection: '', shared: { connections: [], busy: [] } },
-        device: async () => ({ id: 'e04aef32-195f-48c0-a45a-34ebd8b0aa94', name: 'test' }),
+        device: async () => {
+          if (mode === 'identity-pending') await new Promise(() => {});
+          return { id: 'e04aef32-195f-48c0-a45a-34ebd8b0aa94', name: 'test' };
+        },
         version: async () => '0.3.6',
         loadLogin: async () => null,
         workspaceRoots: async () => [],
+        foldersExist: async (folders: string[]) => folders.map(() => true),
+        windowSettings: async () => ({ closeToTray: false }),
+        connections: async () => [],
         loadSchedules: async (text: string) => ({ path: '', text }),
         connectProxy: async () => ({ url: 'ws://127.0.0.1:18889/ws' }),
         disconnectProxy: async () => {
@@ -34,11 +42,15 @@ async function setup(
             if (mode === 'connected' && !disconnected)
               throw Error('Connection must close before checking');
             checks++;
+            if (reason === 'pending')
+              await new Promise<void>((resolve) => {
+                finishCheck = resolve;
+              });
             return {
               schema: 1,
-              reason,
-              candidate: reason === 'available' ? candidate : null,
-              compatible: reason === 'available',
+              reason: reason === 'pending' ? 'available' : reason,
+              candidate: ['available', 'pending'].includes(reason) ? candidate : null,
+              compatible: ['available', 'pending'].includes(reason),
             };
           },
           install: async (input: unknown) => {
@@ -46,7 +58,9 @@ async function setup(
             installInput = input;
           },
           status: async () => ({ phase: terminal, current: candidate, target: candidate }),
-          cancel: async () => {},
+          cancel: async () => {
+            cancellations++;
+          },
         },
         managedUpdate: {
           state: async () => ({ phase: 'disabled' }),
@@ -65,8 +79,9 @@ async function setup(
         }),
       });
       Object.defineProperty(window, 'upgradeFixture', {
-        value: () => ({ installed, checks, disconnected, installInput }),
+        value: () => ({ installed, checks, cancellations, disconnected, installInput }),
       });
+      Object.defineProperty(window, 'finishUpgradeCheck', { value: () => finishCheck?.() });
     },
     { reason, terminal, protocol: PROTOCOL_VERSION, mode },
   );
@@ -76,14 +91,30 @@ async function setup(
       if (message.type === 'auth')
         route.send(
           JSON.stringify({
-            ...(mode === 'connected'
+            ...(mode === 'connected' || mode === 'active'
               ? {
                   type: 'ready',
                   protocolVersion: PROTOCOL_VERSION,
                   version: '0.3.6',
                   connectionId: randomUUID(),
                   adapter: 'claude-code',
-                  sessions: [],
+                  sessions:
+                    mode === 'active'
+                      ? [
+                          {
+                            id: randomUUID(),
+                            title: 'Running session',
+                            projectPath: 'C:/fixture',
+                            createdAt: new Date().toISOString(),
+                            updatedAt: new Date().toISOString(),
+                            activeRun: {
+                              id: randomUUID(),
+                              connectionId: randomUUID(),
+                              status: 'running',
+                            },
+                          },
+                        ]
+                      : [],
                 }
               : {
                   type: 'connection.error',
@@ -105,13 +136,23 @@ async function setup(
   if (mode !== 'none') await page.getByRole('button', { name: '连接', exact: true }).click();
 }
 
-test('same semantic version protocol mismatch checks signed target then requires explicit installation confirmation', async ({
+async function openMaintenance(page: import('@playwright/test').Page) {
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '关于与更新', exact: true })
+    .click();
+  page.once('dialog', (dialog) => void dialog.accept());
+  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '配套服务端更新' })).toBeVisible();
+}
+
+test('settings checks a signed target then requires explicit installation confirmation', async ({
   page,
 }) => {
   await setup(page);
-  const upgrade = page.getByRole('button', { name: '检查服务端更新', exact: true });
-  await expect(upgrade).toBeVisible();
-  await upgrade.click();
+  await openMaintenance(page);
   await expect(
     page.getByText(new RegExp(`0.3.6.*Build 2.*协议 ${PROTOCOL_VERSION}`)),
   ).toBeVisible();
@@ -128,36 +169,70 @@ test('first Ubuntu bootstrap instruction links fixed CC management center for di
   page,
 }) => {
   await setup(page, 'disabled');
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await openMaintenance(page);
   await expect(page.getByText(/首次.*Ubuntu.*接入命令/)).toBeVisible();
   await expect(page.getByRole('button', { name: '打开 CC管理中心' })).toBeVisible();
   await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
 });
 
-test('rollback is terminal and form changes erase the displayed confirmation', async ({ page }) => {
+test('closing maintenance discards confirmation and reconnecting can recheck a rollback target', async ({
+  page,
+}) => {
   await setup(page, 'available', 'rolled-back');
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await openMaintenance(page);
+  await expect(page.getByRole('button', { name: '确认升级到 Build 2', exact: true })).toBeVisible();
+  await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();
   await page
     .getByLabel('服务凭据', { exact: true })
     .fill('changed-fixture-token-at-least-24-characters');
   await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await openMaintenance(page);
   await page.getByRole('button', { name: '确认升级到 Build 2', exact: true }).click();
   await expect(page.getByText(/已回滚.*原版本/)).toBeVisible();
 });
 
-test('connection page checks builds without requiring a prior protocol mismatch', async ({
-  page,
-}) => {
+test('ordinary login omits service maintenance and makes no update checks', async ({ page }) => {
   await setup(page, 'available', 'committed', 'none');
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
-  await expect(page.getByRole('button', { name: '确认升级到 Build 2', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
     installed: false,
-    checks: 1,
+    checks: 0,
   });
-  await page.getByRole('button', { name: '取消等待', exact: true }).click();
-  await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
+});
+
+test('settings cannot start maintenance while login is waiting for the device identity', async ({
+  page,
+}) => {
+  await setup(page, 'available', 'committed', 'identity-pending');
+  await page.keyboard.press('Control+Comma');
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '关于与更新', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toBeDisabled();
+  expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({ checks: 0 });
+});
+
+test('protocol mismatch recovery stays in settings while the login form has no maintenance entry', async ({
+  page,
+}) => {
+  await setup(page, 'available', 'committed', 'mismatch');
+  await expect(page.getByRole('alert')).toContainText('协议不匹配');
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Control+Comma');
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '关于与更新', exact: true })
+    .click();
+  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '配套服务端更新' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '确认升级到 Build 2', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
+    checks: 1,
+    installed: false,
+  });
 });
 
 test('connected settings confirms disconnect, retains unsaved credentials, then checks the same protocol build', async ({
@@ -205,12 +280,110 @@ test('connected settings confirms disconnect, retains unsaved credentials, then 
 });
 
 test('a current build reports no upgrade without asking for installation', async ({ page }) => {
-  await setup(page, 'current', 'committed', 'none');
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await setup(page, 'current');
+  await openMaintenance(page);
   await expect(page.getByText(/当前可用构建，无需升级/)).toBeVisible();
   await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
     installed: false,
     checks: 1,
+  });
+});
+
+test('disconnected maintenance is not blocked by stale session activity', async ({ page }) => {
+  await setup(page, 'available', 'committed', 'active');
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await expect(page.getByRole('menuitem', { name: '检查服务端更新', exact: true })).toBeDisabled();
+  await page.getByRole('menuitem', { name: '断开连接', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '关于与更新', exact: true })
+    .click();
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toBeEnabled();
+});
+
+for (const shortcuts of [
+  { enabled: false, keys: {} },
+  { enabled: true, keys: { settings: '' } },
+]) {
+  test(`version mismatch recovery works without a settings shortcut: ${JSON.stringify(shortcuts)}`, async ({
+    page,
+  }) => {
+    await page.addInitScript((shortcuts) => {
+      localStorage.setItem('proxy-prefs', JSON.stringify({ shortcuts }));
+    }, shortcuts);
+    await setup(page, 'available', 'committed', 'mismatch');
+    await expect(page.getByRole('alert')).toContainText('协议不匹配');
+    await page.getByRole('button', { name: '处理连接版本不匹配', exact: true }).click();
+    await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+    await expect(
+      page.getByRole('button', { name: '确认升级到 Build 2', exact: true }),
+    ).toBeVisible();
+    expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
+      checks: 1,
+      installed: false,
+    });
+  });
+}
+
+test('maintenance fits a short narrow window with a large interface font in both themes', async ({
+  page,
+}) => {
+  await setup(page);
+  await openMaintenance(page);
+  await expect(page.getByRole('button', { name: '确认升级到 Build 2', exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 320, height: 560 });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.style.fontSize = '20px';
+    }, theme);
+    const dialog = page.getByRole('dialog', { name: '配套服务端更新' });
+    await page.screenshot({
+      path: `.local/screenshots/login-maintenance-${theme}-320.png`,
+      fullPage: true,
+    });
+    expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(
+      true,
+    );
+    await dialog
+      .getByRole('button', { name: '确认升级到 Build 2', exact: true })
+      .scrollIntoViewIfNeeded();
+    await expect(
+      dialog.getByRole('button', { name: '确认升级到 Build 2', exact: true }),
+    ).toBeInViewport();
+  }
+});
+
+test('Escape closes maintenance and restores keyboard focus to the login form', async ({
+  page,
+}) => {
+  await setup(page);
+  await openMaintenance(page);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByLabel('服务地址', { exact: true })).toBeFocused();
+  expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
+    installed: false,
+  });
+});
+
+test('closing an in-flight check cancels it and ignores its late result', async ({ page }) => {
+  await setup(page, 'pending');
+  await openMaintenance(page);
+  await expect(page.getByRole('status')).toContainText('正在验证配套服务端发布签名');
+  const before = await page.evaluate(() => (window as any).upgradeFixture().cancellations);
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).upgradeFixture().cancellations)).toBeGreaterThan(
+    before,
+  );
+  await page.evaluate(() => (window as any).finishUpgradeCheck());
+  await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '连接', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
+    checks: 1,
+    installed: false,
   });
 });

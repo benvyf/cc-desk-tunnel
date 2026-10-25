@@ -247,14 +247,14 @@ test('the bar is off by default, in the window and in the settings', async ({ pa
   await open(page, figures, false);
   await expect(page.locator('.session-bar')).toHaveCount(0);
   await page.reload();
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   await expect(page.getByRole('switch', { name: '显示会话栏' })).not.toBeChecked();
 });
 
 test('the settings choose which figures the bar shows, or hide it', async ({ page }) => {
   await switchOn(page);
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   const choice = (name: string) =>
     page.getByRole('group', { name: '会话栏里显示' }).getByRole('button', { name, exact: true });
   await expect(choice('步数')).toHaveAttribute('aria-pressed', 'true');

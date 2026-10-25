@@ -65,6 +65,7 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     const page = await application.firstWindow();
     page.on('pageerror', (error) => errors.push(error.message));
     await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await page.getByText('高级连接选项', { exact: true }).click();
     await expect(page.getByLabel('服务证书指纹', { exact: true })).toBeVisible();
     expect(await application.evaluate(({ app }) => app.isPackaged)).toBe(true);
     expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
@@ -109,6 +110,8 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     if (process.env.NATIVE_TEST_CONFIG) {
       const connection = JSON.parse(readFileSync(resolve(process.env.NATIVE_TEST_CONFIG), 'utf8'));
       await page.getByLabel('服务地址', { exact: true }).fill(connection.url);
+      if (await page.getByLabel('服务证书指纹', { exact: true }).isHidden())
+        await page.getByText('高级连接选项', { exact: true }).click();
       await page.getByLabel('服务证书指纹', { exact: true }).fill(connection.fingerprint ?? '');
       await page.getByLabel('服务凭据', { exact: true }).fill(connection.token);
       await page.getByRole('button', { name: '连接', exact: true }).click();

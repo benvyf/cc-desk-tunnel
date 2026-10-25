@@ -192,7 +192,7 @@ test('expanded folds nothing and groups nothing', async ({ page }) => {
 
 test('the settings choose how much of the work is shown', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '本机设置', exact: true }).click();
+  await page.keyboard.press('Control+Comma');
   const mode = page.getByRole('radiogroup', { name: '工作步骤展示' });
   await expect(mode.getByRole('radio', { name: '标准' })).toBeChecked();
   await mode.getByRole('radio', { name: '全部展开' }).click();

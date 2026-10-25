@@ -81,7 +81,7 @@ import Sidebar from './Sidebar.tsx';
 import TitleBar from './TitleBar.tsx';
 import Presence from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
-import { IconButton, Menu } from './ui.tsx';
+import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import { useManagedUpdate } from './managed-update.ts';
 
@@ -173,6 +173,14 @@ export function App({
   const [busy, setBusy] = useState(false);
   const [serverUpgradeWorking, setServerUpgradeWorking] = useState(false);
   const [serverUpgradeRequested, setServerUpgradeRequested] = useState(false);
+  const [serverUpgradeOpen, setServerUpgradeOpen] = useState(false);
+  const serverUpgradeWasOpen = useRef(false);
+  useEffect(() => {
+    // The settings control that opened maintenance was unmounted on disconnect.
+    if (serverUpgradeWasOpen.current && !serverUpgradeOpen)
+      document.querySelector<HTMLInputElement>('.login-card input[type="url"]')?.focus();
+    serverUpgradeWasOpen.current = serverUpgradeOpen;
+  }, [serverUpgradeOpen]);
   const serverUpgradeChecked = useCallback(() => setServerUpgradeRequested(false), []);
   const [refreshing, setRefreshing] = useState(false);
   const [findRequest, setFindRequest] = useState(0);
@@ -635,6 +643,7 @@ export function App({
   }
   function openServerUpgrade() {
     if (
+      connected &&
       !window.confirm(
         '检查服务端更新需要先断开当前连接。请结束任务并关闭其他 CC 连接；升级完成后手动连接。继续？',
       )
@@ -645,6 +654,7 @@ export function App({
       // unremembered credentials; no additional login information is saved to disk here.
       signedIn.current = false;
       setServerUpgradeRequested(true);
+      setServerUpgradeOpen(true);
       client.disconnect();
       setLocalSettings(null);
       await window.desktop!.disconnectProxy();
@@ -1181,16 +1191,19 @@ export function App({
     ...(serviceUpdate ? [serviceUpdate] : []),
   ];
   const managedServerUpdate: MenuItem | undefined =
-    window.desktop?.managedServer && form.mode === 'remote' && nativeMode
+    window.desktop?.managedServer &&
+    form.mode === 'remote' &&
+    (nativeMode || state.status === 'disconnected')
       ? {
           label: '检查服务端更新',
           icon: <Download />,
           disabled:
-            !connected ||
+            (!connected && state.status !== 'disconnected') ||
+            proxyConnecting ||
             busy ||
             refreshing ||
             !!terminalSessionId ||
-            state.sessions.some((item) => !!item.activeRun),
+            (connected && state.sessions.some((item) => !!item.activeRun)),
           run: openServerUpgrade,
         }
       : undefined;
@@ -1331,7 +1344,6 @@ export function App({
   const keys = useRef<(event: KeyboardEvent) => void>(() => {});
   keys.current = (event) => {
     if (event.defaultPrevented || !prefs.shortcuts.enabled) return;
-    if (!connected && state.status !== 'reconnecting') return;
     if (
       (event.target as Element | null)?.closest?.('.native-terminal') ||
       document.querySelector('dialog[open]')
@@ -1340,6 +1352,13 @@ export function App({
     const combo = comboOf(event);
     const action = combo && actions.find((item) => keyFor(prefs, item.id) === combo)?.id;
     if (!action) return;
+    if (!connected && state.status !== 'reconnecting') {
+      if (!browser && action === 'settings') {
+        event.preventDefault();
+        setLocalSettings('general');
+      }
+      return;
+    }
     const run: Record<Action, (() => void) | false | undefined> = {
       back: !terminalSessionId && (() => step(-1)),
       forward: !terminalSessionId && (() => step(1)),
@@ -1437,6 +1456,7 @@ export function App({
           service={null}
           adapterName=""
           updates={[]}
+          serverUpdate={managedServerUpdate}
           showNotes={setNotes}
         />
         {notesDialog}
@@ -1444,27 +1464,37 @@ export function App({
     ) : (
       <>
         {notesDialog}
+        {serverUpgradeOpen && window.desktop?.managedServer && (
+          <Modal
+            title="配套服务端更新"
+            onClose={() => {
+              setServerUpgradeOpen(false);
+              setServerUpgradeRequested(false);
+            }}
+          >
+            <ManagedServerUpgrade
+              form={form}
+              disabled={state.status === 'connecting' || proxyConnecting || busy}
+              activity={setServerUpgradeWorking}
+              autoCheck={serverUpgradeRequested}
+              checked={serverUpgradeChecked}
+            />
+          </Modal>
+        )}
         <LoginPage
+          recover={
+            state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
+              ? () => setLocalSettings('about')
+              : undefined
+          }
           showNotes={setNotes}
           newer={upgrade ?? ahead}
-          openSettings={() => setLocalSettings('general')}
           form={form}
           change={changeForm}
           error={
             currentError && state.mismatch && !window.desktop
               ? `${currentError}请联系管理员安装匹配的定制版。`
               : currentError
-          }
-          managedServer={
-            window.desktop?.managedServer && form.mode === 'remote' ? (
-              <ManagedServerUpgrade
-                form={form}
-                disabled={state.status === 'connecting' || proxyConnecting || busy}
-                activity={setServerUpgradeWorking}
-                autoCheck={serverUpgradeRequested}
-                checked={serverUpgradeChecked}
-              />
-            ) : undefined
           }
           upgrade={state.mismatch && window.desktop ? upgrade : null}
           older={
