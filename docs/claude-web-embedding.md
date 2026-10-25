@@ -1,6 +1,6 @@
 # Claude 网页嵌入：初始试验版本
 
-> 2026-10-25 方向已调整：用户选择本地内嵌网页、Ubuntu 代理出口，并接受管理员在客户端首次登录。当前方案见[本地浏览器与远端出口设计](superpowers/specs/2026-10-25-local-browser-remote-egress-design.md)。下文是已暂停的远端画面试验记录，不代表新方案已实现；无需继续传送或启动蓝色画面联调包。
+> 2026-10-25 方向已调整：用户选择本地内嵌网页、Ubuntu 代理出口，并接受管理员在客户端首次登录。当前方案见[本地浏览器与远端出口设计](superpowers/specs/2026-10-25-local-browser-remote-egress-design.md)，实施进展见[代理基础说明](claude-web-proxy.md)。下文是已暂停的远端画面试验记录，不代表新方案已实现；无需继续传送或启动蓝色画面联调包。
 
 2026-10-25。分支 `codex/claude-web`，基于 Build 9（05918cdd）。仅账号本人使用自己的 Claude 账号。此版本用于验证远端画面和人手操作，尚未部署到 Ubuntu 或发布客户端。
 

@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import type { ServerOptions } from './server.ts';
 import { moderationConfig } from './moderation.ts';
 import { monitorNodePattern } from '../../../packages/protocol/src/account-monitor.ts';
+import { browserProxyHost } from './browser-proxy-target.ts';
 
 function monitorConfig(env: NodeJS.ProcessEnv): ServerOptions['accountMonitor'] {
   const { PROXY_MONITOR_URL: url, PROXY_MONITOR_NODE_ID: nodeId, PROXY_MONITOR_TOKEN: token } = env;
@@ -69,6 +70,9 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
   const options: ServerOptions = {
     accountMonitor: monitorConfig(env),
     token: env.PROXY_TOKEN ?? '',
+    browserProxyHosts: env.PROXY_BROWSER_PROXY_HOSTS?.trim()
+      ? env.PROXY_BROWSER_PROXY_HOSTS.split(',').map((host) => browserProxyHost(host.trim()))
+      : undefined,
     browserEndpoint: env.PROXY_BROWSER_ENDPOINT,
     nativeTerminalReview: env.PROXY_NATIVE_TERMINAL_REVIEW === '1',
     moderation: env.PROXY_MODERATION_CONFIG
