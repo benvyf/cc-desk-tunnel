@@ -64,8 +64,10 @@ export default function Sidebar({
   createInProject,
   sessionMenu,
   projectMenu,
+  modeSwitch,
 }: {
   sideOpen?: boolean;
+  modeSwitch?: ReactNode;
   localProjects?: boolean;
   sessions: Session[];
   // Sessions on the user's other computers: listed apart, by computer and under it by project folder, and not
@@ -313,7 +315,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar" inert={!sideOpen} ref={aside}>
       <div className="sidebar-brand">
-        <Brand connectionName={connectionName} />
+        {modeSwitch ?? <Brand connectionName={connectionName} />}
         <NoticeBell notifications={notifications} open={select} />
         <IconButton
           title={searching ? '关闭搜索' : '搜索'}

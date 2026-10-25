@@ -23,6 +23,19 @@ server {
         proxy_send_timeout 3600s;
         proxy_buffering off;
     }
+    # Optional remote-browser channel. Disabled unless the service is configured by the administrator.
+    # This carries authenticated pixels/input, never a reverse proxy of claude.ai HTML.
+    location /cc-browser/ {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection $cc_desk_tunnel_connection;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_read_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_buffering off;
+    }
     # Installer download for client self-upgrade; the service checks the token.
     location = /client/installer {
         proxy_pass http://127.0.0.1:8787;

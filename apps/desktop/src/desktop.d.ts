@@ -43,6 +43,11 @@ declare global {
       copyText: (text: string) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
       openWeb: (url: string) => Promise<void>;
+      browser: {
+        open: () => Promise<{ enabled: boolean; url?: string; reason?: string }>;
+        close: () => Promise<void>;
+        mode: (active: boolean) => Promise<void>;
+      };
       // The folders holding sessions without a project; new ones are made in the first.
       workspaceRoots: () => Promise<string[]>;
       // Asks for another folder, or goes back to the one under Documents; the folders as they are afterwards.

@@ -9,6 +9,7 @@
 ```
 
 - **全部流量都经过 nginx**：`/ws`（登录与对话，以及 Claude 到 Windows 的执行通道）、`/client/installer`（客户端升级下载）和可选的 `/health`。
+- 可选的远端网页试验另使用 `/cc-browser/v1/status` 和 `/cc-browser/v1/display`。启用时需加入 `nginx.conf.example` 中的 `/cc-browser/` 段；旧配置不会自动生效。该段只转发认证后的画面/键鼠，不代理 Claude 官网 HTML；服务端默认关闭，并拒绝强制审核节点。配置步骤及当前能力见[远端网页说明](../docs/claude-web-embedding.md)。
 - **执行通道也走 `/ws`**。Claude 每执行一条命令，客户端就另开一条到 `/ws` 的连接，所以同一来源会同时有多条连接；不要用 `limit_conn` 之类的设置把它限制到一条。0.2.9 及更早版本单独使用的隧道端口（默认 7000）不再需要。
 - nginx 模式下容器的 8787 只发布在服务器的 `127.0.0.1`，公网无法直接访问。
 

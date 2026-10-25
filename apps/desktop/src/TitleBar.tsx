@@ -22,7 +22,7 @@ export default function TitleBar({
   back?: () => void;
   forward?: () => void;
   sideOpen: boolean;
-  toggleSide: () => void;
+  toggleSide?: () => void;
   menus: BarMenu[];
   openMenu: (menu: BarMenu, position: MenuPosition) => void;
   connected: boolean;
@@ -36,7 +36,11 @@ export default function TitleBar({
       <IconButton title="前进" disabled={!forward} onClick={forward}>
         <ArrowRight />
       </IconButton>
-      <IconButton title={sideOpen ? '收起侧栏' : '展开会话列表'} onClick={toggleSide}>
+      <IconButton
+        title={sideOpen ? '收起侧栏' : '展开会话列表'}
+        disabled={!toggleSide}
+        onClick={toggleSide}
+      >
         <PanelLeft />
       </IconButton>
       <nav className="titlebar-menus" aria-label="菜单">

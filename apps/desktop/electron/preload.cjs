@@ -31,6 +31,11 @@ contextBridge.exposeInMainWorld('desktop', {
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   openExternal: (url) => ipcRenderer.invoke('external:open', url),
   openWeb: (url) => ipcRenderer.invoke('web:open', url),
+  browser: {
+    open: () => ipcRenderer.invoke('browser:open'),
+    close: () => ipcRenderer.invoke('browser:close'),
+    mode: (active) => ipcRenderer.invoke('browser:mode', active),
+  },
   workspaceRoots: () => ipcRenderer.invoke('workspace:roots'),
   chooseWorkspace: (reset) => ipcRenderer.invoke('workspace:choose', reset),
   createWorkspace: () => ipcRenderer.invoke('workspace:create'),

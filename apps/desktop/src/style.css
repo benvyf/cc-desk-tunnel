@@ -1018,6 +1018,91 @@ dialog:has(.release-notes) {
   padding: 14px 12px 8px 18px;
   min-height: 56px;
 }
+.mode-switch {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 9px;
+  background: var(--hover);
+  -webkit-app-region: no-drag;
+}
+.mode-switch button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 29px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.mode-switch button[aria-selected='true'] {
+  background: var(--side);
+  color: var(--text);
+  border-color: var(--line);
+  box-shadow: 0 1px 2px #0000000d;
+}
+.mode-switch svg.app-icon {
+  width: 15px;
+  height: 15px;
+}
+.shell.mode-chat {
+  grid-template-columns: 52px 284px minmax(0, 1fr);
+}
+.shell.mode-chat > .rail,
+.shell.mode-chat > .sidebar,
+.shell.mode-chat > .workspace,
+.shell.mode-chat > .settings-sidebar {
+  display: none;
+}
+.claude-web-page {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--side);
+  border-radius: var(--radius-xl) 0 0 0;
+  overflow: hidden;
+}
+.claude-web-page[hidden] {
+  display: none;
+}
+.claude-web-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line);
+}
+.claude-web-toolbar > [role='status'] {
+  flex: 1;
+  font-size: 13px;
+  color: var(--muted);
+}
+.claude-web-screen {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.claude-web-notice {
+  position: absolute;
+  inset: 100px 20px auto;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+  pointer-events: none;
+}
 .sidebar-brand .brand {
   flex: 1;
   min-width: 0;

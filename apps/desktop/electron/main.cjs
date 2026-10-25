@@ -39,6 +39,9 @@ const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
+const browserSession = require('./browser-session.cjs').createBrowserSession(() => bridge);
+let browserModeActive = false;
+const closeBrowser = browserSession.close;
 let connectionGeneration = 0;
 let proxyOpening = 0;
 let serverClient;
@@ -219,6 +222,7 @@ handle('clipboard:write', (_event, text) => {
 // The official sign-in page and this project's own page open in the user's browser; nothing else is handed to the
 // system.
 handle('external:open', async (event, target) => {
+  if (browserModeActive) throw new Error('Chat中的网站操作只能在远端浏览器进行。');
   const url = new URL(String(target));
   if (
     url.protocol !== 'https:' ||
@@ -229,6 +233,7 @@ handle('external:open', async (event, target) => {
 });
 // Only an address announced by the currently authenticated service may leave the application here.
 handle('web:open', async (_event, target) => {
+  if (browserModeActive) throw new Error('Chat中的网站操作只能在远端浏览器进行。');
   const url = new URL(String(target));
   if (
     url.protocol !== 'https:' ||
@@ -315,6 +320,7 @@ handle('proxy:connect', async (event, config) => {
     const generation = ++connectionGeneration;
     const previous = bridge;
     bridge = null;
+    await closeBrowser();
     await previous?.close();
     if (generation !== connectionGeneration) throw new Error('Connection cancelled');
     const { openProxyBridge } = await import(
@@ -344,6 +350,7 @@ handle('proxy:connect', async (event, config) => {
       () => {
         if (bridge !== connection) return;
         bridge = null;
+        void closeBrowser();
         keepAwake(false);
         if (!event.sender.isDestroyed()) event.sender.send('proxy:closed');
       },
@@ -359,6 +366,11 @@ handle('proxy:connect', async (event, config) => {
     proxyOpening--;
   }
 });
+handle('browser:mode', (_event, active) => {
+  browserModeActive = active === true;
+});
+handle('browser:close', () => closeBrowser());
+handle('browser:open', () => browserSession.open());
 // Update IPC is registered separately so every renderer path shares the same refusal.
 const managedUpdates = require('./managed-updates.cjs');
 managedUpdates.registerManagedUpdates(handle);
@@ -678,10 +690,12 @@ handle('notify:show', (event, notice) => {
   }
 });
 ipcMain.handle('proxy:disconnect', async () => {
+  browserModeActive = false;
   keepAwake(false);
   connectionGeneration++;
   const previous = bridge;
   bridge = null;
+  await closeBrowser();
   await previous?.close();
 });
 
@@ -853,10 +867,10 @@ let quitting = false;
 let exiting = false;
 app.on('before-quit', (event) => {
   quitting = true;
-  if (exiting || !bridge) return;
+  if (exiting || (!bridge && !browserSession.busy())) return;
   event.preventDefault();
   exiting = true;
-  bridge.close().finally(() => app.quit());
+  Promise.allSettled([closeBrowser(), bridge?.close()]).finally(() => app.quit());
 });
 app.on('window-all-closed', () => app.quit());
 app.on('quit', () => {

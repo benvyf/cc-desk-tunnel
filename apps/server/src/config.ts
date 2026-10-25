@@ -69,6 +69,7 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
   const options: ServerOptions = {
     accountMonitor: monitorConfig(env),
     token: env.PROXY_TOKEN ?? '',
+    browserEndpoint: env.PROXY_BROWSER_ENDPOINT,
     nativeTerminalReview: env.PROXY_NATIVE_TERMINAL_REVIEW === '1',
     moderation: env.PROXY_MODERATION_CONFIG
       ? moderationConfig(JSON.parse(readFileSync(env.PROXY_MODERATION_CONFIG, 'utf8')))

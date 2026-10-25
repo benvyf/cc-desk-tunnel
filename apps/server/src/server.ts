@@ -66,6 +66,7 @@ import { AccountMonitor, type AccountMonitorOptions } from './account-monitor.ts
 import { reviewInput, type ModerationOptions } from './moderation.ts';
 import { assertNativeTerminalReview } from './native-terminal-policy.ts';
 import { managedServerHandler, type ManagedBackend } from './managed-server-http.ts';
+import { createBrowserService } from './browser-service.ts';
 
 type Peer = {
   socket: WebSocket;
@@ -123,6 +124,7 @@ type Seat = {
 };
 type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
 export type ServerOptions = {
+  browserEndpoint?: string;
   managed?: {
     backend: ManagedBackend;
     initialMaintenance?: boolean;
@@ -252,6 +254,7 @@ export function createProxyServer(options: ServerOptions) {
         tasks.size ||
         tunnelTasks.size ||
         webRequests ||
+        browserService.busy() ||
         [...peers].some((peer) => peer.authenticated || peer.registering)
       ) {
         maintenance = false;
@@ -313,7 +316,20 @@ export function createProxyServer(options: ServerOptions) {
         nonce: options.managed.nonce,
       })
     : undefined;
+  const browserService = createBrowserService({
+    token: options.token,
+    endpoint: options.browserEndpoint,
+    blocked: () =>
+      closing || maintenance
+        ? 'maintenance'
+        : options.moderation
+          ? 'moderation-required'
+          : undefined,
+    throttle,
+    address: addressOf,
+  });
   const handler: RequestListener = (request, response) => {
+    if (browserService.handle(request, response)) return;
     if (managedHandler?.(request, response)) return;
     if (maintenance && !(request.method === 'GET' && request.url === '/health')) {
       response.writeHead(503, { 'Retry-After': '5', 'Cache-Control': 'no-store' }).end();
@@ -360,6 +376,7 @@ export function createProxyServer(options: ServerOptions) {
     : createServer(handler);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
   server.on('upgrade', (request, socket, head) => {
+    if (browserService.upgrade(request, socket, head)) return;
     if (maintenance) {
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
       return;
@@ -1793,6 +1810,7 @@ export function createProxyServer(options: ServerOptions) {
     },
     async close() {
       closing = true;
+      browserService.close();
       accountMonitor?.close();
       web.close();
       const terminalCleanup = Promise.all(

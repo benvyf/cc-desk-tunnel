@@ -78,6 +78,9 @@ import {
 import SettingsPage from './SettingsPage.tsx';
 import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
+import ModeSwitch from './ModeSwitch.tsx';
+import type { WorkspaceMode } from './ModeSwitch.tsx';
+import ClaudeWebPage from './ClaudeWebPage.tsx';
 import TitleBar from './TitleBar.tsx';
 import Presence from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
@@ -154,6 +157,12 @@ export function App({
     </Presence>
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('coding');
+  const [webVisited, setWebVisited] = useState(false);
+  const changeMode = (mode: WorkspaceMode) => {
+    if (mode === 'chat') setWebVisited(true);
+    setWorkspaceMode(mode);
+  };
   const managedUpdate = useManagedUpdate();
   const [form, setForm] = useState<ConnectionForm>(() => ({
     url: localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws',
@@ -1343,7 +1352,7 @@ export function App({
   // native terminal or an open dialog, is left alone.
   const keys = useRef<(event: KeyboardEvent) => void>(() => {});
   keys.current = (event) => {
-    if (event.defaultPrevented || !prefs.shortcuts.enabled) return;
+    if (workspaceMode === 'chat' || event.defaultPrevented || !prefs.shortcuts.enabled) return;
     if (
       (event.target as Element | null)?.closest?.('.native-terminal') ||
       document.querySelector('dialog[open]')
@@ -1557,22 +1566,32 @@ export function App({
   };
   return (
     <div
-      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''}`}
+      className={`shell ${workspaceMode === 'chat' ? 'mode-chat' : ''} ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''}`}
     >
       {selfSigned && <CertificateWarning />}
       <TitleBar
         title={
-          place.page === 'chat'
-            ? (selected?.title ?? productName)
-            : place.page === 'schedules'
-              ? '定时任务'
-              : sectionNames[place.section]
+          workspaceMode === 'chat'
+            ? 'Claude 网页'
+            : place.page === 'chat'
+              ? (selected?.title ?? productName)
+              : place.page === 'schedules'
+                ? '定时任务'
+                : sectionNames[place.section]
         }
-        back={!terminalSessionId && stepAvailable(-1) ? () => step(-1) : undefined}
-        forward={!terminalSessionId && stepAvailable(1) ? () => step(1) : undefined}
+        back={
+          workspaceMode === 'coding' && !terminalSessionId && stepAvailable(-1)
+            ? () => step(-1)
+            : undefined
+        }
+        forward={
+          workspaceMode === 'coding' && !terminalSessionId && stepAvailable(1)
+            ? () => step(1)
+            : undefined
+        }
         sideOpen={sideOpen}
-        toggleSide={toggleSide}
-        menus={barMenus}
+        toggleSide={workspaceMode === 'chat' ? undefined : toggleSide}
+        menus={workspaceMode === 'chat' ? [] : barMenus}
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
         connected={connected}
         adapterName={adapterName}
@@ -1643,6 +1662,7 @@ export function App({
       ) : (
         <>
           <Sidebar
+            modeSwitch={!browser ? <ModeSwitch mode="coding" change={changeMode} /> : undefined}
             sideOpen={sideOpen}
             sessions={sessions}
             elsewhere={elsewhere}
@@ -2010,6 +2030,13 @@ export function App({
           />
         )}
       </Presence>
+      {webVisited && (
+        <ClaudeWebPage
+          visible={workspaceMode === 'chat'}
+          connected={connected}
+          changeMode={changeMode}
+        />
+      )}
       {notesDialog}
     </div>
   );
