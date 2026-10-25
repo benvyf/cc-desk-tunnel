@@ -52,3 +52,5 @@ held POST 在 17:08:08.803215 被服务端记录，恢复 marker 在 17:08:14.02
 本轮私有诊断材料位于 `.local/owned-egress-02cc481f/`，包括安装/回滚程序、Electron harness、最终运行 checks.json、原始 NetLog、摘要和站点 journal。该目录被 Git 忽略；不提交 token、私钥、profile 或完整凭据。可复用的受限测试站及五项测试在 scripts/owned-egress-site.py 和 scripts/owned-egress-site.test.py。
 
 后续优先补齐本机网络通路与正式客户端入口验证，并落实登录失效后的管理员处理流程。生产 JEV 强制审核保持原状；透明网页代理不能据此宣称能覆盖网页消息审核，因此本轮通过不授权在受审核生产节点开放真实 Claude Chat。
+
+后续完整复审修复了私有回滚工具的停止失败误报，补强上传摘要及诊断计时；原始实验结论和待验收门槛保持上述范围。见 [完整复审记录](claude-web-owned-site-review-2026-10-26.md)。

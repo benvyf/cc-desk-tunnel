@@ -44,8 +44,10 @@ class SiteTests(unittest.TestCase):
             result = json.load(response)
             self.assertEqual(result['bytes'], 18)
             self.assertEqual(result['source'], '203.0.113.8')
+            self.assertEqual(result['sha256'], 'f04bb023b066daeb9605090dc870038fb81984f051912231ed0ad94621bd9698')
         self.assertNotIn('dummy-private-body', json.dumps(self.events))
         self.assertEqual(self.events[-1]['bytes'], 18)
+        self.assertEqual(self.events[-1]['sha256'], result['sha256'])
 
     def test_unknown_paths_other_origins_and_large_bodies_are_rejected(self):
         for url, data, headers, expected in [
