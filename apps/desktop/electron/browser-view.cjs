@@ -23,7 +23,7 @@ async function createBrowserView({
   signal,
 }) {
   if (!secureWebsite(url) || !url.startsWith('https:')) throw new Error('Invalid website entry');
-  const { session, WebContentsView, dialog } = electron;
+  const { session, WebContentsView } = electron;
   const ses = session.fromPartition(partition);
   let closed = false;
   let closing;
@@ -56,28 +56,16 @@ async function createBrowserView({
     );
     return closing;
   };
-  const download = async (event, item, contents) => {
+  const download = (event, item, contents) => {
     if (closed || contents !== view?.webContents) {
       event.preventDefault();
       return;
     }
     downloads.add(item);
     item.once('done', () => downloads.delete(item));
-    item.pause();
-    try {
-      const result = await dialog.showSaveDialog(window, {
-        title: '保存附件',
-        defaultPath: item.getFilename(),
-      });
-      if (closed || result.canceled || !result.filePath) {
-        item.cancel();
-        return;
-      }
-      item.setSavePath(result.filePath);
-      item.resume();
-    } catch {
-      item.cancel();
-    }
+    // Electron owns the save path decision. A second async showSaveDialog here
+    // races its native download dialog while getSavePath() is still empty.
+    item.setSaveDialogOptions({ title: '保存附件' });
   };
   const abort = () => {
     void close();

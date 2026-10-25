@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:https';
-import { request } from 'node:http';
+import { request, type ServerResponse } from 'node:http';
 import { connect } from 'node:net';
 import type { Duplex } from 'node:stream';
 import { createProxyServer } from '../../../server/src/server.ts';
@@ -14,6 +14,13 @@ export async function ownedBrowserService(directory: string, token: string) {
   const coding = createProxyServer({ token, dataDir: directory });
   const internal = new URL(await coding.listen(0));
   const sockets = new Set<Duplex>();
+  let holdingStatus = false;
+  const pendingStatus = new Set<ServerResponse>();
+  const releaseBrowserStatus = () => {
+    holdingStatus = false;
+    for (const response of pendingStatus) response.writeHead(503).end();
+    pendingStatus.clear();
+  };
   const site = createServer(custom, (_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(
@@ -32,6 +39,11 @@ export async function ownedBrowserService(directory: string, token: string) {
     },
   });
   const gateway = createServer(defaultCertificate, (req, res) => {
+    if (holdingStatus && req.url === '/cc-browser/v2/status') {
+      pendingStatus.add(res);
+      res.once('close', () => pendingStatus.delete(res));
+      return;
+    }
     if (browser.handle(req, res)) return;
     const pass = request(
       {
@@ -77,7 +89,13 @@ export async function ownedBrowserService(directory: string, token: string) {
   await once(gateway, 'listening');
   return {
     url: `wss://127.0.0.1:${(gateway.address() as { port: number }).port}/ws`,
+    holdBrowserStatus: () => {
+      holdingStatus = true;
+    },
+    pendingBrowserStatus: () => pendingStatus.size,
+    releaseBrowserStatus,
     async close() {
+      releaseBrowserStatus();
       browser.close();
       for (const socket of sockets) socket.destroy();
       await coding.close();

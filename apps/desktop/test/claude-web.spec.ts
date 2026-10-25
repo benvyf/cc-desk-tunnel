@@ -201,9 +201,27 @@ test('Electron Chat opens the real local view through v2 and hides it for Coding
     await expect.poll(viewVisible).toBe(false);
     await page.getByRole('button', { name: '管理员重新登录', exact: true }).click();
     await expect(page.getByRole('status')).toHaveText('已打开Claude网页');
-    await page.evaluate(() => window.desktop!.disconnectProxy());
+    service.holdBrowserStatus();
+    await page.getByRole('button', { name: '重新打开', exact: true }).click();
+    await expect.poll(service.pendingBrowserStatus).toBe(1);
+    let watchdog: ReturnType<typeof setTimeout>;
+    try {
+      await Promise.race([
+        page.evaluate(() => window.desktop!.disconnectProxy()),
+        new Promise((_, reject) => {
+          watchdog = setTimeout(
+            () => reject(new Error('disconnect waited for status timeout')),
+            2000,
+          );
+        }),
+      ]);
+    } finally {
+      clearTimeout(watchdog!);
+    }
+    await expect.poll(service.pendingBrowserStatus).toBe(0);
     await expect.poll(viewVisible).toBe(false);
   } finally {
+    service.releaseBrowserStatus();
     await application.close();
     await service.close();
     rmSync(directory, { recursive: true, force: true });

@@ -11,6 +11,41 @@ const deferred = () => {
 };
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 
+test('close cancels a pending status query before creating a browser transport', async () => {
+  const entered = deferred();
+  const status = deferred();
+  let signal;
+  let opened = 0;
+  const control = {
+    browserStatus: (received) => {
+      signal = received;
+      entered.resolve();
+      return status.promise;
+    },
+    openBrowser: async () => {
+      opened++;
+      throw new Error('must not open');
+    },
+  };
+  const manager = createBrowserSession(
+    () => control,
+    () => {
+      throw new Error('must not create');
+    },
+  );
+  const pending = manager.open();
+  await entered.promise;
+  const closing = manager.close();
+  try {
+    assert.equal(signal?.aborted, true, 'the status HTTP request must receive cancellation');
+  } finally {
+    status.resolve({ schema: 2, enabled: true });
+    assert.equal((await pending).enabled, false);
+    await closing;
+  }
+  assert.equal(opened, 0);
+});
+
 test(
   'close aborts a pending website load instead of waiting for the website timeout',
   { timeout: 1000 },

@@ -26,6 +26,15 @@ test(
     const site = createServer(custom, (req, res) => {
       requests.push(req.url);
       if (req.url === '/slow') return; // Owned stalled page for cancellation.
+      if (req.url === '/download-slow') {
+        res.writeHead(200, {
+          'Content-Disposition': 'attachment; filename="incomplete.txt"',
+          'Content-Type': 'text/plain',
+          'Content-Length': 1024 * 1024,
+        });
+        res.write(Buffer.alloc(64 * 1024, 'x'));
+        return;
+      }
       if (req.url === '/download') {
         res.writeHead(200, {
           'Content-Disposition': 'attachment; filename="owned.txt"',
@@ -185,9 +194,14 @@ test(
     });
     turn.listen(0, '127.0.0.1');
     await once(turn, 'listening');
+    const rtcLog = join(directory, 'rtc-netlog.json');
+    await application.evaluate(
+      (_electron, path) => global.testView.contents.session.netLog.startLogging(path),
+      rtcLog,
+    );
     try {
       await contents(
-        `new Promise(async resolve => { const rtc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:${udp.address().port}'},{urls:'turn:127.0.0.1:${turn.address().port}?transport=tcp',username:'owned',credential:'owned'}]});rtc.createDataChannel('owned');await rtc.setLocalDescription(await rtc.createOffer());setTimeout(()=>{rtc.close();resolve(true)},700)})`,
+        `new Promise(async resolve => { const rtc=new RTCPeerConnection({iceServers:[{urls:'stun:127.0.0.1:${udp.address().port}'},{urls:'turn:127.0.0.1:${turn.address().port}?transport=tcp',username:'owned',credential:'owned'},{urls:'stun:owned-rtc-stun.invalid:3478'},{urls:'turn:owned-rtc-turn.invalid:443?transport=tcp',username:'owned',credential:'owned'}]});rtc.createDataChannel('owned');await rtc.setLocalDescription(await rtc.createOffer());setTimeout(()=>{rtc.close();resolve(true)},700)})`,
       );
       assert.equal(udpPackets, 0);
       assert.equal(tcpConnections, 0);
@@ -204,9 +218,24 @@ test(
         true,
       );
     } finally {
+      await application.evaluate(() => global.testView.contents.session.netLog.stopLogging());
       udp.close();
       await new Promise((r) => turn.close(r));
     }
+    const network = JSON.parse(await readFile(rtcLog, 'utf8'));
+    const localResolutions = network.events.filter(
+      (event) =>
+        /HOST_RESOLVER/.test(
+          Object.entries(network.constants.logEventTypes).find(
+            ([, value]) => value === event.type,
+          )?.[0] ?? '',
+        ) && /owned-rtc-(?:stun|turn)\.invalid/.test(JSON.stringify(event.params)),
+    );
+    assert.equal(
+      localResolutions.length,
+      0,
+      'WebRTC hostnames must not enter the local DNS resolver',
+    );
     await contents("document.querySelector('#next').click()");
     await new Promise((resolve) => setTimeout(resolve, 100));
     assert.equal(await contents('location.pathname'), '/next');
@@ -216,20 +245,64 @@ test(
     );
     const download = join(directory, 'owned.txt');
     await application.evaluate(({ dialog }, path) => {
-      dialog.showSaveDialog = async () => ({ canceled: false, filePath: path });
+      global.manualSaveCalls = 0;
+      dialog.showSaveDialog = async () => {
+        global.manualSaveCalls++;
+        return { canceled: true };
+      };
+      global.downloadResult = new Promise((resolve) =>
+        global.testView.contents.session.once('will-download', (_e, item) => {
+          global.nativeSaveOptions = item.getSaveDialogOptions();
+          // Only the test selects a path synchronously; production leaves native
+          // path selection and cancellation to Electron's single save dialog.
+          item.setSavePath(path);
+          item.once('done', (_e, state) => resolve(state));
+        }),
+      );
     }, download);
-    const saved = application.evaluate(
-      () =>
-        new Promise((resolve) =>
-          global.testView.contents.session.once('will-download', (_e, item) =>
-            item.once('done', (_e, state) => resolve(state)),
-          ),
-        ),
-    );
     await contents("document.querySelector('#download').click()");
-    assert.equal(await saved, 'completed');
+    const saved = await application.evaluate(async () => ({
+      state: await global.downloadResult,
+      manual: global.manualSaveCalls,
+      options: global.nativeSaveOptions,
+    }));
+    assert.equal(saved.manual, 0, 'must not open a second manual save dialog');
+    assert.equal(saved.options.title, '保存附件');
+    assert.equal(saved.state, 'completed');
     assert.equal(await readFile(download, 'utf8'), 'owned-download-content');
+    await application.evaluate(
+      (_electron, path) => {
+        global.incompleteDownload = new Promise((resolve) =>
+          global.testView.contents.session.once('will-download', (_e, item) => {
+            item.setSavePath(path);
+            global.incompleteItem = item;
+            item.once('done', (_event, state) => resolve(state));
+          }),
+        );
+      },
+      join(directory, 'incomplete.txt'),
+    );
+    await contents(
+      "document.querySelector('#download').href='/download-slow';document.querySelector('#download').click()",
+    );
+    for (
+      let index = 0;
+      index < 50 &&
+      !(await application.evaluate(() => global.incompleteItem?.getReceivedBytes() > 0));
+      index++
+    )
+      await new Promise((r) => setTimeout(r, 20));
+    assert.ok(requests.includes('/download-slow'));
+    assert.deepEqual(
+      await application.evaluate(() => ({
+        exists: !!global.incompleteItem,
+        state: global.incompleteItem?.getState(),
+        bytes: global.incompleteItem?.getReceivedBytes() > 0,
+      })),
+      { exists: true, state: 'progressing', bytes: true },
+    );
     await application.evaluate(() => global.testClose());
+    assert.equal(await application.evaluate(() => global.incompleteDownload), 'cancelled');
     const cancelled = application
       .evaluate(() => global.testStart('/slow'))
       .then(

@@ -364,7 +364,7 @@ export async function openProxyBridge(
     close,
     downloadInstaller,
     webUrl: () => (closed ? null : webUrl),
-    browserStatus: async () => {
+    browserStatus: async (signal) => {
       if (closed || !token) throw new Error('请先连接CC服务。');
       return serviceJson(
         { ...config, token },
@@ -372,6 +372,7 @@ export async function openProxyBridge(
         '/cc-browser/v2/status',
         undefined,
         binaries.resolveProxy,
+        signal,
       );
     },
     openBrowser: async () => {

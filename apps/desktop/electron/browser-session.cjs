@@ -38,7 +38,7 @@ function createBrowserSession(getControl, createView, onState = () => {}) {
       const controller = new AbortController();
       opening = controller;
       try {
-        const status = await control.browserStatus();
+        const status = await control.browserStatus(controller.signal);
         if (!current()) throw new Error('连接已变化。');
         if (!status || status.schema !== 2 || typeof status.enabled !== 'boolean')
           throw new Error('无效网页状态。');
