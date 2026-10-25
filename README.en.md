@@ -1,6 +1,6 @@
 > **Custom maintenance build:** current implementation, production state, review fixes and portable source recovery are documented in [DEVELOPMENT-HANDOFF.md](DEVELOPMENT-HANDOFF.md) (Chinese). Use the VPS manager for the custom pilot packages; the working branch is not yet on GitHub. Older installation/update statements below describe upstream behavior.
 
-# CC Desk Tunnel
+# CC SPACE
 
 [简体中文](README.md) | **English**
 
@@ -8,7 +8,7 @@
 
 Drive Claude Code in the cloud from a desktop client, and let it work on your Windows PC through a reverse tunnel.
 
-Claude Code (CC for short) runs on a Linux server; your code, compilers and tools stay on Windows. CC Desk Tunnel connects the two: a container on the server, a desktop client on Windows, and an encrypted reverse SSH channel through which Claude reads and writes files and runs commands on your computer.
+Claude Code (CC for short) runs on a Linux server; your code, compilers and tools stay on Windows. CC SPACE connects the two: a container on the server, a desktop client on Windows, and an encrypted reverse SSH channel through which Claude reads and writes files and runs commands on your computer.
 
 [Download](https://github.com/benvyf/cc-desk-tunnel/releases) · [Quick start](#quick-start) · [Security](#security) · [Documentation](#documentation) · License: [Apache-2.0](LICENSE)
 
@@ -21,7 +21,7 @@ Claude Code (CC for short) runs on a Linux server; your code, compilers and tool
 
 ## What it solves
 
-| The usual way | What gets in the way | With CC Desk Tunnel |
+| The usual way | What gets in the way | With CC SPACE |
 | --- | --- | --- |
 | Move the project to a server and let Claude Code develop there | You set up the toolchain again; builds and tests need an expensive machine; your local editor, emulators and desktop software are out of reach | Project and toolchain stay local and commands run locally; the server only runs Claude Code, so a small one is enough |
 | Use the CLI on the server through remote desktop or an SSH terminal | Lag, awkward input methods and copy-paste, long output that is hard to read back | A local desktop app with native input, scrolling and copying |

@@ -45,14 +45,14 @@ const results = await electronBuild({
   publish: 'never',
   config: {
     appId: 'io.github.ccdesktunnel.desktop',
-    productName: 'CC Desk Tunnel',
+    productName: 'CC SPACE',
     electronVersion: electron.version,
     electronDist: join(root, 'node_modules/electron/dist'),
     directories: { app, output },
     npmRebuild: false,
     asar: true,
     asarUnpack: ['electron/*.ps1'],
-    files: ['package.json', 'electron/**', 'dist/**'],
+    files: ['brand.json', 'package.json', 'electron/**', 'dist/**'],
     extraResources: [
       {
         from: vendor,
@@ -66,13 +66,14 @@ const results = await electronBuild({
       icon: join(root, 'apps/desktop/electron/icon.png'),
     },
     nsis: {
+      include: join(root, 'scripts/installer-branding.nsh'),
       oneClick: false,
       perMachine: false,
       allowElevation: true,
       allowToChangeInstallationDirectory: true,
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
-      shortcutName: 'CC Desk Tunnel',
+      shortcutName: 'CC SPACE',
       runAfterFinish: false,
       deleteAppDataOnUninstall: false,
       artifactName: 'CC-Desk-Tunnel-Setup-${version}-${arch}.${ext}',
@@ -90,7 +91,7 @@ execFileSync(
     stdio: 'inherit',
     env: {
       ...process.env,
-      WINDOWS_PACKAGE_EXE: join(output, 'win-unpacked/CC Desk Tunnel.exe'),
+      WINDOWS_PACKAGE_EXE: join(output, 'win-unpacked/CC SPACE.exe'),
       NATIVE_TEST_CONFIG: '',
     },
   },
@@ -106,9 +107,7 @@ execFileSync(
   ],
   { windowsHide: true, stdio: 'inherit' },
 );
-console.log(
-  `Windows package: ${results.join(', ') || join(output, 'win-unpacked/CC Desk Tunnel.exe')}`,
-);
+console.log(`Windows package: ${results.join(', ') || join(output, 'win-unpacked/CC SPACE.exe')}`);
 console.log(
   'No service token, OAuth data, local history, test fixtures or source repository included.',
 );

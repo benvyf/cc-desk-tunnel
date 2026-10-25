@@ -160,6 +160,18 @@ test('production browser logs in with TOTP, sends no desktop identity, and expos
   page,
 }) => {
   const fixture = await browserFixture(page);
+  await expect(page.getByRole('heading', { name: 'CC SPACE', exact: true })).toBeVisible();
+  expect(
+    await page
+      .locator('.web-login-body .brand')
+      .evaluate((brand) => parseFloat(getComputedStyle(brand).fontSize)),
+  ).toBeCloseTo(24, 2);
+  const centerOffset = await page.locator('.web-login-body .brand').evaluate((brand) => {
+    const mark = brand.querySelector('.brand-mark')!.getBoundingClientRect();
+    const name = brand.querySelector('.brand-name')!.getBoundingClientRect();
+    return Math.abs(mark.top + mark.height / 2 - name.top - name.height / 2);
+  });
+  expect(centerOffset).toBeLessThan(0.5);
   await expect(page.getByRole('note')).toContainText('自签名证书');
   await page.getByLabel('服务凭据', { exact: true }).fill('test-password');
   await page.getByLabel('验证器动态码', { exact: true }).fill('000000');

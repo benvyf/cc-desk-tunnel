@@ -13,7 +13,7 @@ const mac = process.platform === 'darwin';
 if (process.platform === 'win32' || !process.argv[2] || mac !== process.argv[2].endsWith('.app'))
   throw new Error('Usage: node scripts/smoke-posix-package.mjs <application> [arguments]');
 const executable = mac
-  ? join(resolve(process.argv[2]), 'Contents/MacOS/CC Desk Tunnel')
+  ? join(resolve(process.argv[2]), 'Contents/MacOS/CC SPACE')
   : resolve(process.argv[2]);
 const archive = join(dirname(executable), mac ? '../Resources/app.asar' : 'resources/app.asar');
 // The shell each system gives its users: the script host has to work with both.

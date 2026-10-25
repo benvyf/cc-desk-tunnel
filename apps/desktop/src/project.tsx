@@ -1,7 +1,9 @@
+import { productName } from './Brand.tsx';
+
 // Where the project lives, shown as a small link on the sign-in page and in the connection menu.
 // Nothing is shown while the address is empty.
 export const project = {
-  name: 'cc-desk-tunnel',
+  name: productName,
   url: 'https://github.com/benvyf/cc-desk-tunnel',
 };
 

@@ -16,6 +16,7 @@ const {
   net,
 } = require('electron');
 const path = require('node:path');
+const { name: productName, appId, legacyProfileName, configureBrand } = require('./branding.cjs');
 const {
   closeSync,
   existsSync,
@@ -47,7 +48,7 @@ const serverManagementBusy = () => serverManagementOpening > 0 || !!serverClient
 const connections = require('./connections.cjs');
 // See connections.cjs. The profile is chosen before anything is read from it, the instance lock included:
 // each connection is then a single instance of its own.
-const base = app.getPath('userData');
+const base = configureBrand(app);
 const connectionId = connections.requested(process.argv, base);
 if (connectionId) {
   app.setPath('userData', connections.directory(base, connectionId));
@@ -243,12 +244,14 @@ handle('web:open', async (_event, target) => {
 // Sessions without a project still need a working directory on this computer; they get one under Documents, grouped by
 // day, unless the user chose another folder. Folders used before are remembered: their sessions are still
 // sessions without a project.
-const defaultRoot = () => path.join(app.getPath('documents'), 'CC Desk Tunnel');
+const defaultRoot = () => path.join(app.getPath('documents'), productName);
 function workspaceRoots() {
   const saved = readComputer().workspaceRoots;
-  const roots = [...(Array.isArray(saved) ? saved : []), defaultRoot()].filter(
-    (root) => typeof root === 'string' && root,
-  );
+  const roots = [
+    ...(Array.isArray(saved) ? saved : []),
+    defaultRoot(),
+    path.join(app.getPath('documents'), legacyProfileName),
+  ].filter((root) => typeof root === 'string' && root);
   // Windows and macOS take a path in any case; Linux tells the cases apart.
   const key = (root) => (process.platform === 'linux' ? root : root.toLowerCase());
   return roots.filter(
@@ -510,7 +513,7 @@ function label() {
   const entries = connections.list(base);
   return entries.length > 1 ? (entries.find((entry) => entry.id === connectionId)?.name ?? '') : '';
 }
-const titled = () => (label() ? `CC Desk Tunnel · ${label()}` : 'CC Desk Tunnel');
+const titled = () => (label() ? `${productName} · ${label()}` : productName);
 const others = () => connections.list(base).filter((entry) => entry.id !== connectionId);
 const listed = () =>
   connections.list(base).map((entry) => ({
@@ -683,8 +686,7 @@ ipcMain.handle('proxy:disconnect', async () => {
 });
 
 // Windows files notifications under this identity; the installer gives the shortcut the same one.
-if (process.platform === 'win32')
-  app.setAppUserModelId(app.isPackaged ? 'io.github.ccdesktunnel.desktop' : process.execPath);
+if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? appId : process.execPath);
 app.whenReady().then(() => {
   if (!ownsInstance) return;
   void managedClient.initialize();
@@ -705,13 +707,13 @@ app.whenReady().then(() => {
           {
             label: app.name,
             submenu: [
-              { role: 'about', label: '关于 CC Desk Tunnel' },
+              { role: 'about', label: `关于 ${productName}` },
               { type: 'separator' },
-              { role: 'hide', label: '隐藏 CC Desk Tunnel' },
+              { role: 'hide', label: `隐藏 ${productName}` },
               { role: 'hideOthers', label: '隐藏其他' },
               { role: 'unhide', label: '全部显示' },
               { type: 'separator' },
-              { role: 'quit', label: '退出 CC Desk Tunnel' },
+              { role: 'quit', label: `退出 ${productName}` },
             ],
           },
           {
@@ -785,9 +787,9 @@ app.whenReady().then(() => {
   // The macOS menu bar takes a small shape in one colour, which it tints itself for light and dark.
   const tray = new Tray(
     process.platform === 'darwin'
-      ? require('./tray-icon.cjs').terminalTemplate(nativeImage)
+      ? require('./tray-icon.cjs').spaceTemplate(nativeImage)
       : nativeImage
-          .createFromPath(path.join(__dirname, 'icon.png'))
+          .createFromPath(path.join(__dirname, 'tray.png'))
           .resize({ width: 32, height: 32 }),
   );
   const buildMenu = () =>
@@ -841,7 +843,7 @@ app.whenReady().then(() => {
       // Balloons are a thing of the Windows tray.
       if (process.platform === 'win32')
         tray.displayBalloon({
-          title: 'CC Desk Tunnel 仍在后台运行',
+          title: `${productName} 仍在后台运行`,
           content: '点击托盘图标恢复窗口；右键图标选择“退出”才会结束连接。',
         });
     }

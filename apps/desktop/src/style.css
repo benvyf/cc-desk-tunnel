@@ -480,8 +480,44 @@ button.chip.danger:hover:not(:disabled) {
   font-size: calc(20rem / 14);
   white-space: nowrap;
 }
+.brand-lockup {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 9px;
+  row-gap: 5px;
+}
+.brand-mark {
+  grid-column: 1;
+  grid-row: 1;
+  flex: none;
+  width: auto;
+  height: 32px;
+  aspect-ratio: 116 / 237.21;
+}
+.brand-mark path:first-child {
+  fill: light-dark(#b65d41, #faf9f5);
+}
+.brand-mark path:last-child {
+  fill: #d97757;
+}
+.brand-copy {
+  display: contents;
+}
+.brand-name {
+  grid-column: 2;
+  grid-row: 1;
+  display: block;
+  max-width: 100%;
+  line-height: 1.3;
+  letter-spacing: 0.025em;
+}
 .brand-connection {
-  margin-left: 8px;
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
   padding: 1px 8px;
   border-radius: var(--radius-full);
   background: var(--accent-soft);
@@ -535,11 +571,27 @@ button.chip.danger:hover:not(:disabled) {
 }
 .login-content {
   width: 100%;
+  min-width: 0;
   max-width: 400px;
   margin: 0 auto;
 }
 .login-content > .brand {
   margin-bottom: 42px;
+  font-size: calc(24rem / 14);
+}
+.login-content > .brand,
+.web-login-body h1 > .brand,
+.about-brand {
+  column-gap: 13px;
+  font-size: calc(24rem / 14);
+}
+.login-content > .brand .brand-mark,
+.web-login-body h1 .brand-mark,
+.about-brand .brand-mark {
+  height: 44px;
+}
+.about-brand {
+  margin-bottom: 24px;
   font-size: calc(24rem / 14);
 }
 .login-links {
@@ -881,6 +933,9 @@ dialog:has(.release-notes) {
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.sidebar-brand .brand-mark {
+  height: 28px;
 }
 .side-action {
   display: flex;

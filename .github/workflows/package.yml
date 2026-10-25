@@ -146,7 +146,7 @@ jobs:
       - run: npm run package:linux || (sleep 60 && npm run package:linux)
         shell: bash
       - run: sudo apt-get install -y ./artifacts/linux/*.deb
-      - run: xvfb-run -a -s "-screen 0 1280x900x24" node scripts/smoke-posix-package.mjs "/opt/CC Desk Tunnel/cc-desk-tunnel"
+      - run: xvfb-run -a -s "-screen 0 1280x900x24" node scripts/smoke-posix-package.mjs "/opt/CC SPACE/cc-desk-tunnel"
         env:
           SMOKE_SCREENSHOT: artifacts/linux/window-x64.png
       - uses: actions/upload-artifact@v4

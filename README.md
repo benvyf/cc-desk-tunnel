@@ -1,4 +1,4 @@
-# CC Desk Tunnel（CC 桌面隧道）
+# CC SPACE
 
 **简体中文** | [English](README.en.md)
 
@@ -10,7 +10,7 @@
 
 用桌面客户端驱动云端的 Claude Code，经反向隧道在你的 Windows 本机执行。
 
-Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、编译器和各种工具都留在 Windows 本机。CC Desk Tunnel 把两端接起来：服务器上是一个容器，Windows 上是一个桌面客户端，Claude 通过一条加密的反向 SSH 通道在你的电脑上读写文件、执行命令。
+Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、编译器和各种工具都留在 Windows 本机。CC SPACE 把两端接起来：服务器上是一个容器，Windows 上是一个桌面客户端，Claude 通过一条加密的反向 SSH 通道在你的电脑上读写文件、执行命令。
 
 [下载](https://github.com/benvyf/cc-desk-tunnel/releases) · [快速开始](#快速开始) · [安全须知](#安全须知) · [文档](#文档) · 许可：[Apache-2.0](LICENSE)
 
@@ -21,7 +21,7 @@ Claude Code（简称 CC）运行在一台 Linux 服务器上；项目代码、�
 
 ## 解决什么问题
 
-| 常见做法 | 麻烦在哪 | 用 CC Desk Tunnel |
+| 常见做法 | 麻烦在哪 | 用 CC SPACE |
 | --- | --- | --- |
 | 把项目搬到服务器上，让 Claude Code 在那里开发 | 要在服务器上重装一遍工具链；编译、测试吃配置，得买高配机器；用不了本机的编辑器、模拟器和各种桌面软件 | 项目和工具链留在本机，命令在本机执行；服务器只跑 Claude Code，低配即可 |
 | 用远程桌面或 SSH 终端操作服务器上的 CLI | 画面延迟、中文输入和复制粘贴别扭，长输出难以翻阅 | 本机的桌面应用，原生的输入、滚动和复制 |

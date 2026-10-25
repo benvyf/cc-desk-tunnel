@@ -3,6 +3,7 @@ import { ShieldAlert } from './icons.tsx';
 import type { WebLoginState } from '@cc-desk-tunnel/protocol';
 import { browserLogin, browserLogout, browserSession } from './browser-api.ts';
 import { App } from './App.tsx';
+import Brand from './Brand.tsx';
 
 export function CertificateWarning() {
   const ref = useRef<HTMLParagraphElement>(null);
@@ -76,7 +77,9 @@ export default function WebGate() {
   return (
     <main className="web-login">
       <section className="web-login-body">
-        <h1>CC Desk Tunnel</h1>
+        <h1>
+          <Brand />
+        </h1>
         <p className="muted">登录服务端工作台</p>
         {session?.selfSigned && <CertificateWarning />}
         {!session ? (

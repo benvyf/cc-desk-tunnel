@@ -26,7 +26,7 @@ export type Outcome = { at: number; status: 'sent' | 'missed' | 'failed'; text: 
 type Progress = Record<string, { key: string; base: number; last?: Outcome }>;
 
 export const guide = [
-  'CC Desk Tunnel 客户端的定时任务。到点时客户端向会话发送一条带“定时任务”标签的消息，内容为 prompt。',
+  'CC SPACE 客户端的定时任务。到点时客户端向会话发送一条带“定时任务”标签的消息，内容为 prompt。',
   '修改本文件后几秒内生效，无需重启；格式不对的任务不会运行，并在客户端“定时任务”面板里提示原因。',
   '任务字段：id（任意不重复字符串）、name、enabled（true/false）、prompt（不超过 15000 字）、schedule、target、model、effort。',
   'schedule 四选一，时间均为本机时间：{"type":"once","at":"2026-01-31T09:00"}、{"type":"daily","time":"09:00"}、',

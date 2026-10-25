@@ -43,7 +43,7 @@ test('Electron: a second connection is a window of its own and shares what is th
     await login(page);
     // One connection has no name to show.
     await expect(page.locator('.brand-connection')).toHaveCount(0);
-    expect(await title(first)).toBe('CC Desk Tunnel');
+    expect(await title(first)).toBe('CC SPACE');
     await general(page);
     await page.getByRole('textbox', { name: '新连接的名称', exact: true }).fill('工作');
     await page.getByRole('button', { name: '新建并打开', exact: true }).click();
@@ -53,7 +53,7 @@ test('Electron: a second connection is a window of its own and shares what is th
     const own = resolve(profile, 'connections', id);
     const instance = resolve(own, 'instance.json');
     await expect.poll(() => existsSync(instance), { timeout: 30000 }).toBe(true);
-    await expect.poll(() => title(first)).toBe('CC Desk Tunnel · 主连接');
+    await expect.poll(() => title(first)).toBe('CC SPACE · 主连接');
     const row = page
       .locator('.setting-row')
       .filter({ has: page.getByText('工作', { exact: true }) });
@@ -72,7 +72,7 @@ test('Electron: a second connection is a window of its own and shares what is th
     const other = await second.firstWindow();
     await expect(other.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
     await expect(other.locator('.brand-connection')).toHaveText('工作');
-    expect(await title(second)).toBe('CC Desk Tunnel · 工作');
+    expect(await title(second)).toBe('CC SPACE · 工作');
     expect(await second.evaluate(({ app }) => app.getPath('userData'))).toBe(own);
     const device = (target: Page) => target.evaluate(() => window.desktop!.device());
     expect(await device(other)).toEqual(await device(page));
@@ -153,7 +153,7 @@ test('Electron: a second connection is a window of its own and shares what is th
     await other.getByRole('button', { name: '改名 主连接', exact: true }).click();
     await other.getByRole('textbox', { name: '连接的名称', exact: true }).fill('个人');
     await other.getByRole('button', { name: '保存', exact: true }).click();
-    await expect.poll(() => title(first)).toBe('CC Desk Tunnel · 个人');
+    await expect.poll(() => title(first)).toBe('CC SPACE · 个人');
 
     await second.close();
     second = undefined;
@@ -162,7 +162,7 @@ test('Electron: a second connection is a window of its own and shares what is th
     await page.getByRole('button', { name: '删除 工作', exact: true }).click();
     await expect(row).toHaveCount(0);
     expect(existsSync(own)).toBe(false);
-    await expect.poll(() => title(first)).toBe('CC Desk Tunnel');
+    await expect.poll(() => title(first)).toBe('CC SPACE');
   } finally {
     await second?.close().catch(() => {});
     if (id) dismiss();

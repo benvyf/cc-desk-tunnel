@@ -31,11 +31,14 @@ const directory = resolve(
 );
 mkdirSync(directory, { recursive: true });
 const name = 'CC Managed Update Acceptance';
-const vendor = existsSync(join(root, 'apps/desktop/vendor/pwsh/pwsh.exe'))
-  ? join(root, 'apps/desktop/vendor')
-  : join(root, 'CC Desk Tunnel/resources/vendor');
-if (!existsSync(join(vendor, 'pwsh/pwsh.exe')))
-  throw new Error('Prepare bundled PowerShell before acceptance');
+const vendor = [
+  'apps/desktop/vendor',
+  'CC SPACE/resources/vendor',
+  'CC Desk Tunnel/resources/vendor',
+]
+  .map((directory) => join(root, directory))
+  .find((directory) => existsSync(join(directory, 'pwsh/pwsh.exe')));
+if (!vendor) throw new Error('Prepare bundled PowerShell before acceptance');
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 let index;
 let artifact;
@@ -117,7 +120,7 @@ async function build(build) {
       npmRebuild: false,
       asar: true,
       asarUnpack: ['electron/*.ps1'],
-      files: ['package.json', 'electron/**', 'dist/**'],
+      files: ['brand.json', 'package.json', 'electron/**', 'dist/**'],
       extraResources: [
         { from: vendor, to: 'vendor', filter: ['openssh/**', 'pwsh/**', '!**/runtime.json'] },
       ],

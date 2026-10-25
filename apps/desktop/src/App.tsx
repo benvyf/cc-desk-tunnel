@@ -8,6 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
+import { productName } from './Brand.tsx';
 import {
   CircleHelp,
   Download,
@@ -1532,7 +1533,7 @@ export function App({
       <TitleBar
         title={
           place.page === 'chat'
-            ? (selected?.title ?? 'CC Desk Tunnel')
+            ? (selected?.title ?? productName)
             : place.page === 'schedules'
               ? '定时任务'
               : sectionNames[place.section]

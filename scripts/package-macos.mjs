@@ -26,7 +26,7 @@ const architecture = args.includes('--arm64')
 const unpacked = args.includes('--dir');
 const app = join(root, `.local/macos-package/${architecture}/app`);
 const output = join(root, 'artifacts/macos');
-const bundle = join(output, architecture === 'arm64' ? 'mac-arm64' : 'mac', 'CC Desk Tunnel.app');
+const bundle = join(output, architecture === 'arm64' ? 'mac-arm64' : 'mac', 'CC SPACE.app');
 await stageDesktop(root, app, {
   description: 'macOS client for a native remote Claude Code session',
   ...posixService,
@@ -45,7 +45,7 @@ const results = await electronBuild({
   publish: 'never',
   config: {
     appId: 'io.github.ccdesktunnel.desktop',
-    productName: 'CC Desk Tunnel',
+    productName: 'CC SPACE',
     electronVersion: electron.version,
     // The Electron installed here is of this machine's architecture; the other one is downloaded.
     ...(architecture === process.arch &&
@@ -55,7 +55,7 @@ const results = await electronBuild({
     directories: { app, output },
     npmRebuild: false,
     asar: true,
-    files: ['package.json', 'electron/**', 'dist/**', 'node_modules/**'],
+    files: ['brand.json', 'package.json', 'electron/**', 'dist/**', 'node_modules/**'],
     mac: {
       category: 'public.app-category.developer-tools',
       minimumSystemVersion: '13.0',

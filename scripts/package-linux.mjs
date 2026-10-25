@@ -28,19 +28,20 @@ const results = await electronBuild({
   publish: 'never',
   config: {
     appId: 'io.github.ccdesktunnel.desktop',
-    productName: 'CC Desk Tunnel',
+    productName: 'CC SPACE',
     electronVersion: electron.version,
     electronDist: join(root, 'node_modules/electron/dist'),
     directories: { app, output },
     npmRebuild: false,
     asar: true,
-    files: ['package.json', 'electron/**', 'dist/**', 'node_modules/**'],
+    files: ['brand.json', 'package.json', 'electron/**', 'dist/**', 'node_modules/**'],
     linux: {
       target: 'deb',
       executableName: 'cc-desk-tunnel',
+      syncDesktopName: true,
       category: 'Development',
       icon: join(root, 'apps/desktop/electron/icon.png'),
-      maintainer: 'CC Desk Tunnel contributors <cc-desk-tunnel@users.noreply.github.com>',
+      maintainer: 'CC SPACE contributors <cc-desk-tunnel@users.noreply.github.com>',
       artifactName: 'CC-Desk-Tunnel-${version}-linux-${arch}.${ext}',
     },
     deb: {

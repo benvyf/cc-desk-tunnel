@@ -67,6 +67,22 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
     await expect(page.getByLabel('服务证书指纹', { exact: true })).toBeVisible();
     expect(await application.evaluate(({ app }) => app.isPackaged)).toBe(true);
+    expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
+    await expect(page).toHaveTitle('CC SPACE');
+    await expect(page.locator('.brand-name')).toHaveText('CC SPACE');
+    const images = await application.evaluate(({ app, nativeImage }) => {
+      const load = process.mainModule!.require;
+      const path = load('node:path');
+      const assets = path.join(app.getAppPath(), 'electron');
+      return ['icon.png', 'tray.png', 'trayTemplate.png'].map((file) =>
+        nativeImage.createFromPath(path.join(assets, file)).getSize(),
+      );
+    });
+    expect(images).toEqual([
+      { width: 1024, height: 1024 },
+      { width: 32, height: 32 },
+      { width: 18, height: 18 },
+    ]);
     expect(await page.evaluate((path) => window.desktop!.gitBranch(path), project)).toBe(
       'package-smoke',
     );

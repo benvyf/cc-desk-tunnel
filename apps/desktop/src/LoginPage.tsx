@@ -1,4 +1,5 @@
-import { Download, Globe, Laptop, Settings, SquareTerminal, Unplug } from './icons.tsx';
+import { Download, Globe, Laptop, Settings, Unplug } from './icons.tsx';
+import Brand from './Brand.tsx';
 import { useState } from 'react';
 import { thisDevice } from './device.ts';
 import { GithubMark, openProject, project } from './project.tsx';
@@ -93,11 +94,7 @@ export default function LoginPage({
     <main className="login-page">
       <div className="window-drag" />
       <div className="login-content">
-        <div className="brand">
-          <SquareTerminal />
-          <span>CC Desk Tunnel</span>
-          {connectionName && <span className="brand-connection">{connectionName}</span>}
-        </div>
+        <Brand connectionName={connectionName} />
         <div className="login-title">
           <h1>连接代理服务</h1>
           {form.mode === 'local' && <span className="badge simulation">离线模拟</span>}

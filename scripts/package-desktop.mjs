@@ -10,6 +10,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { build as viteBuild } from 'vite';
+import brand from '../apps/desktop/brand.json' with { type: 'json' };
 
 // A package the program loads by name while it runs, copied with what it depends on. Compiled add-ons are
 // left out: they are optional speed-ups built for the Node of the machine that installed them, not for the
@@ -97,8 +98,17 @@ export async function stageDesktop(
   const commonjs = readdirSync(join(root, 'apps/desktop/electron')).filter((file) =>
     file.endsWith('.cjs'),
   );
-  for (const file of [...commonjs, 'release-download.mjs', 'icon.png', ...files])
+  for (const file of [
+    ...commonjs,
+    'release-download.mjs',
+    'icon.png',
+    'tray.png',
+    'trayTemplate.png',
+    'trayTemplate@2x.png',
+    ...files,
+  ])
     cpSync(join(root, 'apps/desktop/electron', file), join(app, 'electron', file));
+  cpSync(join(root, 'apps/desktop/brand.json'), join(app, 'brand.json'));
   if (managedIdentity) {
     await viteBuild({
       configFile: false,
@@ -136,11 +146,12 @@ export async function stageDesktop(
     JSON.stringify(
       {
         name: 'cc-desk-tunnel',
-        productName: 'CC Desk Tunnel',
+        productName: brand.name,
+        desktopName: 'cc-desk-tunnel.desktop',
         // The desktop workspace manifest is the single source of the client version.
         version: JSON.parse(readFileSync(join(root, 'apps/desktop/package.json'), 'utf8')).version,
         description,
-        author: 'CC Desk Tunnel contributors',
+        author: 'CC SPACE contributors',
         private: true,
         main: 'electron/main.cjs',
         type: 'module',

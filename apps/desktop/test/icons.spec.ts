@@ -33,7 +33,7 @@ test('page and settings navigation use bold selected glyphs and restore regular 
   await expect(shortcuts.locator('svg')).toHaveAttribute('data-weight', 'bold');
   await expect(shortcuts).toHaveAccessibleName('快捷键');
   await categories.getByRole('button', { name: '关于与更新', exact: true }).click();
-  const homepage = page.getByRole('button', { name: '项目主页 · cc-desk-tunnel', exact: true });
+  const homepage = page.getByRole('button', { name: '项目主页 · CC SPACE', exact: true });
   await expect(homepage.locator('svg')).toHaveCSS('width', '16px');
   await expect(homepage.locator('svg')).toHaveCSS('height', '16px');
   await expect(homepage.locator('svg')).toHaveAttribute('viewBox', '0 0 16 16');

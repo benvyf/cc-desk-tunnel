@@ -25,6 +25,7 @@ import { GithubMark, openProject, project } from './project.tsx';
 import SettingsPanel from './SettingsPanel.tsx';
 import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
 import FontSizeSettings from './FontSizeSettings.tsx';
+import Brand from './Brand.tsx';
 import type { NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
@@ -740,6 +741,7 @@ function About({
     <section className="page" aria-label="关于与更新">
       <div className="page-body">
         <h1 className="page-title">关于与更新</h1>
+        <Brand className="about-brand" />
         <div className="card">
           <Row title="客户端版本">
             <span className="setting-actions">

@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import Brand from './Brand.tsx';
 import type { ReactNode } from 'react';
 import {
   ChevronDown,
@@ -312,10 +313,7 @@ export default function Sidebar({
   return (
     <aside className="sidebar" inert={!sideOpen} ref={aside}>
       <div className="sidebar-brand">
-        <span className="brand">
-          CC Desk Tunnel
-          {connectionName && <span className="brand-connection">{connectionName}</span>}
-        </span>
+        <Brand connectionName={connectionName} />
         <NoticeBell notifications={notifications} open={select} />
         <IconButton
           title={searching ? '关闭搜索' : '搜索'}

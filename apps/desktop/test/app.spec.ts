@@ -210,14 +210,14 @@ test('Electron loads the built UI with sandbox and closes its execution connecti
     await page.locator('.new-session').click();
     const plain = page.locator('.session-list > .session-row.selected');
     await expect(plain.locator('strong')).toHaveText('新会话');
-    const [day] = readdirSync(resolve(documents, 'CC Desk Tunnel'));
+    const [day] = readdirSync(resolve(documents, 'CC SPACE'));
     expect(day).toMatch(/^\d{4}-\d{2}-\d{2}$/);
-    expect(readdirSync(resolve(documents, 'CC Desk Tunnel', day))).toHaveLength(1);
+    expect(readdirSync(resolve(documents, 'CC SPACE', day))).toHaveLength(1);
     await plain.click({ button: 'right' });
     await page.getByRole('menuitem', { name: '删除', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: '删除', exact: true }).click();
     await expect(plain).toHaveCount(0);
-    await expect.poll(() => existsSync(resolve(documents, 'CC Desk Tunnel', day))).toBe(false);
+    await expect.poll(() => existsSync(resolve(documents, 'CC SPACE', day))).toBe(false);
     await application.evaluate(({ dialog }) => {
       dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
     });
