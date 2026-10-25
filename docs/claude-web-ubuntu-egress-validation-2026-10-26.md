@@ -8,7 +8,7 @@
 
 本地真实 Electron 网页 → 随机数字回环 HTTP 代理 → 经证书指纹验证的 v2 WSS → 本轮独立 SSH 转发 → Ubuntu 测试容器 → Ubuntu DNS 与自有 HTTPS 站点。SSH 在 VPS 只监听回环地址，不新增公网测试监听。
 
-原生诊断通过 `spawn` 启动正式 `main.cjs`，没有 Playwright 浏览器启动参数，确认 `MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`、禁用 QUIC、DNS 预取和非代理 WebRTC UDP 等设置。使用新的私有 profile 和正式 `browser-view.cjs`、`browser-network-proxy.mjs`；网站证书采用正常公共 CA 校验，没有网站证书例外。
+原生诊断通过 `spawn` 启动诊断入口，再加载未修改的正式 `main.cjs`，没有 Playwright 浏览器启动参数，确认 `MAP * ~NOTFOUND, EXCLUDE 127.0.0.1`、禁用 QUIC、DNS 预取和非代理 WebRTC UDP 等设置。使用新的私有 profile 和正式 `browser-view.cjs`、`browser-network-proxy.mjs`；网站证书采用正常公共 CA 校验，没有网站证书例外。
 
 **范围限制：诊断程序直接创建受控网页视图，没有经生产 Coding 控制连接后点击 Chat 入口。**实际 Ubuntu v2 鉴权、证书指纹和非法目标拒绝另行通过了本机到 Ubuntu 的检查。此前 Chat/Coding UI 回归已通过，但不能将其表述为本轮真实远端完整 UI 验收。本轮的可见性检查只验证视图隐藏和恢复。
 
@@ -22,7 +22,7 @@ Windows 抓包 UTC 19:04:42.754 至 19:05:18.466，覆盖 UTC 19:04:57.553 至 1
 - Ubuntu 管理员回传的 tcpdump 输出显示 UTC 19:04:58.366 从 Ubuntu `172.22.248.220` 向 `172.22.240.1:53` 查询 `api.ghostapi.org` 的 A/AAAA；随后可见 `172.20.0.2:39598` 经网桥及 Ubuntu eth0 出站连接 `74.82.201.214:443`。显式恢复时再次出现 DNS 查询和容器出站连接，时间与测试站记录对应。
 - Ubuntu 抓包统计为 330 captured、344 received by filter、0 dropped by kernel。使用 `any` 会在多个接口重复观察同一连接，以上不是唯一连接数量。Ubuntu 证据来自管理员终端回传，没有取得该端的原始 PCAP。
 - Windows NetLog 中网页域名没有 DNS transaction、UDP_BYTES_SENT 为零，所有 TCP 连接尝试均为 `127.0.0.1` 的随机代理端口。指定 RTC 与预取标签也未出现在出站 DNS 报文中。
-- Windows 系统抓包可见各 1 个带本轮标记的 DNS、UDP 阳性 observation，证明此次这两条包采集路径有阳性记录；不是所有解析或 UDP 路径的完整覆盖证明。
+- Windows 系统抓包可见各 1 个带本轮标记的 DNS、UDP 阳性 observation：DNS 保留完整唯一首标签，域名后缀因 128 字节截断不完整；UDP 的 payload 完整匹配本轮标记。证明此次这两条包采集路径有阳性记录，不是所有解析或 UDP 路径的完整覆盖证明。
 
 ## 功能结果与限制
 
@@ -41,5 +41,11 @@ NetLog 仍可见 IPv6 路由探测 socket 建立，未记录发送字节；没�
 原始 Windows 抓包、NetLog、结果及摘要继续保留在本机忽略目录；12 项证据文件的 SHA256 记录于 `evidence-manifest.json`。自有站点日志位于 `.local/owned-egress-6e7eeced/site-events.json`。不提交测试包、token、密钥、profile 或原始抓包。
 
 收尾已确认：Windows 抓包停止，本轮本机转发端口 18789/18790 无监听；Ubuntu 测试容器停止、18789 无监听、测试网络已回收，生产 CC 仍健康；VPS 的测试站路由、服务、专用 SSH 授权和账号已撤销，测试监听为空，nginx 与 SSH 保持 active。测试目录和证据保留。
+
+## 再次独立复核
+
+两位只读审查者分别复核证据/结论和隔离/清理，未发现可确认的 P1/P2。重新计算 12 项原证据 SHA256 全部匹配，核对自有站点记录与本轮 nonce 的 GET、POST、WSS、恢复时间一致，离线 nonce 没有记录；下载字节和上传 SHA256 正确。NetLog 中 8 个 TCP 开始事件均指向随机回环代理，未发现 DNS transaction 或 UDP 发送。DNS、UDP 阳性及接口丢包字段也已从原 PCAP 重新核对。
+
+重新运行抓包读取器 9 项、SSH 回滚 6 项及站点回滚 5 项，共 20 项通过。再次只读查询 VPS，临时账号、授权、站点入口和监听仍不存在，nginx/SSH active；本机测试端口无监听。Windows 凭据包和取证目录 ACL 仅向当前用户与 SYSTEM 授予权限。本轮没有重启实验或修改产品代码，仅澄清启动入口和截断 DNS 阳性的表述；现有验证边界保持不变。
 
 后续需单独验证完整客户端 Chat 入口与独立远端完整服务的接线，并审定生产审核准入，再进行真实网页登录和安装器验收。本报告不授权或宣称已完成这些步骤。前一轮本机证据见 [DNS 修复验证](claude-web-dns-fix-validation-2026-10-26.md)，取消补修见 [后续审查](claude-web-dns-followup-review-2026-10-26.md)。
