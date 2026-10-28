@@ -521,6 +521,20 @@ require('./managed-server-ipc.cjs').registerManagedServerUpdates(
 );
 // The service token is kept only when the user asks, encrypted for the current account of the system (DPAPI on
 // Windows, the login keychain on macOS).
+const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
+  request: (url, options) => net.fetch(url, options),
+  read: () => readSettings().desktopAccess,
+  write: (desktopAccess) => writeSettings({ desktopAccess }),
+  storage: safeStorage,
+});
+handle('access:load', () => desktopAccess.load());
+handle('access:login', async (_event, input) => {
+  const result = await desktopAccess.login(input);
+  writeSettings({ login: undefined });
+  return result;
+});
+handle('access:ticket', (_event, nodeId) => desktopAccess.ticket(nodeId));
+handle('access:logout', () => desktopAccess.logout());
 handle('login:load', () => {
   const { login } = readSettings();
   if (!login) return null;

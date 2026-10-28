@@ -4,6 +4,7 @@ import { setupNavigation } from './navigation.js';
 import { setupEnrollment } from './enrollment.js';
 import { setupServerDownload } from './server-download.js';
 import { setupFreshNodes } from './fresh-nodes.js';
+import { setupDesktopAccess } from './desktop-access.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
@@ -53,6 +54,7 @@ function logout() {
   enrollment.clear();
   serverDownload.clear();
   freshNodes.clear();
+  desktopAccess.clear();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -340,6 +342,10 @@ function renderMonitor() {
     $('monitor-node-status').append(
       element('p', `${nodeId}：${state}${row ? ` · 最近接收 ${date(row.receivedAt)}` : ''}`),
     );
+    const manage = element('button', `管理设备 ${nodeId}`, 'quiet');
+    manage.type = 'button';
+    manage.onclick = () => void action(() => desktopAccess.open(nodeId));
+    $('monitor-node-status').append(manage);
   }
   if (!data.configuredNodes.length)
     $('monitor-node-status').append(element('p', '未配置上报节点。'));
@@ -584,6 +590,7 @@ const passwordLogin = setupPasswordLogin({ action, notice, login, request });
 const enrollment = setupEnrollment({ request, action, notice, date });
 const serverDownload = setupServerDownload({ request, element, notice });
 const freshNodes = setupFreshNodes({ request, action, notice, date });
+const desktopAccess = setupDesktopAccess({ request, action, notice, date });
 const navigation = setupNavigation({
   changed: queuePageRefresh,
   authenticated: () => Boolean(token),

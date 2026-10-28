@@ -182,7 +182,7 @@ export class ProxyClient {
     reconnect: boolean;
     // Remote mode: opens the bridge in the main process and resolves to its address. A bridge serves one
     // connection, so every attempt asks for a new one.
-    bridge?: () => Promise<string>;
+    bridge?: () => Promise<string | { url: string; token: string }>;
   } | null = null;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   retryAttempt = 0;
@@ -230,7 +230,7 @@ export class ProxyClient {
     token: string,
     device: Device,
     reconnect = true,
-    bridge?: () => Promise<string>,
+    bridge?: () => Promise<string | { url: string; token: string }>,
   ) {
     const address = new URL(url);
     if (
@@ -353,9 +353,10 @@ export class ProxyClient {
     const turn = ++this.turn;
     const current = () => this.credentials === credentials && this.turn === turn;
     credentials.bridge().then(
-      (url) => {
+      (connection) => {
         if (!current()) return;
-        credentials.url = url;
+        credentials.url = typeof connection === 'string' ? connection : connection.url;
+        if (typeof connection !== 'string') credentials.token = connection.token;
         this.attach(credentials);
       },
       // The bridge could not even be set up on this computer: nothing a later attempt would change.

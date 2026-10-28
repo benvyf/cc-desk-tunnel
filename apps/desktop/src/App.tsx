@@ -57,6 +57,7 @@ import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
 import Conversation from './Conversation.tsx';
 import LoginPage from './LoginPage.tsx';
+import EmailLoginPage from './EmailLoginPage.tsx';
 import ManagedServerUpgrade from './ManagedServerUpgrade.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { exportSession } from './exportSession.ts';
@@ -126,6 +127,7 @@ export function App({
   browser,
 }: { browser?: { selfSigned: boolean; expired: () => void; logout: () => Promise<void> } } = {}) {
   const host = hostCapabilities(!!browser);
+  const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
   const [client] = useState(() => new ProxyClient());
   useEffect(() => {
     if (!browser) return;
@@ -156,6 +158,7 @@ export function App({
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const managedUpdate = useManagedUpdate();
   const [form, setForm] = useState<ConnectionForm>(() => ({
+    authMethod: emailLoginAvailable ? 'email' : 'manual',
     url: localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws',
     token: '',
     fingerprint: '',
@@ -168,6 +171,9 @@ export function App({
     [],
   );
   const [proxyConnecting, setProxyConnecting] = useState(false);
+  const [loginWorkspaces, setLoginWorkspaces] = useState<{ id: string; name: string }[] | null>(
+    null,
+  );
   const [error, setError] = useState<string | RequestInterruptedError | null>(null);
   // One request at a time from this window; `refreshing` is the slower native status read.
   const [busy, setBusy] = useState(false);
@@ -478,16 +484,29 @@ export function App({
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
-    void window.desktop?.loadLogin().then((saved) => {
+    void Promise.all([
+      window.desktop?.loadLogin(),
+      emailLoginAvailable ? window.desktop!.access.load() : null,
+    ]).then(([saved, account]) => {
+      if (account) {
+        const restored: ConnectionForm = { ...form, ...account, password: '', authMethod: 'email' };
+        setForm(restored);
+        if (restored.autoLogin) void login(restored);
+        return;
+      }
       if (!saved) return;
       // The installed client has no simulation mode, whatever an earlier version saved.
-      const restored = window.desktop!.dev ? saved : { ...saved, mode: 'remote' as const };
+      const restored = {
+        ...saved,
+        authMethod: 'manual' as const,
+        mode: window.desktop!.dev ? saved.mode : ('remote' as const),
+      };
       setForm(restored);
       if (restored.autoLogin) void login(restored);
     });
   }, []);
   useEffect(() => {
-    if (connected) void window.desktop?.saveLogin(form);
+    if (connected && form.authMethod !== 'email') void window.desktop?.saveLogin(form);
   }, [connected, form.remember, form.autoLogin]);
   useEffect(() => {
     const close = () => client.disconnect();
@@ -596,6 +615,19 @@ export function App({
   async function login(form: ConnectionForm) {
     setError(null);
     try {
+      if (form.authMethod === 'email' && window.desktop?.access) {
+        setProxyConnecting(true);
+        const account = await window.desktop.access.login({
+          email: form.email ?? '',
+          password: form.password ?? '',
+          remember: form.remember,
+          autoLogin: form.autoLogin,
+        });
+        changeForm({ email: account.email, password: '', token: '' });
+        if (account.workspaces.length !== 1) setLoginWorkspaces(account.workspaces);
+        else await connectWorkspace(account.workspaces[0]!.id);
+        return;
+      }
       if (form.mode === 'remote') {
         setProxyConnecting(true);
         // The address here only has to be a loopback one; each attempt gets its own from the bridge it opens.
@@ -624,6 +656,26 @@ export function App({
       setProxyConnecting(false);
     }
   }
+  async function connectWorkspace(nodeId: string) {
+    setError(null);
+    setProxyConnecting(true);
+    try {
+      const device = await thisDevice();
+      client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
+        const connection = await window.desktop!.access.ticket(nodeId);
+        const bridge = await window.desktop!.connectProxy({
+          url: connection.url,
+          fingerprint: connection.fingerprint,
+          waits: getPrefs().connection,
+        });
+        return { url: bridge.url, token: connection.token };
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '连接工作空间失败。');
+    } finally {
+      setProxyConnecting(false);
+    }
+  }
   function stopRun() {
     if (!selected?.activeRun) return;
     const { id: sessionId, activeRun } = selected;
@@ -638,6 +690,11 @@ export function App({
       return;
     }
     client.disconnect();
+    if (form.authMethod === 'email') {
+      setLoginWorkspaces(null);
+      changeForm({ password: '', remember: false, autoLogin: false });
+      void window.desktop?.access.logout().catch((error) => setError(error.message));
+    }
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
   }
@@ -1481,41 +1538,58 @@ export function App({
             />
           </Modal>
         )}
-        <LoginPage
-          recover={
-            state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
-              ? () => setLocalSettings('about')
-              : undefined
-          }
-          showNotes={setNotes}
-          newer={upgrade ?? ahead}
-          form={form}
-          change={changeForm}
-          error={
-            currentError && state.mismatch && !window.desktop
-              ? `${currentError}请联系管理员安装匹配的定制版。`
-              : currentError
-          }
-          upgrade={state.mismatch && window.desktop ? upgrade : null}
-          older={
-            selfUpdating &&
-            form.mode === 'remote' &&
-            state.mismatch &&
-            state.service &&
-            isNewer(version, state.service)
-              ? state.service
-              : null
-          }
-          direct={direct}
-          downloaded={downloaded}
-          install={install}
-          connecting={
-            state.status === 'connecting' || proxyConnecting || busy || serverUpgradeWorking
-          }
-          submit={() => {
-            void login(form);
-          }}
-        />
+        {form.authMethod === 'email' && emailLoginAvailable ? (
+          <EmailLoginPage
+            form={form}
+            change={changeForm}
+            submit={() => void login(form)}
+            connecting={state.status === 'connecting' || proxyConnecting}
+            error={currentError}
+            workspaces={loginWorkspaces}
+            choose={(id) => void connectWorkspace(id)}
+            manual={() => {
+              setLoginWorkspaces(null);
+              changeForm({ authMethod: 'manual' });
+            }}
+          />
+        ) : (
+          <LoginPage
+            emailLogin={emailLoginAvailable ? () => changeForm({ authMethod: 'email' }) : undefined}
+            recover={
+              state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
+                ? () => setLocalSettings('about')
+                : undefined
+            }
+            showNotes={setNotes}
+            newer={upgrade ?? ahead}
+            form={form}
+            change={changeForm}
+            error={
+              currentError && state.mismatch && !window.desktop
+                ? `${currentError}请联系管理员安装匹配的定制版。`
+                : currentError
+            }
+            upgrade={state.mismatch && window.desktop ? upgrade : null}
+            older={
+              selfUpdating &&
+              form.mode === 'remote' &&
+              state.mismatch &&
+              state.service &&
+              isNewer(version, state.service)
+                ? state.service
+                : null
+            }
+            direct={direct}
+            downloaded={downloaded}
+            install={install}
+            connecting={
+              state.status === 'connecting' || proxyConnecting || busy || serverUpgradeWorking
+            }
+            submit={() => {
+              void login(form);
+            }}
+          />
+        )}
       </>
     );
   const menuSession =

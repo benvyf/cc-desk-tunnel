@@ -66,12 +66,14 @@ import { AccountMonitor, type AccountMonitorOptions } from './account-monitor.ts
 import { reviewInput, type ModerationOptions } from './moderation.ts';
 import { assertNativeTerminalReview } from './native-terminal-policy.ts';
 import { managedServerHandler, type ManagedBackend } from './managed-server-http.ts';
+import { validateDesktopTicket, type DesktopAccessOptions } from './desktop-access.ts';
 
 type Peer = {
   socket: WebSocket;
   id: string;
   address: string;
   authenticated: boolean;
+  access?: { ticket: string; userId: string; validUntil: number };
   browser?: string;
   origin?: string;
   // A browser that came through a trusted proxy, which serves it the proxy's certificate.
@@ -134,6 +136,7 @@ export type ServerOptions = {
     nonce?: string;
   };
   accountMonitor?: AccountMonitorOptions;
+  desktopAccess?: DesktopAccessOptions;
   token: string;
   dataDir: string;
   moderation?: ModerationOptions;
@@ -337,6 +340,8 @@ export function createProxyServer(options: ServerOptions) {
       } else {
         response.writeHead(404).end();
       }
+    } else if (options.desktopAccess && !options.desktopAccess.allowLegacy) {
+      response.writeHead(403).end('请使用 CC SPACE 邮箱登录。');
     } else {
       webRequests++;
       void web
@@ -368,7 +373,11 @@ export function createProxyServer(options: ServerOptions) {
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
       return;
     }
-    if (!closing && web.matchesUpgrade(request)) {
+    if (
+      !closing &&
+      !(options.desktopAccess && !options.desktopAccess.allowLegacy) &&
+      web.matchesUpgrade(request)
+    ) {
       const address = web.address(request);
       const session = web.authenticate(request);
       if (!session) {
@@ -1298,7 +1307,7 @@ export function createProxyServer(options: ServerOptions) {
   }
 
   // The first frame must authenticate; a desktop client also asks for its execution channel here.
-  function authenticate(peer: Peer, value: unknown) {
+  async function authenticate(peer: Peer, value: unknown) {
     if (peer.browser) {
       const auth = webAuthSchema.safeParse(value);
       if (
@@ -1330,9 +1339,33 @@ export function createProxyServer(options: ServerOptions) {
     const auth = authSchema.safeParse(value);
     // Only a wrong token counts against the address: an outdated client holding the right one is not guessing.
     const token = (value as { token?: unknown } | null)?.token;
-    if (typeof token !== 'string' || !authorized(token)) refuse(peer.address);
+    let allowed =
+      typeof token === 'string' &&
+      authorized(token) &&
+      options.desktopAccess?.allowLegacy !== false;
+    if (
+      auth.success &&
+      options.desktopAccess &&
+      typeof token === 'string' &&
+      token.startsWith('ccs_')
+    ) {
+      try {
+        peer.access = await validateDesktopTicket(options.desktopAccess, token);
+        allowed = true;
+      } catch {
+        send(peer, {
+          type: 'connection.error',
+          code: 'unauthorized',
+          message: '邮箱登录已失效或管理中心暂不可用，请重新登录。',
+        });
+        peer.socket.close(4001, 'Desktop authorization unavailable');
+        return false;
+      }
+      if (closing || peer.socket.readyState !== WebSocket.OPEN) return false;
+    }
+    if (!allowed) refuse(peer.address);
     else throttle.succeed(peer.address);
-    if (!auth.success || !authorized(auth.data.token)) {
+    if (!auth.success || !allowed) {
       send(peer, {
         type: 'connection.error',
         code: 'unauthorized',
@@ -1402,8 +1435,12 @@ export function createProxyServer(options: ServerOptions) {
   function attachChannel(peer: Peer, value: unknown) {
     const attach = tunnelAttachSchema.safeParse(value);
     const tunnel = attach.success
-      ? [...peers].find((owner) => owner.authenticated && owner.id === attach.data.connectionId)
-          ?.tunnel
+      ? [...peers].find(
+          (owner) =>
+            owner.authenticated &&
+            (!owner.access || owner.access.validUntil > Date.now()) &&
+            owner.id === attach.data.connectionId,
+        )?.tunnel
       : undefined;
     if (!attach.success || !tunnel) {
       peer.socket.close(TUNNEL_CLOSE.unknown, 'Unknown tunnel');
@@ -1647,6 +1684,32 @@ export function createProxyServer(options: ServerOptions) {
       // Whether this connection still holds one of the places for those that have not signed in.
       let signedIn = false;
       let greeted = false;
+      let pendingIdentity: unknown;
+      let renewing = false;
+      const revoke = () => {
+        peer.left = true;
+        send(peer, {
+          type: 'connection.error',
+          code: 'unauthorized',
+          message: '登录授权已结束，请重新登录。',
+        });
+        socket.close(4001, 'Desktop authorization expired');
+      };
+      const accessTimer = setInterval(() => {
+        if (!peer.access || !options.desktopAccess || renewing) return;
+        if (peer.access.validUntil <= Date.now()) {
+          revoke();
+          return;
+        }
+        renewing = true;
+        void validateDesktopTicket(options.desktopAccess, peer.access.ticket, true)
+          .then((access) => {
+            peer.access = access;
+          }, revoke)
+          .finally(() => {
+            renewing = false;
+          });
+      }, 30_000);
       socket.on('pong', () => {
         missed = 0;
       });
@@ -1680,15 +1743,29 @@ export function createProxyServer(options: ServerOptions) {
         }
         if (!peer.authenticated) {
           // Only the first frame signs in. What a refused client sent after it is not another attempt.
-          if (greeted) return;
+          if (greeted) {
+            // Desktop sends its device frame immediately after auth; account validation is asynchronous.
+            if (pendingIdentity === undefined && deviceIdentitySchema.safeParse(value).success)
+              pendingIdentity = value;
+            return;
+          }
           greeted = true;
           const channel =
             !peer.browser && (value as { type?: unknown } | null)?.type === 'tunnel.attach';
-          if (channel ? attachChannel(peer, value) : authenticate(peer, value)) {
-            clearTimeout(authTimer);
-            signedIn = true;
-            gate.leave(address);
-          }
+          void Promise.resolve(channel ? attachChannel(peer, value) : authenticate(peer, value))
+            .then((accepted) => {
+              if (!accepted) return;
+              clearTimeout(authTimer);
+              signedIn = true;
+              gate.leave(address);
+              if (pendingIdentity !== undefined && peer.authenticated)
+                socket.emit('message', Buffer.from(JSON.stringify(pendingIdentity)), false);
+            })
+            .catch(() => socket.close(4001, 'Authentication failed'));
+          return;
+        }
+        if (peer.access && peer.access.validUntil <= Date.now()) {
+          revoke();
           return;
         }
         if (peer.browser) {
@@ -1775,6 +1852,7 @@ export function createProxyServer(options: ServerOptions) {
       });
       socket.on('close', (code) => {
         clearTimeout(authTimer);
+        clearInterval(accessTimer);
         clearInterval(heartbeat);
         if (!signedIn) gate.leave(address);
         // Why a connection ended is the first thing needed when a run was cut short.

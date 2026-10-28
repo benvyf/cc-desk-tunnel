@@ -7,6 +7,9 @@ import { Button } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 
 export type ConnectionForm = {
+  authMethod?: 'email' | 'manual';
+  email?: string;
+  password?: string;
   url: string;
   token: string;
   fingerprint: string;
@@ -30,6 +33,7 @@ export default function LoginPage({
   showNotes,
   recover,
   submit,
+  emailLogin,
 }: {
   form: ConnectionForm;
   change: (values: Partial<ConnectionForm>) => void;
@@ -51,6 +55,7 @@ export default function LoginPage({
   showNotes: (version: string) => void;
   recover?: () => void;
   submit: () => void;
+  emailLogin?: () => void;
 }) {
   const connectionName = useConnectionName();
   const hasFingerprint = !!form.fingerprint;
@@ -287,6 +292,7 @@ export default function LoginPage({
               {connecting ? '连接中…' : '连接'}
             </Button>
           </form>
+          {emailLogin && <Button onClick={emailLogin}>使用邮箱登录</Button>}
         </section>
       </div>
     </main>
