@@ -10,7 +10,7 @@
 
 已上线 Linux Build 6 / 协议 22 的终端按键修复，以及管理中心识别本机唯一 CC Compose 容器的升级指令，同步整合进主分支。Linux 精确制品源码仍为 `f52c765bf746251924bd3efc4fb39a47b5ce1296`，归档 SHA256 `4be6ae3cb034e5fb62360cf25a7b4f8d1486fb23e0318dcc2da6c33c5c461f84`；证据见 `docs/evidence/native-terminal-build6-2026-10-29.json`。不自动升级任何 Ubuntu 节点。
 
-本次发布开始前已现场核对 VPS：Windows Build 18、Linux Build 6，两套续期 timer 均 active；GitHub main 为 `35705a3`，是终端窗口分支的祖先。发布完成后的 Windows 索引、验证证据和续期登记应以 `docs/evidence/windows-client-build20-2026-10-29.json` 及 VPS 实时状态为准。
+2026-10-29 已完成发布：GitHub main 已包含终端窗口及 Linux/管理中心修复；Windows pilot 由 Build 18 升至 Build 20，首次发布 revision 21，真实续期验收后 revision 22。VPS 与本机均完整下载 201168400 字节并核对 SHA256，本机独立验签通过。新续期登记指向干净制品源码和精确 EXE，两套 timer 均 active，候选数为 0；Linux Build 6、其续期配置和 stable 索引逐字节保持。旧 Windows Build 9/18 已从公开目录转移到本次受保护备份，公开目录只保留 Build 20。备份为 `/var/backups/cc-update-service/windows-build20-20261028T184732Z`。66 项相关回归、4 项终端界面测试、TypeScript、格式及实际打包程序路由复测通过。发布证据见 `docs/evidence/windows-client-build20-2026-10-29.json`；实际索引 revision 和有效期仍以 VPS 实时状态为准。
 
 2026-10-28 邮箱远端升级复查：修复检查到当前版本/暂不安装后缺少重连入口、安装响应损坏时停止查询、协议不匹配后无法从登录页进入升级三个问题；补齐旧管理中心 404 提示，将邮箱安装超时调整为 180 秒、检查/查询为 50 秒，Nginx 对应 190 秒。30 项主进程/授权/TLS 测试、26 项更新界面测试、TypeScript 和代码格式检查通过；旧服务端升级测试已更新为当前菜单入口，包含浅深色窄屏与键盘操作。仍未打包、部署或操作真实远端升级。
 

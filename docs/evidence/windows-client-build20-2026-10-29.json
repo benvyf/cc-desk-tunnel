@@ -1,0 +1,79 @@
+{
+  "status": "PUBLISHED",
+  "windowsBuild": 20,
+  "linuxBuild": 6,
+  "protocol": 22,
+  "sourceCommit": "bd5c58c4d2497717dc9771afdd4c52916066c349",
+  "revision": 22,
+  "expiresAt": "2026-10-31T18:50:04.479Z",
+  "size": 201168400,
+  "sha256": "98d231c3eb7634f84b08fa1e25f5653676698310c099d360a0a99b313cba184c",
+  "downloadUrl": "https://api.ghostapi.org/cc-updates/v1/artifacts/20/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+  "publicationEvidence": "/root/.cc-update-admin/client-build-20/pilot.json.evidence.json",
+  "renewalEvidence": "/root/.cc-update-admin/automation/runs/2026-10-28T18-50-04.039Z/pilot.json.evidence.json",
+  "backup": "/var/backups/cc-update-service/windows-build20-20261028T184732Z",
+  "publicArtifactVerified": true,
+  "renewalVerified": true,
+  "renewalCheck": {
+    "at": "2026-10-28T18:52:04.843Z",
+    "status": "not-due",
+    "revision": 22,
+    "expiresAt": "2026-10-31T18:50:04.479Z"
+  },
+  "linuxAndStableUnchanged": true,
+  "serverRenewalUnchanged": true,
+  "candidates": 0,
+  "oldDownloadStatus": {
+    "9": 404,
+    "18": 404
+  },
+  "remainingPublicBuilds": ["20"],
+  "serviceState": {
+    "cc-update-service": "active",
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  },
+  "runtimeHashes": {
+    "server": "a560b457a58ddb66d5a3ee5fa7313bf567ce9c252230fc71358e30b8ff2f9ae7",
+    "managementDistribution": "5a4082ade3015221893bad53976003c84b31d4f89d50c0ae28cf0ce8b203aa66",
+    "managementDownload": "2d6e44a207d575f1bd239e6d4e4fcfb89b50e09d8314cfd9b1b6d5cbb1bb23a1"
+  },
+  "localDate": "2026-10-29",
+  "integratedSourceCommit": "f71f13bf90457b10eefdd2317e1dac56ab429b15",
+  "localIndependentVerification": {
+    "status": "complete",
+    "signature": true,
+    "build": 20,
+    "revision": 22,
+    "sourceCommit": "bd5c58c4d2497717dc9771afdd4c52916066c349",
+    "size": 201168400,
+    "sha256": "98d231c3eb7634f84b08fa1e25f5653676698310c099d360a0a99b313cba184c",
+    "fullDownload": {
+      "status": "complete",
+      "bytes": 201168400,
+      "sha256": "98d231c3eb7634f84b08fa1e25f5653676698310c099d360a0a99b313cba184c"
+    }
+  },
+  "deployedRuntimeMatchesMain": true,
+  "verification": {
+    "regressionTests": {
+      "passed": 66,
+      "failed": 0,
+      "skipped": 0
+    },
+    "terminalUiTests": {
+      "passed": 4,
+      "failed": 0,
+      "browserChannel": "msedge"
+    },
+    "typecheck": true,
+    "formatCheck": true,
+    "packagedRouting": true,
+    "realClaudeRequests": 0
+  },
+  "scope": {
+    "terminalMultiWindowImplemented": false,
+    "ubuntuNodesUpgraded": false,
+    "clientAutoInstalled": false
+  }
+}
