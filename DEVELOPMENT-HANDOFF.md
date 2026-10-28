@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 邮箱登录第二轮 review 已部署
+
+管理中心运行源码 `f5f69048e36ece8b9027c41dfefce4deb21b3f46`，修复异步密码重置覆盖并发停用/撤权的问题；保存冲突返回 409。新增认证边界回归通过，全量测试发现的两处旧版本期望已修正并针对性复跑通过。补充定制 Build 与协议对应记录，不改变受保护运行时文件。详见[第二轮 review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)及[证据](docs/evidence/email-login-review2-2026-10-28.json)。
+
+部署备份 `/var/backups/cc-update-service/email-review2-20261028T022821Z`，旧运行目录 `/opt/cc-update-service.before-email-review2-20261028T022821Z`；配置、Nginx 和公开索引保持，管理服务与两个续期 timer active。Windows 仍使用 Build 12、Linux 仍使用 Build 5；本轮未修改其运行代码或重打包。生产邮箱用户数仍为 0，Ubuntu Build 5/Windows Build 12 安装及真实邮箱登录验收仍待用户确认。
+
 ### 2026-10-28 邮箱登录 review 修复
 
 最新客户端应使用 Windows Build 12（协议 22），修复源码 `0ddfa93311c6cd9f22a11ddbf6c8d9a98f8d0efd`。本次修复临时票据请求失败后的重连、失效登录清理、账号切换、邮箱模式下错误的旧升级入口、代理后 IP 限流和关闭面板后密码残留。Linux Build 5/升级脚本保持，未收到真实 Ubuntu 升级及邮箱登录验收。具体发现、回归与部署见 [review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)。
