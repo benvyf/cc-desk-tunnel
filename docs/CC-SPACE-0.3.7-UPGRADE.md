@@ -21,6 +21,8 @@
 
 ## 一台试升级
 
+最新实机反馈：用户在本电脑安装新版 Windows 客户端后连接升级后的 Ubuntu，报告“可以正常使用，暂时没发现问题”。这确认了基本连接和实际使用；文件、图片、后台任务、审核等功能尚未收到逐项验收结果。保留旧容器、镜像和冷备份，公共发布渠道仍未更新。
+
 已由用户在试点确认：容器 `cc-desk-tunnel-ba938975-proxy-1`，镜像 `sha256:365918cb8abf4f4b784502a6bbabeda5704dc928e5c899438199776001b1adb2`，Node 24.21.0 / SDK 0.3.286。`/srv/cc-desk-tunnel` 读写挂载到 `/data`；`/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed` 只读挂载到 `/etc/claude-code`。这些是 2026-10-28 用户终端回传的快照，不是开发机 SSH 检查。
 
 `scripts/prepare-cc-space-037.py` 只为该已确认试点准备候选镜像：固定归档摘要、源码提交、基础镜像和官方 CLI 摘要；验证包文件后离线构建，再以临时数据、模拟审核配置及 CLI 调用哨兵测试监督程序启动与退出。它不切换当前容器，不挂载真实 `/srv` 数据，不调用 Claude。开发机已验证脚本语法、归档提取/清单与篡改拒绝；Docker 运行验证需要用户在试点执行。成功标志为 `OFFLINE_PREFLIGHT_OK`，它也不代表已经完成正式切换。
@@ -36,6 +38,12 @@
 7. 试点通过后再签名发布配套候选，更新原渠道续期登记，并逐台安排基础镜像切换。未升级设备继续使用旧客户端；不得在仍需支持旧设备时删除 Build 9/旧服务端归档。
 
 ## 回退
+
+2026-10-28 用户已在 `ubuntu-cc` 回传 `UPGRADE_OK: Linux Build 4 / protocol 21; original image, container and cold backup retained.`，试点服务端切换成功，Windows Build 10 连接及真实业务验收仍待完成，公共发布渠道未更新。首次执行因磁盘空间不足在备份及停服前退出；用户清理构建和安装包缓存后剩余 4.7G，重试成功。实际冷备份目录为 `/var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676`，离线回退命令：
+
+```bash
+sudo python3 /var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676/rollback.py --rollback /var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676
+```
 
 保留升级前的完整冷备份、旧镜像、旧容器配置与旧客户端安装包。回退时先停止新容器并另存升级后的数据，再恢复升级前冷备份、旧受管程序指针与旧镜像配置，确认协议 20 就绪后使用 Build 9 连接。不要让旧程序直接打开可能已被新程序写入的数据库，也不要覆盖唯一的一份新数据。
 

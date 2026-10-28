@@ -1,5 +1,5 @@
 {
-  "phase": "candidate-ready-not-deployed",
+  "phase": "pilot-server-and-client-working-user-reported",
   "checkedAt": "2026-10-28T01:16:07.673003+00:00",
   "sourceCommit": "0c2caa8f235d1d5f85d7245fcee898177204dbff",
   "customBase": "05918cdd920470628df2cbcc5cde52365e5b38f2",
@@ -55,7 +55,7 @@
     "linuxBuild": 3,
     "protocol": 20,
     "channelsChanged": false,
-    "containersChanged": false,
+    "containersChanged": true,
     "signedCandidates": false,
     "providerTestRequests": 0
   },
@@ -70,5 +70,13 @@
     "preparedImage": "cc-space-preview:0.3.7-build4",
     "preparationDirectory": "/var/tmp/cc-space-037-mb0x0m3t"
   },
-  "next": "Close clients and Claude processes; execute checked cutover script on the pilot, then validate Build 10 client against protocol 21. Production publishing is still pending."
+  "pilotCutover": {
+    "source": "user-reported terminal output",
+    "result": "UPGRADE_OK: Linux Build 4 / protocol 21; original image, container and cold backup retained.",
+    "backupDirectory": "/var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676",
+    "rollbackCommand": "sudo python3 /var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676/rollback.py --rollback /var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676",
+    "clientAcceptance": "User installed the candidate on their local Windows computer and reported normal use with no issues noticed so far; individual new features and moderation were not separately confirmed.",
+    "diskSpace": "Initial space check stopped before backup or downtime; user cleaned Docker build and apt caches, then reported 4.7G free before successful retry."
+  },
+  "next": "Retain rollback assets and observe normal pilot use. Detailed feature acceptance, PR merge and public channel publishing remain pending."
 }
