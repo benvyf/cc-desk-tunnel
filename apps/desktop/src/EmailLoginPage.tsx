@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Brand from './Brand.tsx';
 import { ArrowRight, ShieldCheck } from './icons.tsx';
 import { Button } from './ui.tsx';
@@ -24,6 +24,9 @@ export default function EmailLoginPage({
   back: () => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
+  useEffect(() => {
+    if (!form.password) setShowPassword(false);
+  }, [form.password]);
   const alert = error && (
     <p className="error-text email-login-error" role="alert">
       {error}

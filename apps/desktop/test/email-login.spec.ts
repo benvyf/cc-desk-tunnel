@@ -207,3 +207,89 @@ test('local settings and help have no manual credential controls', async ({ page
   await page.getByRole('button', { name: '返回登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
 });
+
+test('session expiry resets password visibility before another sign-in', async ({ page }) => {
+  await page.getByLabel('密码', { exact: true }).fill('private-password');
+  await page.getByRole('button', { name: '显示密码' }).click();
+  await expect(page.getByLabel('密码', { exact: true })).toHaveAttribute('type', 'text');
+  await page.evaluate(() => (window as any).expireEmail());
+  await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('密码', { exact: true })).toHaveAttribute('type', 'password');
+  await page.getByLabel('密码', { exact: true }).fill('next-password');
+  await expect(page.getByLabel('密码', { exact: true })).toHaveAttribute('type', 'password');
+});
+
+test('a late remembered login cannot overwrite typed credentials or start auto-login', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.desktop!.access.load = () =>
+      new Promise((resolve) => {
+        (window as any).finishRestore = resolve;
+      });
+    (window as any).restoreLoginCalls = 0;
+    window.desktop!.access.login = async (input) => {
+      (window as any).restoreLoginCalls++;
+      return { email: input.email, workspaces: [] };
+    };
+  });
+  await page.reload();
+  await page.getByLabel('邮箱', { exact: true }).fill('new@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('new-password');
+  await page.evaluate(async () => {
+    (window as any).finishRestore({ email: 'old@example.com', remember: true, autoLogin: true });
+    await new Promise(requestAnimationFrame);
+  });
+  await expect(page.getByLabel('邮箱', { exact: true })).toHaveValue('new@example.com');
+  await expect(page.getByLabel('密码', { exact: true })).toHaveValue('new-password');
+  expect(await page.evaluate(() => (window as any).restoreLoginCalls)).toBe(0);
+});
+
+test('saved-login read failure is explained and a fresh email login remains usable', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.desktop!.access.load = async () => {
+      throw new Error('fixture saved-login read failure');
+    };
+  });
+  await page.reload();
+  await expect(page.getByRole('alert')).toContainText('无法读取已保存的登录');
+  await page.getByLabel('邮箱', { exact: true }).fill('me@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('correct-password');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '选择工作空间' })).toBeVisible();
+});
+
+test('a single assigned workspace connects with management-center metadata', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.desktop!.access.login = async (input) => ({
+      email: input.email,
+      workspaces: [{ id: 'managed-ubuntu', name: 'Ubuntu' }],
+    });
+    window.desktop!.access.ticket = async (id) => {
+      (window as any).ticketNode = id;
+      return {
+        url: 'wss://managed.example/ws',
+        fingerprint: 'AB:'.repeat(31) + 'CD',
+        token: 'ccs_' + 'x'.repeat(43),
+      };
+    };
+    window.desktop!.connectProxy = async (input) => {
+      (window as any).managedConnection = input;
+      throw new Error('fixture managed connection reached');
+    };
+  });
+  await page.reload();
+  await page.getByLabel('邮箱', { exact: true }).fill('me@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('correct-password');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('fixture managed connection reached');
+  expect(await page.evaluate(() => (window as any).ticketNode)).toBe('managed-ubuntu');
+  expect(await page.evaluate(() => (window as any).managedConnection)).toMatchObject({
+    url: 'wss://managed.example/ws',
+    fingerprint: 'AB:'.repeat(31) + 'CD',
+  });
+  await expect(page.getByRole('heading', { name: '选择工作空间' })).toHaveCount(0);
+  await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
+});

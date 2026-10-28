@@ -482,6 +482,7 @@ export function App({
 
   // A saved sign-in fills the form once per launch and, when asked, connects without a click.
   const loaded = useRef(false);
+  const loginInteracted = useRef(false);
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
@@ -489,23 +490,37 @@ export function App({
     void Promise.all([
       emailOnly ? null : window.desktop?.loadLogin(),
       emailLoginAvailable ? window.desktop!.access.load() : null,
-    ]).then(([saved, account]) => {
-      if (account) {
-        const restored: ConnectionForm = { ...form, ...account, password: '', authMethod: 'email' };
+    ])
+      .then(([saved, account]) => {
+        // A delayed disk/IPC read must never replace a sign-in the user has already started.
+        if (loginInteracted.current) return;
+        if (account) {
+          const restored: ConnectionForm = {
+            ...form,
+            ...account,
+            password: '',
+            authMethod: 'email',
+          };
+          setForm(restored);
+          if (restored.autoLogin) void login(restored);
+          return;
+        }
+        if (emailOnly || !saved) return;
+        // The installed client has no simulation mode, whatever an earlier version saved.
+        const restored = {
+          ...saved,
+          authMethod: 'manual' as const,
+          mode: window.desktop!.dev ? saved.mode : ('remote' as const),
+        };
         setForm(restored);
         if (restored.autoLogin) void login(restored);
-        return;
-      }
-      if (emailOnly || !saved) return;
-      // The installed client has no simulation mode, whatever an earlier version saved.
-      const restored = {
-        ...saved,
-        authMethod: 'manual' as const,
-        mode: window.desktop!.dev ? saved.mode : ('remote' as const),
-      };
-      setForm(restored);
-      if (restored.autoLogin) void login(restored);
-    });
+      })
+      .catch((error: unknown) => {
+        if (!loginInteracted.current)
+          setError(
+            `无法读取已保存的登录，请重新输入邮箱和密码。${error instanceof Error ? `\n${error.message}` : ''}`,
+          );
+      });
   }, []);
   useEffect(() => {
     if (connected && form.authMethod !== 'email') void window.desktop?.saveLogin(form);
@@ -528,6 +543,7 @@ export function App({
   useEffect(
     () =>
       window.desktop?.access?.onExpired?.((message) => {
+        loginInteracted.current = true;
         signedIn.current = false;
         client.disconnect();
         setLoginWorkspaces(null);
@@ -627,6 +643,7 @@ export function App({
   }
   // Remote mode connects through the main process, which opens the tunnel and returns a loopback address.
   async function login(form: ConnectionForm) {
+    loginInteracted.current = true;
     setError(null);
     try {
       if (emailOnly && !emailLoginAvailable)
@@ -702,6 +719,7 @@ export function App({
     });
   }
   function disconnect() {
+    loginInteracted.current = true;
     setServerUpgradeRequested(false);
     if (browser) {
       void act(browser.logout);
@@ -1565,7 +1583,10 @@ export function App({
         {emailOnly || (form.authMethod === 'email' && emailLoginAvailable) ? (
           <EmailLoginPage
             form={form}
-            change={changeForm}
+            change={(values) => {
+              loginInteracted.current = true;
+              changeForm(values);
+            }}
             submit={() => void login(form)}
             connecting={state.status === 'connecting' || proxyConnecting}
             error={currentError}
