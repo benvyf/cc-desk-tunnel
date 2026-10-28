@@ -10,6 +10,7 @@ export default function EmailLoginPage({
   error,
   workspaces,
   choose,
+  back,
   manual,
 }: {
   form: ConnectionForm;
@@ -19,6 +20,7 @@ export default function EmailLoginPage({
   error: string | null;
   workspaces: { id: string; name: string }[] | null;
   choose: (id: string) => void;
+  back: () => void;
   manual: () => void;
 }) {
   return (
@@ -41,6 +43,9 @@ export default function EmailLoginPage({
                   {space.name}
                 </Button>
               ))}
+              <Button disabled={connecting} onClick={back}>
+                返回邮箱登录
+              </Button>
             </div>
           ) : (
             <form

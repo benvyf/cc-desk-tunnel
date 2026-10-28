@@ -74,3 +74,34 @@ test('untrusted connection metadata and network errors are rejected', async () =
   bad = true;
   await assert.rejects(access.ticket('node'), /无法连接/);
 });
+
+test('expired remembered authorization is cleared; temporary failures keep it and remain retryable', async () => {
+  let saved = null;
+  let status = 200;
+  const access = createDesktopAccess({
+    read: () => saved,
+    write: (value) => {
+      saved = value;
+    },
+    storage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(text),
+      decryptString: (bytes) => bytes.toString(),
+    },
+    request: async () =>
+      status === 200
+        ? Response.json({ email: 'me@example.com', token: 'session', workspaces: [] })
+        : status === 502
+          ? new Response('<html>Bad gateway</html>', { status })
+          : Response.json({ error: '登录已失效，请重新登录。' }, { status }),
+  });
+  await access.login({ email: 'me@example.com', password: 'password', remember: true });
+  status = 502;
+  await assert.rejects(access.ticket('node'), (error) => error.retryable === true);
+  assert.ok(saved, 'transient gateway failure preserves remembered session');
+  status = 401;
+  await assert.rejects(access.ticket('node'), /登录已失效/);
+  assert.equal(saved, null);
+  assert.equal(access.load(), null);
+  await assert.rejects(access.ticket('node'), /先登录/);
+});

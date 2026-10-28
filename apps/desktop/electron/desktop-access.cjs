@@ -29,11 +29,26 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
         ...(data === undefined ? {} : { body: JSON.stringify(data) }),
       });
     } catch {
-      throw new Error('无法连接 CC 管理中心，请检查网络后重试。');
+      throw Object.assign(new Error('无法连接 CC 管理中心，请检查网络后重试。'), {
+        retryable: true,
+      });
     }
-    const value = response.status === 204 ? null : await response.json();
-    if (!response.ok) throw new Error(value?.error || '管理中心请求失败，请稍后重试。');
+    const value = response.status === 204 ? null : await response.json().catch(() => null);
+    if (!response.ok)
+      throw Object.assign(new Error(value?.error || '管理中心暂不可用，请稍后重试。'), {
+        status: response.status,
+        retryable: response.status === 429 || response.status >= 500,
+      });
+    if (response.status !== 204 && !value) throw new Error('管理中心返回了无效信息，请稍后重试。');
     return value;
+  }
+  function clearExpired(error, current) {
+    if (error.status === 401 && session === current) {
+      generation++;
+      session = null;
+      write(null);
+    }
+    throw error;
   }
   return {
     load() {
@@ -65,7 +80,9 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
       let next;
       if (!input.password && session?.email === email) {
         const current = session;
-        const value = await api('workspaces', undefined, current.token);
+        const value = await api('workspaces', undefined, current.token).catch((error) =>
+          clearExpired(error, current),
+        );
         next = { ...current, workspaces: value.workspaces };
       } else {
         next = await api('login', { email, password: input.password, remember: !!input.remember });
@@ -81,7 +98,9 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
       if (!session || typeof nodeId !== 'string') throw new Error('请先登录邮箱账号。');
       const turn = generation,
         current = session;
-      const value = await api('connect', { nodeId }, current.token);
+      const value = await api('connect', { nodeId }, current.token).catch((error) =>
+        clearExpired(error, current),
+      );
       if (turn !== generation || current !== session) throw new Error('登录已取消。');
       const url = new URL(value.url);
       if (

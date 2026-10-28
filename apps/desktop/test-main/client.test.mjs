@@ -476,6 +476,27 @@ test('scheduled tasks: the file round-trips, bad tasks are named, and rules find
   );
 });
 
+test('temporary ticket failures retry with a fresh token; explicit refusal stops retrying', async (t) => {
+  const { client, socket } = fixture(t);
+  let attempts = 0;
+  client.credentials.device = { id: randomUUID(), name: 'desktop' };
+  client.credentials.bridge = async () => {
+    if (++attempts === 1) throw Object.assign(new Error('temporary outage'), { retryable: true });
+    return { url: 'ws://127.0.0.1:2/bridge', token: 'new-ticket-with-enough-characters' };
+  };
+  socket.close();
+  client.retryNow();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(client.state.status, 'reconnecting');
+  client.retryNow();
+  await new Promise((resolve) => setImmediate(resolve));
+  client.socket.onopen();
+  assert.equal(client.socket.sent[0].token, 'new-ticket-with-enough-characters');
+  client.socket.message({ type: 'connection.error', code: 'unauthorized', message: 'revoked' });
+  assert.equal(client.state.status, 'disconnected');
+  assert.equal(client.retryTimer, undefined);
+});
+
 test('a remote connection that breaks is made again through a new bridge, and only a refusal ends it', async (t) => {
   const Original = globalThis.WebSocket;
   const sockets = [];

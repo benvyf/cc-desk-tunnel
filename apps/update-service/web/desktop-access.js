@@ -76,6 +76,8 @@ export function setupDesktopAccess({ request, action, notice, date }) {
     position.before(accounts);
     accounts.hidden = false;
     $('desktop-access-panel').hidden = true;
+    $('access-user-form').reset();
+    $('access-node-credential').value = '';
   };
   $('access-user-add').onclick = () => edit();
   $('access-user-cancel').onclick = () => {

@@ -12,6 +12,45 @@ import { validateConfig } from '../src/config.ts';
 import { createProxyServer } from '../../server/src/server.ts';
 import { PROTOCOL_VERSION } from '../../../packages/protocol/src/index.ts';
 
+test('trusted proxy addresses isolate IP throttling while account throttling is shared', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-access-ip-'));
+  const config = validateConfig({
+    origin: 'https://fixture.invalid',
+    dataDir: root,
+    port: 8817,
+    adminName: 'fixture',
+    adminTokenSha256: createHash('sha256').update('admin').digest('hex'),
+    trustedKeys: {
+      test: generateKeyPairSync('ed25519').publicKey.export({ format: 'pem', type: 'spki' }),
+    },
+  });
+  const store = await UpdateStore.open(root, config.trustedKeys, config.adminName);
+  const server = await createUpdateServer(store, config);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const port = address.port;
+  t.after(async () => {
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  async function attempt(ip: string, email: string) {
+    const response = await fetch(`http://127.0.0.1:${port}/cc-access/v1/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-real-ip': ip },
+      body: JSON.stringify({ email, password: 'incorrect' }),
+    });
+    await response.text();
+    return response.status;
+  }
+  for (let i = 0; i < 10; i++) assert.equal(await attempt('192.0.2.1', 'one@example.com'), 401);
+  assert.equal(await attempt('192.0.2.1', 'two@example.com'), 429);
+  assert.equal(await attempt('192.0.2.2', 'one@example.com'), 429);
+  assert.equal(await attempt('192.0.2.2', 'two@example.com'), 401);
+});
+
 test(
   'real management HTTP, desktop handshake and live revocation without any Claude request',
   { timeout: 45_000 },

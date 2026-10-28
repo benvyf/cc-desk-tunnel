@@ -359,9 +359,25 @@ export class ProxyClient {
         if (typeof connection !== 'string') credentials.token = connection.token;
         this.attach(credentials);
       },
-      // The bridge could not even be set up on this computer: nothing a later attempt would change.
       (error) => {
         if (!current()) return;
+        if (this.established && credentials.reconnect && error?.retryable === true) {
+          this.update({
+            status: 'reconnecting',
+            connectionId: null,
+            devices: [],
+            error: error.message,
+          });
+          this.retryTimer = setTimeout(
+            () => {
+              this.retryTimer = undefined;
+              this.open();
+            },
+            Math.min(1000 * 2 ** this.retryAttempt++, 10000),
+          );
+          return;
+        }
+        // Local setup failures and refused authorization need user action.
         this.credentials = null;
         this.update({
           status: 'disconnected',
@@ -615,7 +631,7 @@ export class ProxyClient {
     socket?.close();
     this.rejectPending();
     this.retryAttempt = 0;
-    this.update({ status: 'disconnected', connectionId: null });
+    this.update({ status: 'disconnected', connectionId: null, error: null });
   }
   private rejectPending() {
     for (const [requestId, request] of this.pending) {

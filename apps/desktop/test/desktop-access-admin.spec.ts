@@ -65,6 +65,9 @@ test('device configuration, existing monitor tab and personal user editing', asy
   await page.getByLabel('启用此用户').uncheck();
   await page.getByRole('button', { name: '保存用户', exact: true }).click();
   await expect(page.getByRole('cell', { name: '已停用' })).toBeVisible();
+  await page.getByRole('button', { name: '编辑 / 重置密码' }).click();
+  await page.getByLabel('密码', { exact: true }).fill('unsaved-private-password');
   await page.getByRole('button', { name: '返回账号监控' }).click();
   await expect(page.getByText('已有 Claude 账号记录')).toBeVisible();
+  await expect(page.locator('#access-user-password')).toHaveValue('');
 });

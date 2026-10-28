@@ -64,6 +64,10 @@ test('email login keeps node details out of the form, handles workspace selectio
   await expect(page.getByRole('heading', { name: '选择工作空间' })).toBeVisible();
   await page.getByRole('button', { name: '我的 Ubuntu' }).click();
   await expect(page.getByRole('alert')).toContainText('测试连接已到达本机通道');
+  await page.getByRole('button', { name: '返回邮箱登录' }).click();
+  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByRole('button', { name: '使用服务地址连接' }).click();
   await expect(page.getByLabel('服务地址', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '使用邮箱登录' }).click();

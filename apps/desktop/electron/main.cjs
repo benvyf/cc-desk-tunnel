@@ -533,7 +533,14 @@ handle('access:login', async (_event, input) => {
   writeSettings({ login: undefined });
   return result;
 });
-handle('access:ticket', (_event, nodeId) => desktopAccess.ticket(nodeId));
+handle('access:ticket', async (_event, nodeId) => {
+  try {
+    return await desktopAccess.ticket(nodeId);
+  } catch (error) {
+    // Electron does not preserve custom Error properties across IPC.
+    return { error: error.message, retryable: error.retryable === true };
+  }
+});
 handle('access:logout', () => desktopAccess.logout());
 handle('login:load', () => {
   const { login } = readSettings();

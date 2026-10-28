@@ -663,6 +663,8 @@ export function App({
       const device = await thisDevice();
       client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
         const connection = await window.desktop!.access.ticket(nodeId);
+        if ('error' in connection)
+          throw Object.assign(new Error(connection.error), { retryable: connection.retryable });
         const bridge = await window.desktop!.connectProxy({
           url: connection.url,
           fingerprint: connection.fingerprint,
@@ -697,6 +699,11 @@ export function App({
     }
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
+  }
+  function leaveEmailLogin(method: 'email' | 'manual') {
+    disconnect();
+    setError(null);
+    changeForm({ authMethod: method, password: '', token: '' });
   }
   function openServerUpgrade() {
     if (
@@ -1252,9 +1259,10 @@ export function App({
     form.mode === 'remote' &&
     (nativeMode || state.status === 'disconnected')
       ? {
-          label: '检查服务端更新',
+          label: form.authMethod === 'email' ? '邮箱连接请在管理中心升级服务端' : '检查服务端更新',
           icon: <Download />,
           disabled:
+            form.authMethod === 'email' ||
             (!connected && state.status !== 'disconnected') ||
             proxyConnecting ||
             busy ||
@@ -1547,10 +1555,8 @@ export function App({
             error={currentError}
             workspaces={loginWorkspaces}
             choose={(id) => void connectWorkspace(id)}
-            manual={() => {
-              setLoginWorkspaces(null);
-              changeForm({ authMethod: 'manual' });
-            }}
+            back={() => leaveEmailLogin('email')}
+            manual={() => leaveEmailLogin('manual')}
           />
         ) : (
           <LoginPage

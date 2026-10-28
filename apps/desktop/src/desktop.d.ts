@@ -75,7 +75,12 @@ declare global {
           remember: boolean;
           autoLogin: boolean;
         }) => Promise<{ email: string; workspaces: { id: string; name: string }[] }>;
-        ticket: (nodeId: string) => Promise<{ url: string; fingerprint: string; token: string }>;
+        ticket: (
+          nodeId: string,
+        ) => Promise<
+          | { url: string; fingerprint: string; token: string }
+          | { error: string; retryable: boolean }
+        >;
         logout: () => Promise<void>;
       };
       loadDrafts: () => Promise<import('./drafts.ts').SavedDrafts>;

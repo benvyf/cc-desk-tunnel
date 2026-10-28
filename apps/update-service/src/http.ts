@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { isIP } from 'node:net';
 import { join } from 'node:path';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
@@ -155,11 +156,16 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           if (!input || typeof input !== 'object' || Array.isArray(input))
             throw new UpdateError(400, 'Invalid request.');
           if (path === '/cc-access/v1/login') {
-            respond(
-              response,
-              200,
-              await desktopAccess.login(input, request.socket.remoteAddress ?? 'unknown'),
-            );
+            const remote = request.socket.remoteAddress ?? 'unknown';
+            const forwarded = request.headers['x-real-ip'];
+            // Production only listens on loopback; Nginx overwrites this header.
+            const address =
+              ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote) &&
+              typeof forwarded === 'string' &&
+              isIP(forwarded)
+                ? forwarded
+                : remote;
+            respond(response, 200, await desktopAccess.login(input, address));
           } else if (path === '/cc-access/v1/connect') {
             if (typeof input.nodeId !== 'string') throw new UpdateError(400, '请选择工作空间。');
             respond(response, 200, desktopAccess.connect(bearer, input.nodeId));
@@ -170,7 +176,9 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
             if (request.headers.origin !== undefined)
               throw new UpdateError(403, 'Node request required.');
             const expected =
-              typeof input.nodeId === 'string' ? nodeHashes()[input.nodeId] : undefined;
+              typeof input.nodeId === 'string' && Object.hasOwn(nodeHashes(), input.nodeId)
+                ? nodeHashes()[input.nodeId]
+                : undefined;
             if (
               !expected ||
               !/^[A-Za-z0-9_-]{32,128}$/.test(bearer) ||
