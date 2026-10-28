@@ -171,3 +171,45 @@ test('existing session databases migrate without invalidating login until the ne
     migrated.close();
   }
 });
+
+test('renaming an email while its password is being verified rejects the stale login', async (t) => {
+  const { store, input, nodes, id } = await fixture(t);
+  const pending = store.login(input, 'old-computer');
+  const refused = assert.rejects(pending, /邮箱或密码/);
+  await store.saveUser(id, { ...input, email: 'renamed@example.com', password: '' }, nodes);
+  await refused;
+  const next = await store.login({ ...input, email: 'renamed@example.com' }, 'new-computer');
+  assert.equal(next.email, 'renamed@example.com');
+  assert.equal(store.workspaces(next.token).length, 1);
+});
+
+test('a failed computer replacement rolls back old sessions, tickets and device mappings', async (t) => {
+  const { root, store, input } = await fixture(t);
+  const first = await store.login(
+    { ...input, deviceId: '11111111-1111-4111-8111-111111111111' },
+    'a',
+  );
+  const ticket = store.connect(first.token, 'ubuntu-cc');
+  const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
+  try {
+    db.exec(
+      "CREATE TRIGGER fail_device_insert BEFORE INSERT ON session_devices BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END",
+    );
+    await assert.rejects(
+      store.login({ ...input, deviceId: '22222222-2222-4222-8222-222222222222' }, 'b'),
+      /simulated write failure/,
+    );
+    assert.equal(store.workspaces(first.token).length, 1);
+    assert.ok(store.validate(ticket.token, 'ubuntu-cc', true));
+    assert.equal(db.prepare('SELECT count(*) AS n FROM session_devices').get()!.n, 1);
+    db.exec('DROP TRIGGER fail_device_insert');
+    const next = await store.login(
+      { ...input, deviceId: '22222222-2222-4222-8222-222222222222' },
+      'b',
+    );
+    assert.throws(() => store.workspaces(first.token), /失效/);
+    assert.equal(store.workspaces(next.token).length, 1);
+  } finally {
+    db.close();
+  }
+});

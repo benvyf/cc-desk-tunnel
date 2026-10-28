@@ -225,11 +225,14 @@ export class DesktopAccess {
         typeof input.password === 'string' && input.password.length <= 128 ? input.password : '';
       const actual = await derive(value, String(row?.salt ?? 'cc-space-unregistered-email'));
       const current = row
-        ? this.db.prepare('SELECT salt,password,enabled FROM users WHERE id=?').get(String(row.id))
+        ? this.db
+            .prepare('SELECT email,salt,password,enabled FROM users WHERE id=?')
+            .get(String(row.id))
         : undefined;
       if (
         !row?.enabled ||
         !current?.enabled ||
+        current.email !== row.email ||
         current.password !== row.password ||
         current.salt !== row.salt ||
         !timingSafeEqual(actual, Buffer.from(String(row?.password ?? '00'.repeat(64)), 'hex'))
