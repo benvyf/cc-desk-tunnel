@@ -64,6 +64,9 @@ test('packaged exe runs without development dependencies and reclaims bundled re
   try {
     const page = await application.firstWindow();
     page.on('pageerror', (error) => errors.push(error.message));
+    await expect(page.getByRole('heading', { name: '登录 CC SPACE', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => window.desktop!.access.load())).toBeNull();
+    await page.getByRole('button', { name: '使用服务地址连接' }).click();
     await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
     await page.getByText('高级连接选项', { exact: true }).click();
     await expect(page.getByLabel('服务证书指纹', { exact: true })).toBeVisible();

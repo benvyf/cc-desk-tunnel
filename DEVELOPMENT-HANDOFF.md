@@ -1,5 +1,15 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 邮箱登录已实现，等待首台实机切换
+
+`codex/email-login` 在上游合并分支上新增个人邮箱登录。安装包源码 `12b2da3ca49ffeb7d712a96d4c8302a582a2a873`，Windows Build 11 / Linux Build 5 / protocol 22。管理中心已部署到 VPS，`ubuntu-cc` 服务地址和完整证书指纹已配置；用户尚未创建邮箱账号，Ubuntu 仍是先前用户确认的 Build 4，不能写成邮箱登录实机通过。
+
+Linux Build 5 已发布到 pilot，revision 7，初始有效期至 `2026-11-11T02:13:54.616Z`；自动续期已登记精确 Build 5 并通过强制续签及 systemd 执行。Windows 公开渠道仍 Build 9，stable 未改。Build 4 与 5 运行时兼容指纹一致，直接走现有受管程序更新，无需新镜像。操作见[邮箱登录试点](docs/CC-SPACE-EMAIL-LOGIN-PILOT.md)；用户执行 `scripts/upgrade-cc-space-email.py` 前需结束任务、退出客户端，升级后安装 Windows Build 11。
+
+管理中心备份 `/var/backups/cc-update-service/email-login-20261028T021053Z`，旧运行目录 `/opt/cc-update-service.before-email-login-20261028T021053Z`；Linux 发布与续期备份 `/var/backups/cc-update-service/email-server5-20261028T021353Z`。旧 Build 4 镜像及冷备份保留。此后的更新覆盖下节“公开 Linux Build 3”状态；下节其余既有实机反馈仍为历史依据。
+
+本轮已验证主进程加密会话、管理 API/页面、真实代理握手及停用用户关闭长连接、邮箱 UI 与实际 Windows 打包 smoke；具体证据见 [email-login-2026-10-28.json](docs/evidence/email-login-2026-10-28.json)。未发起真实 Claude/JEV 调用。源码与包不得混淆：后续文档、测试或运维脚本提交不会改变现有 Build 11/5 归档源码身份。
+
 ### 2026-10-28 上游 0.3.7 合并候选（试点客户端与服务端已正常使用）
 
 最新用户反馈：本电脑安装新版客户端后可以正常使用，暂未发现问题。基本连接及实际使用已得到用户确认；下文客户端待验收描述属于此前阶段，文件、图片、后台任务及审核等专项验收仍未逐项确认。PR 合并与公共渠道发布尚未完成。
