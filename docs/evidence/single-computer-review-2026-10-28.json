@@ -1,0 +1,46 @@
+{
+  "phase": "review-fix-deployed",
+  "sourceCommit": "997186a7384f8343eb820a4337322616d4a46bfb",
+  "windowsBuildUnchanged": 13,
+  "serverBuildUnchanged": 5,
+  "protocol": 22,
+  "findings": [
+    {
+      "priority": "P2",
+      "problem": "An old-email login could finish after an administrator renamed the email during password derivation",
+      "fix": "Recheck current email together with enabled status and password before creating a session",
+      "reproducedBeforeFix": true
+    }
+  ],
+  "checks": {
+    "relatedAuthenticationTests": { "passed": 15, "failed": 0, "skipped": 0 },
+    "failedReplacementPreservesSessionsTicketsAndDeviceMappings": true,
+    "realHttpAndLiveWebSocketTakeover": "passed",
+    "typecheck": "passed",
+    "fullSuiteRepeated": false,
+    "priorFullSuiteEvidence": "single-computer-login-2026-10-28.json",
+    "desktopOrUbuntuRuntimeChanged": false,
+    "actualProductionClaudeOrJevRequests": 0
+  },
+  "managementArtifact": {
+    "filename": "cc-update-service-single-computer-review.tar.gz",
+    "size": 136646,
+    "sha256": "b7c078fee31c45f0239a832a994ece8b94d22f9e07f1d5e23b2114bf9ef83f84"
+  },
+  "production": {
+    "deployedAt": "2026-10-28T02:42:01Z",
+    "sourceCommit": "997186a7384f8343eb820a4337322616d4a46bfb",
+    "backup": "/var/backups/cc-update-service/single-computer-review-20261028T024201Z",
+    "previousRuntime": "/opt/cc-update-service.before-single-computer-review-20261028T024201Z",
+    "publicManagementAssetsVerified": true,
+    "unauthenticatedUserApi": 401,
+    "configurationAndNginxUnchanged": true,
+    "publicIndexesUnchanged": true,
+    "managementAndBothRenewalTimers": "active",
+    "userCountAtDeployment": 0
+  },
+  "pendingUserAcceptance": [
+    "Ubuntu Build 5 and email-only mode",
+    "Windows Build 13 on two computers and actual single-computer login behavior"
+  ]
+}

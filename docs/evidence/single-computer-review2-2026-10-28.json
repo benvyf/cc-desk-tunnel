@@ -1,0 +1,41 @@
+{
+  "phase": "review-fixed-and-windows-packaged",
+  "sourceCommit": "d59bae8971c9096711307b7af0f00f5a0a3cf0d6",
+  "windowsBuild": 14,
+  "serverBuildUnchanged": 5,
+  "protocol": 22,
+  "findings": [
+    {
+      "priority": "P2",
+      "problem": "A background check started while password login was pending could reject the old session and cancel the new login",
+      "fix": "Pause background checks until all pending login attempts finish, with finally cleanup for success, failure and cancellation",
+      "reproducedBeforeFix": true
+    }
+  ],
+  "checks": {
+    "fullSuite": { "total": 578, "passed": 543, "failed": 0, "skipped": 35 },
+    "newRaceRegressionsPassed": 2,
+    "typecheck": "passed",
+    "actualPackagedWindowsStartup": "passed with isolated profile",
+    "packagedBuildProtocolAndSourceIdentity": "verified",
+    "packagedMainProcessModulesComparedWithSource": 3,
+    "actualProductionClaudeOrJevRequests": 0
+  },
+  "windowsArtifact": {
+    "filename": "CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+    "directory": "D:/cc-desk-tunnel/artifacts/cc-space-single-computer-build14",
+    "size": 201162996,
+    "sha256": "67f3da08d7d094b426f32f06a3becf4eb45b11f889c338b09ab94fbf90f7bf44"
+  },
+  "productionChanges": {
+    "managementRedeployed": false,
+    "lastVerifiedManagementSourceCommit": "997186a7384f8343eb820a4337322616d4a46bfb",
+    "ubuntuModified": false,
+    "publicWindowsOrLinuxIndexesModified": false
+  },
+  "pendingUserAcceptance": [
+    "Install Windows Build 14 on both computers",
+    "Confirm Ubuntu Build 5 and switch to email-only mode after successful email login",
+    "Verify actual takeover and revoked remembered login on two computers"
+  ]
+}

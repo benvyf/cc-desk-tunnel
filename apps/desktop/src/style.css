@@ -605,6 +605,121 @@ button.chip.danger:hover:not(:disabled) {
   background: var(--surface-2);
   box-shadow: var(--shadow-sm);
 }
+/* The installed client's only sign-in surface. Connection details come from the management center. */
+.email-login-page {
+  padding-top: clamp(calc(var(--bar) + 28px), 15dvh, 140px);
+  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft), transparent 65%);
+}
+.email-login-page .login-content {
+  max-width: 448px;
+}
+.email-login-page .login-content > .brand {
+  margin-bottom: 24px;
+}
+.email-login-card {
+  padding: 32px;
+  box-shadow: var(--shadow-md);
+}
+.email-login-heading {
+  margin-bottom: 28px;
+  text-align: center;
+}
+.email-login-heading h1 {
+  font-size: calc(22rem / 14);
+  line-height: 1.4;
+}
+.email-login-heading p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: calc(13rem / 14);
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+.email-login-card .connection-form {
+  gap: 16px;
+}
+.email-password-field {
+  position: relative;
+  margin-top: -8px;
+}
+.email-password-field input {
+  padding-right: 64px;
+}
+.email-password-toggle {
+  position: absolute;
+  right: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  padding: 8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  cursor: pointer;
+}
+.email-password-toggle:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.email-login-card .login-options {
+  justify-content: space-between;
+  gap: 12px;
+  margin: 4px 0;
+}
+.email-login-card .login-submit {
+  gap: 10px;
+  min-height: 48px;
+}
+.email-login-help,
+.email-login-footer {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  text-align: center;
+  line-height: 1.7;
+}
+.email-login-footer {
+  margin: 20px 8px 0;
+}
+.email-login-policy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1.7;
+}
+.email-login-policy .app-icon {
+  flex: 0 0 auto;
+  margin-top: 2px;
+  color: var(--accent);
+}
+.email-login-policy p {
+  margin: 0;
+}
+.email-login-error {
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+}
+.email-workspace {
+  justify-content: space-between;
+  text-align: left;
+  min-height: 52px;
+  white-space: normal;
+}
+.email-workspace span {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.email-workspace .app-icon {
+  flex: 0 0 auto;
+}
 .settings-only {
   display: grid;
   grid-template-columns: 284px minmax(0, 1fr);
@@ -729,6 +844,9 @@ button.chip.danger:hover:not(:disabled) {
   background: var(--surface-1);
 }
 @media (max-width: 480px) {
+  .login-page.email-login-page {
+    padding-top: calc(var(--bar) + 24px);
+  }
   .login-page {
     padding: clamp(calc(var(--bar) + 24px), 18dvh, 168px) 16px 32px;
   }

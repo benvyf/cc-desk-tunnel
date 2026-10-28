@@ -7,6 +7,9 @@ import { Button } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 
 export type ConnectionForm = {
+  authMethod?: 'email' | 'manual';
+  email?: string;
+  password?: string;
   url: string;
   token: string;
   fingerprint: string;

@@ -5,6 +5,42 @@
   background: #11151c;
   font-synthesis: none;
 }
+.access-tabs {
+  display: flex;
+  gap: 12px;
+  margin: 20px 0;
+  border-bottom: 1px solid #303847;
+}
+.access-tabs button {
+  background: transparent;
+  color: #9ba9be;
+  border: 0;
+  border-radius: 0;
+}
+.access-tabs button[aria-selected='true'] {
+  color: #e9edf5;
+  border-bottom: 2px solid #b8d8a0;
+}
+.access-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+.access-editor {
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid #303847;
+  border-radius: 10px;
+}
+.access-editor fieldset {
+  border: 1px solid #303847;
+  margin: 18px 0;
+}
+@media (max-width: 640px) {
+  .access-grid {
+    grid-template-columns: 1fr;
+  }
+}
 * {
   box-sizing: border-box;
 }

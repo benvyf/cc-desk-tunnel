@@ -18,6 +18,38 @@
         <div class="section-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 id="monitor-heading">账号监控</h2></div><button id="monitor-refresh" class="quiet">刷新账号数据</button></div>
         <p class="muted">正常使用时被动更新，刷新只读取 VPS。换号后保留历史账号；同账号各节点额度分别显示。超过 15 分钟未采集标为过期，不代表离线或封禁。</p>
         <div id="monitor-node-status" class="muted" aria-live="polite"></div>
+        <section id="desktop-access-panel" class="card" aria-labelledby="desktop-access-heading" hidden>
+          <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="desktop-access-heading"></h3></div><button id="desktop-access-close" class="quiet">返回账号监控</button></div>
+          <div class="access-tabs" role="tablist" aria-label="设备管理">
+            <button id="access-claude-tab" type="button" role="tab" aria-selected="false" aria-controls="access-claude">Claude 账号</button>
+            <button id="access-connection-tab" type="button" role="tab" aria-selected="true" aria-controls="access-connection">连接配置</button>
+            <button id="access-users-tab" type="button" role="tab" aria-selected="false" aria-controls="access-users">登录用户</button>
+          </div>
+          <div id="access-claude" role="tabpanel" aria-labelledby="access-claude-tab" hidden></div>
+          <div id="access-connection" role="tabpanel" aria-labelledby="access-connection-tab">
+            <form id="access-node-form">
+              <div class="access-grid"><label>工作空间名称<input id="access-node-name" required maxlength="80"></label><label>设备标识<input id="access-node-id" readonly></label></div>
+              <label>服务地址<input id="access-node-url" type="url" placeholder="wss://your-server:8443/ws" required></label>
+              <label>服务证书指纹<input id="access-node-fingerprint" placeholder="完整 SHA-256 指纹；使用受信任证书时留空" spellcheck="false"></label>
+              <details><summary>高级配置 · 传统服务凭据</summary><p id="access-credential-state" class="muted"></p><label>更新服务凭据<input id="access-node-credential" type="password" autocomplete="off" placeholder="留空保持不变"></label></details>
+              <p class="muted">客户端通过邮箱获取短期连接授权，无需填写以上信息。监控上报正常不代表此地址可连接。</p>
+              <button type="submit">保存连接配置</button>
+            </form>
+          </div>
+          <div id="access-users" role="tabpanel" aria-labelledby="access-users-tab" hidden>
+            <div class="section-heading"><h3>CC SPACE 登录用户</h3><button id="access-user-add" type="button">添加用户</button></div>
+            <p class="muted">这里的邮箱用于登录 CC SPACE，与 Claude 官方账号分开。访问同一设备会共用该设备的会话与工作区。</p>
+            <p class="muted">每个邮箱账号仅允许一台电脑在线。新电脑登录成功后，旧电脑会自动退出；同一台电脑的多个窗口可同时使用。</p>
+            <form id="access-user-form" class="access-editor" hidden>
+              <div class="access-grid"><label>邮箱<input id="access-user-email" type="email" required maxlength="254" autocomplete="off"></label><label>密码<input id="access-user-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="已有用户留空保持密码"></label></div>
+              <label class="check"><input id="access-user-enabled" type="checkbox" checked>启用此用户</label>
+              <fieldset><legend>授权工作空间</legend><div id="access-user-nodes"></div></fieldset>
+              <p class="muted">保存修改后，该用户在所有设备上的已有登录会被撤销，需要重新登录。</p>
+              <button type="submit">保存用户</button><button id="access-user-cancel" class="quiet" type="button">取消</button>
+            </form>
+            <div class="table-scroll"><table><thead><tr><th>邮箱</th><th>状态</th><th>授权设备</th><th>最近登录</th><th>操作</th></tr></thead><tbody id="access-user-list"></tbody></table></div>
+          </div>
+        </section>
         <section class="card" aria-labelledby="enrollment-heading">
           <div class="section-heading"><h3 id="enrollment-heading">接入 Ubuntu 节点</h3><button id="enrollment-open" class="quiet">一键接入</button></div>
           <p class="muted">生成一条命令，在 Ubuntu 控制台执行。目前仅准备了第一台 ubuntu-cc 的 v0.3.6 安装包。先结束 Claude 任务并关闭 CC 客户端；安装会短暂重启 CC 服务，自动备份，失败时尝试回滚。</p>

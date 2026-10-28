@@ -2,6 +2,8 @@
 
 当前版本见 `src/index.ts` 的 `PROTOCOL_VERSION`，导出 TypeScript 类型和 Zod 运行时校验。两端需一起升级。服务适配原生公开事件，不复制 CLI 私有控制协议；该部分由官方 SDK 管理。
 
+定制版 CC SPACE 按 Build 配对协议，记录在 [managed-protocol-history.json](../../deploy/managed-protocol-history.json)。同为 0.3.7，Windows Build 10 / Linux Build 4 使用协议 21，Windows Build 11–17 / Linux Build 5 使用协议 22，不能只按应用版本号判断兼容。`PROTOCOL_HISTORY` 保留原版按应用版本号的历史（原版 0.3.7 为 21），用于追溯原版；定制受管升级使用签名索引和 Build，不使用该表推断新协议或自动降级。下面按版本号协商的升级描述属于原版协议说明。
+
 ## 连接与消息
 
 - WebSocket `/ws` 建立后，首帧必须是 `auth`：协议版本、代理服务 token、设备名称。5 秒内不认证则关闭；token 不进入会话事件。服务回传 `ready`、连接 ID 和会话目录。

@@ -67,6 +67,23 @@ declare global {
       removeWorkspace: (directory: string) => Promise<void>;
       loadLogin: () => Promise<import('./LoginPage.tsx').ConnectionForm | null>;
       saveLogin: (login: import('./LoginPage.tsx').ConnectionForm) => Promise<void>;
+      access: {
+        load: () => Promise<{ email: string; remember: boolean; autoLogin: boolean } | null>;
+        login: (input: {
+          email: string;
+          password: string;
+          remember: boolean;
+          autoLogin: boolean;
+        }) => Promise<{ email: string; workspaces: { id: string; name: string }[] }>;
+        ticket: (
+          nodeId: string,
+        ) => Promise<
+          | { url: string; fingerprint: string; token: string }
+          | { error: string; retryable: boolean }
+        >;
+        logout: () => Promise<void>;
+        onExpired: (callback: (message: string) => void) => () => void;
+      };
       loadDrafts: () => Promise<import('./drafts.ts').SavedDrafts>;
       saveDrafts: (drafts: import('./drafts.ts').SavedDrafts) => Promise<void>;
       loadSchedules: (initial: string) => Promise<{ path: string; text: string }>;

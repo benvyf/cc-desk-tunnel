@@ -2,6 +2,7 @@ import { createHash, randomUUID, timingSafeEqual } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { Readable } from 'node:stream';
+import { isIP } from 'node:net';
 import { join } from 'node:path';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError, UpdateStore } from './store.ts';
@@ -11,6 +12,7 @@ import { FreshNodes } from './fresh-nodes.ts';
 import { validateMonitorReport } from '../../../packages/protocol/src/account-monitor.ts';
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
+import { DesktopAccess } from './desktop-access.ts';
 import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
 import {
   ServerDistribution,
@@ -67,6 +69,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['server-download.js', 'text/javascript'],
     ['fresh-install.py', 'text/plain'],
     ['fresh-nodes.js', 'text/javascript'],
+    ['desktop-access.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -84,6 +87,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ? new MonitorStore(config.dataDir, Object.keys(nodeHashes()))
     : undefined;
   const passwordAuth = new PasswordAuth(join(config.dataDir, 'private'));
+  const desktopAccess = new DesktopAccess(config.dataDir);
   const enrollment = new EnrollmentStore(config);
   let failures = 0;
   let windowStart = Date.now();
@@ -133,6 +137,71 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         const url = new URL(request.url, 'http://localhost');
         if (url.search) throw new UpdateError(404, 'Not found.');
         const path = url.pathname;
+        if (path.startsWith('/cc-access/v1/')) {
+          if (request.headers.origin !== undefined && request.headers.origin !== config.origin)
+            throw new UpdateError(403, 'Invalid request origin.');
+          const bearer = request.headers.authorization?.replace(/^Bearer /, '') ?? '';
+          if (path === '/cc-access/v1/workspaces' && request.method === 'GET') {
+            respond(response, 200, { workspaces: desktopAccess.workspaces(bearer) });
+            return;
+          }
+          if (request.method !== 'POST') throw new UpdateError(405, 'Method not allowed.');
+          contentType(request, 'application/json');
+          let input: Record<string, unknown>;
+          try {
+            input = JSON.parse((await body(request, 4096)).toString('utf8'));
+          } catch {
+            throw new UpdateError(400, 'Invalid JSON.');
+          }
+          if (!input || typeof input !== 'object' || Array.isArray(input))
+            throw new UpdateError(400, 'Invalid request.');
+          if (path === '/cc-access/v1/login') {
+            const remote = request.socket.remoteAddress ?? 'unknown';
+            const forwarded = request.headers['x-real-ip'];
+            // Production only listens on loopback; Nginx overwrites this header.
+            const address =
+              ['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(remote) &&
+              typeof forwarded === 'string' &&
+              isIP(forwarded)
+                ? forwarded
+                : remote;
+            respond(response, 200, await desktopAccess.login(input, address));
+          } else if (path === '/cc-access/v1/connect') {
+            if (typeof input.nodeId !== 'string') throw new UpdateError(400, '请选择工作空间。');
+            respond(response, 200, desktopAccess.connect(bearer, input.nodeId));
+          } else if (path === '/cc-access/v1/logout') {
+            desktopAccess.logout(bearer);
+            respond(response, 204);
+          } else if (path === '/cc-access/v1/validate') {
+            if (request.headers.origin !== undefined)
+              throw new UpdateError(403, 'Node request required.');
+            const expected =
+              typeof input.nodeId === 'string' && Object.hasOwn(nodeHashes(), input.nodeId)
+                ? nodeHashes()[input.nodeId]
+                : undefined;
+            if (
+              !expected ||
+              !/^[A-Za-z0-9_-]{32,128}$/.test(bearer) ||
+              !timingSafeEqual(
+                createHash('sha256').update(bearer).digest(),
+                Buffer.from(expected, 'hex'),
+              )
+            )
+              throw new UpdateError(401, 'Node authentication required.');
+            if (
+              typeof input.ticket !== 'string' ||
+              input.ticket.length > 128 ||
+              typeof input.renewal !== 'boolean'
+            )
+              throw new UpdateError(400, 'Invalid ticket.');
+            respond(
+              response,
+              200,
+              desktopAccess.validate(input.ticket, String(input.nodeId), input.renewal),
+            );
+          } else throw new UpdateError(404, 'Not found.');
+          return;
+        }
         if (path === SERVER_INDEX_PATH || path.startsWith('/cc-updates/server/v1/artifacts/')) {
           if (request.method !== 'GET' && request.method !== 'HEAD')
             throw new UpdateError(405, 'Method not allowed.');
@@ -327,6 +396,42 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         authenticated(request);
+        if (path === `${api}/desktop-access` && request.method === 'GET') {
+          respond(response, 200, desktopAccess.status(Object.keys(nodeHashes())));
+          return;
+        }
+        const accessNode = new RegExp(`^${api}/desktop-access/nodes/([a-z0-9_-]+)$`).exec(path);
+        const accessUser = new RegExp(`^${api}/desktop-access/users(?:/([a-f0-9-]+))?$`).exec(path);
+        if ((accessNode && request.method === 'PUT') || (accessUser && request.method === 'POST')) {
+          contentType(request, 'application/json');
+          let input;
+          try {
+            input = JSON.parse((await body(request, 8192)).toString('utf8'));
+          } catch {
+            throw new UpdateError(400, 'Invalid JSON.');
+          }
+          if (!input || typeof input !== 'object' || Array.isArray(input))
+            throw new UpdateError(400, 'Invalid request.');
+          if (accessNode) {
+            desktopAccess.saveNode(accessNode[1]!, input, Object.keys(nodeHashes()));
+            console.log('Desktop connection updated', {
+              administrator: config.adminName,
+              nodeId: accessNode[1],
+            });
+          } else {
+            const userId = await desktopAccess.saveUser(
+              accessUser![1],
+              input,
+              Object.keys(nodeHashes()),
+            );
+            console.log('Desktop user updated; sessions revoked', {
+              administrator: config.adminName,
+              userId,
+            });
+          }
+          respond(response, 200, desktopAccess.status(Object.keys(nodeHashes())));
+          return;
+        }
         if (path === `${api}/fresh-nodes` && request.method === 'POST') {
           contentType(request, 'application/json');
           let input;
@@ -560,5 +665,6 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   server.maxHeadersCount = 32;
   server.once('close', () => monitor?.close());
   server.once('close', () => moderation.close());
+  server.once('close', () => desktopAccess.close());
   return server;
 }

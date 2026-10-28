@@ -362,7 +362,7 @@ function Seconds({
 }
 
 // The computer's connections, each a window of its own to a service of its own: see electron/connections.cjs.
-function Connections() {
+function Connections({ email }: { email: boolean }) {
   const [list, setList] = useState<ListedConnection[]>([]);
   const [name, setName] = useState('');
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null);
@@ -452,7 +452,7 @@ function Connections() {
                     onClick={() => {
                       if (
                         window.confirm(
-                          `删除连接“${entry.name}”？它在这台电脑上保存的服务地址、凭据、草稿和定时任务会一并删除；服务端上的会话不受影响。`,
+                          `删除连接“${entry.name}”？它在这台电脑上保存的${email ? '登录状态' : '服务地址、凭据'}、草稿和定时任务会一并删除；服务端上的会话不受影响。`,
                         )
                       )
                         void act(window.desktop!.removeConnection(entry.id));
@@ -467,7 +467,11 @@ function Connections() {
         ))}
         <Row
           title="新建连接"
-          detail="再开一个窗口去连另一台服务端。每个连接各有自己的服务地址、凭据、草稿和定时任务；项目列表、通知、快捷键等本机设置是共用的"
+          detail={
+            email
+              ? '打开独立窗口，登录邮箱并选择管理中心分配的工作空间。各窗口的登录状态、草稿和定时任务独立，本机偏好共用。'
+              : '再开一个窗口去连另一台服务端。每个连接各有自己的服务地址、凭据、草稿和定时任务；项目列表、通知、快捷键等本机设置是共用的'
+          }
         >
           <form
             className="setting-actions"
@@ -583,28 +587,32 @@ function General({
                 />
               </Row>
             </div>
-            <h2 className="page-heading">连接</h2>
-            <div className="card">
-              <Row title="记住凭据" detail="服务凭据经当前系统账户加密后保存在本机">
-                <Switch
-                  label="记住凭据"
-                  checked={form.remember}
-                  onChange={(remember) =>
-                    changeForm({ remember, autoLogin: remember && form.autoLogin })
-                  }
-                />
-              </Row>
-              <Row title="自动登录" detail="启动客户端后直接连接上次的服务">
-                <Switch
-                  label="自动登录"
-                  checked={form.autoLogin}
-                  onChange={(autoLogin) =>
-                    changeForm({ autoLogin, remember: autoLogin || form.remember })
-                  }
-                />
-              </Row>
-            </div>
-            <Connections />
+            {form.authMethod !== 'email' && (
+              <>
+                <h2 className="page-heading">连接</h2>
+                <div className="card">
+                  <Row title="记住凭据" detail="服务凭据经当前系统账户加密后保存在本机">
+                    <Switch
+                      label="记住凭据"
+                      checked={form.remember}
+                      onChange={(remember) =>
+                        changeForm({ remember, autoLogin: remember && form.autoLogin })
+                      }
+                    />
+                  </Row>
+                  <Row title="自动登录" detail="启动客户端后直接连接上次的服务">
+                    <Switch
+                      label="自动登录"
+                      checked={form.autoLogin}
+                      onChange={(autoLogin) =>
+                        changeForm({ autoLogin, remember: autoLogin || form.remember })
+                      }
+                    />
+                  </Row>
+                </div>
+              </>
+            )}
+            <Connections email={form.authMethod === 'email'} />
             <h2 className="page-heading">连接等待时间</h2>
             <div className="card">
               {waits.map(({ step, title, detail }) => (

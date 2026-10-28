@@ -1,0 +1,61 @@
+{
+  "phase": "review-fixed-packaged-and-management-deployed",
+  "recordedAt": "2026-10-28T02:22:32.089414+00:00",
+  "sourceCommit": "0ddfa93311c6cd9f22a11ddbf6c8d9a98f8d0efd",
+  "windowsBuild": 12,
+  "serverBuildUnchanged": 5,
+  "protocol": 22,
+  "pullRequest": "https://github.com/benvyf/cc-desk-tunnel/pull/2",
+  "fixes": [
+    "Transient ticket failures retry after an established connection; gateway HTML errors handled",
+    "401 clears only the corresponding remembered session",
+    "Trusted proxy IPs are used for login throttling; per-account limits remain",
+    "Workspace picker can return to email login; switching clears prior authorization/errors",
+    "Email login cannot call the legacy token-only upgrade endpoint",
+    "Closing the management panel clears unsaved passwords"
+  ],
+  "artifacts": {
+    "windows": {
+      "filename": "CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+      "size": 201162519,
+      "sha256": "70dc8938404ce7dbcb51208cc828ef3825b53c0d7b46ebd06d950202406f1491"
+    },
+    "management": {
+      "filename": "cc-update-service-email-review.tar.gz",
+      "size": 136022,
+      "sha256": "4c24bebd96c37aa9d3bdf61abd1d2da257c6b23a627e5a38be9c0ea6094716e5"
+    }
+  },
+  "checks": {
+    "newRegressionReproducedBeforeFix": [
+      "temporary ticket retry",
+      "gateway response handling",
+      "proxy IP throttling"
+    ],
+    "relatedCoreTests": 28,
+    "finalClientTestsAfterExplicitDisconnectFix": 24,
+    "uiTests": 2,
+    "uiBrowser": "Microsoft Edge",
+    "typecheck": "passed",
+    "productionFrontendBuild": "passed",
+    "actualWindowsPackagedSmoke": "passed",
+    "actualProductionClaudeOrJevRequests": 0
+  },
+  "production": {
+    "managementSourceCommit": "0ddfa93311c6cd9f22a11ddbf6c8d9a98f8d0efd",
+    "backup": "/var/backups/cc-update-service/email-review-20261028T022120Z",
+    "previousRuntime": "/opt/cc-update-service.before-email-review-20261028T022120Z",
+    "configurationAndNginxUnchanged": true,
+    "publicIndexesUnchanged": true,
+    "userCountAtDeployment": 0,
+    "publicManagementAssetHashVerified": true,
+    "unauthenticatedUserApi": 401,
+    "managementAndBothRenewalTimers": "active"
+  },
+  "pendingUserAcceptance": [
+    "Ubuntu Build 5 install confirmation",
+    "Windows Build 12 install",
+    "Private email user setup",
+    "Real client email login"
+  ]
+}

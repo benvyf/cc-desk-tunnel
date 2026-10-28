@@ -1,0 +1,36 @@
+{
+  "date": "2026-10-28",
+  "change": "Remove the two requested sign-in phrases, center the heading and tighten card spacing",
+  "package": {
+    "identity": {
+      "product": "cc-desk-tunnel-managed",
+      "build": 17,
+      "channel": "pilot",
+      "origin": "https://api.ghostapi.org",
+      "trustedKeys": {
+        "managed-vps-2026-10-23": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n"
+      },
+      "appVersion": "0.3.7",
+      "protocol": 22,
+      "sourceCommit": "02f5b1af8b5d53f7eccaa04f78a996a832e4b964",
+      "platform": "win32",
+      "arch": "x64"
+    },
+    "installer": "D:\\cc-desk-tunnel\\artifacts\\cc-space-email-only-build17\\CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+    "bytes": 201164371,
+    "sha256": "0f58da34a78c436bd59bfbab99cc477a5451523406f12f51c1af0d0e8660ff94",
+    "packagedSourceMatches": ["main.cjs", "desktop-access.cjs", "preload.cjs"],
+    "rendererFiles": 71
+  },
+  "validation": {
+    "emailUiTestsPassed": 9,
+    "typescript": "passed",
+    "repositoryCheck": "passed: 593 indexed files",
+    "packagedStartup": "passed",
+    "themes": ["light", "dark"],
+    "viewportWidths": [1240, 390, 320],
+    "fontSizes": [14, 20]
+  },
+  "ubuntu": "User confirmed Linux Build 5 / protocol 22 committed; email connection confirmation pending",
+  "publicUpdateIndexesChanged": false
+}

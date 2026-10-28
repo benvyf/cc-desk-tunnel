@@ -6,7 +6,7 @@ async function desktopLogin(page: Page, fingerprint = '') {
   await page.addInitScript((fingerprint) => {
     const noOp = () => {};
     const api = {
-      dev: false,
+      dev: true,
       platform: 'win32',
       boot: { connection: '', shared: { connections: [], busy: [] } },
       version: async () => '0.3.6',
@@ -22,6 +22,7 @@ async function desktopLogin(page: Page, fingerprint = '') {
       },
       loadLogin: async () => ({
         url: 'wss://service.example/ws',
+        mode: 'remote',
         token: '',
         fingerprint,
         remember: false,

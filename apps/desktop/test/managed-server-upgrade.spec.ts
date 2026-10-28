@@ -19,7 +19,7 @@ async function setup(
       const candidate = { build: 2, appVersion: '0.3.6', protocol, sha256: 'b'.repeat(64) };
       const noOp = () => {};
       const api = {
-        dev: false,
+        dev: true,
         platform: 'win32',
         boot: { connection: '', shared: { connections: [], busy: [] } },
         device: async () => {

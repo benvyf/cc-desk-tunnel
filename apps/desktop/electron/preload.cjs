@@ -39,6 +39,17 @@ contextBridge.exposeInMainWorld('desktop', {
   createWorkspace: () => ipcRenderer.invoke('workspace:create'),
   removeWorkspace: (directory) => ipcRenderer.invoke('workspace:remove', directory),
   loadLogin: () => ipcRenderer.invoke('login:load'),
+  access: {
+    load: () => ipcRenderer.invoke('access:load'),
+    login: (input) => ipcRenderer.invoke('access:login', input),
+    ticket: (nodeId) => ipcRenderer.invoke('access:ticket', nodeId),
+    logout: () => ipcRenderer.invoke('access:logout'),
+    onExpired: (callback) => {
+      const listener = (_event, message) => callback(message);
+      ipcRenderer.on('access:expired', listener);
+      return () => ipcRenderer.removeListener('access:expired', listener);
+    },
+  },
   saveLogin: (login) => ipcRenderer.invoke('login:save', login),
   loadDrafts: () => ipcRenderer.invoke('drafts:load'),
   saveDrafts: (drafts) => ipcRenderer.invoke('drafts:save', drafts),

@@ -17,6 +17,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { extractRelease, verifyReleaseDirectory } from '../src/managed-server-files.ts';
+import { PROTOCOL_VERSION } from '../../../packages/protocol/src/index.ts';
 
 const { packageServer } = await import(
   new URL('../../../scripts/package-server.mjs', import.meta.url).href
@@ -111,7 +112,7 @@ test('server archives contain a fresh Web build without local data or desktop de
   });
   const descriptor = JSON.parse(descriptorBytes.toString());
   assert.equal(descriptor.build, 1);
-  assert.equal(descriptor.protocol, 20);
+  assert.equal(descriptor.protocol, PROTOCOL_VERSION);
   assert.equal(descriptor.sourceCommit, git('rev-parse', 'HEAD').toString().trim());
   const main = execFileSync(tar, ['-xOzf', output, 'apps/server/src/main.ts'], {
     windowsHide: true,

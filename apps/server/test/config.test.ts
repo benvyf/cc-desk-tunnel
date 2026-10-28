@@ -116,3 +116,30 @@ test('native server fails before opening history storage when transport config i
     /TLS/,
   );
 });
+
+test('email mode requires monitoring credentials and migration preserves manual login', () => {
+  const env = {
+    ...native,
+    PROXY_MONITOR_URL: 'https://manager.example/cc-updates/admin/api/monitor/report',
+    PROXY_MONITOR_NODE_ID: 'ubuntu-cc',
+    PROXY_MONITOR_TOKEN: 'm'.repeat(43),
+  };
+  assert.equal(environmentConfig(env, '/state').options.desktopAccess?.allowLegacy, true);
+  assert.equal(
+    environmentConfig({ ...env, PROXY_LOGIN_MODE: 'email' }, '/state').options.desktopAccess
+      ?.allowLegacy,
+    false,
+  );
+  assert.equal(
+    environmentConfig({ ...env, PROXY_LOGIN_MODE: 'token' }, '/state').options.desktopAccess,
+    undefined,
+  );
+  assert.throws(
+    () => environmentConfig({ ...native, PROXY_LOGIN_MODE: 'email' }, '/state'),
+    /monitoring credentials/,
+  );
+  assert.throws(
+    () => environmentConfig({ ...env, PROXY_LOGIN_MODE: 'invalid' }, '/state'),
+    /PROXY_LOGIN_MODE/,
+  );
+});

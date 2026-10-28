@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import {
   PROTOCOL_HISTORY,
@@ -27,8 +28,18 @@ test('protocol validates UTF-8 text, IDs and bounded input', () => {
   assert.equal(commandSchema.safeParse({ ...command, token: 'unexpected' }).success, false);
 });
 
-test('the protocol history ends with the current version', () => {
-  assert.equal(Object.values(PROTOCOL_HISTORY).at(-1), PROTOCOL_VERSION);
+test('upstream version history and managed build history describe their respective releases', () => {
+  const read = (file: string) =>
+    JSON.parse(readFileSync(new URL('../../../' + file, import.meta.url), 'utf8'));
+  const history = read('deploy/managed-protocol-history.json');
+  const first = history[0];
+  const latest = history.at(-1);
+  assert.equal(PROTOCOL_HISTORY[first.appVersion], first.protocol);
+  assert.equal(Object.values(PROTOCOL_HISTORY).at(-1), first.protocol);
+  assert.equal(latest.protocol, PROTOCOL_VERSION);
+  assert.equal(latest.appVersion, read('apps/desktop/package.json').version);
+  assert.ok(latest.windowsBuilds.includes(read('deploy/managed-client.json').build));
+  assert.equal(latest.serverBuild, read('deploy/managed-server.json').build);
 });
 test('authentication version and event ordering are explicit', () => {
   const auth = {

@@ -96,6 +96,15 @@ export function environmentConfig(env: NodeJS.ProcessEnv, defaultDataDir: string
         }
       : undefined,
   };
+  if (env.PROXY_LOGIN_MODE && !['both', 'email', 'token'].includes(env.PROXY_LOGIN_MODE))
+    throw new Error('Invalid PROXY_LOGIN_MODE');
+  if (env.PROXY_LOGIN_MODE === 'email' && !options.accountMonitor)
+    throw new Error('Email login requires node monitoring credentials');
+  if (options.accountMonitor && env.PROXY_LOGIN_MODE !== 'token')
+    options.desktopAccess = {
+      ...options.accountMonitor,
+      allowLegacy: env.PROXY_LOGIN_MODE !== 'email',
+    };
   if (options.nativeTerminalReview && (!native || !options.moderation))
     throw new Error('Native terminal review requires the native adapter and node moderation.');
   // Custom builds are deployed by the administrator; legacy release settings are ignored.

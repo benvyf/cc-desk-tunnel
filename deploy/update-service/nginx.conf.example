@@ -1,6 +1,17 @@
 # Include these locations inside the chosen HTTPS server {} only.
 # Domain, TLS and existing routing must be checked before installation.
 
+location ^~ /cc-access/v1/ {
+    client_max_body_size 8k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Connection "";
+    proxy_cache off;
+    proxy_read_timeout 15s;
+    # Never log Authorization or request bodies here.
+}
+
 location ^~ /cc-updates/admin/ {
     client_max_body_size 1g;
     proxy_pass http://127.0.0.1:8817;

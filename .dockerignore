@@ -48,6 +48,7 @@
 !deploy/install.sh
 !deploy/manage.sh
 !deploy/managed-client.json
+!deploy/managed-protocol-history.json
 !deploy/nginx.conf.example
 !deploy/nginx.md
 !deploy/test.sh

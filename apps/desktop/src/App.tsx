@@ -57,6 +57,7 @@ import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
 import Conversation from './Conversation.tsx';
 import LoginPage from './LoginPage.tsx';
+import EmailLoginPage from './EmailLoginPage.tsx';
 import ManagedServerUpgrade from './ManagedServerUpgrade.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { exportSession } from './exportSession.ts';
@@ -126,6 +127,8 @@ export function App({
   browser,
 }: { browser?: { selfSigned: boolean; expired: () => void; logout: () => Promise<void> } } = {}) {
   const host = hostCapabilities(!!browser);
+  const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
+  const emailOnly = !!window.desktop && !window.desktop.dev;
   const [client] = useState(() => new ProxyClient());
   useEffect(() => {
     if (!browser) return;
@@ -156,7 +159,8 @@ export function App({
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const managedUpdate = useManagedUpdate();
   const [form, setForm] = useState<ConnectionForm>(() => ({
-    url: localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws',
+    authMethod: emailOnly || emailLoginAvailable ? 'email' : 'manual',
+    url: emailOnly ? '' : (localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws'),
     token: '',
     fingerprint: '',
     mode: window.desktop ? 'remote' : 'local',
@@ -168,6 +172,9 @@ export function App({
     [],
   );
   const [proxyConnecting, setProxyConnecting] = useState(false);
+  const [loginWorkspaces, setLoginWorkspaces] = useState<{ id: string; name: string }[] | null>(
+    null,
+  );
   const [error, setError] = useState<string | RequestInterruptedError | null>(null);
   // One request at a time from this window; `refreshing` is the slower native status read.
   const [busy, setBusy] = useState(false);
@@ -475,19 +482,48 @@ export function App({
 
   // A saved sign-in fills the form once per launch and, when asked, connects without a click.
   const loaded = useRef(false);
+  const loginInteracted = useRef(false);
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
-    void window.desktop?.loadLogin().then((saved) => {
-      if (!saved) return;
-      // The installed client has no simulation mode, whatever an earlier version saved.
-      const restored = window.desktop!.dev ? saved : { ...saved, mode: 'remote' as const };
-      setForm(restored);
-      if (restored.autoLogin) void login(restored);
-    });
+    if (emailOnly) localStorage.removeItem('proxy-url');
+    void Promise.all([
+      emailOnly ? null : window.desktop?.loadLogin(),
+      emailLoginAvailable ? window.desktop!.access.load() : null,
+    ])
+      .then(([saved, account]) => {
+        // A delayed disk/IPC read must never replace a sign-in the user has already started.
+        if (loginInteracted.current) return;
+        if (account) {
+          const restored: ConnectionForm = {
+            ...form,
+            ...account,
+            password: '',
+            authMethod: 'email',
+          };
+          setForm(restored);
+          if (restored.autoLogin) void login(restored);
+          return;
+        }
+        if (emailOnly || !saved) return;
+        // The installed client has no simulation mode, whatever an earlier version saved.
+        const restored = {
+          ...saved,
+          authMethod: 'manual' as const,
+          mode: window.desktop!.dev ? saved.mode : ('remote' as const),
+        };
+        setForm(restored);
+        if (restored.autoLogin) void login(restored);
+      })
+      .catch((error: unknown) => {
+        if (!loginInteracted.current)
+          setError(
+            `无法读取已保存的登录，请重新输入邮箱和密码。${error instanceof Error ? `\n${error.message}` : ''}`,
+          );
+      });
   }, []);
   useEffect(() => {
-    if (connected) void window.desktop?.saveLogin(form);
+    if (connected && form.authMethod !== 'email') void window.desktop?.saveLogin(form);
   }, [connected, form.remember, form.autoLogin]);
   useEffect(() => {
     const close = () => client.disconnect();
@@ -504,6 +540,19 @@ export function App({
   // A connection that breaks is made again by the client, and the window stays where it is. It comes back to
   // the sign-in page only when the connection is over for good: ended here, or refused by the service.
   const signedIn = useRef(false);
+  useEffect(
+    () =>
+      window.desktop?.access?.onExpired?.((message) => {
+        loginInteracted.current = true;
+        signedIn.current = false;
+        client.disconnect();
+        setLoginWorkspaces(null);
+        setProxyConnecting(false);
+        changeForm({ password: '', token: '', remember: false, autoLogin: false });
+        setError(message);
+      }),
+    [client, changeForm],
+  );
   useEffect(() => {
     if (state.status === 'connected' || state.status === 'reconnecting') {
       signedIn.current = true;
@@ -594,8 +643,24 @@ export function App({
   }
   // Remote mode connects through the main process, which opens the tunnel and returns a loopback address.
   async function login(form: ConnectionForm) {
+    loginInteracted.current = true;
     setError(null);
     try {
+      if (emailOnly && !emailLoginAvailable)
+        throw new Error('邮箱登录组件不可用，请重新安装最新客户端。');
+      if (form.authMethod === 'email' && window.desktop?.access) {
+        setProxyConnecting(true);
+        const account = await window.desktop.access.login({
+          email: form.email ?? '',
+          password: form.password ?? '',
+          remember: form.remember,
+          autoLogin: form.autoLogin,
+        });
+        changeForm({ email: account.email, password: '', token: '' });
+        if (account.workspaces.length !== 1) setLoginWorkspaces(account.workspaces);
+        else await connectWorkspace(account.workspaces[0]!.id);
+        return;
+      }
       if (form.mode === 'remote') {
         setProxyConnecting(true);
         // The address here only has to be a loopback one; each attempt gets its own from the bridge it opens.
@@ -624,6 +689,28 @@ export function App({
       setProxyConnecting(false);
     }
   }
+  async function connectWorkspace(nodeId: string) {
+    setError(null);
+    setProxyConnecting(true);
+    try {
+      const device = await thisDevice();
+      client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
+        const connection = await window.desktop!.access.ticket(nodeId);
+        if ('error' in connection)
+          throw Object.assign(new Error(connection.error), { retryable: connection.retryable });
+        const bridge = await window.desktop!.connectProxy({
+          url: connection.url,
+          fingerprint: connection.fingerprint,
+          waits: getPrefs().connection,
+        });
+        return { url: bridge.url, token: connection.token };
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '连接工作空间失败。');
+    } finally {
+      setProxyConnecting(false);
+    }
+  }
   function stopRun() {
     if (!selected?.activeRun) return;
     const { id: sessionId, activeRun } = selected;
@@ -632,14 +719,25 @@ export function App({
     });
   }
   function disconnect() {
+    loginInteracted.current = true;
     setServerUpgradeRequested(false);
     if (browser) {
       void act(browser.logout);
       return;
     }
     client.disconnect();
+    if (form.authMethod === 'email') {
+      setLoginWorkspaces(null);
+      changeForm({ password: '', remember: false, autoLogin: false });
+      void window.desktop?.access.logout().catch((error) => setError(error.message));
+    }
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
+  }
+  function leaveEmailLogin() {
+    disconnect();
+    setError(null);
+    changeForm({ authMethod: 'email', password: '', token: '' });
   }
   function openServerUpgrade() {
     if (
@@ -1195,9 +1293,10 @@ export function App({
     form.mode === 'remote' &&
     (nativeMode || state.status === 'disconnected')
       ? {
-          label: '检查服务端更新',
+          label: form.authMethod === 'email' ? '邮箱连接请在管理中心升级服务端' : '检查服务端更新',
           icon: <Download />,
           disabled:
+            form.authMethod === 'email' ||
             (!connected && state.status !== 'disconnected') ||
             proxyConnecting ||
             busy ||
@@ -1481,41 +1580,57 @@ export function App({
             />
           </Modal>
         )}
-        <LoginPage
-          recover={
-            state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
-              ? () => setLocalSettings('about')
-              : undefined
-          }
-          showNotes={setNotes}
-          newer={upgrade ?? ahead}
-          form={form}
-          change={changeForm}
-          error={
-            currentError && state.mismatch && !window.desktop
-              ? `${currentError}请联系管理员安装匹配的定制版。`
-              : currentError
-          }
-          upgrade={state.mismatch && window.desktop ? upgrade : null}
-          older={
-            selfUpdating &&
-            form.mode === 'remote' &&
-            state.mismatch &&
-            state.service &&
-            isNewer(version, state.service)
-              ? state.service
-              : null
-          }
-          direct={direct}
-          downloaded={downloaded}
-          install={install}
-          connecting={
-            state.status === 'connecting' || proxyConnecting || busy || serverUpgradeWorking
-          }
-          submit={() => {
-            void login(form);
-          }}
-        />
+        {emailOnly || (form.authMethod === 'email' && emailLoginAvailable) ? (
+          <EmailLoginPage
+            form={form}
+            change={(values) => {
+              loginInteracted.current = true;
+              changeForm(values);
+            }}
+            submit={() => void login(form)}
+            connecting={state.status === 'connecting' || proxyConnecting}
+            error={currentError}
+            workspaces={loginWorkspaces}
+            choose={(id) => void connectWorkspace(id)}
+            back={leaveEmailLogin}
+          />
+        ) : (
+          <LoginPage
+            recover={
+              state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
+                ? () => setLocalSettings('about')
+                : undefined
+            }
+            showNotes={setNotes}
+            newer={upgrade ?? ahead}
+            form={form}
+            change={changeForm}
+            error={
+              currentError && state.mismatch && !window.desktop
+                ? `${currentError}请联系管理员安装匹配的定制版。`
+                : currentError
+            }
+            upgrade={state.mismatch && window.desktop ? upgrade : null}
+            older={
+              selfUpdating &&
+              form.mode === 'remote' &&
+              state.mismatch &&
+              state.service &&
+              isNewer(version, state.service)
+                ? state.service
+                : null
+            }
+            direct={direct}
+            downloaded={downloaded}
+            install={install}
+            connecting={
+              state.status === 'connecting' || proxyConnecting || busy || serverUpgradeWorking
+            }
+            submit={() => {
+              void login(form);
+            }}
+          />
+        )}
       </>
     );
   const menuSession =

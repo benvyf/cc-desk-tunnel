@@ -1,5 +1,73 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 登录页精简：Windows Build 17
+
+按用户截图要求删除“你的专属工作空间”和“使用邮箱登录，继续你的创作与开发。”两句，标题居中，收紧卡片宽度和留白；工作空间选择页仍显示当前邮箱。最新安装包为 Build 17 / protocol 22，源码 `02f5b1af8b5d53f7eccaa04f78a996a832e4b964`，位于 `D:\cc-desk-tunnel\artifacts\cc-space-email-only-build17\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164371 字节，SHA256 `0f58da34a78c436bd59bfbab99cc477a5451523406f12f51c1af0d0e8660ff94`。
+
+9 项邮箱界面测试、深浅色/窄屏/大字号截图检查、TypeScript、仓库检查和实际打包程序启动通过；包内身份、3 个主进程模块及 71 个前端文件核对一致。未改变管理中心或公开更新索引；Ubuntu 已由用户确认升级为 Build 5，邮箱连接成功与仅邮箱模式仍待反馈。见[本轮证据](docs/evidence/email-login-layout-build17-2026-10-28.json)。
+
+### 2026-10-28 现场已升级 Ubuntu：Linux Build 5 / protocol 22
+
+用户报告邮箱连接报“服务凭据不正确”。本机只读核对：已安装 Windows Build 16 / protocol 22，有保存的邮箱会话，没有旧手动连接配置；连接已到达节点但授权被拒绝。用户在 Ubuntu 返回诊断 `build=4, protocol=21, configuredLoginMode=both, monitorConfigured=true`，确认旧服务端不识别邮箱票据。
+
+核对固定升级脚本、在线升级 helper 摘要及签名 Linux 索引后，用户执行升级并返回 `SUCCESS: Linux Build 5 / protocol 22 is installed and committed.`，因此 Ubuntu Build 5 现场升级已确认，无需再次升级或重建 Docker。下一步只需客户端重新邮箱登录，等待连接成功反馈；两电脑实测与 Ubuntu 切换 `PROXY_LOGIN_MODE=email` 仍未确认。不要把“升级成功”写成“邮箱连接已验收”。
+
+### 2026-10-28 邮箱登录页 Review：Windows Build 16
+
+最新交付为 Build 16 / protocol 22，源码 `981f7312db6d60a73c33c2b670ec27025ec9485a`。三处已复现并修复：授权失效后密码显示状态保留、迟到的保存状态覆盖新输入/触发旧账号自动登录、保存状态读取失败缺少诊断。9 项邮箱界面与 17 项授权测试、TypeScript、仓库检查、实际打包程序启动/旧配置迁移、包内身份及 3 个主进程模块和 71 个前端文件一致性通过。
+
+安装包 `D:\cc-desk-tunnel\artifacts\cc-space-email-only-build16\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164545 字节，SHA256 `9ca5c204e4258b066c95ca3a297ccfe772d9030a6283221ccfc7f548256df699`。本轮没有管理中心部署、公开索引发布或本机软件安装。Linux 继续 Build 5；真实邮箱/两电脑及 Ubuntu 仅邮箱模式仍待现场确认。Build 15 属于上一轮交付，应使用 Build 16。详见[Review](docs/CC-SPACE-EMAIL-ONLY-REVIEW.md)与[证据](docs/evidence/email-only-review-2026-10-28.json)。
+
+### 2026-10-28 邮箱专用登录页：Windows Build 15
+
+最新客户端为 Build 15 / protocol 22，源码 `f01571603881365e43b45e9f75a4a15a2cbf73dd`。正式客户端仅显示邮箱登录，删除手动地址/凭据/证书入口；启动时清理旧 `login` 配置和旧 `proxy-url`，不再恢复 token 自动登录。保留邮箱加密会话、设备身份和本机工作数据；设置与帮助也改为管理中心配置说明。开发模拟入口只在未打包环境保留。
+
+安装包：`D:\cc-desk-tunnel\artifacts\cc-space-email-only-build15\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164114 字节，SHA256 `895348a44bd65ed1de70135429551d09154d1d16dbeb815cb6b7fd7749f00eb2`。31 项 Edge 界面回归、深浅/窄屏/大字体截图检查、TypeScript、590 个索引文件检查及实际打包 EXE 启动/旧配置迁移均通过，包内身份及三个主进程模块与源码一致。完整测试 578 项中 542 通过、35 跳过，1 项仅临时目录清理 EPERM；该项原样单独重跑通过，未修改旧测试或产品代码。
+
+本轮只交付客户端，未部署管理中心、修改公开索引或在本机安装。Linux 仍用 Build 5；Ubuntu 是否已升级、邮箱创建与实机登录、两电脑切换及 `PROXY_LOGIN_MODE=email` 仍需用户验收。关闭客户端手动入口不代表远端 token 已停用。见[说明](docs/CC-SPACE-EMAIL-ONLY.md)及[证据](docs/evidence/email-only-login-2026-10-28.json)。
+
+### 2026-10-28 第二轮单电脑登录 review：Windows Build 14
+
+最新客户端为 Build 14 / protocol 22，源码 `d59bae8971c9096711307b7af0f00f5a0a3cf0d6`。复现并修复旧会话失效后、用户正在密码登录时，恰好开始的后台授权检查把新登录取消的问题：登录进行中暂停后台检查，全部并发登录结束后恢复，失败路径也释放计数。原先对迟到响应的代次校验保留。
+
+最新完整回归 578 项：543 通过、35 跳过、0 失败；TypeScript、实际打包程序启动及包内身份/三个主进程模块与源码核对通过。安装包在 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build14\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。仅客户端运行代码变化，管理中心本轮未重部署，Linux Build 5 保持；不要继续以 Build 13 作为最新客户端。两电脑实机切换及 Ubuntu 仅邮箱模式仍待用户验收。见[第二轮证据](docs/evidence/single-computer-review2-2026-10-28.json)。
+
+### 2026-10-28 单电脑登录 review 完成
+
+管理中心最新运行源码 `997186a7384f8343eb820a4337322616d4a46bfb`。复现并修复管理员改邮箱与旧邮箱登录并发时，旧邮箱仍能成功登录一次的问题：密码派生返回后重新核对邮箱、启用状态与密码。新增故障注入证明替换电脑时数据库写入失败会回滚，原电脑会话、票据和设备映射均保留。相关 15 项认证回归及 TypeScript 通过，未重复运行上一节已通过的全量测试。
+
+修复已部署；备份 `/var/backups/cc-update-service/single-computer-review-20261028T024201Z`，旧目录 `/opt/cc-update-service.before-single-computer-review-20261028T024201Z`。配置、Nginx、公开索引保持；管理服务与两个续期 timer active。仅管理中心运行代码变化，继续使用 Windows Build 13 / Linux Build 5。真实两台电脑切换与 Ubuntu 仅邮箱模式仍待用户验收。见[审查证据](docs/evidence/single-computer-review-2026-10-28.json)。
+
+### 2026-10-28 单电脑登录已实现、打包并部署管理中心
+
+最新试点客户端为 Windows Build 13 / protocol 22，源码 `f5842d521b76de54f788d3b49baff7a8daedd71d`。同一邮箱的新电脑密码登录原子撤销其他电脑的会话及票据；同机多窗口可共存。主进程每 15 秒检查授权，失效后关闭本机通道、清除保存会话并回到登录页；自动恢复不重新提交密码，旧响应不影响新登录。数据库新增独立设备映射表，保留旧会话表结构以便程序回退。
+
+管理中心同源码已上线，备份 `/var/backups/cc-update-service/single-computer-20261028T023826Z`，旧目录 `/opt/cc-update-service.before-single-computer-20261028T023826Z`。配置、Nginx 和发布索引保持；服务及两续期 timer active。实际安装包启动、Edge 邮箱页面、TypeScript、完整 574 项测试（539 通过、35 跳过、0 失败）通过；未调用真实 Claude/JEV。
+
+安装包位于 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build13\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。Linux 仍为 Build 5；尚未收到该版本安装和真实邮箱验收，生产邮箱数仍为 0。单电脑规则约束邮箱账号，Ubuntu 仍待在邮箱验证成功后切换 `PROXY_LOGIN_MODE=email`，否则传统 token 可绕过；不要宣称节点已经关闭传统入口。操作与边界见[单电脑登录](docs/CC-SPACE-SINGLE-COMPUTER-LOGIN.md)，摘要及精确包身份见[发布证据](docs/evidence/single-computer-login-2026-10-28.json)。
+
+### 2026-10-28 邮箱登录第二轮 review 已部署
+
+管理中心运行源码 `f5f69048e36ece8b9027c41dfefce4deb21b3f46`，修复异步密码重置覆盖并发停用/撤权的问题；保存冲突返回 409。新增认证边界回归通过，全量测试发现的两处旧版本期望已修正并针对性复跑通过。补充定制 Build 与协议对应记录，不改变受保护运行时文件。详见[第二轮 review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)及[证据](docs/evidence/email-login-review2-2026-10-28.json)。
+
+部署备份 `/var/backups/cc-update-service/email-review2-20261028T022821Z`，旧运行目录 `/opt/cc-update-service.before-email-review2-20261028T022821Z`；配置、Nginx 和公开索引保持，管理服务与两个续期 timer active。Windows 仍使用 Build 12、Linux 仍使用 Build 5；本轮未修改其运行代码或重打包。生产邮箱用户数仍为 0，Ubuntu Build 5/Windows Build 12 安装及真实邮箱登录验收仍待用户确认。
+
+### 2026-10-28 邮箱登录 review 修复
+
+最新客户端应使用 Windows Build 12（协议 22），修复源码 `0ddfa93311c6cd9f22a11ddbf6c8d9a98f8d0efd`。本次修复临时票据请求失败后的重连、失效登录清理、账号切换、邮箱模式下错误的旧升级入口、代理后 IP 限流和关闭面板后密码残留。Linux Build 5/升级脚本保持，未收到真实 Ubuntu 升级及邮箱登录验收。具体发现、回归与部署见 [review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)。
+
+管理中心修复已部署，备份 `/var/backups/cc-update-service/email-review-20261028T022120Z`，旧运行目录 `/opt/cc-update-service.before-email-review-20261028T022120Z`。配置、公开 Windows/Linux 索引不变；服务与两续期 timer active。下节 Build 11 是初次实现状态，当前试点客户端以本节 Build 12 为准。
+
+### 2026-10-28 邮箱登录已实现，等待首台实机切换
+
+`codex/email-login` 在上游合并分支上新增个人邮箱登录。安装包源码 `12b2da3ca49ffeb7d712a96d4c8302a582a2a873`，Windows Build 11 / Linux Build 5 / protocol 22。管理中心已部署到 VPS，`ubuntu-cc` 服务地址和完整证书指纹已配置；用户尚未创建邮箱账号，Ubuntu 仍是先前用户确认的 Build 4，不能写成邮箱登录实机通过。
+
+Linux Build 5 已发布到 pilot，revision 7，初始有效期至 `2026-11-11T02:13:54.616Z`；自动续期已登记精确 Build 5 并通过强制续签及 systemd 执行。Windows 公开渠道仍 Build 9，stable 未改。Build 4 与 5 运行时兼容指纹一致，直接走现有受管程序更新，无需新镜像。操作见[邮箱登录试点](docs/CC-SPACE-EMAIL-LOGIN-PILOT.md)；用户执行 `scripts/upgrade-cc-space-email.py` 前需结束任务、退出客户端，升级后安装 Windows Build 11。
+
+管理中心备份 `/var/backups/cc-update-service/email-login-20261028T021053Z`，旧运行目录 `/opt/cc-update-service.before-email-login-20261028T021053Z`；Linux 发布与续期备份 `/var/backups/cc-update-service/email-server5-20261028T021353Z`。旧 Build 4 镜像及冷备份保留。此后的更新覆盖下节“公开 Linux Build 3”状态；下节其余既有实机反馈仍为历史依据。
+
+本轮已验证主进程加密会话、管理 API/页面、真实代理握手及停用用户关闭长连接、邮箱 UI 与实际 Windows 打包 smoke；具体证据见 [email-login-2026-10-28.json](docs/evidence/email-login-2026-10-28.json)。未发起真实 Claude/JEV 调用。源码与包不得混淆：后续文档、测试或运维脚本提交不会改变现有 Build 11/5 归档源码身份。
+
 ### 2026-10-28 上游 0.3.7 合并候选（试点客户端与服务端已正常使用）
 
 最新用户反馈：本电脑安装新版客户端后可以正常使用，暂未发现问题。基本连接及实际使用已得到用户确认；下文客户端待验收描述属于此前阶段，文件、图片、后台任务及审核等专项验收仍未逐项确认。PR 合并与公共渠道发布尚未完成。
