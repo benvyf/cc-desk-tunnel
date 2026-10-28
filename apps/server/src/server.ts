@@ -1488,7 +1488,10 @@ export function createProxyServer(options: ServerOptions) {
   }
   // Keystrokes, resizes and flow-control acknowledgments carry no request ID and get no response.
   function controlTerminal(peer: Peer, control: TerminalControl) {
-    if (options.moderation && control.type === 'terminal.input') return;
+    // Reviewed terminals enforce policy at CLI hooks; their raw keys must reach the PTY.
+    // Keep input disabled when the node has no native review path.
+    if (options.moderation && !options.nativeTerminalReview && control.type === 'terminal.input')
+      return;
     const current = terminals.get(control.sessionId);
     if (!current || current.owner !== peer || current.id !== control.terminalId) {
       send(peer, {
