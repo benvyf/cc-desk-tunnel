@@ -14,7 +14,7 @@ Windows 最新 Build 14 / protocol 22 配合新版管理中心实现。Linux 继
 
 ## 部署与使用
 
-安装 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build14\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。管理中心在“登录用户”页说明单电脑规则，用户无需额外开关。先确认 Ubuntu 已升级为 Linux Build 5，并已在管理中心设置自己的邮箱密码。
+安装最新[邮箱专用客户端 Build 16](CC-SPACE-EMAIL-ONLY.md)：`D:\cc-desk-tunnel\artifacts\cc-space-email-only-build16\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。管理中心在“登录用户”页说明单电脑规则，用户无需额外开关。先确认 Ubuntu 已升级为 Linux Build 5，并已在管理中心设置自己的邮箱密码。
 
 在电脑 A 通过邮箱登录，再在电脑 B 用同一邮箱登录。B 应正常进入工作空间，A 应自动返回登录页。然后重启 A：不能凭旧记住登录恢复连接；必须重新输入密码。无需发起 Claude/JEV 请求即可验证。
 

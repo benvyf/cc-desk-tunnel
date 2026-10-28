@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 邮箱登录页 Review：Windows Build 16
+
+最新交付为 Build 16 / protocol 22，源码 `981f7312db6d60a73c33c2b670ec27025ec9485a`。三处已复现并修复：授权失效后密码显示状态保留、迟到的保存状态覆盖新输入/触发旧账号自动登录、保存状态读取失败缺少诊断。9 项邮箱界面与 17 项授权测试、TypeScript、仓库检查、实际打包程序启动/旧配置迁移、包内身份及 3 个主进程模块和 71 个前端文件一致性通过。
+
+安装包 `D:\cc-desk-tunnel\artifacts\cc-space-email-only-build16\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164545 字节，SHA256 `9ca5c204e4258b066c95ca3a297ccfe772d9030a6283221ccfc7f548256df699`。本轮没有管理中心部署、公开索引发布或本机软件安装。Linux 继续 Build 5；真实邮箱/两电脑及 Ubuntu 仅邮箱模式仍待现场确认。Build 15 属于上一轮交付，应使用 Build 16。详见[Review](docs/CC-SPACE-EMAIL-ONLY-REVIEW.md)与[证据](docs/evidence/email-only-review-2026-10-28.json)。
+
 ### 2026-10-28 邮箱专用登录页：Windows Build 15
 
 最新客户端为 Build 15 / protocol 22，源码 `f01571603881365e43b45e9f75a4a15a2cbf73dd`。正式客户端仅显示邮箱登录，删除手动地址/凭据/证书入口；启动时清理旧 `login` 配置和旧 `proxy-url`，不再恢复 token 自动登录。保留邮箱加密会话、设备身份和本机工作数据；设置与帮助也改为管理中心配置说明。开发模拟入口只在未打包环境保留。
