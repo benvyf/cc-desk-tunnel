@@ -1,6 +1,6 @@
 # 同一邮箱仅一台电脑在线
 
-Windows Build 13 / protocol 22 配合新版管理中心实现。Linux 继续使用 Build 5，不需要为此重建镜像。
+Windows 最新 Build 14 / protocol 22 配合新版管理中心实现。Linux 继续使用 Build 5，不需要为此重建镜像。
 
 ## 登录规则
 
@@ -14,7 +14,7 @@ Windows Build 13 / protocol 22 配合新版管理中心实现。Linux 继续使�
 
 ## 部署与使用
 
-安装 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build13\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。管理中心在“登录用户”页说明单电脑规则，用户无需额外开关。先确认 Ubuntu 已升级为 Linux Build 5，并已在管理中心设置自己的邮箱密码。
+安装 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build14\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。管理中心在“登录用户”页说明单电脑规则，用户无需额外开关。先确认 Ubuntu 已升级为 Linux Build 5，并已在管理中心设置自己的邮箱密码。
 
 在电脑 A 通过邮箱登录，再在电脑 B 用同一邮箱登录。B 应正常进入工作空间，A 应自动返回登录页。然后重启 A：不能凭旧记住登录恢复连接；必须重新输入密码。无需发起 Claude/JEV 请求即可验证。
 
@@ -47,7 +47,7 @@ sudo docker restart cc-desk-tunnel-ba938975-proxy-1
 
 管理中心在数据库中新增独立的 `session_devices` 表，保留旧 `sessions` 表结构。已有会话在下一次成功登录前保留；新电脑登录时会撤销无法识别设备的旧会话。新增表不会阻止旧管理中心运行代码回退，回退不恢复已经撤销的登录。
 
-完整 574 项测试中 539 通过、35 跳过、0 失败；实际 Windows 包启动与 Edge 邮箱页面检查通过。实际包摘要、验证结果、部署备份及待验收项见[本次发布证据](evidence/single-computer-login-2026-10-28.json)。Windows 公开更新渠道与 Linux 签名索引没有改变。
+Build 13 的初始部署与页面检查见[初始发布证据](evidence/single-computer-login-2026-10-28.json)。最新 Build 14 的摘要与验证见下方第二轮 review；Windows 公开更新渠道与 Linux 签名索引未在本轮改动。
 
 ## Review 补充（2026-10-28）
 
@@ -55,4 +55,10 @@ sudo docker restart cc-desk-tunnel-ba938975-proxy-1
 
 还以数据库写入失败验证替换电脑事务的回滚：原电脑会话、票据及设备映射均保留，恢复写入后才能成功切换。相关 15 项认证回归包含真实 HTTP / WebSocket 切换、同机多窗口、迟到响应、到期及迁移，全部通过，TypeScript 通过。客户端与 Ubuntu 运行代码未变，不重复打包或重跑先前的页面/完整安装包检查。
 
-管理中心已部署该修复，继续使用上述 Build 13 安装包。精确源码和备份位置见[review 证据](evidence/single-computer-review-2026-10-28.json)。尚无真实两电脑及仅邮箱模式的用户验收记录，不把自动测试写成现场已通过。
+管理中心已部署第一轮修复，当时客户端为 Build 13；最新客户端以以下第二轮记录为准。精确管理中心源码和备份位置见[review 证据](evidence/single-computer-review-2026-10-28.json)。尚无真实两电脑及仅邮箱模式的用户验收记录，不把自动测试写成现场已通过。
+
+## 第二轮 review：Build 14
+
+发现 P2：旧登录已失效、用户正在重新输入密码登录时，如果此刻开始后台会话检查，旧会话的 401 会取消即将完成的新登录。先以可控的异步响应复现失败，随后让后台检查在登录期间暂停；并发登录用计数管理，全部结束后恢复，包含失败与取消路径，不改原有迟到响应校验。
+
+完整 578 项回归中 543 通过、35 跳过、0 失败，TypeScript 和实际 Build 14 程序启动检查通过；包内身份和三个主进程模块与源码核对通过。该修复只需安装 Build 14，管理中心与 Linux Build 5 无需为此改动。具体见[第二轮 review 证据](evidence/single-computer-review2-2026-10-28.json)。实际两电脑切换和关闭 Ubuntu 传统 token 入口仍待用户完成。
