@@ -501,8 +501,12 @@ require('./managed-server-ipc.cjs').registerManagedServerUpdates(
   async () => {
     serverClientLoading ??= import(
       pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
-    ).then(({ createManagedServerClient }) => {
+    ).then(({ createManagedServerClient, serviceJson }) => {
       serverClient = createManagedServerClient({
+        request: (config, method, route, body, resolveProxy, signal) =>
+          config.nodeId
+            ? desktopAccess.serverRequest(config.nodeId, route, body, signal)
+            : serviceJson(config, method, route, body, resolveProxy, signal),
         resolveProxy: (url) => session.defaultSession.resolveProxy(url),
         isBlocked: () => !!bridge || proxyOpening > 0 || managedClient.frozen(),
         readReplay: () =>
@@ -530,6 +534,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   storage: safeStorage,
   deviceId: () => readComputer().deviceId ?? writeComputer({ deviceId: randomUUID() }).deviceId,
   onExpired: (message) => {
+    serverClient?.cancel();
     void disconnectProxy().catch((error) =>
       log(`Close expired email connection: ${error.message}`),
     );
@@ -543,6 +548,7 @@ setInterval(
 handle('access:load', () => desktopAccess.load());
 handle('access:login', async (_event, input) => {
   const result = await desktopAccess.login(input);
+  serverClient?.cancel();
   writeSettings({ login: undefined });
   return result;
 });
@@ -554,7 +560,10 @@ handle('access:ticket', async (_event, nodeId) => {
     return { error: error.message, retryable: error.retryable === true };
   }
 });
-handle('access:logout', () => desktopAccess.logout());
+handle('access:logout', () => {
+  serverClient?.cancel();
+  return desktopAccess.logout();
+});
 handle('login:load', () => {
   if (app.isPackaged) return null;
   const { login } = readSettings();

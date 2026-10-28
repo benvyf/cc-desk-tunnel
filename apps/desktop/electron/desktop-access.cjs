@@ -25,13 +25,15 @@ function createDesktopAccess({
         : null;
     write(saved);
   }
-  async function api(path, data, token) {
+  async function api(path, data, token, signal, timeout = 10_000) {
     let response;
     try {
       response = await request(origin + '/cc-access/v1/' + path, {
         method: data === undefined ? 'GET' : 'POST',
         redirect: 'error',
-        signal: AbortSignal.timeout(10_000),
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(timeout)])
+          : AbortSignal.timeout(timeout),
         headers: {
           'content-type': 'application/json',
           ...(token ? { authorization: `Bearer ${token}` } : {}),
@@ -49,7 +51,8 @@ function createDesktopAccess({
         status: response.status,
         retryable: response.status === 429 || response.status >= 500,
       });
-    if (response.status !== 204 && !value) throw new Error('管理中心返回了无效信息，请稍后重试。');
+    if (response.status !== 204 && !value)
+      throw Object.assign(new Error('管理中心返回了无效信息，请稍后重试。'), { retryable: true });
     return value;
   }
   function clearExpired(error, current, turn) {
@@ -61,6 +64,29 @@ function createDesktopAccess({
     }
   }
   return {
+    async serverRequest(nodeId, route, body, signal) {
+      if (!session || typeof nodeId !== 'string' || !/^[a-z0-9_-]{1,80}$/.test(nodeId))
+        throw new Error('请先登录邮箱并选择工作空间。');
+      const action = /^\/cc-managed\/server\/v1\/(check|install|status)$/.exec(route)?.[1];
+      if (!action) throw new Error('无效服务端升级操作。');
+      const current = session,
+        turn = generation;
+      const result = await api(
+        `server/${action}`,
+        { ...body, nodeId },
+        current.token,
+        signal,
+        action === 'install' ? 180_000 : 50_000,
+      ).catch((error) => {
+        clearExpired(error, current, turn);
+        if (error.status === 404)
+          throw new Error('管理中心尚未启用邮箱远端升级，请先更新管理中心。');
+        if (error.retryable) throw new Error('服务管理网络请求失败；请稍候查询升级状态。');
+        throw error;
+      });
+      if (current !== session || turn !== generation) throw new Error('登录已失效，请重新登录。');
+      return result;
+    },
     load() {
       const saved = read();
       try {

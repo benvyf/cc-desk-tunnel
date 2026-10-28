@@ -1064,6 +1064,23 @@ dialog:has(.release-notes) {
   overflow-wrap: anywhere;
   font-size: calc(13.5rem / 14);
 }
+.managed-update-summary {
+  overflow-wrap: anywhere;
+}
+.managed-update-summary progress {
+  width: 100%;
+  accent-color: var(--accent);
+}
+.managed-update-server {
+  border-top: 1px solid var(--line);
+  margin: 20px 0;
+  padding-top: 8px;
+}
+.login-update-button {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+}
 .connection-dot.online {
   background: var(--ok);
 }
@@ -1105,18 +1122,21 @@ dialog:has(.release-notes) {
 .rail-space {
   flex: 1;
 }
-.rail .rail-update {
+.rail .rail-update,
+.login-update-button {
   width: var(--control-compact);
   height: var(--control-compact);
   border-radius: 50%;
-  background: var(--ink);
-  color: var(--ink-text);
+  background: #0a84ff;
+  color: #ffffff;
 }
-.rail .rail-update:hover {
-  background: var(--ink-hover);
-  color: var(--ink-text);
+.rail .rail-update:hover,
+.login-update-button:hover {
+  background: #0071e3;
+  color: #ffffff;
 }
-.rail .rail-update svg.app-icon {
+.rail .rail-update svg.app-icon,
+.login-update-button svg.app-icon {
   width: var(--icon-sm);
   height: var(--icon-sm);
 }

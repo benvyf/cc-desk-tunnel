@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import type { ConnectionForm } from './LoginPage.tsx';
 import type { ServerCheck, ServerStatus } from '../../server/src/managed-server-http.ts';
 
-export type ManagedServerConnection = Pick<ConnectionForm, 'url' | 'fingerprint' | 'token'>;
+export type ManagedServerConnection =
+  Pick<ConnectionForm, 'url' | 'fingerprint' | 'token'> | { nodeId: string };
 export type ManagedServerConfirmation = ManagedServerConnection & {
   confirmed: true;
   build: number;
@@ -37,17 +38,22 @@ export default function ManagedServerUpgrade({
   activity,
   autoCheck = false,
   checked,
+  nodeId,
+  reconnect,
 }: {
   form: ConnectionForm;
   disabled: boolean;
   activity: (working: boolean) => void;
   autoCheck?: boolean;
   checked?: () => void;
+  nodeId?: string;
+  reconnect?: () => void;
 }) {
   const [candidate, setCandidate] = useState<ServerCheck['candidate']>(null);
   const [working, setWorking] = useState(false);
   const [text, setText] = useState('');
   const [help, setHelp] = useState(false);
+  const [canReconnect, setCanReconnect] = useState(true);
   const generation = useRef(0);
   const api = window.desktop!.managedServer;
   useEffect(() => {
@@ -55,6 +61,7 @@ export default function ManagedServerUpgrade({
     setCandidate(null);
     setText('');
     setHelp(false);
+    setCanReconnect(true);
     setWorking(false);
     activity(false);
     return () => {
@@ -62,12 +69,15 @@ export default function ManagedServerUpgrade({
       activity(false);
       void api.cancel().catch(() => {});
     };
-  }, [form.url, form.fingerprint, form.token, api, activity]);
-  const credentials = (): ManagedServerConnection => ({
-    url: form.url,
-    fingerprint: form.fingerprint,
-    token: form.token.trim(),
-  });
+  }, [nodeId, form.url, form.fingerprint, form.token, api, activity]);
+  const credentials = (): ManagedServerConnection =>
+    nodeId
+      ? { nodeId }
+      : {
+          url: form.url,
+          fingerprint: form.fingerprint,
+          token: form.token.trim(),
+        };
   const message = (error: unknown) =>
     error instanceof Error ? error.message : '服务端升级失败，请重新检查。';
   async function check() {
@@ -81,7 +91,9 @@ export default function ManagedServerUpgrade({
       const result = await api.check(credentials());
       if (own !== generation.current) return;
       setCandidate(result.reason === 'available' ? result.candidate : null);
-      setText(explanations[result.reason]);
+      setText(
+        `当前版本 ${result.current.appVersion} · Build ${result.current.build}。${explanations[result.reason]}`,
+      );
       setHelp(
         result.reason === 'disabled' ||
           result.reason === 'manual-image-upgrade' ||
@@ -111,6 +123,7 @@ export default function ManagedServerUpgrade({
     const alive = () => own === generation.current;
     setCandidate(null);
     setWorking(true);
+    setCanReconnect(false);
     activity(true);
     setText('正在准备升级；服务重启期间网络暂时中断是正常现象…');
     try {
@@ -130,7 +143,10 @@ export default function ManagedServerUpgrade({
           const status = await api.status(credentials());
           if (!alive()) return;
           setText(progress[status.phase]);
-          if (['committed', 'rolled-back', 'failed'].includes(status.phase)) return;
+          if (['committed', 'rolled-back', 'failed'].includes(status.phase)) {
+            setCanReconnect(status.phase !== 'failed');
+            return;
+          }
         } catch (error) {
           if (!alive()) return;
           if (!/网络请求失败/.test(message(error))) throw error;
@@ -168,7 +184,6 @@ export default function ManagedServerUpgrade({
           <p>
             目标版本 {candidate.appVersion} · Build {candidate.build} · 协议 {candidate.protocol}
           </p>
-          <p className="muted">SHA256：{candidate.sha256}</p>
           <p>升级需要重启服务。确认后才会安装，完成后请手动连接。</p>
           <button
             className="button login-submit"
@@ -179,6 +194,16 @@ export default function ManagedServerUpgrade({
             确认升级到 Build {candidate.build}
           </button>
         </>
+      )}
+      {canReconnect && reconnect && (
+        <button
+          type="button"
+          className="button primary"
+          disabled={disabled || working}
+          onClick={reconnect}
+        >
+          重新连接
+        </button>
       )}
       {(working || candidate) && (
         <button

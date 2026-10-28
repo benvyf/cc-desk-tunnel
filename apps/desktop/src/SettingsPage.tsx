@@ -21,7 +21,6 @@ import { viewModes } from './transcriptView.ts';
 import type { ConnectionWaits, NotifyKind } from './prefs.ts';
 import { inSummary, sampleStats, statFields, summaryText } from './turnStats.ts';
 import { barText, inBar, sampleSession, sessionFields } from './sessionStats.ts';
-import { GithubMark, openProject, project } from './project.tsx';
 import SettingsPanel from './SettingsPanel.tsx';
 import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
 import FontSizeSettings from './FontSizeSettings.tsx';
@@ -32,8 +31,6 @@ import type { ListedConnection } from './shared.ts';
 import ShortcutSettings from './ShortcutSettings.tsx';
 import { IconButton, Switch } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
-import type { MenuItem } from './ui.tsx';
-import ManagedUpdatePanel from './ManagedUpdatePanel.tsx';
 
 export type Section =
   'account' | 'claude' | 'general' | 'notifications' | 'shortcuts' | 'help' | 'about';
@@ -730,21 +727,7 @@ function Notices() {
   );
 }
 
-function About({
-  version,
-  service,
-  adapterName,
-  updates,
-  serverUpdate,
-  showNotes,
-}: {
-  version: string;
-  service: string | null;
-  adapterName: string;
-  updates: MenuItem[];
-  serverUpdate?: MenuItem;
-  showNotes: (version: string) => void;
-}) {
+function About({ version, service }: { version: string; service: string | null }) {
   return (
     <section className="page" aria-label="关于与更新">
       <div className="page-body">
@@ -752,67 +735,12 @@ function About({
         <Brand className="about-brand" />
         <div className="card">
           <Row title="客户端版本">
-            <span className="setting-actions">
-              <span className="setting-value">{version || '浏览器开发入口'}</span>
-              {version && !window.desktop?.managedUpdate && (
-                <button type="button" className="button" onClick={() => showNotes(version)}>
-                  这一版的更新内容
-                </button>
-              )}
-            </span>
+            <span className="setting-value">{version || '浏览器开发入口'}</span>
           </Row>
           <Row title="服务端版本">
             <span className="setting-value">{service ?? '未知'}</span>
           </Row>
-          <Row title="运行方式">
-            <span className="setting-value">{adapterName}</span>
-          </Row>
         </div>
-        <h2 className="page-heading">更新</h2>
-        {window.desktop?.managedUpdate ? (
-          <ManagedUpdatePanel />
-        ) : (
-          <div className="card">
-            <Row
-              title="客户端与服务端需要同一版本"
-              detail="服务端跟随发布页；客户端的安装包由所连接的服务端提供，也可以在登录页改从 GitHub 发布页下载，校验后覆盖升级"
-            >
-              <span className="setting-actions">
-                {updates.map((item) => (
-                  <button
-                    type="button"
-                    className="button"
-                    key={item.label}
-                    disabled={item.disabled}
-                    onClick={item.run}
-                  >
-                    {item.icon}
-                    {item.label}
-                  </button>
-                ))}
-                {updates.length === 0 && <span className="setting-value">没有可用的更新操作</span>}
-              </span>
-            </Row>
-          </div>
-        )}
-        {serverUpdate && (
-          <div className="card">
-            <Row
-              title="配套服务端更新"
-              detail="协议相同也可按 Build 升级。检查前先断开当前连接，确认目标后安装；升级完成后手动连接。"
-            >
-              <button
-                type="button"
-                className="button"
-                disabled={serverUpdate.disabled}
-                onClick={serverUpdate.run}
-              >
-                {serverUpdate.icon}
-                {serverUpdate.label}
-              </button>
-            </Row>
-          </div>
-        )}
         {window.desktop && (
           <>
             <h2 className="page-heading">排查</h2>
@@ -844,12 +772,6 @@ function About({
             </div>
           </>
         )}
-        {project.url && (
-          <button type="button" className="button" onClick={openProject}>
-            <GithubMark />
-            项目主页 · {project.name}
-          </button>
-        )}
       </div>
     </section>
   );
@@ -871,10 +793,6 @@ export default function SettingsPage({
   chooseWorkspace,
   version,
   service,
-  adapterName,
-  updates,
-  serverUpdate,
-  showNotes,
   back,
   browser = false,
 }: {
@@ -895,10 +813,6 @@ export default function SettingsPage({
   chooseWorkspace: (reset: boolean) => void;
   version: string;
   service: string | null;
-  adapterName: string;
-  updates: MenuItem[];
-  serverUpdate?: MenuItem;
-  showNotes: (version: string) => void;
 }) {
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
@@ -980,14 +894,7 @@ export default function SettingsPage({
         ) : section === 'help' ? (
           <Help />
         ) : (
-          <About
-            version={version}
-            service={service}
-            adapterName={adapterName}
-            updates={updates}
-            serverUpdate={serverUpdate}
-            showNotes={showNotes}
-          />
+          <About version={version} service={service} />
         )}
       </main>
     </>

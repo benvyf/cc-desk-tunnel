@@ -42,7 +42,7 @@ test('release announcements cannot expose an update action in a managed client',
   await expect(
     page.getByRole('button', { name: /升级服务端|检查更新|升级客户端|查看 99/ }),
   ).toHaveCount(0);
-  await expect(page.getByText('没有可用的更新操作')).toBeVisible();
+  await expect(page.getByRole('button', { name: '更新', exact: true })).toHaveCount(0);
   expect(commands.some((command) => command.startsWith('service.update.'))).toBe(false);
 });
 

@@ -32,6 +32,19 @@ const reasons = [
 const positive = (n) => Number.isSafeInteger(n) && n > 0;
 const digest = (s) => typeof s === 'string' && /^[a-f0-9]{64}$/.test(s);
 function connection(input, install = false) {
+  if (input && Object.hasOwn(input, 'nodeId')) {
+    strictObject(input, install ? ['nodeId', 'confirmed', 'build', 'sha256'] : ['nodeId']);
+    requireValue(
+      typeof input.nodeId === 'string' && /^[a-z0-9_-]{1,80}$/.test(input.nodeId),
+      '请选择有效工作空间。',
+    );
+    if (install)
+      requireValue(
+        input.confirmed === true && positive(input.build) && digest(input.sha256),
+        '需要确认精确构建与摘要。',
+      );
+    return { nodeId: input.nodeId };
+  }
   strictObject(input, install ? [...fields, 'confirmed', 'build', 'sha256'] : fields);
   requireValue(
     typeof input.url === 'string' &&
@@ -95,6 +108,7 @@ export function createManagedServerClient({
     try {
       return await request(config, method, path, body, resolveProxy, controller.signal);
     } catch (error) {
+      if (config.nodeId && error?.message) throw error;
       // Transport errors may include URLs or HTTP details; never relay arbitrary error text from a peer.
       if (error?.status === 404)
         throw new Error(

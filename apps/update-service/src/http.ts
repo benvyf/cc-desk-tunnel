@@ -13,6 +13,7 @@ import { validateMonitorReport } from '../../../packages/protocol/src/account-mo
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
 import { DesktopAccess } from './desktop-access.ts';
+import { desktopServerUpdate } from './desktop-server-update.ts';
 import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
 import {
   ServerDistribution,
@@ -169,6 +170,12 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           } else if (path === '/cc-access/v1/connect') {
             if (typeof input.nodeId !== 'string') throw new UpdateError(400, '请选择工作空间。');
             respond(response, 200, desktopAccess.connect(bearer, input.nodeId));
+          } else if (/^\/cc-access\/v1\/server\/(check|install|status)$/.test(path)) {
+            respond(
+              response,
+              200,
+              await desktopServerUpdate(desktopAccess, bearer, path.split('/').at(-1)!, input),
+            );
           } else if (path === '/cc-access/v1/logout') {
             desktopAccess.logout(bearer);
             respond(response, 204);

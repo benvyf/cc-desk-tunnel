@@ -13,6 +13,7 @@ export default function EmailLoginPage({
   workspaces,
   choose,
   back,
+  recover,
 }: {
   form: ConnectionForm;
   change: (input: Partial<ConnectionForm>) => void;
@@ -22,15 +23,23 @@ export default function EmailLoginPage({
   workspaces: { id: string; name: string }[] | null;
   choose: (id: string) => void;
   back: () => void;
+  recover?: () => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
     if (!form.password) setShowPassword(false);
   }, [form.password]);
   const alert = error && (
-    <p className="error-text email-login-error" role="alert">
-      {error}
-    </p>
+    <>
+      <p className="error-text email-login-error" role="alert">
+        {error}
+      </p>
+      {recover && (
+        <Button disabled={connecting} onClick={recover}>
+          检查服务端更新
+        </Button>
+      )}
+    </>
   );
   return (
     <main className="login-page email-login-page">

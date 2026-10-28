@@ -84,7 +84,8 @@ import Presence from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
 import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
-import { useManagedUpdate } from './managed-update.ts';
+import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
+import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
 
 const NativeTerminal = lazy(() => import('./NativeTerminal.tsx'));
 // The notes of every version so far are read only when asked for, and stay out of what the window starts with.
@@ -158,6 +159,8 @@ export function App({
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const managedUpdate = useManagedUpdate();
+  const [managedUpdateOpen, setManagedUpdateOpen] = useState(false);
+  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
   const [form, setForm] = useState<ConnectionForm>(() => ({
     authMethod: emailOnly || emailLoginAvailable ? 'email' : 'manual',
     url: emailOnly ? '' : (localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws'),
@@ -346,6 +349,52 @@ export function App({
     refreshing ||
     !!terminalSessionId ||
     state.sessions.some((session) => !!session.activeRun);
+  const managedNotice = managedUpdateNotice(managedUpdate);
+  const loginUpdateButton = managedNotice && (
+    <button
+      type="button"
+      className="icon-button login-update-button"
+      title={managedNotice}
+      aria-label="更新"
+      aria-haspopup="dialog"
+      onClick={() => setManagedUpdateOpen(true)}
+    >
+      <Download />
+    </button>
+  );
+  const managedUpdateDialog = (
+    <Presence kind="dialog">
+      {managedUpdateOpen && (
+        <ManagedUpdateDialog
+          server={
+            activeWorkspace && window.desktop?.managedServer
+              ? {
+                  version: state.service,
+                  disabled:
+                    busy ||
+                    refreshing ||
+                    !!terminalSessionId ||
+                    proxyConnecting ||
+                    state.sessions.some((session) => !!session.activeRun),
+                  open: openServerUpgrade,
+                }
+              : undefined
+          }
+          state={managedUpdate}
+          blocked={updateBlocked}
+          connected={connected}
+          canDisconnect={
+            !busy &&
+            !refreshing &&
+            !terminalSessionId &&
+            !state.sessions.some((session) => !!session.activeRun)
+          }
+          disconnect={disconnect}
+          onClose={() => setManagedUpdateOpen(false)}
+        />
+      )}
+    </Presence>
+  );
   useEffect(() => {
     const report = () => {
       void window.desktop?.managedUpdate?.activity({ blocked: updateBlocked }).catch(() => {});
@@ -547,6 +596,9 @@ export function App({
         signedIn.current = false;
         client.disconnect();
         setLoginWorkspaces(null);
+        setActiveWorkspace(null);
+        setServerUpgradeOpen(false);
+        setServerUpgradeRequested(false);
         setProxyConnecting(false);
         changeForm({ password: '', token: '', remember: false, autoLogin: false });
         setError(message);
@@ -690,6 +742,7 @@ export function App({
     }
   }
   async function connectWorkspace(nodeId: string) {
+    setActiveWorkspace(nodeId);
     setError(null);
     setProxyConnecting(true);
     try {
@@ -719,6 +772,7 @@ export function App({
     });
   }
   function disconnect() {
+    setActiveWorkspace(null);
     loginInteracted.current = true;
     setServerUpgradeRequested(false);
     if (browser) {
@@ -748,6 +802,7 @@ export function App({
     )
       return;
     void act(async () => {
+      setManagedUpdateOpen(false);
       // Keep credentials only in this window for the upgrade. Ordinary disconnect still clears
       // unremembered credentials; no additional login information is saved to disk here.
       signedIn.current = false;
@@ -1293,10 +1348,10 @@ export function App({
     form.mode === 'remote' &&
     (nativeMode || state.status === 'disconnected')
       ? {
-          label: form.authMethod === 'email' ? '邮箱连接请在管理中心升级服务端' : '检查服务端更新',
+          label: '检查服务端更新',
           icon: <Download />,
           disabled:
-            form.authMethod === 'email' ||
+            (form.authMethod === 'email' && !activeWorkspace) ||
             (!connected && state.status !== 'disconnected') ||
             proxyConnecting ||
             busy ||
@@ -1338,6 +1393,9 @@ export function App({
       run: () => open('settings', nativeMode && host.nativeSettings ? 'claude' : 'general'),
     },
     { label: '帮助', icon: <CircleHelp />, run: () => open('settings', 'help') },
+    ...(window.desktop?.managedUpdate
+      ? [{ label: '检查更新', icon: <Download />, run: () => setManagedUpdateOpen(true) }]
+      : []),
     ...(managedServerUpdate ? [managedServerUpdate] : []),
     {
       label: browser ? '退出登录' : '断开连接',
@@ -1553,16 +1611,16 @@ export function App({
           }}
           version={version}
           service={null}
-          adapterName=""
-          updates={[]}
-          serverUpdate={managedServerUpdate}
-          showNotes={setNotes}
         />
         {notesDialog}
+        {managedUpdateDialog}
+        {loginUpdateButton}
       </div>
     ) : (
       <>
         {notesDialog}
+        {managedUpdateDialog}
+        {loginUpdateButton}
         {serverUpgradeOpen && window.desktop?.managedServer && (
           <Modal
             title="配套服务端更新"
@@ -1572,6 +1630,15 @@ export function App({
             }}
           >
             <ManagedServerUpgrade
+              nodeId={form.authMethod === 'email' ? (activeWorkspace ?? undefined) : undefined}
+              reconnect={
+                activeWorkspace
+                  ? () => {
+                      setServerUpgradeOpen(false);
+                      void connectWorkspace(activeWorkspace);
+                    }
+                  : undefined
+              }
               form={form}
               disabled={state.status === 'connecting' || proxyConnecting || busy}
               activity={setServerUpgradeWorking}
@@ -1593,12 +1660,17 @@ export function App({
             workspaces={loginWorkspaces}
             choose={(id) => void connectWorkspace(id)}
             back={leaveEmailLogin}
+            recover={
+              state.mismatch && activeWorkspace && window.desktop?.managedServer
+                ? openServerUpgrade
+                : undefined
+            }
           />
         ) : (
           <LoginPage
             recover={
               state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
-                ? () => setLocalSettings('about')
+                ? openServerUpgrade
                 : undefined
             }
             showNotes={setNotes}
@@ -1696,8 +1768,11 @@ export function App({
         page={place.page}
         go={(page) => open(page)}
         schedules={host.schedules}
-        update={host.serviceManagement ? pendingUpdate : null}
-        openUpdate={(position) => setMenu({ kind: 'update', ...position })}
+        update={host.serviceManagement ? (managedNotice ?? pendingUpdate) : null}
+        updatePopup={managedNotice ? 'dialog' : 'menu'}
+        openUpdate={(position) =>
+          managedNotice ? setManagedUpdateOpen(true) : setMenu({ kind: 'update', ...position })
+        }
         openSettings={(position) => setMenu({ kind: 'settings', ...position })}
       />
       <Presence kind="shade">
@@ -1728,10 +1803,6 @@ export function App({
           }}
           version={version}
           service={state.service}
-          adapterName={adapterName}
-          updates={host.serviceManagement ? updates : []}
-          serverUpdate={managedServerUpdate}
-          showNotes={setNotes}
           account={
             <AccountPanel
               client={client}
@@ -2137,6 +2208,7 @@ export function App({
         )}
       </Presence>
       {notesDialog}
+      {managedUpdateDialog}
     </div>
   );
 }

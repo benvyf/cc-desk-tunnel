@@ -10,6 +10,7 @@ export default function Rail({
   schedules = true,
   go,
   update,
+  updatePopup = 'menu',
   openUpdate,
   openSettings,
 }: {
@@ -17,6 +18,7 @@ export default function Rail({
   schedules?: boolean;
   go: (page: Page) => void;
   update: string | null;
+  updatePopup?: 'menu' | 'dialog';
   openUpdate: (position: MenuPosition) => void;
   openSettings: (position: MenuPosition) => void;
 }) {
@@ -53,7 +55,7 @@ export default function Rail({
           className="rail-update"
           title={update}
           aria-label="更新"
-          aria-haspopup="menu"
+          aria-haspopup={updatePopup}
           onClick={(event) => openUpdate(beside(event.currentTarget))}
         >
           <Download />

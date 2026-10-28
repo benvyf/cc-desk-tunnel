@@ -78,6 +78,44 @@ async function fixture(options = {}) {
     },
   };
 }
+
+test('email workspace upgrades retain signed confirmation and cannot switch the confirmed workspace', async () => {
+  const f = await fixture();
+  const config = { nodeId: 'ubuntu-cc' };
+  const found = await f.client.check(config);
+  assert.deepEqual(f.calls[0][0], config);
+  await assert.rejects(f.client.check({ ...config, token: 'not-accepted' }), /fields/);
+  await assert.rejects(
+    f.client.install({
+      nodeId: 'other',
+      confirmed: true,
+      build: found.candidate.build,
+      sha256: found.candidate.sha256,
+    }),
+    /确认/,
+  );
+  f.set({ accepted: true, build: found.candidate.build, sha256: found.candidate.sha256 });
+  await f.client.install({
+    ...config,
+    confirmed: true,
+    build: found.candidate.build,
+    sha256: found.candidate.sha256,
+  });
+  assert.deepEqual(f.calls.at(-1)[0], config);
+  f.set({
+    schema: 1,
+    phase: 'committed',
+    current: {
+      build: found.candidate.build,
+      appVersion: found.candidate.appVersion,
+      protocol: found.candidate.protocol,
+      sha256: found.candidate.sha256,
+    },
+    target: found.candidate,
+  });
+  assert.equal((await f.client.status(config)).phase, 'committed');
+  assert.equal(f.client.busy(), false);
+});
 test('check uses compiled protocol and fixed absolute route; install requires exact signed confirmation', async () => {
   const f = await fixture();
   const found = await f.client.check(config);

@@ -48,6 +48,7 @@ async function setup(
               });
             return {
               schema: 1,
+              current: { build: 1, appVersion: '0.3.6', protocol, sha256: null },
               reason: reason === 'pending' ? 'available' : reason,
               candidate: ['available', 'pending'].includes(reason) ? candidate : null,
               compatible: ['available', 'pending'].includes(reason),
@@ -138,13 +139,8 @@ async function setup(
 
 async function openMaintenance(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
-  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
-  await page
-    .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '关于与更新', exact: true })
-    .click();
   page.once('dialog', (dialog) => void dialog.accept());
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await page.getByRole('menuitem', { name: '检查服务端更新', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '配套服务端更新' })).toBeVisible();
 }
 
@@ -211,22 +207,15 @@ test('settings cannot start maintenance while login is waiting for the device id
     .getByRole('navigation', { name: '设置分类' })
     .getByRole('button', { name: '关于与更新', exact: true })
     .click();
-  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toBeDisabled();
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({ checks: 0 });
 });
 
-test('protocol mismatch recovery stays in settings while the login form has no maintenance entry', async ({
-  page,
-}) => {
+test('protocol mismatch recovery opens maintenance from the login form', async ({ page }) => {
   await setup(page, 'available', 'committed', 'mismatch');
   await expect(page.getByRole('alert')).toContainText('协议不匹配');
   await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
-  await page.keyboard.press('Control+Comma');
-  await page
-    .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '关于与更新', exact: true })
-    .click();
-  await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
+  await page.getByRole('button', { name: '处理连接版本不匹配', exact: true }).click();
   await expect(page.getByRole('dialog', { name: '配套服务端更新' })).toBeVisible();
   await expect(page.getByRole('button', { name: '确认升级到 Build 2', exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
@@ -240,12 +229,7 @@ test('connected settings confirms disconnect, retains unsaved credentials, then 
 }) => {
   await setup(page, 'available', 'committed', 'connected');
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
-  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
-  await page
-    .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '关于与更新', exact: true })
-    .click();
-  const check = page.getByRole('button', { name: '检查服务端更新', exact: true });
+  const check = page.getByRole('menuitem', { name: '检查服务端更新', exact: true });
   await expect(check).toBeVisible();
   page.once('dialog', (dialog) => void dialog.dismiss());
   await check.click();
@@ -253,6 +237,7 @@ test('connected settings confirms disconnect, retains unsaved credentials, then 
     checks: 0,
     disconnected: false,
   });
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
   page.once('dialog', (dialog) => void dialog.accept());
   await check.click();
   await expect(page.getByRole('button', { name: '确认升级到 Build 2', exact: true })).toBeVisible();
@@ -290,17 +275,15 @@ test('a current build reports no upgrade without asking for installation', async
   });
 });
 
-test('disconnected maintenance is not blocked by stale session activity', async ({ page }) => {
+test('disconnecting an active session returns to a usable login without starting maintenance', async ({
+  page,
+}) => {
   await setup(page, 'available', 'committed', 'active');
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: '检查服务端更新', exact: true })).toBeDisabled();
   await page.getByRole('menuitem', { name: '断开连接', exact: true }).click();
-  await page.keyboard.press('Control+Comma');
-  await page
-    .getByRole('navigation', { name: '设置分类' })
-    .getByRole('button', { name: '关于与更新', exact: true })
-    .click();
-  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toBeEnabled();
+  await expect(page.getByRole('button', { name: '连接', exact: true })).toBeEnabled();
+  expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({ checks: 0 });
 });
 
 for (const shortcuts of [
@@ -316,7 +299,6 @@ for (const shortcuts of [
     await setup(page, 'available', 'committed', 'mismatch');
     await expect(page.getByRole('alert')).toContainText('协议不匹配');
     await page.getByRole('button', { name: '处理连接版本不匹配', exact: true }).click();
-    await page.getByRole('button', { name: '检查服务端更新', exact: true }).click();
     await expect(
       page.getByRole('button', { name: '确认升级到 Build 2', exact: true }),
     ).toBeVisible();

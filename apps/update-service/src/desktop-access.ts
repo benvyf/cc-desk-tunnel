@@ -5,6 +5,7 @@ import {
   scrypt,
   timingSafeEqual,
   createCipheriv,
+  createDecipheriv,
 } from 'node:crypto';
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -319,6 +320,25 @@ export class DesktopAccess {
       .prepare('INSERT INTO tickets VALUES(?,?,?,?)')
       .run(hash(ticket), hash(token), nodeId, now + ticketLifetime);
     return { ...node, token: ticket, expiresAt: now + ticketLifetime };
+  }
+  // Used only by the management server to reach a granted node; never returned by an access API.
+  serverConnection(token: string, nodeId: string, now = Date.now()) {
+    const session = this.session(token, now);
+    const node = this.db
+      .prepare(
+        'SELECT nodes.url,nodes.fingerprint,nodes.credential FROM nodes JOIN grants ON grants.node_id=nodes.id WHERE grants.user_id=? AND nodes.id=?',
+      )
+      .get(String(session.user_id), nodeId);
+    if (!node) throw new UpdateError(403, '未分配此工作空间。');
+    if (!node.credential) throw new UpdateError(409, '请先在管理中心配置此工作空间的服务凭据。');
+    const encrypted = Buffer.from(String(node.credential), 'base64');
+    const decipher = createDecipheriv('aes-256-gcm', this.key, encrypted.subarray(0, 12));
+    decipher.setAuthTag(encrypted.subarray(12, 28));
+    const credential = Buffer.concat([
+      decipher.update(encrypted.subarray(28)),
+      decipher.final(),
+    ]).toString('utf8');
+    return { url: String(node.url), fingerprint: String(node.fingerprint), token: credential };
   }
   validate(ticket: string, nodeId: string, renewal: boolean, now = Date.now()) {
     const row = this.db

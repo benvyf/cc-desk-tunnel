@@ -2,6 +2,75 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const { createDesktopAccess } = createRequire(import.meta.url)('../electron/desktop-access.cjs');
+
+test('an unreadable upgrade response remains uncertain, while missing routes and expired sessions are actionable', async () => {
+  let response;
+  let expired = 0;
+  const access = createDesktopAccess({
+    read: () => null,
+    write() {},
+    storage: { isEncryptionAvailable: () => false },
+    onExpired: () => expired++,
+    request: async (url) =>
+      url.endsWith('/login')
+        ? Response.json({ email: 'owner@example.com', token: 'private-session', workspaces: [] })
+        : response,
+  });
+  await access.login({ email: 'owner@example.com', password: 'test-password' });
+  for (const body of ['{', 'null']) {
+    response = new Response(body, { status: 200 });
+    await assert.rejects(
+      access.serverRequest('node', '/cc-managed/server/v1/install', {}),
+      /网络请求失败/,
+    );
+    assert.equal(expired, 0);
+  }
+  response = new Response('Not found.', { status: 404 });
+  await assert.rejects(
+    access.serverRequest('node', '/cc-managed/server/v1/check', {}),
+    /管理中心尚未启用/,
+  );
+  response = new Response('{', { status: 401 });
+  await assert.rejects(access.serverRequest('node', '/cc-managed/server/v1/status', {}));
+  assert.equal(expired, 1, 'even an unreadable 401 must expire the email session');
+  await assert.rejects(access.serverRequest('node', '/cc-managed/server/v1/status', {}), /先登录/);
+});
+
+test('server management uses the private email session, bounded routes and rejects stale results after logout', async () => {
+  const calls = [];
+  let finish;
+  const access = createDesktopAccess({
+    read: () => null,
+    write() {},
+    storage: { isEncryptionAvailable: () => false },
+    request: async (url, options) => {
+      calls.push({ url, options });
+      if (url.endsWith('/login'))
+        return Response.json({
+          email: 'owner@example.com',
+          token: 'private-session',
+          workspaces: [],
+        });
+      if (url.endsWith('/logout')) return new Response(null, { status: 204 });
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    },
+  });
+  await access.login({ email: 'owner@example.com', password: 'test-password' });
+  await assert.rejects(access.serverRequest('node', '/arbitrary', {}), /无效/);
+  const pending = access.serverRequest('node', '/cc-managed/server/v1/check', {
+    clientProtocol: 22,
+  });
+  assert.equal(calls.at(-1).url, 'https://api.ghostapi.org/cc-access/v1/server/check');
+  assert.equal(calls.at(-1).options.headers.authorization, 'Bearer private-session');
+  assert.deepEqual(JSON.parse(calls.at(-1).options.body), { nodeId: 'node', clientProtocol: 22 });
+  const rejected = assert.rejects(pending, /失效/);
+  await access.logout();
+  finish(Response.json({ schema: 1 }));
+  await rejected;
+  await assert.rejects(access.serverRequest('node', '/cc-managed/server/v1/status'), /先登录/);
+});
 test('main process stores encrypted session only, restores and renews tickets, logs out', async () => {
   let saved,
     calls = [];
