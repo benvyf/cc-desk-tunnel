@@ -1,0 +1,30 @@
+{
+  "date": "2026-10-28",
+  "feature": "Email-only client sign-in",
+  "windowsBuild": 15,
+  "protocol": 22,
+  "packageStatus": "pending",
+  "validation": {
+    "typescript": "passed",
+    "repositoryCheck": "588 indexed files passed before new documentation",
+    "unitSuite": {
+      "total": 578,
+      "passed": 542,
+      "skipped": 35,
+      "failed": 1,
+      "failure": "Windows managed updater fixture teardown: temporary directory EPERM",
+      "isolatedRerun": "same test passed, no source change"
+    },
+    "uiTests": 31,
+    "uiResult": "passed",
+    "themes": ["light", "dark"],
+    "viewportWidths": [1240, 390, 320],
+    "fontSizes": [14, 20]
+  },
+  "deployment": {
+    "managementServiceChanged": false,
+    "publicUpdateIndexesChanged": false,
+    "ubuntuEmailOnlyModeVerified": false,
+    "productionModelRequests": 0
+  }
+}

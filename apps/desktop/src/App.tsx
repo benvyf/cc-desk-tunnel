@@ -128,6 +128,7 @@ export function App({
 }: { browser?: { selfSigned: boolean; expired: () => void; logout: () => Promise<void> } } = {}) {
   const host = hostCapabilities(!!browser);
   const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
+  const emailOnly = !!window.desktop && !window.desktop.dev;
   const [client] = useState(() => new ProxyClient());
   useEffect(() => {
     if (!browser) return;
@@ -158,8 +159,8 @@ export function App({
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const managedUpdate = useManagedUpdate();
   const [form, setForm] = useState<ConnectionForm>(() => ({
-    authMethod: emailLoginAvailable ? 'email' : 'manual',
-    url: localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws',
+    authMethod: emailOnly || emailLoginAvailable ? 'email' : 'manual',
+    url: emailOnly ? '' : (localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws'),
     token: '',
     fingerprint: '',
     mode: window.desktop ? 'remote' : 'local',
@@ -484,8 +485,9 @@ export function App({
   useEffect(() => {
     if (loaded.current) return;
     loaded.current = true;
+    if (emailOnly) localStorage.removeItem('proxy-url');
     void Promise.all([
-      window.desktop?.loadLogin(),
+      emailOnly ? null : window.desktop?.loadLogin(),
       emailLoginAvailable ? window.desktop!.access.load() : null,
     ]).then(([saved, account]) => {
       if (account) {
@@ -494,7 +496,7 @@ export function App({
         if (restored.autoLogin) void login(restored);
         return;
       }
-      if (!saved) return;
+      if (emailOnly || !saved) return;
       // The installed client has no simulation mode, whatever an earlier version saved.
       const restored = {
         ...saved,
@@ -627,6 +629,8 @@ export function App({
   async function login(form: ConnectionForm) {
     setError(null);
     try {
+      if (emailOnly && !emailLoginAvailable)
+        throw new Error('邮箱登录组件不可用，请重新安装最新客户端。');
       if (form.authMethod === 'email' && window.desktop?.access) {
         setProxyConnecting(true);
         const account = await window.desktop.access.login({
@@ -712,10 +716,10 @@ export function App({
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
   }
-  function leaveEmailLogin(method: 'email' | 'manual') {
+  function leaveEmailLogin() {
     disconnect();
     setError(null);
-    changeForm({ authMethod: method, password: '', token: '' });
+    changeForm({ authMethod: 'email', password: '', token: '' });
   }
   function openServerUpgrade() {
     if (
@@ -1558,7 +1562,7 @@ export function App({
             />
           </Modal>
         )}
-        {form.authMethod === 'email' && emailLoginAvailable ? (
+        {emailOnly || (form.authMethod === 'email' && emailLoginAvailable) ? (
           <EmailLoginPage
             form={form}
             change={changeForm}
@@ -1567,12 +1571,10 @@ export function App({
             error={currentError}
             workspaces={loginWorkspaces}
             choose={(id) => void connectWorkspace(id)}
-            back={() => leaveEmailLogin('email')}
-            manual={() => leaveEmailLogin('manual')}
+            back={leaveEmailLogin}
           />
         ) : (
           <LoginPage
-            emailLogin={emailLoginAvailable ? () => changeForm({ authMethod: 'email' }) : undefined}
             recover={
               state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
                 ? () => setLocalSettings('about')

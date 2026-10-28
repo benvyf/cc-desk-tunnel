@@ -519,8 +519,10 @@ require('./managed-server-ipc.cjs').registerManagedServerUpdates(
   },
   (url) => shell.openExternal(url),
 );
-// The service token is kept only when the user asks, encrypted for the current account of the system (DPAPI on
-// Windows, the login keychain on macOS).
+// Installed clients only use the management center. Drop legacy connection credentials in this profile,
+// preserving the email session, device identity, drafts and all unrelated settings.
+if (app.isPackaged && readSettings().login) writeSettings({ login: undefined });
+// Email sessions are encrypted for the current OS account; passwords are never saved.
 const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   request: (url, options) => net.fetch(url, options),
   read: () => readSettings().desktopAccess,
@@ -554,6 +556,7 @@ handle('access:ticket', async (_event, nodeId) => {
 });
 handle('access:logout', () => desktopAccess.logout());
 handle('login:load', () => {
+  if (app.isPackaged) return null;
   const { login } = readSettings();
   if (!login) return null;
   let token = '';
@@ -571,6 +574,7 @@ handle('login:load', () => {
   };
 });
 handle('login:save', (_event, login) => {
+  if (app.isPackaged) return;
   const remember = login?.remember === true && safeStorage.isEncryptionAvailable();
   writeSettings({
     login: remember

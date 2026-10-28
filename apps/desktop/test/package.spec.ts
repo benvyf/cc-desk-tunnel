@@ -43,6 +43,19 @@ test('packaged exe runs without development dependencies and reclaims bundled re
   const project = join(directory, '项目 fixture');
   mkdirSync(join(project, '.git'), { recursive: true });
   writeFileSync(join(project, '.git/HEAD'), 'ref: refs/heads/package-smoke\n');
+  const profile = join(directory, 'profile');
+  mkdirSync(profile, { recursive: true });
+  writeFileSync(
+    join(profile, 'settings.json'),
+    JSON.stringify({
+      login: {
+        url: 'wss://legacy.example/ws',
+        token: 'invalid-legacy-ciphertext',
+        autoLogin: true,
+      },
+      smokePreserved: 'keep-unrelated-settings',
+    }),
+  );
   const env = Object.fromEntries(
     Object.entries(process.env).filter(
       (entry): entry is [string, string] =>
@@ -67,10 +80,26 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     await expect(page.getByRole('heading', { name: '登录 CC SPACE', exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.desktop!.access.load())).toBeNull();
     expect(await page.evaluate(() => typeof window.desktop!.access.onExpired)).toBe('function');
-    await page.getByRole('button', { name: '使用服务地址连接' }).click();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
-    await page.getByText('高级连接选项', { exact: true }).click();
-    await expect(page.getByLabel('服务证书指纹', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '使用服务地址连接' })).toHaveCount(0);
+    await expect(page.getByLabel('服务地址', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('服务凭据', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('服务证书指纹', { exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => window.desktop!.loadLogin())).toBeNull();
+    await page.evaluate(() =>
+      window.desktop!.saveLogin({
+        url: 'wss://legacy.example/ws',
+        token: 'legacy-token',
+        fingerprint: '',
+        mode: 'remote',
+        remember: true,
+        autoLogin: true,
+      }),
+    );
+    const settings = JSON.parse(readFileSync(join(profile, 'settings.json'), 'utf8'));
+    expect(settings.login).toBeUndefined();
+    expect(settings.smokePreserved).toBe('keep-unrelated-settings');
     expect(await application.evaluate(({ app }) => app.isPackaged)).toBe(true);
     expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
     await expect(page).toHaveTitle('CC SPACE');
@@ -113,12 +142,11 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     ).toBe(1);
     if (process.env.NATIVE_TEST_CONFIG) {
       const connection = JSON.parse(readFileSync(resolve(process.env.NATIVE_TEST_CONFIG), 'utf8'));
-      await page.getByLabel('服务地址', { exact: true }).fill(connection.url);
-      if (await page.getByLabel('服务证书指纹', { exact: true }).isHidden())
-        await page.getByText('高级连接选项', { exact: true }).click();
-      await page.getByLabel('服务证书指纹', { exact: true }).fill(connection.fingerprint ?? '');
-      await page.getByLabel('服务凭据', { exact: true }).fill(connection.token);
-      await page.getByRole('button', { name: '连接', exact: true }).click();
+      if (!connection.email || !connection.password)
+        throw new Error('Native package test requires an email account fixture.');
+      await page.getByLabel('邮箱', { exact: true }).fill(connection.email);
+      await page.getByLabel('密码', { exact: true }).fill(connection.password);
+      await page.getByRole('button', { name: '登录', exact: true }).click();
       await expect(page.locator('.connection-status')).toContainText('已连接', { timeout: 45000 });
       const components = await componentProcesses(resources);
 
