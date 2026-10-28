@@ -13,6 +13,7 @@ function createDesktopAccess({
   let session = null;
   let generation = 0;
   let checking = false;
+  let signingIn = 0;
   function persist(remember, autoLogin) {
     const saved =
       remember && storage.isEncryptionAvailable() && session
@@ -85,29 +86,34 @@ function createDesktopAccess({
       )
         throw new Error('请输入邮箱和密码。');
       const turn = ++generation;
-      const email = input.email.trim().toLowerCase();
-      let next;
-      if (!input.password && session?.email === email) {
-        const current = session;
-        const value = await api('workspaces', undefined, current.token).catch((error) => {
-          clearExpired(error, current, turn);
-          throw error;
-        });
-        next = { ...current, workspaces: value.workspaces };
-      } else {
-        next = await api('login', {
-          email,
-          password: input.password,
-          remember: !!input.remember,
-          ...(deviceId ? { deviceId: deviceId() } : {}),
-        });
+      signingIn++;
+      try {
+        const email = input.email.trim().toLowerCase();
+        let next;
+        if (!input.password && session?.email === email) {
+          const current = session;
+          const value = await api('workspaces', undefined, current.token).catch((error) => {
+            clearExpired(error, current, turn);
+            throw error;
+          });
+          next = { ...current, workspaces: value.workspaces };
+        } else {
+          next = await api('login', {
+            email,
+            password: input.password,
+            remember: !!input.remember,
+            ...(deviceId ? { deviceId: deviceId() } : {}),
+          });
+        }
+        if (turn !== generation) throw new Error('登录已取消。');
+        if (!next || typeof next.token !== 'string' || !Array.isArray(next.workspaces))
+          throw new Error('管理中心返回了无效登录信息。');
+        session = { email: next.email, token: next.token };
+        persist(!!input.remember, !!input.autoLogin);
+        return { email: next.email, workspaces: next.workspaces };
+      } finally {
+        signingIn--;
       }
-      if (turn !== generation) throw new Error('登录已取消。');
-      if (!next || typeof next.token !== 'string' || !Array.isArray(next.workspaces))
-        throw new Error('管理中心返回了无效登录信息。');
-      session = { email: next.email, token: next.token };
-      persist(!!input.remember, !!input.autoLogin);
-      return { email: next.email, workspaces: next.workspaces };
     },
     async ticket(nodeId) {
       if (!session || typeof nodeId !== 'string') throw new Error('请先登录邮箱账号。');
@@ -133,7 +139,7 @@ function createDesktopAccess({
       return { url: url.href, fingerprint: value.fingerprint, token: value.token };
     },
     async check() {
-      if (!session || checking) return;
+      if (!session || checking || signingIn) return;
       checking = true;
       const current = session,
         turn = generation;

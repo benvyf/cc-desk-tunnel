@@ -250,3 +250,85 @@ test('background authorization checks clear revoked sessions but tolerate outage
   assert.equal(expired.length, 1);
   await assert.rejects(access.ticket('node'), /先登录/);
 });
+
+test('a background check started during password login cannot cancel the new login', async () => {
+  let saved;
+  let delayed = false;
+  let completeLogin;
+  let checks = 0;
+  const expired = [];
+  const access = createDesktopAccess({
+    read: () => saved,
+    write: (value) => {
+      saved = value;
+    },
+    storage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(text),
+      decryptString: (bytes) => bytes.toString(),
+    },
+    onExpired: (message) => expired.push(message),
+    request: async (url) => {
+      if (url.endsWith('/login')) {
+        if (delayed)
+          return new Promise((resolve) => {
+            completeLogin = resolve;
+          });
+        return Response.json({ email: 'me@example.com', token: 'old-session', workspaces: [] });
+      }
+      checks++;
+      return Response.json({ error: '旧登录已失效' }, { status: 401 });
+    },
+  });
+  const input = { email: 'me@example.com', password: 'password', remember: true };
+  await access.login(input);
+  delayed = true;
+  const pending = access.login(input);
+  const result = pending.then(
+    (value) => ({ value }),
+    (error) => ({ error }),
+  );
+  await access.check();
+  completeLogin(Response.json({ email: input.email, token: 'new-session', workspaces: [] }));
+  assert.ok('value' in (await result), 'the new login must succeed');
+  assert.equal(checks, 0, 'do not check the old session while a newer login is pending');
+  assert.deepEqual(expired, []);
+  assert.equal(Buffer.from(saved.token, 'base64').toString(), 'new-session');
+  await access.check();
+  assert.equal(checks, 1, 'checks resume after login');
+  assert.equal(saved, null);
+});
+
+test('overlapping login failures cannot resume checks while a newer login is pending', async () => {
+  let delayed = false;
+  const completions = [];
+  let checks = 0;
+  const access = createDesktopAccess({
+    read: () => null,
+    write() {},
+    storage: { isEncryptionAvailable: () => false },
+    request: async (url) => {
+      if (url.endsWith('/login')) {
+        if (delayed) return new Promise((resolve) => completions.push(resolve));
+        return Response.json({ email: 'me@example.com', token: 'old-session', workspaces: [] });
+      }
+      checks++;
+      return Response.json({ error: '登录已失效' }, { status: 401 });
+    },
+  });
+  const input = { email: 'me@example.com', password: 'password' };
+  await access.login(input);
+  delayed = true;
+  const first = access.login(input);
+  const rejected = assert.rejects(first, /密码错误/);
+  const second = access.login(input);
+  completions[0](Response.json({ error: '密码错误' }, { status: 401 }));
+  await rejected;
+  await access.check();
+  assert.equal(checks, 0);
+  completions[1](Response.json({ email: input.email, token: 'new-session', workspaces: [] }));
+  await second;
+  await access.check();
+  assert.equal(checks, 1, 'the last login completion restores checks');
+  await assert.rejects(access.ticket('node'), /先登录/);
+});
