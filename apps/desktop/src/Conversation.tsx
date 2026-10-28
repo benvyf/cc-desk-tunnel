@@ -17,7 +17,9 @@ import {
   ChevronRight,
   FileCode,
   FileText,
+  FoldVertical,
   Globe,
+  Image as ImageIcon,
   LoaderCircle,
   MessageSquare,
   Pencil,
@@ -38,7 +40,7 @@ import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import { conversation } from './transcript.ts';
 import { usePrefs } from './prefs.ts';
 import ThinkingAccordion from './ThinkingAccordion.tsx';
-import type { TranscriptItem, Turn, Work } from './transcript.ts';
+import type { Compact, Notice, TranscriptItem, Turn, Work } from './transcript.ts';
 import { CopyButton, copyText } from './copy.tsx';
 import { messageTime } from './messageTime.ts';
 import TurnStats from './TurnStats.tsx';
@@ -48,6 +50,11 @@ import type { MenuItem, MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
 import AttachmentTiles from './AttachmentTiles.tsx';
 import { splitAttachmentMessage } from './attachments.ts';
+import { LinkPlace, linkTarget } from './links.ts';
+import type { Link } from './links.ts';
+import { followLink, linkMenu } from './linkActions.ts';
+import { pictureUrl, toolPictures } from './pictures.ts';
+import { Picture } from './Picture.tsx';
 
 const RichText = lazy(() => import('./RichText.tsx'));
 const Rich = ({ text, streaming = false }: { text: string; streaming?: boolean }) => (
@@ -67,6 +74,11 @@ type Live = {
   // a second answer.
   answered: (tool: Tool) => boolean;
   reply: (tool: Tool, allowed: boolean, answers?: Record<string, string>) => void;
+  // The foreground task a running call waits on, while this window may act on it: 'sent' once it has, until
+  // the call returns.
+  taskControl: (tool: Tool) => 'ready' | 'sent' | undefined;
+  endTool: (tool: Tool) => void;
+  backgroundTool: (tool: Tool) => void;
   // Absent while a fork cannot be made.
   edit?: (item: Text) => void;
 };
@@ -89,7 +101,8 @@ function Fold({
 }: {
   className: string;
   forced?: boolean;
-  summary: React.ReactNode;
+  // Given whether the fold is open, for a heading that shows what the open fold would show twice.
+  summary: React.ReactNode | ((shown: boolean) => React.ReactNode);
   children: () => React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -104,17 +117,94 @@ function Fold({
         }}
       >
         <ChevronRight className="fold-chevron" />
-        {summary}
+        {typeof summary === 'function' ? summary(shown) : summary}
       </summary>
       {shown && children()}
     </details>
   );
 }
 
+// What a link leads to, beside it: shown while the pointer rests on the link, and after a click with what came of
+// it (a note), so that why a path cannot be opened is read where it was clicked.
+type LinkCard = { top: number; left: number; above: boolean; link: Link; note?: string };
+function LinkCardView({ card }: { card: LinkCard }) {
+  const { link, note } = card;
+  const target =
+    link.kind === 'web'
+      ? link.url
+      : link.kind === 'path' && link.line
+        ? `${link.path}:${link.line}`
+        : link.path;
+  const hint =
+    link.kind === 'web'
+      ? '点击在浏览器中打开 · 右键可复制地址'
+      : link.kind === 'path'
+        ? '点击打开 · 右键查看更多操作'
+        : `${link.reason}右键可复制路径。`;
+  return (
+    <div
+      className={`link-card${card.above ? ' above' : ''}`}
+      role="tooltip"
+      style={{ top: card.top, left: card.left }}
+    >
+      <span className="link-card-target">{target}</span>
+      {note ? (
+        <strong>{note}</strong>
+      ) : (
+        <small className={link.kind === 'elsewhere' ? 'link-card-warn' : undefined}>{hint}</small>
+      )}
+    </div>
+  );
+}
+
+// What may be done with the task a running call waits on, in the call's line or in the heading of its shut group.
+function TaskActions({
+  tool,
+  control,
+  live,
+}: {
+  tool: Tool;
+  control: 'ready' | 'sent';
+  live: Live;
+}) {
+  return (
+    <span className="tool-task-actions">
+      <button
+        type="button"
+        className="button"
+        disabled={control === 'sent' || live.busy}
+        title="命令接着运行，Claude 不再等它，先做别的；命令结束后 Claude 会收到结果"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          live.backgroundTool(tool);
+        }}
+      >
+        转后台
+      </button>
+      <button
+        type="button"
+        className="button"
+        disabled={control === 'sent' || live.busy}
+        title="只结束这一条，这一轮不停止，Claude 会接着处理"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          live.endTool(tool);
+        }}
+      >
+        终止
+      </button>
+    </span>
+  );
+}
+
 function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Live }) {
   const { category, verb, subject, added, removed, running, failed } = describe(tool, active);
   const Icon = icons[category];
+  const pictures = useMemo(() => (tool.output ? toolPictures(tool.output) : null), [tool.output]);
   const approval = live.canApprove(tool);
+  const control = live.taskControl(tool);
   // A question Claude asks is answered, not allowed or denied.
   const questions = tool.name === 'AskUserQuestion' ? questionsOf(tool.input) : null;
   if (approval && questions)
@@ -137,6 +227,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
           <span className="tool-subject" title={subject}>
             {subject}
           </span>
+          {pictures && <ImageIcon className="tool-picture-mark" aria-label="含图片" />}
           {(added > 0 || removed > 0) && (
             <span className="tool-diff">
               <ins>+{added}</ins>
@@ -149,6 +240,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
               ? duration(tool.at, tool.endedAt)
               : running && duration(tool.at, live.now)}
           </span>
+          {control && <TaskActions tool={tool} control={control} live={live} />}
         </span>
       }
     >
@@ -163,16 +255,34 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
               {tool.liveOutput}
             </pre>
           )}
-          {tool.output && (
+          {pictures ? (
             <>
-              <CopyButton text={tool.output} label="复制工具输出" />
-              <pre className="tool-output" data-search-content>
-                {tool.exitCode !== null &&
-                  tool.exitCode !== undefined &&
-                  `退出码 ${tool.exitCode}\n`}
-                {tool.output}
-              </pre>
+              {pictures.text && (
+                <>
+                  <CopyButton text={pictures.text} label="复制工具输出" />
+                  <pre className="tool-output" data-search-content>
+                    {pictures.text}
+                  </pre>
+                </>
+              )}
+              <div className="tool-pictures">
+                {pictures.pictures.map((picture, index) => (
+                  <Picture key={index} src={pictureUrl(picture)} alt={`图片 ${index + 1}`} />
+                ))}
+              </div>
             </>
+          ) : (
+            tool.output && (
+              <>
+                <CopyButton text={tool.output} label="复制工具输出" />
+                <pre className="tool-output" data-search-content>
+                  {tool.exitCode !== null &&
+                    tool.exitCode !== undefined &&
+                    `退出码 ${tool.exitCode}\n`}
+                  {tool.output}
+                </pre>
+              </>
+            )
           )}
           {approval && (
             <div className="approval-actions">
@@ -253,17 +363,24 @@ function WorkGroup({
   until?: string;
 }) {
   const { label, waiting, running, started, ended } = summarize(work, active, latest);
+  // The one call of the group waited on in the foreground can be acted on without opening it; several are acted on
+  // in their own lines.
+  const controlled = work.items.filter(
+    (item): item is Tool => item.kind === 'tool' && !!live.taskControl(item),
+  );
+  const control = controlled.length === 1 ? live.taskControl(controlled[0]) : undefined;
   return (
     <Fold
       className="work"
       forced={waiting}
-      summary={
+      summary={(shown) => (
         <span className="work-heading">
           {running && <LoaderCircle className="spinning" />}
           <span>{label}</span>
           {!waiting && <small>{duration(started, ended && !running ? ended : live.now)}</small>}
+          {control && !shown && <TaskActions tool={controlled[0]} control={control} live={live} />}
         </span>
-      }
+      )}
     >
       {() => <WorkItems work={work} active={active} live={live} until={until} />}
     </Fold>
@@ -386,6 +503,36 @@ function Message({
   );
 }
 
+// A compaction of the context, in its place among the steps: under way with its timer, then what it compacted.
+function CompactMark({ item, active, now }: { item: Compact; active: boolean; now: number }) {
+  const running = active && !item.endedAt;
+  const timed = running || (item.endedAt && item.endedAt !== item.at);
+  return (
+    <div className={`compact-mark${running ? ' running' : ''}`} role="status">
+      <span>
+        {running ? <LoaderCircle className="spinning" /> : <FoldVertical />}
+        {running
+          ? '正在压缩上下文'
+          : !item.endedAt
+            ? '上下文压缩未完成'
+            : item.trigger === 'auto'
+              ? '上下文已自动压缩'
+              : '上下文已压缩'}
+        {item.previousTokens != null && ` · 压缩前 ${item.previousTokens.toLocaleString()} tokens`}
+        {timed && ` · ${duration(item.at, item.endedAt ?? now)}`}
+      </span>
+    </div>
+  );
+}
+
+function NoticeLine({ item }: { item: Notice }) {
+  const error = item.kind === 'notice' && item.error;
+  return <RunNotice text={item.text} error={error} />;
+}
+
+// How long a turn took, without the time it stood stopped before it was taken up again.
+const spent = (turn: Turn) => duration(turn.startedAt, Date.parse(turn.endedAt!) - turn.pausedMs);
+
 // A question put in while the run goes on closes the turn before it, but the run has not finished: that turn and the
 // ones joined to it stay as they were until it has.
 function heldOpen(turns: Turn[], index: number) {
@@ -410,11 +557,17 @@ function TurnView({
   const active = !turn.endedAt;
   const expanded = usePrefs().view.mode === 'expanded';
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
+  // A turn of nothing but a compaction, as /compact makes, has nothing to fold away.
+  const folds = turn.steps.some((step) => step.kind === 'work' || step.kind === 'assistant');
   const steps = () =>
     turn.steps.map((step, index) => {
       const next = turn.steps[index + 1] ?? turn.answer;
       const until = (next?.kind === 'work' ? next.items[0].at : next?.at) ?? turn.endedAt;
-      return step.kind === 'work' ? (
+      return step.kind === 'compact' ? (
+        <CompactMark key={step.id} item={step} active={active} now={live.now} />
+      ) : step.kind === 'notice' || step.kind === 'note' ? (
+        <NoticeLine key={step.id} item={step} />
+      ) : step.kind === 'work' ? (
         expanded ? (
           <div key={step.id} className="work-flat">
             <WorkItems work={step} active={active} live={live} until={until} preview />
@@ -435,21 +588,16 @@ function TurnView({
     });
   return (
     <>
-      {turn.question?.continued ? (
-        <div className="run-notice" role="status">
-          {turn.question.text}
-        </div>
-      ) : (
-        turn.question && (
-          <Message
-            item={turn.question}
-            native={native}
-            edit={turn.joined ? undefined : live.edit}
-            joined={turn.joined}
-          />
-        )
+      {/* "Continue" without the turn it takes up, which is on an earlier page, shows nothing for itself. */}
+      {turn.question && !turn.question.continued && (
+        <Message
+          item={turn.question}
+          native={native}
+          edit={turn.joined ? undefined : live.edit}
+          joined={turn.joined}
+        />
       )}
-      {active || held || expanded
+      {active || held || expanded || !folds
         ? steps()
         : turn.steps.length > 0 && (
             <Fold
@@ -458,7 +606,7 @@ function TurnView({
                 <span className={turn.outcome}>
                   {turn.outcome === 'cancelled' && '已停止 · '}
                   {turn.outcome === 'failed' && '处理失败 · '}
-                  用时 {duration(turn.startedAt, turn.endedAt!)}
+                  用时 {spent(turn)}
                   {turn.tools > 0 && ` · ${turn.tools} 步`}
                   {notes > 0 && ` · ${notes} 条说明`}
                 </span>
@@ -486,7 +634,7 @@ function TurnView({
         )
       )}
       {turn.notices.map((item) => (
-        <RunNotice key={item.id} text={item.text} error={item.error} />
+        <NoticeLine key={item.id} item={item} />
       ))}
     </>
   );
@@ -506,11 +654,15 @@ export default function Conversation({
   loadEarlier,
   replyApproval,
   stopTask,
+  backgroundTask,
   stop,
   edit,
   findRequest,
+  here,
 }: {
   session: Session | undefined;
+  // This window can open the files of the session's project: a desktop on the computer they are on.
+  here: boolean;
   events: SessionEvent[];
   history: HistoryState | undefined;
   connected: boolean;
@@ -522,6 +674,8 @@ export default function Conversation({
   findRequest: number;
   // Ends one background task of the run, or the run with all of them.
   stopTask: (taskId: string) => void;
+  // Sends the foreground task a call waits on to the background.
+  backgroundTask: (toolId: string) => void;
   stop: () => void;
   replyApproval: (
     runId: string,
@@ -536,10 +690,13 @@ export default function Conversation({
   progress: Record<string, TaskProgress> | undefined;
 }) {
   const turns = useMemo(() => conversation(events), [events]);
-  const toolAtWork = !!turns
-    .at(-1)
-    ?.steps.flatMap((step) => (step.kind === 'work' ? step.items : []))
-    .some((item) => item.kind === 'tool' && item.state === 'running');
+  // A compaction under way counts its time in its own line, as a tool does.
+  const steps = turns.at(-1)?.steps ?? [];
+  const toolAtWork =
+    steps.some((step) => step.kind === 'compact' && !step.endedAt) ||
+    steps
+      .flatMap((step) => (step.kind === 'work' ? step.items : []))
+      .some((item) => item.kind === 'tool' && item.state === 'running');
   // A task has been waited for since the run first listed it.
   const listedAt = (taskId: string) =>
     Date.parse(
@@ -561,9 +718,34 @@ export default function Conversation({
   const [query, setQuery] = useState('');
   const [loadError, setLoadError] = useState('');
   const [copyStatus, setCopyStatus] = useState('');
-  const [contextMenu, setContextMenu] = useState<(MenuPosition & { items: MenuItem[] }) | null>(
-    null,
+  const [contextMenu, setContextMenu] = useState<
+    (MenuPosition & { heading?: string; items: MenuItem[] }) | null
+  >(null);
+  // Only the desktop opens files; a page in a browser may still count as on the computer for its runs.
+  const place = useMemo(
+    () =>
+      session
+        ? {
+            projectPath: session.projectPath,
+            here: here && !!window.desktop,
+            browser: !window.desktop,
+          }
+        : null,
+    [session?.projectPath, here],
   );
+  const [linkCard, setLinkCard] = useState<LinkCard | null>(null);
+  const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const showLink = (element: Element, link: Link, note?: string) => {
+    const box = element.getBoundingClientRect();
+    const above = box.bottom + 110 > innerHeight;
+    setLinkCard({
+      top: above ? box.top - 6 : box.bottom + 6,
+      left: Math.max(8, Math.min(box.left, innerWidth - 368)),
+      above,
+      link,
+      note,
+    });
+  };
   const transcriptRoot = useRef<HTMLDivElement>(null);
   const lastFindRequest = useRef(findRequest);
   const searching = findOpen && query.length > 0;
@@ -577,10 +759,18 @@ export default function Conversation({
     setLoadError('');
     setContextMenu(null);
     setCopyStatus('');
+    setLinkCard(null);
   }, [session?.id]);
+  // What came of a click stays a while, then goes.
+  useEffect(() => {
+    if (!linkCard?.note) return;
+    const timer = setTimeout(() => setLinkCard(null), 4000);
+    return () => clearTimeout(timer);
+  }, [linkCard]);
   useEffect(() => {
     if (!copyStatus) return;
-    const timer = setTimeout(() => setCopyStatus(''), 2000);
+    // Longer words, such as why a link did not open, stay longer.
+    const timer = setTimeout(() => setCopyStatus(''), Math.max(2000, copyStatus.length * 150));
     return () => clearTimeout(timer);
   }, [copyStatus]);
   useEffect(() => {
@@ -618,6 +808,20 @@ export default function Conversation({
   // ref stops a second press before the page has drawn the first; the state greys the buttons out.
   const answering = useRef(new Set<string>());
   const [answered, setAnswered] = useState<ReadonlySet<string>>(new Set());
+  // A press on a task's buttons holds them until the call returns; should nothing come of it, they are offered again.
+  const [taskSent, setTaskSent] = useState<ReadonlySet<string>>(new Set());
+  const sendTask = (toolId: string) => {
+    setTaskSent((value) => new Set(value).add(toolId));
+    setTimeout(
+      () =>
+        setTaskSent((value) => {
+          const rest = new Set(value);
+          rest.delete(toolId);
+          return rest;
+        }),
+      5000,
+    );
+  };
   const live: Live = {
     now,
     busy,
@@ -644,6 +848,26 @@ export default function Conversation({
       });
     },
     edit: edit && !running ? (item) => edit(item.id, item.text) : undefined,
+    taskControl: (tool) =>
+      connected &&
+      ownsRun &&
+      session?.activeRun?.id === tool.runId &&
+      tool.taskId &&
+      !tool.endedAt &&
+      // A command over in a moment is not worth buttons that would flash.
+      now - Date.parse(tool.at) >= 3000
+        ? taskSent.has(tool.id)
+          ? 'sent'
+          : 'ready'
+        : undefined,
+    endTool: (tool) => {
+      sendTask(tool.id);
+      stopTask(tool.taskId!);
+    },
+    backgroundTool: (tool) => {
+      sendTask(tool.id);
+      backgroundTask(tool.id);
+    },
   };
   const scroll = useRef<HTMLDivElement>(null);
   // The view follows new output until the reader moves up from the end, and again once they come back down to it.
@@ -752,33 +976,73 @@ export default function Conversation({
               () => setCopyStatus('复制失败，请重试'),
             );
           };
-          setContextMenu({
-            x: event.clientX,
-            y: event.clientY,
-            items: [
-              { label: '复制选中文字', disabled: !selection, run: () => copy(selection) },
-              ...(block
-                ? [{ label: '复制此代码块', run: () => copy(block.textContent ?? '') }]
-                : []),
-              ...(message
-                ? [{ label: '复制整条消息', run: () => copy(message.dataset.copyText ?? '') }]
-                : []),
-              {
-                label: '全选对话文字',
-                run: () => {
-                  if (!transcriptRoot.current) return;
-                  const range = document.createRange();
-                  range.selectNodeContents(transcriptRoot.current);
-                  const selected = window.getSelection();
-                  selected?.removeAllRanges();
-                  selected?.addRange(range);
-                },
+          const items: MenuItem[] = [
+            { label: '复制选中文字', disabled: !selection, run: () => copy(selection) },
+            ...(block ? [{ label: '复制此代码块', run: () => copy(block.textContent ?? '') }] : []),
+            ...(message
+              ? [{ label: '复制整条消息', run: () => copy(message.dataset.copyText ?? '') }]
+              : []),
+            {
+              label: '全选对话文字',
+              run: () => {
+                if (!transcriptRoot.current) return;
+                const range = document.createRange();
+                range.selectNodeContents(transcriptRoot.current);
+                const selected = window.getSelection();
+                selected?.removeAllRanges();
+                selected?.addRange(range);
               },
-              { label: '查找对话内容', separated: true, run: openFind },
-            ],
-          });
+            },
+            { label: '查找对话内容', separated: true, run: openFind },
+          ];
+          const { clientX: x, clientY: y } = event;
+          const element = target.closest<HTMLElement>('[data-link]');
+          const link = element?.dataset.link ? linkTarget(element.dataset.link, place) : null;
+          clearTimeout(resting.current);
+          setLinkCard(null);
+          if (!element || !link) {
+            setContextMenu({ x, y, items });
+            return;
+          }
+          // A link's own choices come first; what is done to the text follows.
+          void linkMenu(link, (note) => showLink(element, link, note), copy).then(
+            (menu) =>
+              setContextMenu({
+                x,
+                y,
+                heading: menu.heading,
+                items: [...menu.items, { ...items[0], separated: true }, ...items.slice(1)],
+              }),
+            () => setContextMenu({ x, y, items }),
+          );
+        }}
+        onClick={(event) => {
+          // The window opens no page itself: a link is followed here, where the session's project is known.
+          const anchor = (event.target as HTMLElement).closest<HTMLElement>('a[href]');
+          if (!anchor || !transcriptRoot.current?.contains(anchor)) return;
+          event.preventDefault();
+          const link = anchor.dataset.link ? linkTarget(anchor.dataset.link, place) : null;
+          clearTimeout(resting.current);
+          if (link) void followLink(link, (note) => showLink(anchor, link, note));
+        }}
+        onPointerOver={(event) => {
+          const anchor = (event.target as HTMLElement).closest<HTMLElement>('a[data-link]');
+          if (!anchor || linkCard?.note) return;
+          clearTimeout(resting.current);
+          resting.current = setTimeout(() => {
+            const link = linkTarget(anchor.dataset.link!, place);
+            if (link) showLink(anchor, link);
+          }, 350);
+        }}
+        onPointerOut={(event) => {
+          const anchor = (event.target as HTMLElement).closest('a[data-link]');
+          if (!anchor || anchor.contains(event.relatedTarget as Node | null)) return;
+          clearTimeout(resting.current);
+          setLinkCard((card) => (card?.note ? card : null));
         }}
         onScroll={() => {
+          // Only when one is shown: scrolling must not draw the conversation again.
+          if (linkCard) setLinkCard(null);
           if (!scroll.current) return;
           const top = scroll.current.scrollTop;
           const end = fromEnd(scroll.current) < 40;
@@ -870,16 +1134,18 @@ export default function Conversation({
                 <span className="empty-project">{session.projectPath}</span>
               </div>
             )}
-            {turns.map((turn, index) => (
-              <TurnView
-                key={turn.id}
-                turn={turn}
-                native={native}
-                live={live}
-                latest={index === turns.length - 1}
-                held={heldOpen(turns, index)}
-              />
-            ))}
+            <LinkPlace.Provider value={place}>
+              {turns.map((turn, index) => (
+                <TurnView
+                  key={turn.id}
+                  turn={turn}
+                  native={native}
+                  live={live}
+                  latest={index === turns.length - 1}
+                  held={heldOpen(turns, index)}
+                />
+              ))}
+            </LinkPlace.Provider>
             {session.activeRun && background && (
               <div className="background-tasks">
                 <div className="run-indicator" role="status">
@@ -970,6 +1236,7 @@ export default function Conversation({
           <Menu label="对话文字操作" {...contextMenu} onClose={() => setContextMenu(null)} />
         )}
       </Presence>
+      {linkCard && !contextMenu && <LinkCardView card={linkCard} />}
     </SearchExpanded.Provider>
   );
 }

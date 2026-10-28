@@ -519,7 +519,8 @@ for (const theme of ['light', 'dark', 'system']) {
         }
         await page.screenshot({
           path: resolve(screenshots, `thinking-${theme}-${name}-${width}.png`),
-          animations: 'disabled',
+          // Keep live CSS animations owned by CSS; screenshot cancellation/replay can outlive a media change.
+          animations: 'allow',
         });
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
@@ -552,15 +553,19 @@ for (const theme of ['light', 'dark', 'system']) {
     await block.locator(':scope > summary').click({ position: { x: 14, y: 14 } });
     const activeColour = await capture('active');
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    expect(await block.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBe(0);
+    await expect
+      .poll(() => block.evaluate((el) => el.getAnimations({ subtree: true }).length))
+      .toBe(0);
     await expect(block.locator('.thinking-indicator > span')).toHaveCount(3);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
-    expect(
-      await block
-        .locator('.thinking-indicator > span')
-        .first()
-        .evaluate((el) => getComputedStyle(el).animationName),
-    ).not.toBe('none');
+    await expect
+      .poll(() =>
+        block
+          .locator('.thinking-indicator > span')
+          .first()
+          .evaluate((el) => getComputedStyle(el).animationName),
+      )
+      .not.toBe('none');
     if (theme === 'system') {
       await page.emulateMedia({ colorScheme: 'dark' });
       expect(await capture('active-dark')).not.toBe(activeColour);
@@ -570,6 +575,8 @@ for (const theme of ['light', 'dark', 'system']) {
     await expect(block).toHaveAttribute('open', '');
     expect(await capture('done')).not.toBe(activeColour);
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    expect(await block.evaluate((el) => el.getAnimations({ subtree: true }).length)).toBe(0);
+    await expect
+      .poll(() => block.evaluate((el) => el.getAnimations({ subtree: true }).length))
+      .toBe(0);
   });
 }

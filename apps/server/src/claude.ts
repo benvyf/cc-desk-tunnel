@@ -12,7 +12,13 @@ import type {
 import { deviceTerms } from './device-terms.ts';
 import { ClaudeStream } from './claude-stream.ts';
 import type { SshConnection } from './tunnel.ts';
-import { nativeCapabilities, nativeContextRefresh, nativeMetrics } from './native-controls.ts';
+import {
+  loginOf,
+  nativeCapabilities,
+  nativeContextRefresh,
+  nativeMetrics,
+  ObservedQuotas,
+} from './native-controls.ts';
 import type { NativeInput } from './native-input.ts';
 import { readNativeSettings } from './native-settings.ts';
 import { questionTally } from './question.ts';
@@ -72,8 +78,16 @@ export type ClaudeRun = {
   }) => void;
   // Filled in while the CLI is running, so the service can ask it for fresh account quota mid-run and end
   // one of its background tasks.
-  controls: { refresh?: () => Promise<void>; stopTask?: (taskId: string) => Promise<void> };
+  controls: {
+    refresh?: () => Promise<void>;
+    stopTask?: (taskId: string) => Promise<void>;
+    backgroundTask?: (toolId: string) => Promise<boolean>;
+  };
 };
+// The plan quota the CLI last passed on in its message stream. One account serves every session, so the reading of
+// any of them stands for all those signed in the same way, and a session that has not made a request yet shows the
+// last one known.
+const observed = new ObservedQuotas();
 // `sessionId` is the proxy's name for the session, which a scheduled task needs to continue it.
 export function remotePrompt(
   projectPath: string,
@@ -217,6 +231,7 @@ export async function runClaude(
       },
     });
     const initialized = await session.initializationResult();
+    const login = loginOf(initialized.account);
     // The commands change while the run goes on: each turn's `init` names those bound to the CLI's terminal, and
     // skills found on the way bring a new list. A change is passed on once.
     let commands = initialized.commands;
@@ -243,8 +258,11 @@ export async function runClaude(
     let quotaAt = Date.now();
     const running = session;
     run.controls.stopTask = (taskId) => running.stopTask(taskId);
+    run.controls.backgroundTask = (toolId) => running.backgroundTasks(toolId);
     run.controls.refresh = async () => {
-      const payload = await nativeMetrics(running);
+      const payload = await nativeMetrics(running, undefined, {
+        observed: observed.of(login),
+      });
       if (payload.type === 'native.metrics') metrics = payload;
       quotaAt = Date.now();
       if (!run.signal.aborted) run.emit(payload);
@@ -259,6 +277,7 @@ export async function runClaude(
     // What each background task last said of itself, and when it was passed on.
     const progress = new Map<string, { said: string; at: number }>();
     for await (const message of session) {
+      if (message.type === 'rate_limit_event') observed.observe(login, message);
       if (message.type === 'system' && message.subtype === 'init') {
         terminal = message.terminal_slash_commands ?? [];
         offer();
@@ -331,7 +350,11 @@ export async function runClaude(
         // Quota moves slowly; a long turn rereads it once a minute and the context every few seconds.
         const full = !metrics || refreshedAt - quotaAt >= 60000;
         if (full) quotaAt = refreshedAt;
-        refresh = (full ? nativeMetrics(session) : nativeContextRefresh(session, metrics!))
+        refresh = (
+          full
+            ? nativeMetrics(session, undefined, { observed: observed.of(login) })
+            : nativeContextRefresh(session, metrics!)
+        )
           .then(
             (payload) => {
               if (payload?.type !== 'native.metrics' || !payload.context || run.signal.aborted)
@@ -375,7 +398,9 @@ export async function runClaude(
         promptIds = [];
         if (!run.signal.aborted) {
           try {
-            const payload = await nativeMetrics(session, message);
+            const payload = await nativeMetrics(session, message, {
+              observed: observed.of(login),
+            });
             if (payload.type === 'native.metrics') metrics = payload;
             run.emit(payload);
           } catch {
@@ -397,6 +422,7 @@ export async function runClaude(
     clearTimeout(settle);
     run.controls.refresh = undefined;
     run.controls.stopTask = undefined;
+    run.controls.backgroundTask = undefined;
     run.input.close();
     session?.close();
     run.signal.removeEventListener('abort', stop);
@@ -476,6 +502,7 @@ export async function readNativeStatus(
       }
     })().catch(() => {});
     const initialized = await process.initializationResult();
+    const login = loginOf(initialized.account);
     return [
       nativeCapabilities(
         initialized.models,
@@ -483,7 +510,7 @@ export async function readNativeStatus(
         initialized.commands,
         options.model,
       ),
-      await nativeMetrics(process),
+      await nativeMetrics(process, undefined, { observed: observed.of(login) }),
     ];
   } finally {
     clearTimeout(timer);

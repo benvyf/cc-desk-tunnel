@@ -18,7 +18,7 @@ import { ManagedServerSupervisor } from '../src/managed-server-supervisor.ts';
 
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 
-test('managed program updates match the installed baseline and reject historical Build 2 drift', async (t) => {
+test('managed program updates match a new image and reject historical Build 2 drift', async (t) => {
   const reviewed = JSON.parse(
     readFileSync(
       new URL('fixtures/account-display-upgrade-baseline.json', import.meta.url),
@@ -28,8 +28,15 @@ test('managed program updates match the installed baseline and reject historical
   const profile = JSON.parse(
     readFileSync(join(root, 'deploy/server-bootstrap-profile.json'), 'utf8'),
   );
-  for (const file of ['apps/server/src/native-account.ts', 'packages/protocol/src/index.ts'])
-    assert.equal(sha256(readFileSync(join(root, file))), profile.files[file]);
+  assert.equal(
+    sha256(readFileSync(join(root, 'apps/server/src/native-account.ts'))),
+    profile.files['apps/server/src/native-account.ts'],
+  );
+  // Protocol 21 changes the persisted schema; the historical bootstrap profile must stay immutable.
+  assert.notEqual(
+    sha256(readFileSync(join(root, 'packages/protocol/src/index.ts'))),
+    profile.files['packages/protocol/src/index.ts'],
+  );
   const scratch = mkdtempSync(join(tmpdir(), 'cc-account-upgrade-'));
   t.after(() => rmSync(scratch, { recursive: true, force: true }));
   const baseline = join(scratch, 'baseline');

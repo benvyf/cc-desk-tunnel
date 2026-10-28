@@ -1710,6 +1710,7 @@ export function App({
             <Conversation
               findRequest={findRequest}
               session={selected}
+              here={!!selected && onThis(selected)}
               events={events}
               history={history}
               connected={connected}
@@ -1736,6 +1737,16 @@ export function App({
                     sessionId: selected!.id,
                     runId: selected!.activeRun!.id,
                     taskId,
+                  });
+                });
+              }}
+              backgroundTask={(toolId) => {
+                void act(async () => {
+                  await client.request({
+                    type: 'run.task.background',
+                    sessionId: selected!.id,
+                    runId: selected!.activeRun!.id,
+                    toolId,
                   });
                 });
               }}

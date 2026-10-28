@@ -107,7 +107,11 @@ export type Run = {
   // Output still arriving in pieces: sent on as it comes, recorded once it is whole.
   open?: Fragment;
   input?: NativeInput;
-  controls: { refresh?: () => Promise<void>; stopTask?: (taskId: string) => Promise<void> };
+  controls: {
+    refresh?: () => Promise<void>;
+    stopTask?: (taskId: string) => Promise<void>;
+    backgroundTask?: (toolId: string) => Promise<boolean>;
+  };
   // Turn figures are reported one after another, so a later report for the same question never lands before an earlier one.
   stats: ReturnType<typeof inOrder>;
 };
@@ -1007,7 +1011,7 @@ export function createProxyServer(options: ServerOptions) {
   // what has already stopped is nothing, and of two answers the first counts.
   async function controlRun(
     peer: Peer,
-    command: CommandOf<'run.cancel' | 'run.task.stop' | 'approval.reply'>,
+    command: CommandOf<'run.cancel' | 'run.task.stop' | 'run.task.background' | 'approval.reply'>,
   ) {
     const run = runs.get(command.sessionId);
     if (!run || run.id !== command.runId) {
@@ -1020,6 +1024,18 @@ export function createProxyServer(options: ServerOptions) {
       if (!run.controls.stopTask) return;
       // The CLI reports the task gone through its task list; a task already over is not an error.
       void run.controls.stopTask(command.taskId).catch(() => {});
+      return;
+    }
+    if (command.type === 'run.task.background') {
+      if (!run.controls.backgroundTask) return;
+      // A call that has returned meanwhile is nothing to send; the CLI refuses only when background tasks are off.
+      void run.controls.backgroundTask(command.toolId).catch(() => {
+        if (runs.get(run.sessionId) === run)
+          emit(run, {
+            type: 'native.notice',
+            text: '未能转到后台：这台电脑的 Claude Code 关闭了后台任务。',
+          });
+      });
       return;
     }
     if (command.type === 'run.cancel') {
@@ -1241,6 +1257,7 @@ export function createProxyServer(options: ServerOptions) {
         return command.sessionId;
       case 'run.cancel':
       case 'run.task.stop':
+      case 'run.task.background':
       case 'approval.reply':
         await controlRun(peer, command);
         return command.sessionId;

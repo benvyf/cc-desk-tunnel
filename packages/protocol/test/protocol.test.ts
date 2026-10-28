@@ -118,6 +118,21 @@ test('a run waiting only for background tasks, its task list and the request to 
   };
   assert.ok(commandSchema.safeParse(stop).success);
   assert.equal(commandSchema.safeParse({ ...stop, taskId: '' }).success, false);
+  const background = {
+    type: 'run.task.background',
+    requestId: randomUUID(),
+    sessionId: event.sessionId,
+    runId: event.runId,
+    toolId: 'call-1',
+  };
+  assert.ok(commandSchema.safeParse(background).success);
+  assert.equal(commandSchema.safeParse({ ...background, toolId: '' }).success, false);
+  assert.ok(
+    eventSchema.safeParse({
+      ...event,
+      payload: { type: 'tool.task', toolId: 'call-1', taskId: 'b1' },
+    }).success,
+  );
 });
 
 test('a session report is asked for by session and answers with its figures', () => {
