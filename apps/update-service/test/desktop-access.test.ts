@@ -83,3 +83,31 @@ test('credentials are redacted, remembered login persists, logout revokes, failu
     );
   await assert.rejects(store.login(input, 'failure'), /一分钟/);
 });
+
+test('a password reset in flight cannot undo a newer disable or grant revocation', async (t) => {
+  const { store, nodes, input, id } = await fixture(t);
+  const reset = store.saveUser(id, { ...input, password: 'replacement-password' }, nodes);
+  const rejected = assert.rejects(reset, /已被修改/);
+  await store.saveUser(id, { ...input, password: '', enabled: false, nodes: [] }, nodes);
+  await rejected;
+  const user = store.status(nodes).users.find((user) => user.id === id)!;
+  assert.equal(user.enabled, false);
+  assert.deepEqual(user.nodes, []);
+});
+
+test('ticket replacement, grant revocation and exact session expiry reject old authorization', async (t) => {
+  const { store, nodes, input, id } = await fixture(t);
+  const now = Date.now();
+  const login = await store.login(input, 'expiry-test', now);
+  const old = store.connect(login.token, 'ubuntu-cc', now);
+  const next = store.connect(login.token, 'ubuntu-cc', now + 1);
+  assert.throws(() => store.validate(old.token, 'ubuntu-cc', true, now + 2), /失效/);
+  assert.equal(store.validate(next.token, 'ubuntu-cc', false, now + 2).userId, id);
+  assert.throws(() => store.workspaces(login.token, login.expiresAt), /失效/);
+  assert.throws(() => store.validate(next.token, 'ubuntu-cc', true, login.expiresAt), /失效/);
+  await store.saveUser(id, { ...input, password: '', nodes: [] }, nodes);
+  assert.throws(() => store.validate(next.token, 'ubuntu-cc', true, now + 3), /失效/);
+  const renewedLogin = await store.login(input, 'expiry-test');
+  assert.deepEqual(renewedLogin.workspaces, []);
+  assert.throws(() => store.connect(renewedLogin.token, 'ubuntu-cc'), /未分配/);
+});

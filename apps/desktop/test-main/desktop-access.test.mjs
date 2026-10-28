@@ -105,3 +105,63 @@ test('expired remembered authorization is cleared; temporary failures keep it an
   assert.equal(access.load(), null);
   await assert.rejects(access.ticket('node'), /先登录/);
 });
+
+test('late login, ticket and expired-session responses cannot undo logout or a newer login', async () => {
+  let saved = null;
+  let defer = '';
+  let respond;
+  const connection = {
+    url: 'wss://node.example/ws',
+    fingerprint: '',
+    token: 'ccs_' + 'x'.repeat(43),
+  };
+  const access = createDesktopAccess({
+    read: () => saved,
+    write: (value) => {
+      saved = value;
+    },
+    storage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(text),
+      decryptString: (bytes) => bytes.toString(),
+    },
+    request: async (url, options) => {
+      if (defer && url.endsWith('/' + defer))
+        return new Promise((resolve) => {
+          respond = resolve;
+        });
+      if (url.endsWith('/logout')) return new Response(null, { status: 204 });
+      if (url.endsWith('/connect')) return Response.json(connection);
+      const input = JSON.parse(options.body);
+      return Response.json({ email: input.email, token: input.email, workspaces: [] });
+    },
+  });
+  const input = (email) => ({ email, password: 'password', remember: true });
+  await access.login(input('first@example.com'));
+  defer = 'connect';
+  const oldTicket = access.ticket('node');
+  const oldRejected = assert.rejects(oldTicket, /失效/);
+  await access.login(input('second@example.com'));
+  respond(Response.json({ error: '登录已失效' }, { status: 401 }));
+  await oldRejected;
+  assert.equal(saved.email, 'second@example.com');
+  defer = '';
+  assert.equal((await access.ticket('node')).token, connection.token);
+
+  defer = 'connect';
+  const ticket = access.ticket('node');
+  const ticketCancelled = assert.rejects(ticket, /取消/);
+  await access.logout();
+  respond(Response.json(connection));
+  await ticketCancelled;
+  assert.equal(saved, null);
+
+  defer = 'login';
+  const login = access.login(input('first@example.com'));
+  const loginCancelled = assert.rejects(login, /取消/);
+  await access.logout();
+  respond(Response.json({ email: 'first@example.com', token: 'late-token', workspaces: [] }));
+  await loginCancelled;
+  assert.equal(saved, null);
+  await assert.rejects(access.ticket('node'), /先登录/);
+});

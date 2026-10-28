@@ -155,6 +155,12 @@ export class DesktopAccess {
       throw new UpdateError(400, '请选择有效设备和账号状态。');
     const old = id ? this.db.prepare('SELECT * FROM users WHERE id=?').get(id) : undefined;
     if (id && !old) throw new UpdateError(404, '用户不存在。');
+    const state = () =>
+      JSON.stringify([
+        this.db.prepare('SELECT email,salt,password,enabled FROM users WHERE id=?').get(id!),
+        this.db.prepare('SELECT node_id FROM grants WHERE user_id=? ORDER BY node_id').all(id!),
+      ]);
+    const before = id ? state() : null;
     let salt = String(old?.salt ?? ''),
       digest = String(old?.password ?? '');
     if (!old || input.password) {
@@ -162,6 +168,8 @@ export class DesktopAccess {
       salt = randomBytes(16).toString('hex');
       digest = (await derive(input.password, salt)).toString('hex');
     }
+    // Password derivation yields: a later disable/reset/revocation must not be overwritten.
+    if (id && state() !== before) throw new UpdateError(409, '此用户已被修改，请刷新后重试。');
     const userId = id ?? randomUUID();
     this.db.exec('BEGIN');
     try {
