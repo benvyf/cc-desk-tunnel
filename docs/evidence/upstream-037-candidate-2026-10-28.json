@@ -29,6 +29,11 @@
       "filename": "prepare-cc-space-037.py",
       "size": 7360,
       "sha256": "326d69622885bc684cefabe0eb03f6921eb0c3f2efd0df962ad459ce409a7233"
+    },
+    "cutover": {
+      "filename": "install-cc-space-037.py",
+      "size": 12115,
+      "sha256": "ef67028f547a89b3cf6ec791162fe06e857fae51e2a1f5cb228feef949a22c93"
     }
   },
   "checks": {
@@ -42,7 +47,8 @@
     "packagedLocalFileAndImageSmoke": "passed",
     "serverArchiveInventory": "passed",
     "preflightScriptSyntaxAndArchiveChecks": "passed",
-    "remoteDockerPreflight": "not-run"
+    "remoteDockerPreflight": "passed; user-reported OFFLINE_PREFLIGHT_OK",
+    "cutoverScript": "syntax, pinned helper, process discrimination, container config cloning, temporary cold-backup restoration, new-data preservation, repeated rollback and corrupt-backup refusal passed; no production cutover yet"
   },
   "production": {
     "windowsBuild": 9,
@@ -60,7 +66,9 @@
     "sdk": "0.3.286",
     "app": "0.3.6",
     "dataBind": "/srv/cc-desk-tunnel:/data:rw",
-    "policyBind": "/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed:/etc/claude-code:ro"
+    "policyBind": "/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed:/etc/claude-code:ro",
+    "preparedImage": "cc-space-preview:0.3.7-build4",
+    "preparationDirectory": "/var/tmp/cc-space-037-mb0x0m3t"
   },
-  "next": "Transfer server archive, run pinned preflight on the confirmed Ubuntu, then prepare cold backup and controlled image cutover. VPS signing requires administrator access."
+  "next": "Close clients and Claude processes; execute checked cutover script on the pilot, then validate Build 10 client against protocol 21. Production publishing is still pending."
 }
