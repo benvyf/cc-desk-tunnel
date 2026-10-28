@@ -47,4 +47,4 @@ sudo docker restart cc-desk-tunnel-ba938975-proxy-1
 
 管理中心在数据库中新增独立的 `session_devices` 表，保留旧 `sessions` 表结构。已有会话在下一次成功登录前保留；新电脑登录时会撤销无法识别设备的旧会话。新增表不会阻止旧管理中心运行代码回退，回退不恢复已经撤销的登录。
 
-实际包摘要、验证结果、部署备份及待验收项另见本次发布证据。Windows 公开更新渠道与 Linux 签名索引不会因本地试点打包自动改变。
+完整 574 项测试中 539 通过、35 跳过、0 失败；实际 Windows 包启动与 Edge 邮箱页面检查通过。实际包摘要、验证结果、部署备份及待验收项见[本次发布证据](evidence/single-computer-login-2026-10-28.json)。Windows 公开更新渠道与 Linux 签名索引没有改变。

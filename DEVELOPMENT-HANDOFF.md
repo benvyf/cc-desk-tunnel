@@ -1,5 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 单电脑登录已实现、打包并部署管理中心
+
+最新试点客户端为 Windows Build 13 / protocol 22，源码 `f5842d521b76de54f788d3b49baff7a8daedd71d`。同一邮箱的新电脑密码登录原子撤销其他电脑的会话及票据；同机多窗口可共存。主进程每 15 秒检查授权，失效后关闭本机通道、清除保存会话并回到登录页；自动恢复不重新提交密码，旧响应不影响新登录。数据库新增独立设备映射表，保留旧会话表结构以便程序回退。
+
+管理中心同源码已上线，备份 `/var/backups/cc-update-service/single-computer-20261028T023826Z`，旧目录 `/opt/cc-update-service.before-single-computer-20261028T023826Z`。配置、Nginx 和发布索引保持；服务及两续期 timer active。实际安装包启动、Edge 邮箱页面、TypeScript、完整 574 项测试（539 通过、35 跳过、0 失败）通过；未调用真实 Claude/JEV。
+
+安装包位于 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build13\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。Linux 仍为 Build 5；尚未收到该版本安装和真实邮箱验收，生产邮箱数仍为 0。单电脑规则约束邮箱账号，Ubuntu 仍待在邮箱验证成功后切换 `PROXY_LOGIN_MODE=email`，否则传统 token 可绕过；不要宣称节点已经关闭传统入口。操作与边界见[单电脑登录](docs/CC-SPACE-SINGLE-COMPUTER-LOGIN.md)，摘要及精确包身份见[发布证据](docs/evidence/single-computer-login-2026-10-28.json)。
+
 ### 2026-10-28 邮箱登录第二轮 review 已部署
 
 管理中心运行源码 `f5f69048e36ece8b9027c41dfefce4deb21b3f46`，修复异步密码重置覆盖并发停用/撤权的问题；保存冲突返回 409。新增认证边界回归通过，全量测试发现的两处旧版本期望已修正并针对性复跑通过。补充定制 Build 与协议对应记录，不改变受保护运行时文件。详见[第二轮 review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)及[证据](docs/evidence/email-login-review2-2026-10-28.json)。

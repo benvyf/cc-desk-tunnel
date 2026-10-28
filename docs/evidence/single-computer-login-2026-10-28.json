@@ -1,0 +1,63 @@
+{
+  "phase": "packaged-and-management-deployed-awaiting-real-client-acceptance",
+  "sourceCommit": "f5842d521b76de54f788d3b49baff7a8daedd71d",
+  "inventoryCorrectionCommit": "23ddca8",
+  "windowsBuild": 13,
+  "serverBuildUnchanged": 5,
+  "protocol": 22,
+  "pullRequest": "https://github.com/benvyf/cc-desk-tunnel/pull/2",
+  "behavior": {
+    "scope": "one computer per email account; same-computer windows may coexist",
+    "replacement": "successful password login atomically revokes other computers' sessions and tickets",
+    "clientCheckIntervalSeconds": 15,
+    "nodeLeaseCheckIntervalSeconds": 30,
+    "rememberedLoginCanReplaceCurrentComputer": false,
+    "wrongPasswordCanRevokeCurrentComputer": false,
+    "transientNetworkFailureSignsOutClient": false,
+    "schema": "additive session_devices table; existing sessions schema retained for runtime rollback"
+  },
+  "checks": {
+    "takeoverRegressionFailedBeforeImplementation": true,
+    "focusedAuthenticationAndProtocolTestsPassed": 20,
+    "finalMainProcessTestsPassed": 5,
+    "finalFullSuite": { "total": 574, "passed": 539, "failed": 0, "skipped": 35 },
+    "typecheck": "passed",
+    "emailUiInEdge": "passed including revoked workspace-picker state and cleared remember/auto-login fields",
+    "actualWindowsPackagedSmoke": "passed with isolated profile",
+    "packagedIdentityAndThreeChangedMainProcessModules": "verified against source",
+    "trackedFilesDocumentationAndSecretsCheck": "passed",
+    "actualProductionClaudeOrJevRequests": 0
+  },
+  "artifacts": {
+    "windows": {
+      "filename": "CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+      "directory": "D:/cc-desk-tunnel/artifacts/cc-space-single-computer-build13",
+      "size": 201163078,
+      "sha256": "0a1b75f58c0def858fc2d82a676e3c055e28113002f937f3b6263751907aa903"
+    },
+    "management": {
+      "filename": "cc-update-service-single-computer.tar.gz",
+      "size": 136640,
+      "sha256": "b74acb3862491899fd040e95dfe8319a057e8d90877ad6c11ff1806112327247"
+    }
+  },
+  "production": {
+    "deployedAt": "2026-10-28T02:38:26Z",
+    "managementSourceCommit": "f5842d521b76de54f788d3b49baff7a8daedd71d",
+    "backup": "/var/backups/cc-update-service/single-computer-20261028T023826Z",
+    "previousRuntime": "/opt/cc-update-service.before-single-computer-20261028T023826Z",
+    "configurationAndNginxUnchanged": true,
+    "publicWindowsAndLinuxIndexesUnchanged": true,
+    "publicManagementPageAndScriptBytesVerified": true,
+    "unauthenticatedUserApi": 401,
+    "sessionDeviceTableCreated": true,
+    "managementAndBothRenewalTimers": "active",
+    "userCountAtDeployment": 0
+  },
+  "pendingUserAcceptance": [
+    "Confirm Ubuntu Build 5 is installed",
+    "Create private email account and install Windows Build 13 on both computers",
+    "Verify real email login then switch Ubuntu PROXY_LOGIN_MODE from both to email to close legacy-token bypass",
+    "Verify A is signed out when B logs in and A cannot restore a revoked remembered session"
+  ]
+}
