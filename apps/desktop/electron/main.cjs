@@ -993,7 +993,13 @@ app.whenReady().then(() => {
   renamed();
   refreshTray = buildMenu;
   window.on('close', (event) => {
-    if (quitting || !closeToTray()) return;
+    if (quitting) return;
+    if (!closeToTray()) {
+      // Use the same child-window and connection cleanup as an explicit Quit.
+      event.preventDefault();
+      app.quit();
+      return;
+    }
     event.preventDefault();
     window.hide();
     if (!readComputer().trayHintShown) {
