@@ -1,5 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 邮箱专用登录页：Windows Build 15
+
+最新客户端为 Build 15 / protocol 22，源码 `f01571603881365e43b45e9f75a4a15a2cbf73dd`。正式客户端仅显示邮箱登录，删除手动地址/凭据/证书入口；启动时清理旧 `login` 配置和旧 `proxy-url`，不再恢复 token 自动登录。保留邮箱加密会话、设备身份和本机工作数据；设置与帮助也改为管理中心配置说明。开发模拟入口只在未打包环境保留。
+
+安装包：`D:\cc-desk-tunnel\artifacts\cc-space-email-only-build15\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164114 字节，SHA256 `895348a44bd65ed1de70135429551d09154d1d16dbeb815cb6b7fd7749f00eb2`。31 项 Edge 界面回归、深浅/窄屏/大字体截图检查、TypeScript、590 个索引文件检查及实际打包 EXE 启动/旧配置迁移均通过，包内身份及三个主进程模块与源码一致。完整测试 578 项中 542 通过、35 跳过，1 项仅临时目录清理 EPERM；该项原样单独重跑通过，未修改旧测试或产品代码。
+
+本轮只交付客户端，未部署管理中心、修改公开索引或在本机安装。Linux 仍用 Build 5；Ubuntu 是否已升级、邮箱创建与实机登录、两电脑切换及 `PROXY_LOGIN_MODE=email` 仍需用户验收。关闭客户端手动入口不代表远端 token 已停用。见[说明](docs/CC-SPACE-EMAIL-ONLY.md)及[证据](docs/evidence/email-only-login-2026-10-28.json)。
+
 ### 2026-10-28 第二轮单电脑登录 review：Windows Build 14
 
 最新客户端为 Build 14 / protocol 22，源码 `d59bae8971c9096711307b7af0f00f5a0a3cf0d6`。复现并修复旧会话失效后、用户正在密码登录时，恰好开始的后台授权检查把新登录取消的问题：登录进行中暂停后台检查，全部并发登录结束后恢复，失败路径也释放计数。原先对迟到响应的代次校验保留。

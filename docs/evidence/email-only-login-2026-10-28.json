@@ -3,10 +3,10 @@
   "feature": "Email-only client sign-in",
   "windowsBuild": 15,
   "protocol": 22,
-  "packageStatus": "pending",
+  "packageStatus": "verified",
   "validation": {
     "typescript": "passed",
-    "repositoryCheck": "588 indexed files passed before new documentation",
+    "repositoryCheck": "590 indexed files passed",
     "unitSuite": {
       "total": 578,
       "passed": 542,
@@ -16,15 +16,41 @@
       "isolatedRerun": "same test passed, no source change"
     },
     "uiTests": 31,
-    "uiResult": "passed",
+    "uiResult": "31 passed (1.4m)",
     "themes": ["light", "dark"],
     "viewportWidths": [1240, 390, 320],
-    "fontSizes": [14, 20]
+    "fontSizes": [14, 20],
+    "packagedStartup": "passed: email-only screen, legacy IPC disabled, legacy settings removed, unrelated settings preserved"
   },
   "deployment": {
     "managementServiceChanged": false,
     "publicUpdateIndexesChanged": false,
     "ubuntuEmailOnlyModeVerified": false,
     "productionModelRequests": 0
-  }
+  },
+  "package": {
+    "identity": {
+      "product": "cc-desk-tunnel-managed",
+      "build": 15,
+      "channel": "pilot",
+      "origin": "https://api.ghostapi.org",
+      "trustedKeys": {
+        "managed-vps-2026-10-23": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n"
+      },
+      "appVersion": "0.3.7",
+      "protocol": 22,
+      "sourceCommit": "f01571603881365e43b45e9f75a4a15a2cbf73dd",
+      "platform": "win32",
+      "arch": "x64"
+    },
+    "installer": "D:\\cc-desk-tunnel\\artifacts\\cc-space-email-only-build15\\CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+    "bytes": 201164114,
+    "sha256": "895348a44bd65ed1de70135429551d09154d1d16dbeb815cb6b7fd7749f00eb2",
+    "packagedSourceMatches": ["main.cjs", "desktop-access.cjs", "preload.cjs"]
+  },
+  "screenshots": [
+    ".local/screenshots/email-only-light-1240-14.png",
+    ".local/screenshots/email-only-dark-320-20.png",
+    "D:/cc-desk-tunnel/artifacts/cc-space-email-only-build15/login-preview.png"
+  ]
 }
