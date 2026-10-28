@@ -80,10 +80,6 @@ export default function AccountPanel({
             </p>
           </div>
         </div>
-        <p className="muted">
-          账号由服务端管理，登录、退出和换号请在 Ubuntu 终端操作。编号与邮箱的对应关系可在 CC
-          控制中心查看。
-        </p>
         <dl className="account-details">
           <div>
             <dt>模型服务</dt>
