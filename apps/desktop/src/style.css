@@ -5474,3 +5474,18 @@ dialog:has(.web-settings-form) {
 .font-size-settings > .setting-row > span:first-child {
   min-width: 0;
 }
+
+.terminal-window-notice {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+}
+.terminal-window-notice button {
+  padding: 6px 12px;
+  border-radius: 6px;
+}

@@ -16,6 +16,9 @@ export default function TitleBar({
   openMenu,
   connected,
   adapterName,
+  openTerminal,
+  terminalAvailable = false,
+  terminalOpen = false,
 }: {
   title: string;
   // Absent while there is nowhere to go.
@@ -27,6 +30,9 @@ export default function TitleBar({
   openMenu: (menu: BarMenu, position: MenuPosition) => void;
   connected: boolean;
   adapterName: string;
+  openTerminal?: () => void;
+  terminalAvailable?: boolean;
+  terminalOpen?: boolean;
 }) {
   return (
     <header className="titlebar">
@@ -53,6 +59,14 @@ export default function TitleBar({
             {menu.label}
           </button>
         ))}
+        <button
+          type="button"
+          disabled={!terminalAvailable}
+          onClick={openTerminal}
+          title={terminalOpen ? '显示已打开的终端' : '打开当前会话的原生终端'}
+        >
+          终端
+        </button>
       </nav>
       <h1>{title}</h1>
       <span className="connection-status" title={adapterName}>

@@ -87,7 +87,7 @@ import type { MenuItem, MenuPosition } from './ui.tsx';
 import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
 
-const NativeTerminal = lazy(() => import('./NativeTerminal.tsx'));
+const NativeTerminal = lazy(() => import('./TerminalWindow.tsx'));
 // The notes of every version so far are read only when asked for, and stay out of what the window starts with.
 const ReleaseNotes = lazy(() => import('./ReleaseNotes.tsx'));
 
@@ -1405,6 +1405,19 @@ export function App({
     },
   ];
   const toggleSide = () => setSideOpen((value) => !value);
+  const openTerminal = () => {
+    if (terminalSessionId) {
+      void window.desktop?.terminalWindow?.focus();
+      return;
+    }
+    if (!selected || !connected || !nativeMode || busy || selected.activeRun) return;
+    show(selected.id);
+    setTerminalSessionId(selected.id);
+  };
+  const terminalAvailable =
+    connected &&
+    nativeMode &&
+    (!!terminalSessionId || (!!selected && !busy && !selected.activeRun));
   const canCreate = connected && !busy && !refreshing && !terminalSessionId;
   const barMenus: BarMenu[] = [
     {
@@ -1760,6 +1773,9 @@ export function App({
         sideOpen={sideOpen}
         toggleSide={toggleSide}
         menus={barMenus}
+        openTerminal={openTerminal}
+        terminalAvailable={terminalAvailable}
+        terminalOpen={!!terminalSessionId}
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
         connected={connected}
         adapterName={adapterName}

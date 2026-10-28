@@ -1,3 +1,6 @@
+const { installEditMenu } = require('./edit-menu.cjs');
+const { installTerminalWindow, isTerminalWindow } = require('./terminal-window.cjs');
+const terminalControllers = new WeakMap();
 const {
   app,
   BrowserWindow,
@@ -124,6 +127,8 @@ function handle(channel, listener) {
     return listener(event, ...args);
   });
 }
+
+handle('terminal-window:focus', (event) => terminalControllers.get(event.sender)?.focus() ?? false);
 
 handle('project:choose', async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
@@ -750,6 +755,7 @@ followTheme(seen.prefs && JSON.parse(seen.prefs));
 nativeTheme.on('updated', () => {
   const colours = windowColours();
   for (const window of BrowserWindow.getAllWindows()) {
+    if (isTerminalWindow(window)) continue;
     window.setBackgroundColor(colours.color);
     if (process.platform !== 'darwin') window.setTitleBarOverlay({ ...colours, height: 40 });
   }
@@ -927,21 +933,10 @@ app.whenReady().then(() => {
       headers: { 'Content-Type': picture.type, 'Cache-Control': 'no-store' },
     });
   });
-  window.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  terminalControllers.set(window.webContents, installTerminalWindow(window, Menu));
   // Electron does not provide an editing menu by default. Native roles keep text selection, undo and paste
   // in the focused input, without exposing clipboard reads to the renderer.
-  window.webContents.on('context-menu', (_event, params) => {
-    if (!params.isEditable) return;
-    Menu.buildFromTemplate([
-      { role: 'undo', label: '撤销', enabled: params.editFlags.canUndo },
-      { role: 'redo', label: '重做', enabled: params.editFlags.canRedo },
-      { type: 'separator' },
-      { role: 'cut', label: '剪切', enabled: params.editFlags.canCut },
-      { role: 'copy', label: '复制', enabled: params.editFlags.canCopy },
-      { role: 'paste', label: '粘贴', enabled: params.editFlags.canPaste },
-      { role: 'selectAll', label: '全选' },
-    ]).popup({ window });
-  });
+  installEditMenu(window, Menu);
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.loadFile(path.join(__dirname, '../dist/index.html'));
 
@@ -1016,6 +1011,9 @@ let quitting = false;
 let exiting = false;
 app.on('before-quit', (event) => {
   quitting = true;
+  // Dispose portal windows while their owning renderer is still alive.
+  for (const window of BrowserWindow.getAllWindows())
+    if (isTerminalWindow(window)) window.destroy();
   if (exiting || !bridge) return;
   event.preventDefault();
   exiting = true;

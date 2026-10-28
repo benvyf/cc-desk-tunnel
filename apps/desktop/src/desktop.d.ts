@@ -3,6 +3,10 @@ export {};
 declare global {
   interface Window {
     desktop?: {
+      terminalWindow: {
+        focus: () => Promise<boolean>;
+        onClosed: (callback: () => void) => () => void;
+      };
       // Run from the source tree, not installed: the login page then also offers the simulation service.
       dev: boolean;
       platform: 'win32' | 'darwin' | 'linux';

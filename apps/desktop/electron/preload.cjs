@@ -1,5 +1,13 @@
 const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
+  terminalWindow: {
+    focus: () => ipcRenderer.invoke('terminal-window:focus'),
+    onClosed: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('terminal-window:closed', listener);
+      return () => ipcRenderer.removeListener('terminal-window:closed', listener);
+    },
+  },
   dev: process.argv.includes('--cc-desk-tunnel-dev'),
   platform: process.platform,
   // Read once, before the page draws: see `boot` in main.cjs.
