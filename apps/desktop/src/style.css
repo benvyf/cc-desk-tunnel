@@ -607,23 +607,31 @@ button.chip.danger:hover:not(:disabled) {
 }
 /* The installed client's only sign-in surface. Connection details come from the management center. */
 .email-login-page {
-  padding-top: clamp(calc(var(--bar) + 28px), 12dvh, 120px);
+  padding-top: clamp(calc(var(--bar) + 28px), 15dvh, 140px);
   background: radial-gradient(ellipse at 50% 0%, var(--accent-soft), transparent 65%);
 }
 .email-login-page .login-content {
-  max-width: 460px;
+  max-width: 448px;
+}
+.email-login-page .login-content > .brand {
+  margin-bottom: 24px;
 }
 .email-login-card {
   padding: 32px;
   box-shadow: var(--shadow-md);
 }
-.email-login-eyebrow {
-  margin: 0 0 12px;
-  font-size: var(--font-caption);
-  color: var(--accent);
-  letter-spacing: 0.08em;
+.email-login-heading {
+  margin-bottom: 28px;
+  text-align: center;
 }
-.email-login-card .login-subtitle {
+.email-login-heading h1 {
+  font-size: calc(22rem / 14);
+  line-height: 1.4;
+}
+.email-login-heading p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: calc(13rem / 14);
   line-height: 1.65;
   overflow-wrap: anywhere;
 }
@@ -678,8 +686,8 @@ button.chip.danger:hover:not(:disabled) {
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin-top: 24px;
-  padding-top: 20px;
+  margin-top: 20px;
+  padding-top: 16px;
   border-top: 1px solid var(--line-soft);
   color: var(--muted);
   font-size: var(--font-caption);
@@ -836,6 +844,9 @@ button.chip.danger:hover:not(:disabled) {
   background: var(--surface-1);
 }
 @media (max-width: 480px) {
+  .login-page.email-login-page {
+    padding-top: calc(var(--bar) + 24px);
+  }
   .login-page {
     padding: clamp(calc(var(--bar) + 24px), 18dvh, 168px) 16px 32px;
   }

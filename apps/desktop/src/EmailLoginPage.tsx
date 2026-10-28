@@ -42,13 +42,10 @@ export default function EmailLoginPage({
           aria-labelledby="email-login-heading"
           aria-busy={connecting}
         >
-          <p className="email-login-eyebrow">你的专属工作空间</p>
-          <div className="login-title">
+          <div className="email-login-heading">
             <h1 id="email-login-heading">{workspaces ? '选择工作空间' : '登录 CC SPACE'}</h1>
+            {workspaces && <p>{form.email}</p>}
           </div>
-          <p className="login-subtitle">
-            {workspaces ? form.email : '使用邮箱登录，继续你的创作与开发。'}
-          </p>
           {workspaces ? (
             <div className="connection-form email-workspaces">
               {!workspaces.length && <p role="status">暂未分配工作空间，请联系管理员。</p>}
