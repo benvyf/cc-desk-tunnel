@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 登录页精简：Windows Build 17
+
+按用户截图要求删除“你的专属工作空间”和“使用邮箱登录，继续你的创作与开发。”两句，标题居中，收紧卡片宽度和留白；工作空间选择页仍显示当前邮箱。最新安装包为 Build 17 / protocol 22，源码 `02f5b1af8b5d53f7eccaa04f78a996a832e4b964`，位于 `D:\cc-desk-tunnel\artifacts\cc-space-email-only-build17\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164371 字节，SHA256 `0f58da34a78c436bd59bfbab99cc477a5451523406f12f51c1af0d0e8660ff94`。
+
+9 项邮箱界面测试、深浅色/窄屏/大字号截图检查、TypeScript、仓库检查和实际打包程序启动通过；包内身份、3 个主进程模块及 71 个前端文件核对一致。未改变管理中心或公开更新索引；Ubuntu 已由用户确认升级为 Build 5，邮箱连接成功与仅邮箱模式仍待反馈。见[本轮证据](docs/evidence/email-login-layout-build17-2026-10-28.json)。
+
 ### 2026-10-28 现场已升级 Ubuntu：Linux Build 5 / protocol 22
 
 用户报告邮箱连接报“服务凭据不正确”。本机只读核对：已安装 Windows Build 16 / protocol 22，有保存的邮箱会话，没有旧手动连接配置；连接已到达节点但授权被拒绝。用户在 Ubuntu 返回诊断 `build=4, protocol=21, configuredLoginMode=both, monitorConfigured=true`，确认旧服务端不识别邮箱票据。
