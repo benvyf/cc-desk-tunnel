@@ -114,6 +114,7 @@ export default function EmailLoginPage({
               >
                 {connecting ? '正在登录…' : '登录'}
               </Button>
+              <p className="login-hint">同一账号仅限一台电脑在线，新电脑登录后旧电脑会自动退出。</p>
               <p className="login-hint">忘记密码？请联系管理员重置。</p>
             </form>
           )}

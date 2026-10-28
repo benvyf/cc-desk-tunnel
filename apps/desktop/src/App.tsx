@@ -523,6 +523,18 @@ export function App({
   // A connection that breaks is made again by the client, and the window stays where it is. It comes back to
   // the sign-in page only when the connection is over for good: ended here, or refused by the service.
   const signedIn = useRef(false);
+  useEffect(
+    () =>
+      window.desktop?.access?.onExpired?.((message) => {
+        signedIn.current = false;
+        client.disconnect();
+        setLoginWorkspaces(null);
+        setProxyConnecting(false);
+        changeForm({ password: '', token: '', remember: false, autoLogin: false });
+        setError(message);
+      }),
+    [client, changeForm],
+  );
   useEffect(() => {
     if (state.status === 'connected' || state.status === 'reconnecting') {
       signedIn.current = true;

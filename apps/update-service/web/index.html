@@ -39,6 +39,7 @@
           <div id="access-users" role="tabpanel" aria-labelledby="access-users-tab" hidden>
             <div class="section-heading"><h3>CC SPACE 登录用户</h3><button id="access-user-add" type="button">添加用户</button></div>
             <p class="muted">这里的邮箱用于登录 CC SPACE，与 Claude 官方账号分开。访问同一设备会共用该设备的会话与工作区。</p>
+            <p class="muted">每个邮箱账号仅允许一台电脑在线。新电脑登录成功后，旧电脑会自动退出；同一台电脑的多个窗口可同时使用。</p>
             <form id="access-user-form" class="access-editor" hidden>
               <div class="access-grid"><label>邮箱<input id="access-user-email" type="email" required maxlength="254" autocomplete="off"></label><label>密码<input id="access-user-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="已有用户留空保持密码"></label></div>
               <label class="check"><input id="access-user-enabled" type="checkbox" checked>启用此用户</label>

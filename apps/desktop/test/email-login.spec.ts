@@ -36,6 +36,11 @@ test('email login keeps node details out of the form, handles workspace selectio
           token: 'ccs_' + 'x'.repeat(43),
         }),
         logout: async () => {},
+        onExpired: (callback: (message: string) => void) => {
+          (window as unknown as { expireEmail: () => void }).expireEmail = () =>
+            callback('登录已失效，请重新登录。同一账号仅允许一台电脑在线。');
+          return noOp;
+        },
       },
       connectProxy: async () => {
         throw Error('测试连接已到达本机通道');
@@ -68,6 +73,16 @@ test('email login keeps node details out of the form, handles workspace selectio
   await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
   await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
   await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.getByLabel('密码', { exact: true }).fill('correct-password');
+  await page.getByLabel('自动登录', { exact: true }).check();
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.getByRole('heading', { name: '选择工作空间' })).toBeVisible();
+  await page.evaluate(() => (window as unknown as { expireEmail: () => void }).expireEmail());
+  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
+  await expect(page.getByLabel('自动登录', { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel('记住登录', { exact: true })).not.toBeChecked();
+  await expect(page.getByRole('alert')).toContainText('同一账号仅允许一台电脑在线');
   await page.getByRole('button', { name: '使用服务地址连接' }).click();
   await expect(page.getByLabel('服务地址', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: '使用邮箱登录' }).click();

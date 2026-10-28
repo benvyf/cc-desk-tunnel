@@ -165,3 +165,88 @@ test('late login, ticket and expired-session responses cannot undo logout or a n
   assert.equal(saved, null);
   await assert.rejects(access.ticket('node'), /先登录/);
 });
+
+test('background authorization checks clear revoked sessions but tolerate outages and ignore stale responses', async () => {
+  let saved = null;
+  let status = 200;
+  let defer = false;
+  let finish;
+  let deferLogin = false;
+  let finishLogin;
+  const expired = [];
+  const requests = [];
+  const options = {
+    read: () => saved,
+    write: (value) => {
+      saved = value;
+    },
+    storage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(text),
+      decryptString: (bytes) => bytes.toString(),
+    },
+    deviceId: () => '11111111-1111-4111-8111-111111111111',
+    onExpired: (message) => expired.push(message),
+    request: async (url, request) => {
+      requests.push({ url, request });
+      if (url.endsWith('/login') && deferLogin)
+        return new Promise((resolve) => {
+          finishLogin = resolve;
+        });
+      if (url.endsWith('/login'))
+        return Response.json({ email: 'me@example.com', token: 'session', workspaces: [] });
+      if (defer)
+        return new Promise((resolve) => {
+          finish = resolve;
+        });
+      if (status === 503) throw new Error('network unavailable');
+      return status === 200
+        ? Response.json({ workspaces: [] })
+        : Response.json({ error: '登录已失效，请重新登录。' }, { status });
+    },
+  };
+  const access = createDesktopAccess(options);
+  const login = () =>
+    access.login({ email: 'me@example.com', password: 'password', remember: true });
+  await login();
+  assert.equal(JSON.parse(requests[0].request.body).deviceId, options.deviceId());
+  const restored = createDesktopAccess(options);
+  restored.load();
+  await restored.check();
+  assert.ok(
+    requests.at(-1).url.endsWith('/workspaces'),
+    'restoring a session never issues a password login',
+  );
+  for (status of [500, 503]) {
+    await access.check();
+    assert.ok(saved);
+    assert.deepEqual(expired, []);
+  }
+  defer = true;
+  const pending = access.check();
+  const count = requests.length;
+  await access.check();
+  assert.equal(requests.length, count, 'background checks cannot overlap');
+  await login();
+  finish(Response.json({ error: 'old session revoked' }, { status: 401 }));
+  await pending;
+  assert.ok(saved);
+  assert.deepEqual(expired, []);
+  const earlierCheck = access.check();
+  deferLogin = true;
+  const newerLogin = login();
+  finish(Response.json({ error: 'old session revoked' }, { status: 401 }));
+  await earlierCheck;
+  finishLogin(Response.json({ email: 'me@example.com', token: 'new-session', workspaces: [] }));
+  await newerLogin;
+  assert.ok(saved);
+  assert.deepEqual(expired, [], 'an old check cannot cancel a newer login in flight');
+  defer = false;
+  status = 401;
+  await access.check();
+  assert.equal(saved, null);
+  assert.deepEqual(expired, ['登录已失效，请重新登录。']);
+  await access.check();
+  assert.equal(expired.length, 1);
+  await assert.rejects(access.ticket('node'), /先登录/);
+});

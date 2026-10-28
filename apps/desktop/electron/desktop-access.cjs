@@ -1,9 +1,18 @@
 const ORIGIN = 'https://api.ghostapi.org';
 
 // The account session stays in the main process. Only short-lived connection tickets reach the renderer.
-function createDesktopAccess({ request, read, write, storage, origin = ORIGIN }) {
+function createDesktopAccess({
+  request,
+  read,
+  write,
+  storage,
+  deviceId,
+  onExpired,
+  origin = ORIGIN,
+}) {
   let session = null;
   let generation = 0;
+  let checking = false;
   function persist(remember, autoLogin) {
     const saved =
       remember && storage.isEncryptionAvailable() && session
@@ -42,13 +51,13 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
     if (response.status !== 204 && !value) throw new Error('管理中心返回了无效信息，请稍后重试。');
     return value;
   }
-  function clearExpired(error, current) {
-    if (error.status === 401 && session === current) {
+  function clearExpired(error, current, turn) {
+    if (error.status === 401 && session === current && generation === turn) {
       generation++;
       session = null;
       write(null);
+      onExpired?.(error.message);
     }
-    throw error;
   }
   return {
     load() {
@@ -80,12 +89,18 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
       let next;
       if (!input.password && session?.email === email) {
         const current = session;
-        const value = await api('workspaces', undefined, current.token).catch((error) =>
-          clearExpired(error, current),
-        );
+        const value = await api('workspaces', undefined, current.token).catch((error) => {
+          clearExpired(error, current, turn);
+          throw error;
+        });
         next = { ...current, workspaces: value.workspaces };
       } else {
-        next = await api('login', { email, password: input.password, remember: !!input.remember });
+        next = await api('login', {
+          email,
+          password: input.password,
+          remember: !!input.remember,
+          ...(deviceId ? { deviceId: deviceId() } : {}),
+        });
       }
       if (turn !== generation) throw new Error('登录已取消。');
       if (!next || typeof next.token !== 'string' || !Array.isArray(next.workspaces))
@@ -98,9 +113,10 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
       if (!session || typeof nodeId !== 'string') throw new Error('请先登录邮箱账号。');
       const turn = generation,
         current = session;
-      const value = await api('connect', { nodeId }, current.token).catch((error) =>
-        clearExpired(error, current),
-      );
+      const value = await api('connect', { nodeId }, current.token).catch((error) => {
+        clearExpired(error, current, turn);
+        throw error;
+      });
       if (turn !== generation || current !== session) throw new Error('登录已取消。');
       const url = new URL(value.url);
       if (
@@ -115,6 +131,20 @@ function createDesktopAccess({ request, read, write, storage, origin = ORIGIN })
       )
         throw new Error('工作空间连接配置无效，请联系管理员。');
       return { url: url.href, fingerprint: value.fingerprint, token: value.token };
+    },
+    async check() {
+      if (!session || checking) return;
+      checking = true;
+      const current = session,
+        turn = generation;
+      try {
+        await api('workspaces', undefined, current.token);
+      } catch (error) {
+        // A temporary network failure does not sign the user out.
+        clearExpired(error, current, turn);
+      } finally {
+        checking = false;
+      }
     },
     async logout() {
       generation++;

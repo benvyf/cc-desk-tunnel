@@ -55,6 +55,7 @@ export class DesktopAccess {
       CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY,name TEXT NOT NULL,url TEXT NOT NULL,fingerprint TEXT NOT NULL,credential TEXT NOT NULL DEFAULT '');
       CREATE TABLE IF NOT EXISTS grants(user_id TEXT NOT NULL,node_id TEXT NOT NULL,PRIMARY KEY(user_id,node_id));
       CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_devices(session_hash TEXT PRIMARY KEY,device_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS tickets(hash TEXT PRIMARY KEY,session_hash TEXT NOT NULL,node_id TEXT NOT NULL,expires INTEGER NOT NULL);
     `);
   }
@@ -65,11 +66,17 @@ export class DesktopAccess {
       )
       .run(id);
     this.db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
+    this.db.exec(
+      'DELETE FROM session_devices WHERE session_hash NOT IN (SELECT hash FROM sessions)',
+    );
   }
   private clean(now: number) {
     // Tickets remain tied to their parent session for live-connection lease renewal.
     this.db.prepare('DELETE FROM sessions WHERE expires<=?').run(now);
     this.db.exec('DELETE FROM tickets WHERE session_hash NOT IN (SELECT hash FROM sessions)');
+    this.db.exec(
+      'DELETE FROM session_devices WHERE session_hash NOT IN (SELECT hash FROM sessions)',
+    );
     for (const [key, value] of this.failures) if (value.until <= now) this.failures.delete(key);
   }
   status(nodeIds: string[]) {
@@ -192,6 +199,15 @@ export class DesktopAccess {
   }
   async login(input: Record<string, unknown>, address: string, now = Date.now()) {
     this.clean(now);
+    if (
+      input.deviceId !== undefined &&
+      (typeof input.deviceId !== 'string' ||
+        !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(input.deviceId))
+    )
+      throw new UpdateError(400, '客户端设备标识无效，请更新客户端。');
+    // Older clients without an installation ID use one exclusive session per login.
+    const deviceId =
+      typeof input.deviceId === 'string' ? input.deviceId.toLowerCase() : randomUUID();
     let identity: string;
     try {
       identity = email(input.email);
@@ -229,10 +245,32 @@ export class DesktopAccess {
       }
       const token = secret(),
         expires = now + (input.remember === true ? 30 * 86400_000 : 8 * 3600_000);
-      this.db
-        .prepare('INSERT INTO sessions VALUES(?,?,?)')
-        .run(hash(token), String(row.id), expires);
-      this.db.prepare('UPDATE users SET last_login=? WHERE id=?').run(now, String(row.id));
+      // Validate the password first, then replace the other computer atomically.
+      this.db.exec('BEGIN');
+      try {
+        this.db
+          .prepare(
+            'DELETE FROM tickets WHERE session_hash IN (SELECT hash FROM sessions WHERE user_id=? AND hash NOT IN (SELECT session_hash FROM session_devices WHERE device_id=?))',
+          )
+          .run(String(row.id), deviceId);
+        this.db
+          .prepare(
+            'DELETE FROM sessions WHERE user_id=? AND hash NOT IN (SELECT session_hash FROM session_devices WHERE device_id=?)',
+          )
+          .run(String(row.id), deviceId);
+        this.db
+          .prepare('INSERT INTO sessions VALUES(?,?,?)')
+          .run(hash(token), String(row.id), expires);
+        this.db.prepare('INSERT INTO session_devices VALUES(?,?)').run(hash(token), deviceId);
+        this.db.exec(
+          'DELETE FROM session_devices WHERE session_hash NOT IN (SELECT hash FROM sessions)',
+        );
+        this.db.prepare('UPDATE users SET last_login=? WHERE id=?').run(now, String(row.id));
+        this.db.exec('COMMIT');
+      } catch (error) {
+        this.db.exec('ROLLBACK');
+        throw error;
+      }
       keys.forEach((key) => this.failures.delete(key));
       return {
         token,
@@ -250,7 +288,7 @@ export class DesktopAccess {
         'SELECT sessions.*,users.email FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>? AND users.enabled=1',
       )
       .get(hash(token), now);
-    if (!row) throw new UpdateError(401, '登录已失效，请重新登录。');
+    if (!row) throw new UpdateError(401, '登录已失效，请重新登录。同一账号仅允许一台电脑在线。');
     return row;
   }
   workspaces(token: string, now = Date.now()) {
@@ -299,6 +337,7 @@ export class DesktopAccess {
   logout(token: string) {
     this.db.prepare('DELETE FROM tickets WHERE session_hash=?').run(hash(token));
     this.db.prepare('DELETE FROM sessions WHERE hash=?').run(hash(token));
+    this.db.prepare('DELETE FROM session_devices WHERE session_hash=?').run(hash(token));
   }
   close() {
     this.db.close();

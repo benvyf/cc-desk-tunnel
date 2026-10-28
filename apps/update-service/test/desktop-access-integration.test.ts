@@ -52,7 +52,7 @@ test('trusted proxy addresses isolate IP throttling while account throttling is 
 });
 
 test(
-  'real management HTTP, desktop handshake and live revocation without any Claude request',
+  'a new computer login revokes the old live socket without any Claude request',
   { timeout: 45_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'cc-access-integration-'));
@@ -185,6 +185,42 @@ test(
     );
     assert.equal((await fetch(proxyUrl + '/')).status, 403, 'legacy web entry disabled');
     const closed = once(socket, 'close');
+    const secondLoginResponse = await request('/cc-access/v1/login', '', {
+      email: userInput.email,
+      password: userInput.password,
+      deviceId: '22222222-2222-4222-8222-222222222222',
+    });
+    assert.equal(secondLoginResponse.status, 200);
+    const secondLogin = await secondLoginResponse.json();
+    assert.equal((await request('/cc-access/v1/workspaces', login.token)).status, 401);
+    assert.equal(
+      (await request('/cc-access/v1/connect', login.token, { nodeId: 'ubuntu-cc' })).status,
+      401,
+    );
+    const secondTicket = await (
+      await request('/cc-access/v1/connect', secondLogin.token, { nodeId: 'ubuntu-cc' })
+    ).json();
+    const secondSocket = new WebSocket(proxyUrl.replace('http', 'ws') + '/ws');
+    sockets.push(secondSocket);
+    let secondReady = false;
+    secondSocket.on('message', (raw) => {
+      if (JSON.parse(raw.toString()).type === 'ready') secondReady = true;
+    });
+    await once(secondSocket, 'open');
+    secondSocket.send(
+      JSON.stringify({
+        type: 'auth',
+        protocolVersion: PROTOCOL_VERSION,
+        token: secondTicket.token,
+        deviceName: 'new-computer',
+      }),
+    );
+    await wait(() => secondReady);
+    const [code] = await closed;
+    assert.equal(code, 4001);
+    assert.ok(messages.some((x) => x.type === 'connection.error' && x.code === 'unauthorized'));
+    assert.equal(secondSocket.readyState, WebSocket.OPEN);
+    assert.equal((await request('/cc-access/v1/workspaces', secondLogin.token)).status, 200);
     assert.equal(
       (
         await request(
@@ -197,9 +233,6 @@ test(
       ).status,
       200,
     );
-    assert.equal((await request('/cc-access/v1/workspaces', login.token)).status, 401);
-    const [code] = await closed;
-    assert.equal(code, 4001);
-    assert.ok(messages.some((x) => x.type === 'connection.error' && x.code === 'unauthorized'));
+    assert.equal((await request('/cc-access/v1/workspaces', secondLogin.token)).status, 401);
   },
 );

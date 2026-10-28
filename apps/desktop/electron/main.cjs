@@ -526,7 +526,18 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   read: () => readSettings().desktopAccess,
   write: (desktopAccess) => writeSettings({ desktopAccess }),
   storage: safeStorage,
+  deviceId: () => readComputer().deviceId ?? writeComputer({ deviceId: randomUUID() }).deviceId,
+  onExpired: (message) => {
+    void disconnectProxy().catch((error) =>
+      log(`Close expired email connection: ${error.message}`),
+    );
+    BrowserWindow.getAllWindows()[0]?.webContents.send('access:expired', message);
+  },
 });
+setInterval(
+  () => void desktopAccess.check().catch((error) => log(`Check email session: ${error.message}`)),
+  15_000,
+).unref();
 handle('access:load', () => desktopAccess.load());
 handle('access:login', async (_event, input) => {
   const result = await desktopAccess.login(input);
@@ -804,13 +815,14 @@ handle('notify:show', (event, notice) => {
     window.once('focus', () => window.flashFrame(false));
   }
 });
-ipcMain.handle('proxy:disconnect', async () => {
+async function disconnectProxy() {
   keepAwake(false);
   connectionGeneration++;
   const previous = bridge;
   bridge = null;
   await previous?.close();
-});
+}
+ipcMain.handle('proxy:disconnect', disconnectProxy);
 
 // Windows files notifications under this identity; the installer gives the shortcut the same one.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? appId : process.execPath);

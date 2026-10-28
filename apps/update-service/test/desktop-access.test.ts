@@ -3,6 +3,7 @@ import { mkdir, mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { test, type TestContext } from 'node:test';
+import { DatabaseSync } from 'node:sqlite';
 import { DesktopAccess } from '../src/desktop-access.ts';
 
 async function fixture(t: TestContext) {
@@ -110,4 +111,63 @@ test('ticket replacement, grant revocation and exact session expiry reject old a
   const renewedLogin = await store.login(input, 'expiry-test');
   assert.deepEqual(renewedLogin.workspaces, []);
   assert.throws(() => store.connect(renewedLogin.token, 'ubuntu-cc'), /未分配/);
+});
+
+test('only the latest computer remains authorized; same-computer windows coexist and bad passwords cannot evict', async (t) => {
+  const { root, store, input } = await fixture(t);
+  const deviceA = '11111111-1111-4111-8111-111111111111';
+  const deviceB = '22222222-2222-4222-8222-222222222222';
+  const first = await store.login({ ...input, deviceId: deviceA, remember: true }, 'same-nat');
+  const firstTicket = store.connect(first.token, 'ubuntu-cc');
+  const anotherWindow = await store.login({ ...input, deviceId: deviceA }, 'same-nat');
+  const otherTicket = store.connect(anotherWindow.token, 'ubuntu-cc');
+  assert.equal(store.workspaces(first.token).length, 1);
+  assert.ok(store.validate(firstTicket.token, 'ubuntu-cc', true));
+  await assert.rejects(
+    store.login({ ...input, password: 'wrong-password', deviceId: deviceB }, 'same-nat'),
+    /邮箱或密码/,
+  );
+  assert.equal(store.workspaces(first.token).length, 1);
+  const latest = await store.login({ ...input, deviceId: deviceB }, 'same-nat');
+  for (const old of [first, anotherWindow]) {
+    assert.throws(() => store.workspaces(old.token), /失效/);
+    assert.throws(() => store.connect(old.token, 'ubuntu-cc'), /失效/);
+    store.logout(old.token); // A late logout from the evicted computer cannot log out the winner.
+  }
+  for (const old of [firstTicket, otherTicket]) {
+    assert.throws(() => store.validate(old.token, 'ubuntu-cc', false), /失效/);
+    assert.throws(() => store.validate(old.token, 'ubuntu-cc', true), /失效/);
+  }
+  const reopened = new DesktopAccess(root);
+  try {
+    assert.equal(reopened.workspaces(latest.token).length, 1);
+    assert.throws(() => reopened.workspaces(first.token), /失效/);
+  } finally {
+    reopened.close();
+  }
+  const legacy = await store.login(input, 'legacy-client');
+  assert.throws(() => store.workspaces(latest.token), /失效/);
+  assert.equal(store.workspaces(legacy.token).length, 1);
+  await store.login({ ...input, deviceId: deviceA }, 'same-nat');
+  assert.throws(() => store.workspaces(legacy.token), /失效/);
+});
+
+test('existing session databases migrate without invalidating login until the next computer signs in', async (t) => {
+  const { root, store, input } = await fixture(t);
+  const before = await store.login(input, 'old-client');
+  const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
+  db.exec('DROP TABLE session_devices');
+  db.close();
+  const migrated = new DesktopAccess(root);
+  try {
+    assert.equal(migrated.workspaces(before.token).length, 1);
+    const after = await migrated.login(
+      { ...input, deviceId: '33333333-3333-4333-8333-333333333333' },
+      'new-client',
+    );
+    assert.throws(() => migrated.workspaces(before.token), /失效/);
+    assert.equal(migrated.workspaces(after.token).length, 1);
+  } finally {
+    migrated.close();
+  }
 });

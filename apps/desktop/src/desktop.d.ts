@@ -82,6 +82,7 @@ declare global {
           | { error: string; retryable: boolean }
         >;
         logout: () => Promise<void>;
+        onExpired: (callback: (message: string) => void) => () => void;
       };
       loadDrafts: () => Promise<import('./drafts.ts').SavedDrafts>;
       saveDrafts: (drafts: import('./drafts.ts').SavedDrafts) => Promise<void>;

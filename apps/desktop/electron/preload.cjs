@@ -44,6 +44,11 @@ contextBridge.exposeInMainWorld('desktop', {
     login: (input) => ipcRenderer.invoke('access:login', input),
     ticket: (nodeId) => ipcRenderer.invoke('access:ticket', nodeId),
     logout: () => ipcRenderer.invoke('access:logout'),
+    onExpired: (callback) => {
+      const listener = (_event, message) => callback(message);
+      ipcRenderer.on('access:expired', listener);
+      return () => ipcRenderer.removeListener('access:expired', listener);
+    },
   },
   saveLogin: (login) => ipcRenderer.invoke('login:save', login),
   loadDrafts: () => ipcRenderer.invoke('drafts:load'),
