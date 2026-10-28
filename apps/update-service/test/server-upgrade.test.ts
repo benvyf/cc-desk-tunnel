@@ -20,9 +20,13 @@ const command = upgradeCommand(release, script);
 
 test('generated upgrade command uses the actual managed HTTP contract and preserves admission', async (t) => {
   assert.equal(command.split('\n').length, 1);
-  assert.match(command, /^sudo docker exec -i cc-desk-tunnel-ba938975-proxy-1 /);
-  assert.doesNotMatch(command, /!|curl|wget|bootstrap|`|\$\(/);
-  const loader = / -e '([^']+)'$/.exec(command)![1];
+  assert.match(command, /^sudo python3 -c /);
+  const wrapper = Buffer.from(
+    /b64decode\("([A-Za-z0-9+/=]+)"\)/.exec(command)![1],
+    'base64',
+  ).toString();
+  assert.doesNotMatch(wrapper, /ba938975|shell=True/);
+  const loader = JSON.parse(/^program = (.+)$/m.exec(wrapper)![1]);
   for (const scenario of ['success', 'busy', 'mismatch', 'rollback', 'already-installed']) {
     await t.test(scenario, async () => {
       let activated = false,
