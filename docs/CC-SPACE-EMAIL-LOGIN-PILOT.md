@@ -1,8 +1,10 @@
 # CC SPACE 邮箱登录试点
 
-管理中心已部署，ubuntu-cc 的地址与证书指纹已配置。Linux Build 5 已发布到 pilot，Windows 最新完整包使用支持[单电脑登录](CC-SPACE-SINGLE-COMPUTER-LOGIN.md)的 Build 16；尚未收到用户执行 Ubuntu 升级或创建邮箱账号的确认。此功能先供本人使用，现有工作区和历史会话继续共用。
+管理中心已部署，ubuntu-cc 的地址与证书指纹已配置。Linux Build 5 已发布到 pilot，用户已返回升级提交成功；本机已核对安装 Windows Build 16 / protocol 22，已有保存的邮箱会话。当前等待升级后重新邮箱连接成功反馈；两电脑实测和仅邮箱模式切换尚未确认。客户端支持[单电脑登录](CC-SPACE-SINGLE-COMPUTER-LOGIN.md)。此功能先供本人使用，现有工作区和历史会话继续共用。
 
 ## 1. 升级 Ubuntu
+
+2026-10-28 现场已完成本节步骤，返回 `SUCCESS: Linux Build 5 / protocol 22 is installed and committed.`；这台 Ubuntu 无需重复升级。以下步骤保留供追溯或其他节点使用。
 
 先结束 Claude 任务，并退出所有连接该 Ubuntu 的 CC 客户端。将 `scripts/upgrade-cc-space-email.py` 复制到 Ubuntu 家目录，执行：
 

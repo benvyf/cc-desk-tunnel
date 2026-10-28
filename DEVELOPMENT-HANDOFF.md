@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 现场已升级 Ubuntu：Linux Build 5 / protocol 22
+
+用户报告邮箱连接报“服务凭据不正确”。本机只读核对：已安装 Windows Build 16 / protocol 22，有保存的邮箱会话，没有旧手动连接配置；连接已到达节点但授权被拒绝。用户在 Ubuntu 返回诊断 `build=4, protocol=21, configuredLoginMode=both, monitorConfigured=true`，确认旧服务端不识别邮箱票据。
+
+核对固定升级脚本、在线升级 helper 摘要及签名 Linux 索引后，用户执行升级并返回 `SUCCESS: Linux Build 5 / protocol 22 is installed and committed.`，因此 Ubuntu Build 5 现场升级已确认，无需再次升级或重建 Docker。下一步只需客户端重新邮箱登录，等待连接成功反馈；两电脑实测与 Ubuntu 切换 `PROXY_LOGIN_MODE=email` 仍未确认。不要把“升级成功”写成“邮箱连接已验收”。
+
 ### 2026-10-28 邮箱登录页 Review：Windows Build 16
 
 最新交付为 Build 16 / protocol 22，源码 `981f7312db6d60a73c33c2b670ec27025ec9485a`。三处已复现并修复：授权失效后密码显示状态保留、迟到的保存状态覆盖新输入/触发旧账号自动登录、保存状态读取失败缺少诊断。9 项邮箱界面与 17 项授权测试、TypeScript、仓库检查、实际打包程序启动/旧配置迁移、包内身份及 3 个主进程模块和 71 个前端文件一致性通过。
