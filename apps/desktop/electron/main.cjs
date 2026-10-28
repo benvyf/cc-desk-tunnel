@@ -44,6 +44,8 @@ const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
+// A terminal is another top-level window; never infer the connection window from array order.
+let primaryWindow;
 let connectionGeneration = 0;
 let proxyOpening = 0;
 let serverClient;
@@ -69,7 +71,7 @@ const leaving = process.argv.includes('--quit-connection');
 const ownsInstance = app.requestSingleInstanceLock({ leaving }) && !leaving;
 if (!ownsInstance) app.quit();
 function showWindow() {
-  const window = BrowserWindow.getAllWindows()[0];
+  const window = primaryWindow;
   if (!window) return;
   if (window.isMinimized()) window.restore();
   window.show();
@@ -543,7 +545,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
     void disconnectProxy().catch((error) =>
       log(`Close expired email connection: ${error.message}`),
     );
-    BrowserWindow.getAllWindows()[0]?.webContents.send('access:expired', message);
+    primaryWindow?.webContents.send('access:expired', message);
   },
 });
 setInterval(
@@ -648,7 +650,7 @@ handle('schedules:load', (_event, initial) => {
       }
       if (text === schedules) return;
       schedules = text;
-      BrowserWindow.getAllWindows()[0]?.webContents.send('schedules:changed', text);
+      primaryWindow?.webContents.send('schedules:changed', text);
     }, 2000);
   }
   schedules = readSchedules();
@@ -932,6 +934,10 @@ app.whenReady().then(() => {
     return new Response(await readFile(file), {
       headers: { 'Content-Type': picture.type, 'Cache-Control': 'no-store' },
     });
+  });
+  primaryWindow = window;
+  window.on('closed', () => {
+    if (primaryWindow === window) primaryWindow = undefined;
   });
   terminalControllers.set(window.webContents, installTerminalWindow(window, Menu));
   // Electron does not provide an editing menu by default. Native roles keep text selection, undo and paste

@@ -10,7 +10,7 @@ const client = {
   onTerminal(fn: typeof listener) {
     listener = fn;
     return () => {
-      listener = () => {};
+      if (listener === fn) listener = () => {};
     };
   },
   async request(command: { type: string }) {

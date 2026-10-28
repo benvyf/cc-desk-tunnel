@@ -31,6 +31,8 @@ export default function TerminalWindow({
         setFallback(true);
         return;
       }
+      // The portal keeps its own Window reference; the child needs no reverse bridge access.
+      popup.opener = null;
       popup.document.title = 'CC SPACE · 原生终端';
       popup.document.documentElement.dataset.theme = 'dark';
       const base = popup.document.createElement('base');

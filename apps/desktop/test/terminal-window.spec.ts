@@ -33,6 +33,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
     child.on('pageerror', (error) => errors.push(error.message));
     await expect(child.locator('.xterm-helper-textarea')).toBeFocused();
     expect(await child.evaluate(() => typeof window.desktop)).toBe('undefined');
+    expect(await child.evaluate(() => window.opener === null)).toBe(true);
     await child.keyboard.press('ArrowDown');
     await child.keyboard.press('Enter');
     await child.keyboard.press('Control+c');
@@ -45,6 +46,18 @@ test('detached terminal has native window controls, exact input, resize, focus a
         ),
       )
       .toEqual(['\x1b[B', '\r', '\x03']);
+    await expect
+      .poll(() =>
+        owner.evaluate(
+          () =>
+            (window as any).terminalTest.controls.filter((f: any) => f.type === 'terminal.resize')
+              .length,
+        ),
+      )
+      .toBeGreaterThan(0);
+    const initialSize = await owner.evaluate(() =>
+      (window as any).terminalTest.controls.filter((f: any) => f.type === 'terminal.resize').at(-1),
+    );
     const bounds = await application.evaluate(({ BrowserWindow }) => {
       const child = BrowserWindow.getAllWindows().find(
         (w) => w.getTitle() === 'CC SPACE · 原生终端',
@@ -66,11 +79,26 @@ test('detached terminal has native window controls, exact input, resize, focus a
         ),
       )
       .toBeGreaterThan(0);
+    await expect
+      .poll(() =>
+        owner.evaluate(() =>
+          (window as any).terminalTest.controls
+            .filter((f: any) => f.type === 'terminal.resize')
+            .at(-1),
+        ),
+      )
+      .not.toEqual(initialSize);
     await application.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()
         .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
         .minimize();
     });
+    await application.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.getTitle() !== 'CC SPACE · 原生终端')!
+        .setSize(500, 800),
+    );
+    await expect(owner.getByRole('button', { name: '终端', exact: true })).toBeVisible();
     await owner.getByRole('button', { name: '终端', exact: true }).click();
     await expect
       .poll(() =>
@@ -85,6 +113,55 @@ test('detached terminal has native window controls, exact input, resize, focus a
       '帮助',
       '终端',
     ]);
+    const pasted = '中文🙂'.repeat(2400);
+    await child.locator('.xterm-helper-textarea').evaluate((input, text) => {
+      const clipboard = new DataTransfer();
+      clipboard.setData('text/plain', text);
+      input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: clipboard }));
+    }, pasted);
+    await expect
+      .poll(() =>
+        owner.evaluate(() =>
+          (window as any).terminalTest.controls
+            .filter((f: any) => f.type === 'terminal.input')
+            .slice(3)
+            .map((f: any) => f.data)
+            .join(''),
+        ),
+      )
+      .toBe(pasted);
+    expect(
+      await owner.evaluate(() =>
+        (window as any).terminalTest.controls
+          .filter((f: any) => f.type === 'terminal.input')
+          .every((f: any) => f.data.length <= 4096),
+      ),
+    ).toBe(true);
+    await application.evaluate(({ BrowserWindow }) => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (window.getTitle() === 'CC SPACE · 原生终端') window.minimize();
+        else window.hide();
+      }
+    });
+    const output = 'background output 中文🙂\r\n'.repeat(500);
+    const outputBytes = Buffer.byteLength(output) * 12;
+    await owner.evaluate(
+      ({ data, bytes }) => {
+        for (let i = 0; i < 12; i++)
+          (window as any).terminalTest.emit({ type: 'terminal.data', data, bytes });
+      },
+      { data: output, bytes: Buffer.byteLength(output) },
+    );
+    await expect
+      .poll(() =>
+        owner.evaluate(() =>
+          (window as any).terminalTest.controls
+            .filter((f: any) => f.type === 'terminal.ack')
+            .reduce((n: number, f: any) => n + f.bytes, 0),
+        ),
+      )
+      .toBe(outputBytes);
+    await owner.evaluate(() => window.desktop!.terminalWindow.focus());
     await owner.evaluate(() =>
       (window as any).terminalTest.emit({
         type: 'terminal.data',

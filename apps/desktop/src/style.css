@@ -4709,7 +4709,7 @@ dialog::backdrop {
   .workspace {
     border-radius: var(--radius-xl) 0 0 0;
   }
-  .titlebar-menus,
+  .titlebar-menus button[aria-haspopup],
   .connection-status small {
     display: none;
   }
