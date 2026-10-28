@@ -33,7 +33,7 @@ export function setupServerDownload({ request, element, notice }) {
     root.append(
       element(
         'p',
-        '包含当前服务端、配套 Web 和部署文件。以下命令仅适用于已审查的第一台 ubuntu-cc。执行前结束任务并完全退出所有 CC 连接（包括托盘）；升级期间保持 Ubuntu 终端打开。',
+        '包含当前服务端、配套 Web 和部署文件。服务端升级适用于已接入受管更新、且每台虚拟机仅运行一个 CC 服务容器的兼容节点；首次接入仍仅适用于已审查的第一台 ubuntu-cc。执行前结束任务并完全退出所有 CC 连接（包括托盘）；升级期间保持 Ubuntu 终端打开。',
         'muted',
       ),
     );
@@ -56,7 +56,14 @@ export function setupServerDownload({ request, element, notice }) {
         }
         try {
           await navigator.clipboard.writeText(command.value);
-          notice('已复制' + title + '命令，请在第一台 Ubuntu 控制台执行。');
+          notice(
+            '已复制' +
+              title +
+              '命令，' +
+              (id === 'server-upgrade-command'
+                ? '请在需要升级的 Ubuntu 控制台执行。'
+                : '请在已审查的第一台 Ubuntu 控制台执行。'),
+          );
         } catch {
           command.focus();
           command.select();
