@@ -1,0 +1,14 @@
+[
+  {
+    "appVersion": "0.3.7",
+    "protocol": 21,
+    "windowsBuilds": [10],
+    "serverBuild": 4
+  },
+  {
+    "appVersion": "0.3.7",
+    "protocol": 22,
+    "windowsBuilds": [11, 12],
+    "serverBuild": 5
+  }
+]
