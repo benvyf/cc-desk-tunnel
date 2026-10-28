@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-28 邮箱登录 review 修复
+
+最新客户端应使用 Windows Build 12（协议 22），修复源码 `0ddfa93311c6cd9f22a11ddbf6c8d9a98f8d0efd`。本次修复临时票据请求失败后的重连、失效登录清理、账号切换、邮箱模式下错误的旧升级入口、代理后 IP 限流和关闭面板后密码残留。Linux Build 5/升级脚本保持，未收到真实 Ubuntu 升级及邮箱登录验收。具体发现、回归与部署见 [review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)。
+
+管理中心修复已部署，备份 `/var/backups/cc-update-service/email-review-20261028T022120Z`，旧运行目录 `/opt/cc-update-service.before-email-review-20261028T022120Z`。配置、公开 Windows/Linux 索引不变；服务与两续期 timer active。下节 Build 11 是初次实现状态，当前试点客户端以本节 Build 12 为准。
+
 ### 2026-10-28 邮箱登录已实现，等待首台实机切换
 
 `codex/email-login` 在上游合并分支上新增个人邮箱登录。安装包源码 `12b2da3ca49ffeb7d712a96d4c8302a582a2a873`，Windows Build 11 / Linux Build 5 / protocol 22。管理中心已部署到 VPS，`ubuntu-cc` 服务地址和完整证书指纹已配置；用户尚未创建邮箱账号，Ubuntu 仍是先前用户确认的 Build 4，不能写成邮箱登录实机通过。
