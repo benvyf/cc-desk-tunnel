@@ -88,6 +88,47 @@ test('detached terminal has native window controls, exact input, resize, focus a
         ),
       )
       .not.toEqual(initialSize);
+    const smallSize = await owner.evaluate(() =>
+      (window as any).terminalTest.controls.filter((f: any) => f.type === 'terminal.resize').at(-1),
+    );
+    await application.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .maximize(),
+    );
+    await expect
+      .poll(() =>
+        application.evaluate(({ BrowserWindow }) =>
+          BrowserWindow.getAllWindows()
+            .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+            .isMaximized(),
+        ),
+      )
+      .toBe(true);
+    await expect
+      .poll(() =>
+        owner.evaluate((small) => {
+          const size = (window as any).terminalTest.controls
+            .filter((f: any) => f.type === 'terminal.resize')
+            .at(-1);
+          return size.cols > small.cols || size.rows > small.rows;
+        }, smallSize),
+      )
+      .toBe(true);
+    await application.evaluate(({ BrowserWindow }) =>
+      BrowserWindow.getAllWindows()
+        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .unmaximize(),
+    );
+    await expect
+      .poll(() =>
+        owner.evaluate(() =>
+          (window as any).terminalTest.controls
+            .filter((f: any) => f.type === 'terminal.resize')
+            .at(-1),
+        ),
+      )
+      .toEqual(smallSize);
     await application.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()
         .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!

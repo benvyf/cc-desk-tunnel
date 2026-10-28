@@ -20,6 +20,8 @@ export default function NativeTerminal({
   const [error, setError] = useState<string | null>(null);
   const stop = useRef<() => void>(() => {});
   useEffect(() => {
+    // Portal terminals live in another document; its rendering clock must drive sizing.
+    const view = host.current!.ownerDocument.defaultView ?? window;
     const terminal = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, monospace",
       fontSize: 13,
@@ -88,7 +90,7 @@ export default function NativeTerminal({
           return;
         }
         setStatus('Linux · Claude Code');
-        resizeFrame = requestAnimationFrame(resize);
+        resizeFrame = view.requestAnimationFrame(resize);
         terminal.focus();
       } else if (message.type === 'terminal.data' && message.terminalId === id && !disposed) {
         terminal.write(message.data, () => {
@@ -130,9 +132,9 @@ export default function NativeTerminal({
       size = current;
       client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
     };
-    const observer = new ResizeObserver(() => {
-      cancelAnimationFrame(resizeFrame);
-      resizeFrame = requestAnimationFrame(resize);
+    const observer = new view.ResizeObserver(() => {
+      view.cancelAnimationFrame(resizeFrame);
+      resizeFrame = view.requestAnimationFrame(resize);
     });
     observer.observe(host.current!);
     // A deferred start avoids launching a throwaway CLI during React's development effect check.
@@ -158,7 +160,7 @@ export default function NativeTerminal({
       disposed = true;
       clearTimeout(ackTimer);
       observer.disconnect();
-      cancelAnimationFrame(resizeFrame);
+      view.cancelAnimationFrame(resizeFrame);
       input.dispose();
       void close();
       // A late opened frame still needs an owner to send its close request.
