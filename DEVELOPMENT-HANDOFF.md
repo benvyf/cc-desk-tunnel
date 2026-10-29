@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-29 终端体验发布准备：Windows Build 21 / Linux Build 7
+
+用户已授权提交、推送、合并 main、打包并发布到 VPS，先测试已安装客户端接收更新，再测试客户端升级服务端。六项终端体验和两轮 review 已完成，详见 [验收记录](docs/TERMINAL-EXPERIENCE-IMPLEMENTATION-STATUS.md)。新版本继续 0.3.7 / 协议 22，pilot；不覆盖已发布 Build 20/6 的制品。
+
+Build 7 增加终端历史表及协议命令，旧基础镜像的兼容性摘要不同，普通在线更新会返回 manual-image-upgrade。用户已选择先准备基础镜像升级命令，再安排客户端升级测试。`scripts/upgrade-terminal-base.py` 默认只离线准备和检查，`--install` 才执行有完整冷备份及离线回退的切换；只支持已确认的 ubuntu-cc Build 4 基础镜像（其受管子程序可能为 Build 5/6），遇到未知镜像拒绝。CLI/SDK 与依赖沿用已核实的镜像，不重新登录或调用模型。真实节点尚未执行；发布完成后另记制品和索引证据。
+
 
 ### 2026-10-29 多标签终端源码实施
 

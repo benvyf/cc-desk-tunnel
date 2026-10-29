@@ -21,6 +21,7 @@ DATA = Path('/srv/cc-desk-tunnel')
 BASE = 'sha256:365918cb8abf4f4b784502a6bbabeda5704dc928e5c899438199776001b1adb2'
 IMAGE = 'cc-space-preview:0.3.7-build4'
 DESCRIPTOR = '27876f345c2992abf77b925686aedee2af9b151babeef46af2486afb361009ac'
+TARGET = {'build': 4, 'protocol': 21}
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 HELPER_URL = 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2913675e8131604cb65a9291337791f3efc9327b/apps/update-service/web/server-bootstrap.py'
 
@@ -135,7 +136,8 @@ def install(b):
     stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + os.urandom(4).hex()
     backup = ROOT / ('backup-' + stamp)
     backup.mkdir(mode=0o700)
-    shutil.copyfile(__file__, backup / 'rollback.py')
+    rollback_source = Path(__file__).read_text().replace("ROOT = Path('/var/lib/cc-space-037-upgrade')", 'ROOT = Path(' + repr(str(ROOT)) + ')')
+    (backup / 'rollback.py').write_text(rollback_source)
     shutil.copyfile(ROOT / 'helper.py', backup / 'helper.py')
     b.durable_json(backup / 'original.json', original)
     record = {'phase': 'prepared', 'dataChanged': False, 'backup': str(backup)}
@@ -183,7 +185,7 @@ def install(b):
         save(b, backup, record)
         engine.request('POST', '/containers/' + replacement + '/start')
         b.wait_healthy(engine, replacement)
-        b.live_status(b.CONTAINER, {'build': 4, 'protocol': 21, 'descriptorSha256': DESCRIPTOR})
+        b.live_status(b.CONTAINER, {**TARGET, 'descriptorSha256': DESCRIPTOR})
         record['phase'] = 'installed'
         record['containerId'] = replacement
         record['imageId'] = candidate
@@ -195,7 +197,7 @@ def install(b):
             print('Cutover did not complete; attempting rollback.', flush=True)
             rollback(b, backup)
         raise
-    print('UPGRADE_OK: Linux Build 4 / protocol 21; original image, container and cold backup retained.')
+    print('UPGRADE_OK: Linux Build ' + str(TARGET['build']) + ' / protocol ' + str(TARGET['protocol']) + '; original image, container and cold backup retained.')
     print('Rollback command: sudo python3 ' + str(backup / 'rollback.py') + ' --rollback ' + str(backup))
 
 
