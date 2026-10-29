@@ -1,5 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-30 基础镜像升级自动断开客户端（已部署）
+
+用户确认 02 已 UPGRADE_OK，备份 `/var/lib/cc-space-terminal-upgrade/backup-20261029T155758Z-02db46ca`；03 在 frozen_idle 的 TCP 检查处停止，尚未完成升级。按用户要求，管理中心完整命令新增 `--disconnect-clients`：清理构建缓存、校验/预检后，暂停原容器检查 Claude 进程及只读会话 activeRun；无任务才隔离网络、停止原服务并关闭客户端连接，随后冷备份/升级。网络隔离阻止切换期间重连；连接本身不再阻止此显式模式。运行或等待中的任务、缺失会话库仍拒绝；默认非强制路径及离线回滚保留原约束。切换失败沿用恢复原容器/网络/重启策略流程。
+
+16 项 Linux 隔离测试通过（Docker 模拟，新增空闲连接切换、运行任务/缺失状态拒绝、断网失败与备份失败进入回滚；不代表真实 03 安装已验证），发布/命令回归通过，浏览器复制命令验证通过，typecheck 通过。VPS 实际兼容中心源码 `b1340a1ffb630c27d7bce75a5a698204410c56f4`，备份 `/var/backups/cc-update-service/build22-compatible-20261029T161509Z`。线上命令参数及内嵌脚本逐字验证，配置/登录/用户权限/节点/Build22与8索引/续期定时器保持。仅部署管理中心，没有操作 Ubuntu 节点或调用模型。
+
+下一步：用户刷新管理中心重新复制「清理并升级基础镜像（ubuntu-cc / 02 / 03）」到 03 执行，先结束运行/等待任务，无需退出客户端；01、02 已成功，无需重复。旧复制命令内嵌旧脚本，不能继续使用。
+
 ### 2026-10-29 根据用户现场检查适配 02 / 03 基础镜像升级
 
 用户已提供两台实际配置，基础描述符均 `fc8afc4c71fe556135fc356aca8186a104943afe021fdc27bd4f43d41a86cad6`（Build 5 / protocol 22 / source `12b2da3`），Node v24.21.0、CLI hash、SDK 0.3.286 与锁文件匹配。分别固定 02 容器 `cc-desk-tunnel-96ccb91a-proxy-1`、镜像 `cb3822893e9da5bd3c21c68810309b9238c263e2a227c5207d875b12f5484697` 和 03 容器 `cc-desk-tunnel-4b35c593-proxy-1`、镜像 `ae2d8b77a5dde6bced39f93ffcbe281def8f117c9b262b69580a0cd4faa40aca`，策略源目录为各自 `/var/lib/cc-node-rebuild-<hostname>/policy`。
