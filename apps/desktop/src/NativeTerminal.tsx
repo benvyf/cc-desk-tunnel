@@ -10,7 +10,8 @@ import '@xterm/xterm/css/xterm.css';
 
 export type TerminalPhase =
   'opening' | 'running' | 'closing' | 'ended' | 'failed' | 'unknown' | 'disconnected';
-export type TerminalHandle = { close: () => Promise<boolean>; retry: () => void; focus: () => void };
+export type TerminalHandle = { close: () => Promise<boolean>; retry: () => void; focus: () => void;
+  paste: (text: string) => void };
 export default function NativeTerminal({
   client,
   sessionId,
@@ -374,6 +375,15 @@ export default function NativeTerminal({
     handle.current = {
       close,
       focus: () => activate.current(true),
+      paste: (text) => {
+        if (disposed || !visible.current || !id || closeRequested || phaseNow() !== 'running' ||
+            client.state?.connectionId !== connectionId || host.current?.ownerDocument.querySelector('dialog[open]'))
+          throw new Error('目标终端不可输入，草稿已保留。');
+        if (/[\r\n]/.test(text) && !terminal.modes.bracketedPasteMode)
+          throw new Error('终端未启用多行粘贴模式，请复制后手动粘贴并检查。');
+        terminal.paste(text);
+        terminal.focus();
+      },
       retry: () => {
         if (phaseNow() === 'failed') {
           closeRequested = false;

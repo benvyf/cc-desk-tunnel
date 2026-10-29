@@ -9,6 +9,7 @@ import { folderName } from './paths.ts';
 import { terminalTarget } from './terminalLinks.ts';
 import { followLink } from './linkActions.ts';
 import TerminalFile from './TerminalFile.tsx';
+import TerminalDraft from './TerminalDraft.tsx';
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
@@ -538,6 +539,10 @@ export default function TerminalWindow({
                 新开同项目终端
               </Button>
             )}
+            <TerminalDraft session={tab.source} phase={tab.phase}
+              handle={() => handles.current.get(tab.tabId)}
+              attachmentsAllowed={!!window.desktop && !state.browser && connected &&
+                tab.source.device?.id === state.device?.id} />
           </div>
         ))}
       </div>

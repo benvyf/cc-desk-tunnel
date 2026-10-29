@@ -6,6 +6,79 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
 });
 
+test('attachment preparation stays with its original tab and errors block paste', async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).desktop = {
+      terminalWindow: { focus() {}, setActive() {} },
+      chooseFiles: () => new Promise((resolve) => { (window as any).finishFiles = resolve; }),
+      attachmentPreview: async () => null,
+      pathForFile: () => '',
+      saveImage: async () => { throw new Error('模拟图片保存失败'); },
+    };
+    (window as any).terminalTest.update({ device: { id: 'device' } });
+  });
+  await page.getByRole('button', { name: '编辑输入', exact: true }).click();
+  await page.getByRole('button', { name: '添加附件', exact: true }).click();
+  await page.getByRole('button', { name: '新建终端', exact: true }).click();
+  await page.getByRole('button', { name: '编辑输入', exact: true }).click();
+  await page.evaluate(() => (window as any).finishFiles(['D:\\fixture\\first.png', 'D:\\fixture\\first.png']));
+  await expect(page.locator('.terminal-panel:visible .attachment-tile')).toHaveCount(0);
+  await page.getByRole('tab').first().click();
+  await expect(page.locator('.terminal-panel:visible .attachment-tile')).toHaveCount(1);
+  const draft = page.getByRole('textbox', { name: '多行终端草稿' });
+  await draft.evaluate((input) => {
+    const data = new DataTransfer(); data.items.add(new File(['broken'], 'bad.png', { type: 'image/png' }));
+    input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: data }));
+  });
+  await expect(page.getByText('添加失败，请重新添加')).toBeVisible();
+  await expect(page.getByRole('button', { name: '粘贴到终端', exact: true })).toBeDisabled();
+  await page.getByRole('button', { name: '移除 bad.png', exact: true }).click();
+  await expect(page.getByRole('button', { name: '粘贴到终端', exact: true })).toBeEnabled();
+  await page.evaluate(() => (window as any).terminalTest.emit({ type: 'terminal.data', data: '\x1b[?2004h', bytes: 8 }));
+  await expect.poll(() => page.evaluate(() => (window as any).terminalTest.controls.some((c: any) => c.type === 'terminal.ack'))).toBe(true);
+  await page.getByRole('button', { name: '粘贴到终端', exact: true }).click();
+  const frames = await page.evaluate(() => (window as any).terminalTest.controls.filter((c: any) => c.type === 'terminal.input'));
+  expect(frames.every((c: any) => c.sessionId === 'fixture')).toBe(true);
+  expect(frames.map((c: any) => c.data).join('')).toContain('Read 后删除临时副本');
+  expect(frames.map((c: any) => c.data).join('').endsWith('\x1b[201~')).toBe(true);
+  await expect(page.locator('.terminal-panel:visible .attachment-tile')).toHaveCount(1);
+});
+
+test('per-tab drafts keep Chinese input, refuse unsafe multiline and paste bracketed chunks without Enter', async ({ page }) => {
+  await page.getByRole('button', { name: '编辑输入', exact: true }).click();
+  const draft = page.getByRole('textbox', { name: '多行终端草稿' });
+  await draft.fill('第一份草稿');
+  await draft.dispatchEvent('compositionstart');
+  await draft.press('Enter');
+  await draft.dispatchEvent('compositionend');
+  await draft.fill('第一份草稿\n第二行');
+  await page.getByRole('button', { name: '粘贴到终端', exact: true }).click();
+  await expect(page.getByText('终端未启用多行粘贴模式，请复制后手动粘贴并检查。')).toBeVisible();
+  expect(await page.evaluate(() => (window as any).terminalTest.controls.filter((c: any) => c.type === 'terminal.input').length)).toBe(0);
+  await page.getByRole('button', { name: '新建终端', exact: true }).click();
+  await page.getByRole('button', { name: '编辑输入', exact: true }).click();
+  await expect(draft).toHaveValue('');
+  await draft.fill('另一个中文草稿');
+  await page.getByRole('tab').first().click();
+  await expect(draft).toHaveValue('第一份草稿\n第二行');
+  await page.evaluate(() => (window as any).terminalTest.emit({ type: 'terminal.data', data: '\x1b[?2004h', bytes: 8 }));
+  await expect.poll(() => page.evaluate(() => (window as any).terminalTest.controls.some((c: any) => c.type === 'terminal.ack' && c.sessionId === 'fixture'))).toBe(true);
+  const text = '中🙂文'.repeat(2500) + '\n最后一行';
+  await draft.fill(text);
+  await page.getByRole('button', { name: '粘贴到终端', exact: true }).click();
+  await expect(page.locator('.terminal-panel:visible .xterm-helper-textarea')).toBeFocused();
+  await expect(draft).toHaveValue(text);
+  const frames = await page.evaluate(() => (window as any).terminalTest.controls.filter((c: any) => c.type === 'terminal.input'));
+  expect(frames.every((c: any) => c.sessionId === 'fixture' && c.terminalId === 'pty' && c.data.length <= 4096)).toBe(true);
+  expect(frames.map((c: any) => c.data).join('')).toBe('\x1b[200~' + text.replaceAll('\n', '\r') + '\x1b[201~');
+  await page.getByRole('button', { name: '收起编辑', exact: true }).click();
+  await page.getByRole('button', { name: '编辑输入', exact: true }).click();
+  await expect(draft).toHaveValue(text);
+  await page.evaluate(() => (window as any).terminalTest.update({ status: 'disconnected' }));
+  await expect(page.getByRole('button', { name: '粘贴到终端', exact: true })).toBeDisabled();
+  await expect(draft).toHaveValue(text);
+});
+
 test('OSC file links read only on click and preview markup as text', async ({ page }) => {
   await page.evaluate(() => {
     (window as any).terminalTest.update({ terminalFiles: { version: 1 } });
