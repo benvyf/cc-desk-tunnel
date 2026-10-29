@@ -107,7 +107,7 @@ const d=JSON.parse(bytes);a.equal(d.files['package-lock.json'].sha256,process.ar
         (work / 'Dockerfile').write_text('FROM ' + base_tag + '\nUSER root\nCOPY --chown=root:root program/ /app/\nCOPY --chown=root:root program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint\nRUN chmod 755 /usr/local/bin/proxy-entrypoint && chmod -R go-w /app\nUSER ccdesktunnel\n')
         with open(work / 'preflight.log', 'ab') as log:
             subprocess.run(['docker', 'build', '--network=none', '--pull=false', '-t', image, str(work)], check=True, stdout=log, stderr=log, timeout=600)
-            b.offline_preflight(image, work, release, log)
+        b.offline_preflight(image, work, release, work / 'preflight.log')
         after = engine.request('GET', '/containers/' + b.CONTAINER + '/json')
         if after['Id'] != current['Id'] or not after['State']['Running']:
             raise RuntimeError('Original container changed during preparation')
