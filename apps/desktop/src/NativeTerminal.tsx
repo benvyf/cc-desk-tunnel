@@ -116,7 +116,10 @@ export default function NativeTerminal({
         clearTimeout(ackTimer);
         view.cancelAnimationFrame(resizeFrame);
         pendingBytes = 0;
-        if (!disposed) setStatus(`已结束 · ${message.exitCode ?? '未知'}`);
+        if (!disposed) {
+          setError(null);
+          setStatus(`已结束 · ${message.exitCode ?? '未知'}`);
+        }
       }
     });
     const input = terminal.onData((data) => {

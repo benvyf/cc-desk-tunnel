@@ -6,6 +6,8 @@ import '../src/style.css';
 const requests: object[] = [];
 const controls: object[] = [];
 let listener = (message: unknown) => {};
+let closeMode: 'normal' | 'pending' | 'fail' = 'normal';
+let finishClose: (ok: boolean) => void = () => {};
 const client = {
   onTerminal(fn: typeof listener) {
     listener = fn;
@@ -17,6 +19,13 @@ const client = {
     requests.push(command);
     if (command.type === 'terminal.open')
       listener({ type: 'terminal.opened', sessionId: 'fixture', terminalId: 'pty' });
+    if (command.type === 'terminal.close') {
+      if (closeMode === 'fail') throw new Error('测试：关闭失败');
+      if (closeMode === 'pending')
+        await new Promise<void>((resolve, reject) => {
+          finishClose = (ok) => (ok ? resolve() : reject(new Error('测试：关闭时终端已结束')));
+        });
+    }
   },
   terminalControl(command: object) {
     controls.push(command);
@@ -59,6 +68,10 @@ Object.assign(window, {
   terminalTest: {
     requests,
     controls,
+    setCloseMode: (mode: typeof closeMode) => {
+      closeMode = mode;
+    },
+    finishClose: (ok: boolean) => finishClose(ok),
     emit: (message: object) => listener({ sessionId: 'fixture', terminalId: 'pty', ...message }),
   },
 });
