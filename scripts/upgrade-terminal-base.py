@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import socket
+import shutil
 import subprocess
 import tempfile
 import tarfile
@@ -40,6 +41,7 @@ def download(path, limit):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--install', action='store_true', help='Cut over only after offline checks')
+    parser.add_argument('--cleanup', action='store_true', help='Remove unused Docker build cache before checking space')
     args = parser.parse_args()
     if os.geteuid() != 0 or socket.gethostname().split('.')[0] != 'ubuntu-cc':
         parser.error('Run with sudo on the confirmed ubuntu-cc host')
@@ -71,6 +73,15 @@ const d=JSON.parse(bytes);a.equal(d.files['package-lock.json'].sha256,process.ar
         if untrusted['build'] != TARGET_BUILD or untrusted['protocol'] != 22:
             raise RuntimeError(f'Expected Linux Build {TARGET_BUILD} / protocol 22; obtain a matching upgrade command')
         release = b.verify_index(index, current['Image'], TARGET_BUILD, untrusted['sha256'])['release']
+        if args.cleanup:
+            print('CLEANUP: removing unused Docker build cache; containers, images and backups are retained.', flush=True)
+            subprocess.run(['docker', 'builder', 'prune', '--all', '--force'], check=True, timeout=300)
+        size = sum(p.stat().st_size for p in legacy.DATA.rglob('*') if p.is_file() and not p.is_symlink())
+        required = size * 2 + 1024 * 1024 * 1024
+        free = shutil.disk_usage(ROOT).free
+        print(f'SPACE_CHECK: available {free / 1024**3:.2f} GiB; required before preparation {required / 1024**3:.2f} GiB.', flush=True)
+        if free < required:
+            raise RuntimeError('Insufficient free space before preparation; no installation requested')
         work = Path(tempfile.mkdtemp(prefix=f'terminal-build{TARGET_BUILD}-', dir='/var/tmp'))
         work.chmod(0o755)
         archive = work / 'server.tar.gz'
@@ -126,6 +137,11 @@ a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/
 a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358');"""
         subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint', '/opt/runtime/node/bin/node', image, '-e', verify, release['descriptorSha256']], check=True, capture_output=True, timeout=90)
         b.offline_preflight(image, work, release, work / 'preflight.log')
+        free = shutil.disk_usage(ROOT).free
+        required = size * 2 + 512 * 1024 * 1024
+        print(f'SPACE_CHECK: available {free / 1024**3:.2f} GiB; required for backup {required / 1024**3:.2f} GiB.', flush=True)
+        if free < required:
+            raise RuntimeError('Insufficient free space after preparation; no installation requested')
         after = engine.request('GET', '/containers/' + b.CONTAINER + '/json')
         if after['Id'] != current['Id'] or not after['State']['Running']:
             raise RuntimeError('Original container changed during preparation')

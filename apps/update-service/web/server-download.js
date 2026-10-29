@@ -75,8 +75,8 @@ export function setupServerDownload({ request, element, notice }) {
     if (status.baseUpgradeCommand)
       appendCommand(
         'server-base-upgrade-command',
-        '基础镜像升级（ubuntu-cc）',
-        '当前 Build 4 基础镜像上的 Build 5/6 节点升级到 Build 7，需先执行此命令。仅适用于已审查的 ubuntu-cc：先结束任务并完全退出客户端；脚本验证签名、离线检查，保存冷备份后切换，失败自动回退。成功后再连接客户端。后续兼容版本可从客户端升级。',
+        '清理并升级基础镜像（仅 ubuntu-cc）',
+        `完整命令：清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 冷备份 → 升级到 Build ${release.build}。仅用于第一台旧 Build 4 基础镜像；不适用于 02、03，已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务并完全退出客户端，成功后直接连接，无需再执行普通升级。`,
         status.baseUpgradeCommand,
       );
     appendCommand(
