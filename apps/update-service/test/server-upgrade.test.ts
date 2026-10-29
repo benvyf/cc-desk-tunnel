@@ -194,10 +194,10 @@ test(
     }, command);
     await expect(page.getByLabel('已接入服务端升级命令')).toHaveValue(command);
     await expect(page.getByLabel('首次接入命令')).toHaveValue('sudo python3 bootstrap-fixture');
-    await expect(page.getByLabel('清理并升级基础镜像（仅 ubuntu-cc）命令')).toHaveValue('sudo python3 cleanup-and-base-upgrade-fixture');
+    await expect(page.getByLabel('清理并升级基础镜像（ubuntu-cc / 02 / 03）命令')).toHaveValue('sudo python3 cleanup-and-base-upgrade-fixture');
     await expect(page.locator('#server-download')).toContainText('升级到 Build 7');
-    await expect(page.locator('#server-download')).toContainText('不适用于 02、03');
-    await page.getByRole('button', { name: '复制清理并升级基础镜像（仅 ubuntu-cc）命令', exact: true }).click();
+    await expect(page.locator('#server-download')).toContainText('02、03 支持已核对的 Build 5 基础镜像');
+    await page.getByRole('button', { name: '复制清理并升级基础镜像（ubuntu-cc / 02 / 03）命令', exact: true }).click();
     assert.equal(await page.evaluate(() => (window as any).copied), 'sudo python3 cleanup-and-base-upgrade-fixture');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth));
     mkdirSync(new URL('../../../.local/', import.meta.url), { recursive: true });

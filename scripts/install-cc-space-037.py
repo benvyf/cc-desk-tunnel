@@ -2,6 +2,7 @@
 """Cut over the confirmed ubuntu-cc pilot; retain a complete offline rollback."""
 
 import argparse
+import copy
 import hashlib
 import importlib.util
 import json
@@ -22,6 +23,20 @@ BASE = 'sha256:365918cb8abf4f4b784502a6bbabeda5704dc928e5c899438199776001b1adb2'
 IMAGE = 'cc-space-preview:0.3.7-build4'
 DESCRIPTOR = '27876f345c2992abf77b925686aedee2af9b151babeef46af2486afb361009ac'
 TARGET = {'build': 4, 'protocol': 21}
+NODE = 'ubuntu-cc'
+REBUILT_NODES = {
+    'ubuntu-cc-02': {
+        'container': 'cc-desk-tunnel-96ccb91a-proxy-1',
+        'image': 'sha256:cb3822893e9da5bd3c21c68810309b9238c263e2a227c5207d875b12f5484697',
+        'policy': '/var/lib/cc-node-rebuild-ubuntu-cc-02/policy',
+    },
+    'ubuntu-cc-03': {
+        'container': 'cc-desk-tunnel-4b35c593-proxy-1',
+        'image': 'sha256:ae2d8b77a5dde6bced39f93ffcbe281def8f117c9b262b69580a0cd4faa40aca',
+        'policy': '/var/lib/cc-node-rebuild-ubuntu-cc-03/policy',
+    },
+}
+REBUILT_DESCRIPTOR = 'fc8afc4c71fe556135fc356aca8186a104943afe021fdc27bd4f43d41a86cad6'
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 HELPER_URL = 'https://raw.githubusercontent.com/benvyf/cc-desk-tunnel/2913675e8131604cb65a9291337791f3efc9327b/apps/update-service/web/server-bootstrap.py'
 
@@ -32,6 +47,34 @@ def digest(path):
         for block in iter(lambda: stream.read(1024 * 1024), b''):
             h.update(block)
     return h.hexdigest()
+
+
+def select_node(node):
+    global NODE
+    if node != 'ubuntu-cc' and node not in REBUILT_NODES:
+        raise RuntimeError('Unsupported host; no upgrade requested')
+    NODE = node
+    return REBUILT_NODES.get(node)
+
+
+def configure_helper(module):
+    profile = REBUILT_NODES.get(NODE)
+    if not profile:
+        return module
+    module.CONTAINER = profile['container']
+    reviewed_validate = module.validate_runtime
+    def validate(original):
+        # Reuse all pinned runtime constraints; only the confirmed policy source differs.
+        policy = [m for m in original.get('Mounts', []) if m['Destination'] == '/etc/claude-code']
+        if len(policy) != 1 or policy[0]['Source'] != profile['policy']:
+            raise RuntimeError('The confirmed node policy mount changed')
+        normalized = copy.deepcopy(original)
+        for mount in normalized.get('Mounts', []):
+            if mount['Destination'] == '/etc/claude-code':
+                mount['Source'] = '/etc/claude-code'
+        reviewed_validate(normalized)
+    module.validate_runtime = validate
+    return module
 
 
 def helper(path, download=False):
@@ -46,7 +89,7 @@ def helper(path, download=False):
     spec = importlib.util.spec_from_file_location('reviewed_bootstrap', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
-    return module
+    return configure_helper(module)
 
 
 def private_command(args, backup):
@@ -137,6 +180,7 @@ def install(b):
     backup = ROOT / ('backup-' + stamp)
     backup.mkdir(mode=0o700)
     rollback_source = Path(__file__).read_text().replace("ROOT = Path('/var/lib/cc-space-037-upgrade')", 'ROOT = Path(' + repr(str(ROOT)) + ')')
+    rollback_source = rollback_source.replace("NODE = 'ubuntu-cc'", 'NODE = ' + repr(NODE))
     (backup / 'rollback.py').write_text(rollback_source)
     shutil.copyfile(ROOT / 'helper.py', backup / 'helper.py')
     b.durable_json(backup / 'original.json', original)
@@ -207,8 +251,8 @@ def main():
     action.add_argument('--install', action='store_true')
     action.add_argument('--rollback', type=Path)
     args = parser.parse_args()
-    if os.geteuid() != 0 or socket.gethostname().split('.')[0] != 'ubuntu-cc':
-        parser.error('Run with sudo on the confirmed ubuntu-cc host')
+    if os.geteuid() != 0 or socket.gethostname().split('.')[0] != NODE:
+        parser.error('Run with sudo on the confirmed ' + NODE + ' host')
     os.umask(0o077)
     ROOT.mkdir(mode=0o700, exist_ok=True)
     if ROOT.is_symlink() or ROOT.stat().st_uid != 0 or ROOT.stat().st_mode & 0o077:
