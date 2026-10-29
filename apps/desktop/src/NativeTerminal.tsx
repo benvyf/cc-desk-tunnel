@@ -49,7 +49,7 @@ export default function NativeTerminal({
     function acknowledge() {
       clearTimeout(ackTimer);
       ackTimer = undefined;
-      if (!id || !pendingBytes || disposed) return;
+      if (!id || !pendingBytes || disposed || closeRequested) return;
       client.terminalControl({
         type: 'terminal.ack',
         sessionId,
@@ -60,6 +60,8 @@ export default function NativeTerminal({
     }
     async function close() {
       closeRequested = true;
+      clearTimeout(ackTimer);
+      view.cancelAnimationFrame(resizeFrame);
       if (!id) {
         if (!opening && !disposed) onClose();
         return;
@@ -72,7 +74,17 @@ export default function NativeTerminal({
         if (id === terminalId) id = null;
         if (!disposed) onClose();
       } catch (error) {
-        if (!disposed) setError(error instanceof Error ? error.message : '关闭失败');
+        // The process can exit while the close request is in flight.
+        if (id !== terminalId) {
+          if (!disposed) onClose();
+          return;
+        }
+        closeRequested = false;
+        if (!disposed) {
+          acknowledge();
+          resizeFrame = view.requestAnimationFrame(resize);
+          setError(error instanceof Error ? error.message : '关闭失败');
+        }
       } finally {
         closing = false;
       }
@@ -102,12 +114,13 @@ export default function NativeTerminal({
       } else if (message.type === 'terminal.closed' && message.terminalId === id) {
         id = null;
         clearTimeout(ackTimer);
+        view.cancelAnimationFrame(resizeFrame);
         pendingBytes = 0;
         if (!disposed) setStatus(`已结束 · ${message.exitCode ?? '未知'}`);
       }
     });
     const input = terminal.onData((data) => {
-      if (!id) return;
+      if (!id || closeRequested) return;
       for (let offset = 0; offset < data.length;) {
         let end = Math.min(offset + 4096, data.length);
         const last = data.charCodeAt(end - 1);
@@ -128,7 +141,7 @@ export default function NativeTerminal({
       const cols = Math.max(20, Math.min(400, terminal.cols)),
         rows = Math.max(5, Math.min(160, terminal.rows));
       const current = `${cols}:${rows}`;
-      if (!id || size === current) return;
+      if (!id || closeRequested || size === current) return;
       size = current;
       client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
     };

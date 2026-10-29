@@ -214,6 +214,7 @@ export class ProxyClient {
       type: Command['type'];
     }
   >();
+  private terminal: { id: string; ended: boolean } | null = null;
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -451,6 +452,8 @@ export class ProxyClient {
           request.reject(new Error(message.message ?? '请求失败。'));
         }
       } else if (message.type === 'connection.error') {
+        // A final resize/ack can reach the server after it has announced the terminal's exit.
+        if (message.code === 'terminal_inactive' && this.terminal?.ended) return;
         this.update({ error: message.message });
         if (message.code === 'unauthorized' && credentials.browser) credentials.browser();
         if (message.code === 'version_mismatch')
@@ -507,6 +510,10 @@ export class ProxyClient {
         message.type === 'terminal.data' ||
         message.type === 'terminal.closed'
       ) {
+        if (message.type === 'terminal.opened')
+          this.terminal = { id: message.terminalId, ended: false };
+        else if (message.type === 'terminal.closed' && this.terminal?.id === message.terminalId)
+          this.terminal.ended = true;
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
         const events = { ...this.state.events };
@@ -634,6 +641,7 @@ export class ProxyClient {
     this.update({ status: 'disconnected', connectionId: null, error: null });
   }
   private rejectPending() {
+    this.terminal = null;
     for (const [requestId, request] of this.pending) {
       clearTimeout(request.timer);
       this.results.delete(requestId);

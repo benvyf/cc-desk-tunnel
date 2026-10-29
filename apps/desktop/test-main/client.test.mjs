@@ -90,6 +90,30 @@ function event(sessionId, sequence, text = 'text') {
   };
 }
 
+test('late terminal controls after exit do not show a connection error, but active terminal errors remain visible', (t) => {
+  const { client, socket, sessions } = fixture(t);
+  const sessionId = sessions[0].id;
+  const terminalId = randomUUID();
+  socket.message({ type: 'terminal.opened', sessionId, terminalId });
+  socket.message({ type: 'terminal.closed', sessionId, terminalId, exitCode: 0 });
+  socket.message({
+    type: 'connection.error',
+    code: 'terminal_inactive',
+    message: '原生终端已结束或属于另一连接。',
+  });
+  assert.equal(client.state.error, null);
+  socket.message({ type: 'connection.error', code: 'test_fault', message: '真实错误仍需显示' });
+  assert.equal(client.state.error, '真实错误仍需显示');
+  client.update({ error: null });
+  socket.message({ type: 'terminal.opened', sessionId, terminalId: randomUUID() });
+  socket.message({
+    type: 'connection.error',
+    code: 'terminal_inactive',
+    message: '原生终端属于另一连接。',
+  });
+  assert.equal(client.state.error, '原生终端属于另一连接。');
+});
+
 for (const type of [
   'session.status',
   'session.history',
