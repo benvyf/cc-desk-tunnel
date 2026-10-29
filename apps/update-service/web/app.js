@@ -5,15 +5,16 @@ import { setupEnrollment } from './enrollment.js';
 import { setupServerDownload } from './server-download.js';
 import { setupFreshNodes } from './fresh-nodes.js';
 import { setupDesktopAccess } from './desktop-access.js';
+import { setupMonitor } from './monitor.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
 let controller = new AbortController();
 let pending = false;
 let pageRefreshQueued = false;
-let monitorData;
+
 let downloadExpiry;
-const monitorDrafts = new Map();
+
 function notice(text, error = false) {
   $('notice').textContent = text;
   $('notice').className = error ? 'error' : '';
@@ -37,8 +38,8 @@ function logout() {
   token = '';
   pageRefreshQueued = false;
   navigation.clear();
-  monitorData = undefined;
-  monitorDrafts.clear();
+  monitor.clear();
+
   $('monitor-search').value = '';
   $('monitor-count').textContent = '';
   $('monitor-node-status').replaceChildren();
@@ -317,211 +318,7 @@ async function refresh() {
   }
 }
 async function refreshMonitor() {
-  monitorData = await request('/monitor');
-  renderMonitor();
-}
-function renderMonitor() {
-  const data = monitorData;
-  if (!data) return;
-  const container = $('monitor-nodes');
-  container.replaceChildren();
-  const nodes = new Map(data.nodes.map((row) => [row.nodeId, row]));
-  const accountNumbers = new Map(
-    data.accounts.map((account) => [account.id, account.accountNumber]),
-  );
-  $('monitor-node-status').replaceChildren();
-  for (const nodeId of data.configuredNodes) {
-    const row = nodes.get(nodeId);
-    const state = !row
-      ? '等待首次上报'
-      : row.account
-        ? `最近账号 ${accountNumbers.get(row.account.id) ?? row.account.id.slice(0, 12)} · ${row.account.email ?? '邮箱待上报'}`
-        : row.identity?.state === 'signed_out'
-          ? '最近确认已退出登录'
-          : '最近身份未知（不能据此认定未登录）';
-    $('monitor-node-status').append(
-      element('p', `${nodeId}：${state}${row ? ` · 最近接收 ${date(row.receivedAt)}` : ''}`),
-    );
-    const manage = element('button', `管理设备 ${nodeId}`, 'quiet');
-    manage.type = 'button';
-    manage.onclick = () => void action(() => desktopAccess.open(nodeId));
-    $('monitor-node-status').append(manage);
-  }
-  if (!data.configuredNodes.length)
-    $('monitor-node-status').append(element('p', '未配置上报节点。'));
-  const query = $('monitor-search').value.trim().toLowerCase();
-  const accounts = data.accounts.filter((account) =>
-    JSON.stringify([
-      account.id,
-      account.accountNumber,
-      account.note,
-      account.snapshots.map((row) => [row.nodeId, row.account]),
-    ])
-      .toLowerCase()
-      .includes(query),
-  );
-  $('monitor-count').textContent =
-    `已记录 ${data.accounts.length} 个账号 · 显示 ${accounts.length} 个 · 已配置 ${data.configuredNodes.length} 个节点`;
-  if (!accounts.length)
-    container.append(
-      element('p', query ? '没有匹配的账号。' : '暂无已识别账号；等待正常使用时上报。', 'empty'),
-    );
-  const quotaNames = {
-    five_hour: '5 小时额度',
-    seven_day: '每周额度',
-    seven_day_opus: 'Opus 每周额度',
-    seven_day_sonnet: 'Sonnet 每周额度',
-  };
-  for (const account of accounts) {
-    const card = element('article', undefined, 'card');
-    const latest = [...account.snapshots].sort((a, b) => b.observedAt.localeCompare(a.observedAt));
-    const identity = latest.find((row) => row.account?.email)?.account ?? latest[0]?.account;
-    card.append(element('h3', `${account.accountNumber} · ${identity?.email ?? '等待邮箱上报'}`));
-    card.append(
-      element(
-        'p',
-        `首次收到 ${date(account.firstSeenAt)} · 最近收到 ${date(account.lastSeenAt)}`,
-        'muted',
-      ),
-    );
-    const editor = element('form');
-    const label = element('label', '账号备注');
-    const input = element('textarea');
-    input.maxLength = 2000;
-    input.value = monitorDrafts.get(account.id) ?? account.note;
-    input.addEventListener('input', () => monitorDrafts.set(account.id, input.value));
-    label.append(input);
-    const save = element('button', '保存备注', 'quiet');
-    save.type = 'submit';
-    editor.append(label, save);
-    editor.addEventListener('submit', (event) => {
-      event.preventDefault();
-      void action(async () => {
-        const submitted = input.value;
-        await request(`/monitor/accounts/${account.id}/note`, {
-          method: 'PUT',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ note: submitted }),
-        });
-        if (monitorDrafts.get(account.id) === submitted) monitorDrafts.delete(account.id);
-        await refreshMonitor();
-        notice('账号备注已保存。');
-      });
-    });
-    card.append(editor);
-    for (const row of latest) {
-      const sample = element('section', undefined, 'monitor-sample');
-      const current = nodes.get(row.nodeId)?.account?.id === account.id;
-      const configured = data.configuredNodes.includes(row.nodeId);
-      sample.append(element('h4', row.nodeId));
-      sample.append(
-        element(
-          'span',
-          current ? '最近绑定（非在线状态）' : configured ? '历史绑定' : '历史绑定 · 节点已移除',
-          'badge',
-        ),
-      );
-      const profile = row.account;
-      const plan =
-        profile.subscriptionType === 'max'
-          ? 'Max（倍率未知）'
-          : (profile.subscriptionType ?? '未知');
-      sample.append(element('p', `套餐：${plan} · 组织：${profile.organization ?? '未知'}`));
-      sample.append(
-        element(
-          'p',
-          `登录方式：${profile.authMethod ?? '未知'} · API 提供方：${profile.apiProvider ?? '未知'}`,
-          'muted',
-        ),
-      );
-      if (row.identity)
-        sample.append(element('p', `身份记录：${date(row.identity.measuredAt)}`, 'muted'));
-      const status = row.quotaStatus;
-      if (status && status.state !== 'ok') {
-        const descriptions = {
-          error: '最近额度读取失败，保留最后有效快照',
-          unavailable: '最近读取未提供额度，保留最后有效快照',
-          unknown: '本次尚未采集额度，以下可能为历史快照',
-        };
-        sample.append(
-          element(
-            'p',
-            `${descriptions[status.state]}${status.measuredAt ? `（${date(status.measuredAt)}）` : ''}`,
-            status.state === 'error' ? 'error' : 'muted',
-          ),
-        );
-      }
-      const sampledAt = row.rateLimits?.measuredAt;
-      const stale = !sampledAt || Date.now() - Date.parse(sampledAt) > 15 * 60000;
-      sample.append(
-        element(
-          'span',
-          !row.rateLimits?.available ? '暂无可用额度' : stale ? '数据已过期' : '最近额度快照',
-          `badge${stale ? ' error' : ''}`,
-        ),
-      );
-      if (!row.rateLimits?.available) sample.append(element('p', '暂无可用额度数据', 'muted'));
-      else
-        for (const window of row.rateLimits.windows) {
-          const label =
-            quotaNames[window.name] ??
-            (window.name.startsWith('seven_day:')
-              ? `${window.name.slice(10)} 每周额度`
-              : window.name);
-          sample.append(
-            element(
-              'p',
-              `${label}：${window.utilization === null ? '未知' : `已用 ${window.utilization}% · 剩余约 ${Math.round((100 - window.utilization) * 10) / 10}%`}`,
-              window.utilization !== null && window.utilization >= 90 ? 'error' : '',
-            ),
-          );
-          if (window.resetsAt)
-            sample.append(
-              element(
-                'p',
-                Date.parse(window.resetsAt) <= Date.now()
-                  ? `重置时间已过，等待新数据（${date(window.resetsAt)}）`
-                  : `重置时间：${date(window.resetsAt)}`,
-                'muted',
-              ),
-            );
-        }
-      if (row.rateLimits?.available && !row.rateLimits.windows.length)
-        sample.append(element('p', '本次未返回额度窗口', 'muted'));
-      if (row.usage) {
-        const u = row.usage;
-        sample.append(
-          element(
-            'p',
-            `最近会话累计：输入 ${u.inputTokens.toLocaleString()} / 输出 ${u.outputTokens.toLocaleString()} tokens；缓存读取 ${u.cacheReadTokens.toLocaleString()} / 写入 ${u.cacheWriteTokens.toLocaleString()}`,
-            'muted',
-          ),
-        );
-        sample.append(element('p', '会话累计可能跨账号，不作为账号总用量。', 'muted'));
-        if (u.costUsd !== null)
-          sample.append(
-            element('p', `API 价格估算 $${u.costUsd.toFixed(4)}（非订阅账单）`, 'muted'),
-          );
-        sample.append(
-          element(
-            'p',
-            `用量采集：${date(u.measuredAt)} · 会话 ${u.sessionId}${u.runId ? ` · 运行 ${u.runId}` : ''}`,
-            'digest',
-          ),
-        );
-      }
-      if (sampledAt) sample.append(element('p', `额度采集：${date(sampledAt)}`, 'muted'));
-      sample.append(
-        element(
-          'p',
-          `节点观察：${date(row.observedAt)} · VPS 接收：${date(row.receivedAt)}`,
-          'muted',
-        ),
-      );
-      card.append(sample);
-    }
-    container.append(card);
-  }
+  await monitor.refresh();
 }
 async function login(sessionToken) {
   token = sessionToken;
@@ -562,15 +359,15 @@ $('create').addEventListener('submit', (event) => {
 });
 $('refresh').addEventListener('click', () => action(refresh));
 $('monitor-refresh').addEventListener('click', () => action(refreshMonitor));
-$('monitor-search').addEventListener('input', renderMonitor);
 setInterval(() => {
   if (
     token &&
     navigation.current === 'accounts' &&
     !pending &&
     !document.hidden &&
-    !monitorDrafts.size &&
-    !document.activeElement?.closest('#monitor-nodes form')
+    !monitor.hasDrafts &&
+    $('desktop-access-panel').hidden &&
+    !document.activeElement?.closest('#monitor-panel form')
   )
     void action(refreshMonitor);
 }, 30000);
@@ -590,7 +387,15 @@ const passwordLogin = setupPasswordLogin({ action, notice, login, request });
 const enrollment = setupEnrollment({ request, action, notice, date });
 const serverDownload = setupServerDownload({ request, element, notice });
 const freshNodes = setupFreshNodes({ request, action, notice, date });
-const desktopAccess = setupDesktopAccess({ request, action, notice, date });
+const monitor = setupMonitor({
+  request,
+  action,
+  notice,
+  element,
+  date,
+  manage: (id, tab) => desktopAccess.open(id, tab),
+});
+const desktopAccess = setupDesktopAccess({ request, action, notice, date, monitor });
 const navigation = setupNavigation({
   changed: queuePageRefresh,
   authenticated: () => Boolean(token),

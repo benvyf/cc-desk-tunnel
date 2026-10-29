@@ -48,12 +48,23 @@ test('device configuration, existing monitor tab and personal user editing', asy
         }
         return data;
       },
+      monitor: {
+        showNode: () => {
+          document.getElementById('access-claude')!.textContent = '已有 Claude 账号记录';
+          document.getElementById('monitor-overview')!.hidden = true;
+        },
+        closeNode: () => {
+          document.getElementById('access-claude')!.replaceChildren();
+          document.getElementById('monitor-overview')!.hidden = false;
+        },
+      },
     });
     return w.controller.open('ubuntu-cc');
   });
   await expect(page.getByLabel('工作空间名称')).toHaveValue('Ubuntu');
   await page.getByRole('tab', { name: 'Claude 账号' }).click();
-  await expect(page.getByText('已有 Claude 账号记录')).toBeVisible();
+  await expect(page.locator('#access-claude')).toHaveText('已有 Claude 账号记录');
+  await expect(page.locator('#access-claude')).toBeVisible();
   await page.getByRole('tab', { name: '登录用户' }).click();
   await page.getByRole('button', { name: '添加用户' }).click();
   await page.getByLabel('邮箱', { exact: true }).fill('me@example.com');

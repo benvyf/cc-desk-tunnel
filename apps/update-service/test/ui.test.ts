@@ -225,8 +225,8 @@ test(
     assert.ok(
       await page.evaluate(
         () =>
-          document.querySelector('nav')!.getBoundingClientRect().bottom <=
-          document.querySelector('#monitor-panel')!.getBoundingClientRect().top,
+          document.querySelector('nav')!.getBoundingClientRect().right <=
+          document.querySelector('#monitor-panel')!.getBoundingClientRect().left,
       ),
     );
     await page.locator('#show-updates').click();
@@ -251,31 +251,25 @@ test(
     await expect
       .poll(() => pageReads.filter((path) => path === 'monitor').length)
       .toBeGreaterThan(monitorReads);
-    await expect(
-      page.getByRole('heading', { name: 'owner@example.invalid', exact: true }),
-    ).toBeVisible();
-    await expect(page.locator('#monitor-node-status')).toContainText(
-      'ubuntu-pending：等待首次上报',
-    );
+    await expect(page.locator('#monitor-nodes')).toContainText('owner@example.invalid');
+    await expect(page.locator('[data-node-id="ubuntu-pending"]')).toContainText('等待首次上报');
     await expect(page.locator('#monitor-nodes')).toContainText('工作组甲');
     await expect(page.locator('#monitor-nodes')).toContainText('最近额度读取失败');
     await expect(
       page.locator('#monitor-nodes').getByText('ubuntu-test', { exact: true }),
     ).toBeVisible();
     await expect(
-      page
-        .locator('#monitor-nodes')
-        .getByText('5 小时额度：已用 82% · 剩余约 18%', { exact: true }),
-    ).toBeVisible();
+      page.locator('#monitor-nodes').getByRole('progressbar', { name: '5 小时额度', exact: true }),
+    ).toHaveAttribute('aria-valuenow', '82');
     await expect(
       page.locator('#monitor-nodes').getByText('数据已过期', { exact: true }),
     ).toBeVisible();
     await page.getByRole('button', { name: '刷新账号数据' }).click();
     await expect(
-      page
-        .locator('#monitor-nodes')
-        .getByText('5 小时额度：已用 82% · 剩余约 18%', { exact: true }),
-    ).toBeVisible();
+      page.locator('#monitor-nodes').getByRole('progressbar', { name: '5 小时额度', exact: true }),
+    ).toHaveAttribute('aria-valuenow', '82');
+    await page.locator('#monitor-history > summary').click();
+    await page.getByText('添加账号备注', { exact: true }).click();
     const accountNote = '主力账号 <img src=x onerror=alert(1)>';
     await page.getByLabel('账号备注').fill(accountNote);
     let releasePage!: () => void;
@@ -312,15 +306,17 @@ test(
     await expect(page.getByLabel('账号备注')).toHaveValue(accountNote + '（未保存的新修改）');
     await page.unroute('**/monitor/accounts/*/note');
     await page.getByLabel('账号备注').fill(accountNote);
-    await page.getByLabel('搜索账号').fill('no-matching-account');
-    await expect(page.locator('#monitor-nodes')).toContainText('没有匹配的账号');
-    await page.getByLabel('搜索账号').fill('主力账号');
+    await page.getByLabel('搜索设备或账号').fill('no-matching-account');
+    await expect(page.locator('#monitor-nodes')).toContainText('没有匹配的设备或账号');
+    await page.getByLabel('搜索设备或账号').fill('主力账号');
     await expect(
-      page.getByRole('heading', { name: 'owner@example.invalid', exact: true }),
+      page
+        .locator('#monitor-history-list')
+        .getByRole('heading', { name: 'owner@example.invalid', exact: true }),
     ).toBeVisible();
-    await page.getByLabel('搜索账号').fill('');
+    await page.getByLabel('搜索设备或账号').fill('');
     const ownerCard = page
-      .locator('#monitor-nodes article')
+      .locator('#monitor-history-list article')
       .filter({ has: page.getByRole('heading', { name: 'owner@example.invalid', exact: true }) });
     const changedAt = new Date(Date.now() + 10).toISOString();
     const changed = await fetch(
@@ -353,7 +349,9 @@ test(
     assert.equal(changed.status, 204);
     await page.getByRole('button', { name: '刷新账号数据' }).click();
     await expect(
-      page.getByRole('heading', { name: 'second@example.invalid', exact: true }),
+      page
+        .locator('#monitor-history-list')
+        .getByRole('heading', { name: 'second@example.invalid', exact: true }),
     ).toBeVisible();
     await expect(ownerCard).toContainText('历史绑定');
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
@@ -421,6 +419,7 @@ test(
     await page.getByLabel('管理令牌', { exact: true }).fill(token);
     await page.getByRole('button', { name: '使用令牌登录', exact: true }).click();
     await page.locator('#show-accounts').click();
+    await page.locator('#monitor-history > summary').click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.getByRole('button', { name: '退出登录' }).click();
     const setupToken = await new PasswordAuth(join(root, 'data/private')).issueSetup();
@@ -435,6 +434,7 @@ test(
     await page.getByLabel('新管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByLabel('确认管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByRole('button', { name: '保存密码并登录', exact: true }).click();
+    await page.locator('#monitor-history > summary').click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.locator('#show-moderation').click();
     await expect(page).toHaveURL(origin + '/cc-updates/admin/moderation');
@@ -496,6 +496,7 @@ test(
     await page.getByLabel('管理员密码', { exact: true }).fill('synthetic browser password');
     await page.getByRole('button', { name: '登录管理', exact: true }).click();
     await page.locator('#show-accounts').click();
+    await page.locator('#monitor-history > summary').click();
     await expect(ownerCard.getByLabel('账号备注')).toHaveValue(accountNote);
     await page.getByRole('button', { name: '修改密码', exact: true }).click();
     await page.getByLabel('当前管理员密码', { exact: true }).fill('wrong_password');

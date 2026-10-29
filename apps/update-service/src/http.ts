@@ -72,6 +72,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['fresh-install.py', 'text/plain'],
     ['fresh-nodes.js', 'text/javascript'],
     ['desktop-access.js', 'text/javascript'],
+    ['monitor.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
