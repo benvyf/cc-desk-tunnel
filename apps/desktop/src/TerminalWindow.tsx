@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import NativeTerminal, { type TerminalHandle, type TerminalPhase } from './NativeTerminal.tsx';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { SquareTerminal, X, Plus } from './icons.tsx';
+import { SquareTerminal, X, Plus, ChevronDown } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { folderName } from './paths.ts';
 
@@ -317,6 +317,7 @@ export default function TerminalWindow({
           {tabs.map((tab) => (
             <div
               className={`terminal-tab ${tab.tabId === activeId ? 'active' : ''}`}
+              data-phase={tab.phase}
               key={tab.tabId}
             >
               <button
@@ -328,16 +329,20 @@ export default function TerminalWindow({
                 onClick={() => setActiveId(tab.tabId)}
               >
                 <span>{tab.alias || folderName(tab.source.projectPath)}</span>
+                {!live(tab) && <span className="terminal-tab-ended">已结束</span>}
                 <small>{tab.detail}</small>
               </button>
               <IconButton
                 title={`关闭${tab.alias || folderName(tab.source.projectPath)}`}
+                size="sm"
                 disabled={closing}
                 onClick={() => {
                   void remove([tab], false);
                 }}
               >
-                <X scale="sm" />
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M2 2 10 10M10 2 2 10" fill="none" stroke="currentColor" />
+                </svg>
               </IconButton>
             </div>
           ))}
@@ -349,9 +354,13 @@ export default function TerminalWindow({
         >
           <Plus scale="sm" />
         </IconButton>
-        <Button size="sm" aria-expanded={menu} onClick={() => setMenu((value) => !value)}>
-          全部终端
-        </Button>
+        <IconButton
+          title="全部终端"
+          aria-expanded={menu}
+          onClick={() => setMenu((value) => !value)}
+        >
+          <ChevronDown scale="sm" />
+        </IconButton>
         {!fallback && (
           <div className="terminal-window-controls">
             <IconButton
