@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { ServerMessage, Session } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import { Button, Modal } from './ui.tsx';
@@ -14,6 +14,8 @@ export default function TerminalHistory({
   onClose: () => void;
   onContinue: (sessionId: string) => void;
 }) {
+  const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const [listedConnection, setListedConnection] = useState<string | null>(null);
   const [items, setItems] = useState<
     Extract<ServerMessage, { type: 'terminal.histories' }>['items']
   >([]);
@@ -26,11 +28,17 @@ export default function TerminalHistory({
     const generation = client.state.connectionId;
     setLoading(true);
     setError('');
+    setItems([]);
+    setConfirmed(false);
+    setListedConnection(null);
     void Promise.resolve().then(async () => {
       if (disposed) return;
       try {
         const result = await client.fetch({ type: 'terminal.history.list', sessionId: source.id });
-        if (!disposed && client.state.connectionId === generation) setItems(result.items);
+        if (!disposed && client.state.connectionId === generation) {
+          setItems(result.items);
+          setListedConnection(generation);
+        }
       } catch (error) {
         if (!disposed) setError(error instanceof Error ? error.message : '历史读取失败。');
       } finally {
@@ -40,7 +48,7 @@ export default function TerminalHistory({
     return () => {
       disposed = true;
     };
-  }, [client, source.id, refresh]);
+  }, [client, source.id, refresh, state.connectionId, state.status]);
   return (
     <Modal title="继续官方历史会话" onClose={onClose}>
       <p className="terminal-file-path">
@@ -68,9 +76,20 @@ export default function TerminalHistory({
             <Button
               size="sm"
               disabled={
-                loading || !confirmed || !item.available || client.state.status !== 'connected'
+                loading ||
+                !!error ||
+                !confirmed ||
+                !item.available ||
+                state.status !== 'connected' ||
+                listedConnection !== state.connectionId
               }
-              onClick={() => onContinue(item.sessionId)}
+              onClick={() => {
+                if (
+                  listedConnection === client.state.connectionId &&
+                  client.state.status === 'connected'
+                )
+                  onContinue(item.sessionId);
+              }}
             >
               新开终端继续
             </Button>

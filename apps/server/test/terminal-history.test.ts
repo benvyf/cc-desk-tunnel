@@ -143,11 +143,16 @@ test('official IDs persist and explicit continuation checks files, scope, locks 
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(
       file,
-      JSON.stringify({
-        type: 'user',
-        sessionId: first.nativeId,
-        message: { role: 'user', content: '中文历史任务' },
-      }) + '\n',
+      'null\n{broken\n' +
+        JSON.stringify({
+          type: 'user',
+          sessionId: first.nativeId,
+          message: {
+            role: 'user',
+            content: [null, { type: 'text', text: 42 }, { type: 'text', text: '中文历史任务' }],
+          },
+        }) +
+        '\n',
     );
     const readyHistory = (await client.histories(original))[0];
     assert.equal(readyHistory.available, true, readyHistory.reason);

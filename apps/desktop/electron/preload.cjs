@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('desktop', {
   pathForFile: (file) => webUtils.getPathForFile(file),
   saveTerminalFile: (name, data, encoding) =>
     ipcRenderer.invoke('terminal-file:save', name, data, encoding),
+  readTerminalText: (path) => ipcRenderer.invoke('terminal-file:text', path),
   saveFile: (name, text) => ipcRenderer.invoke('file:save', name, text),
   saveImage: (type, bytes) => ipcRenderer.invoke('image:save', type, bytes),
   attachmentPreview: (path) => ipcRenderer.invoke('attachment:preview', path),

@@ -29,12 +29,14 @@ export default function TerminalDraft({
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [message, setMessage] = useState('');
   const mounted = useRef(false);
+  const preparation = useRef(0);
   const composing = useRef(false);
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      preparation.current++;
     };
   }, []);
   const ready =
@@ -47,8 +49,8 @@ export default function TerminalDraft({
   const payload = attachments.some((item) => attachmentKind(item.name) === 'IMAGE')
     ? `${text}\n图片附件来自项目设备 ${session.device?.name ?? ''}；请使用已有 SSH 单文件临时复制到 Linux、Read 后删除临时副本的流程读取。`
     : text;
-  function add(paths: string[]) {
-    if (!mounted.current) return;
+  function add(paths: string[], generation: number) {
+    if (!mounted.current || generation !== preparation.current) return;
     setAttachments((items) => {
       const known = new Set(items.map((item) => item.path));
       return [
@@ -70,8 +72,9 @@ export default function TerminalDraft({
   }
   async function files(files: File[]) {
     if (!attachmentsAllowed || !window.desktop) return;
+    const generation = preparation.current;
     for (const file of files) {
-      if (!mounted.current) return;
+      if (!mounted.current || generation !== preparation.current) return;
       let path = '';
       try {
         path = window.desktop.pathForFile(file);
@@ -79,7 +82,7 @@ export default function TerminalDraft({
         /* Clipboard image. */
       }
       if (path) {
-        add([path]);
+        add([path], generation);
         continue;
       }
       if (!file.type.startsWith('image/')) continue;
@@ -94,14 +97,14 @@ export default function TerminalDraft({
           file.type,
           new Uint8Array(await file.arrayBuffer()),
         );
-        if (mounted.current)
+        if (mounted.current && generation === preparation.current)
           setAttachments((items) =>
             items.map((item) =>
               item.id === id ? { ...item, path: saved, status: 'ready' } : item,
             ),
           );
       } catch (error) {
-        if (mounted.current)
+        if (mounted.current && generation === preparation.current)
           setAttachments((items) =>
             items.map((item) =>
               item.id === id
@@ -165,9 +168,14 @@ export default function TerminalDraft({
               size="sm"
               disabled={!attachmentsAllowed}
               onClick={() => {
-                void window
-                  .desktop!.chooseFiles()
-                  .then(add, () => mounted.current && setMessage('选择附件失败。'));
+                const generation = preparation.current;
+                void window.desktop!.chooseFiles().then(
+                  (paths) => add(paths, generation),
+                  () => {
+                    if (mounted.current && generation === preparation.current)
+                      setMessage('选择附件失败。');
+                  },
+                );
               }}
             >
               添加附件
@@ -175,6 +183,7 @@ export default function TerminalDraft({
             <Button
               size="sm"
               onClick={() => {
+                preparation.current++;
                 setDraft('');
                 setAttachments([]);
                 setMessage('');

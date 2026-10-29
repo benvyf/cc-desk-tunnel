@@ -46,6 +46,7 @@ declare global {
         data: string,
         encoding: 'utf8' | 'base64',
       ) => Promise<boolean>;
+      readTerminalText: (path: string) => Promise<string>;
       saveFile: (name: string, text: string) => Promise<boolean>;
       openFolder: (path: string) => Promise<void>;
       openLogs: () => Promise<void>;

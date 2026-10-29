@@ -6,6 +6,137 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
 });
 
+test('local file preview renders text safely and never reads same-named files on another device', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    (window as any).localPreviewReads = [];
+    (window as any).desktop = {
+      terminalWindow: { focus() {}, setActive() {} },
+      inspectPath: async (path: string) => {
+        (window as any).localPreviewReads.push(path);
+        return { kind: 'file', runs: false };
+      },
+      readTerminalText: async () => '<script>unsafe()</script>本机文本',
+    };
+    (window as any).terminalTest.update({ device: { id: 'device' } });
+    const data = '\x1b]8;;file:///D:/fixture/report.html\x07查看文件\x1b]8;;\x07\r\n';
+    (window as any).terminalTest.emit({
+      type: 'terminal.data',
+      data,
+      bytes: new TextEncoder().encode(data).length,
+    });
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).terminalTest.controls.some((c: any) => c.type === 'terminal.ack'),
+      ),
+    )
+    .toBe(true);
+  const screen = await page.locator('.xterm-screen').boundingBox();
+  await page.mouse.click(screen!.x + 7, screen!.y + 7);
+  await expect(page.locator('.terminal-file-text')).toHaveText('<script>unsafe()</script>本机文本');
+  await expect(page.locator('.terminal-file-text script')).toHaveCount(0);
+  await page
+    .getByRole('dialog')
+    .locator('.dialog-actions')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click();
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({ device: { id: 'another-device' } }),
+  );
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.mouse.move(screen!.x + 80, screen!.y + 80);
+  await page.mouse.move(screen!.x + 25, screen!.y + 7, { steps: 5 });
+  await expect(page.locator('.xterm-screen')).toHaveClass(/xterm-cursor-pointer/);
+  await page.mouse.click(screen!.x + 25, screen!.y + 7);
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('另一台设备');
+  expect(await page.evaluate(() => (window as any).localPreviewReads.length)).toBe(1);
+});
+
+test('history refresh failure and changed connection invalidate results and confirmation', async ({
+  page,
+}) => {
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({
+      terminalHistory: { version: 1 },
+      historyItems: [
+        {
+          sessionId: 'old-history',
+          nativeId: '54c6cbb2-4ea7-4c98-9a57-1df184c459f1',
+          title: '旧连接历史',
+          updatedAt: '2026-10-29',
+          available: true,
+        },
+      ],
+    }),
+  );
+  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await page.getByRole('button', { name: '继续官方历史', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await dialog.getByRole('checkbox').check();
+  await expect(dialog.getByRole('button', { name: '新开终端继续' })).toBeEnabled();
+  await page.evaluate(() => (window as any).terminalTest.update({ historyError: true }));
+  await dialog.getByRole('button', { name: '刷新列表' }).click();
+  await expect(dialog.getByRole('alert')).toHaveText('模拟历史读取失败');
+  await expect(dialog.getByRole('button', { name: '新开终端继续' })).toHaveCount(0);
+  await expect(dialog.getByRole('checkbox')).not.toBeChecked();
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({
+      historyError: false,
+      connectionId: 'new-connection',
+      historyItems: [
+        {
+          sessionId: 'new-history',
+          nativeId: '71ece7b5-b52d-43b2-9cbf-3f574a4f1767',
+          title: '新连接历史',
+          updatedAt: '2026-10-29',
+          available: true,
+        },
+      ],
+    }),
+  );
+  await expect(dialog.getByText('新连接历史')).toBeVisible();
+  await expect(dialog.getByText('旧连接历史')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: '新开终端继续' })).toBeDisabled();
+});
+
+test('clear discards pending file selection and clipboard image preparation', async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).desktop = {
+      terminalWindow: { focus() {}, setActive() {} },
+      chooseFiles: () =>
+        new Promise((resolve) => {
+          (window as any).finishFiles = resolve;
+        }),
+      pathForFile: () => '',
+      attachmentPreview: async () => null,
+      saveImage: () =>
+        new Promise((resolve) => {
+          (window as any).finishImage = resolve;
+        }),
+    };
+    (window as any).terminalTest.update({ device: { id: 'device' } });
+  });
+  await page.getByRole('button', { name: '编辑输入', exact: true }).click();
+  await page.getByRole('button', { name: '添加附件', exact: true }).click();
+  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await page.evaluate(() => (window as any).finishFiles(['D:\\discard.png']));
+  await expect(page.locator('.attachment-tile')).toHaveCount(0);
+  await page.getByRole('textbox', { name: '多行终端草稿' }).evaluate((input) => {
+    const data = new DataTransfer();
+    data.items.add(new File(['image'], 'one.png', { type: 'image/png' }));
+    data.items.add(new File(['image'], 'two.png', { type: 'image/png' }));
+    input.dispatchEvent(new ClipboardEvent('paste', { bubbles: true, clipboardData: data }));
+  });
+  await expect(page.getByText('处理中…')).toBeVisible();
+  await page.waitForFunction(() => !!(window as any).finishImage);
+  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await page.evaluate(() => (window as any).finishImage('D:\\discard.png'));
+  await expect(page.locator('.attachment-tile')).toHaveCount(0);
+});
+
 test('official history is negotiated, explicitly confirmed and continued in a new tab with stable retry identity', async ({
   page,
 }) => {
@@ -162,6 +293,16 @@ test('per-tab drafts keep Chinese input, refuse unsafe multiline and paste brack
     )
     .toBe(true);
   const text = '中🙂文'.repeat(2500) + '\n最后一行';
+  await draft.fill('前文\x1b[201~\r危险回车');
+  await page.getByRole('button', { name: '粘贴到终端', exact: true }).click();
+  await expect(page.getByText('草稿含有终端控制字符，请移除后再粘贴。')).toBeVisible();
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).terminalTest.controls.filter((c: any) => c.type === 'terminal.input')
+          .length,
+    ),
+  ).toBe(0);
   await draft.fill(text);
   await page.getByRole('button', { name: '粘贴到终端', exact: true }).click();
   await expect(page.locator('.terminal-panel:visible .xterm-helper-textarea')).toBeFocused();

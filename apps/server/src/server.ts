@@ -761,6 +761,8 @@ export function createProxyServer(options: ServerOptions) {
     if (terminals.has(command.sessionId) || runs.has(command.sessionId) || mutations.size)
       throw new DomainError('native_busy', '请先结束这个会话的运行或会话管理，再打开终端。');
     const device = target(peer, session);
+    // target() may claim a legacy session; use its persisted device identity.
+    session = store.get(session.id).session;
     const ssh = seats.get(device)?.door?.ssh;
     if (!ssh && device !== serverDevice.id)
       throw new DomainError('execution_offline', '本机的执行通道尚未就绪。');

@@ -469,6 +469,7 @@ export class SessionStore {
         permissionMode: settings.permissionMode,
         model: settings.model,
         effort: settings.effort,
+        ...(history ? { nativeRoot: history.root } : {}),
       };
       this.database
         .prepare('UPDATE sessions SET metadata = ? WHERE id = ?')

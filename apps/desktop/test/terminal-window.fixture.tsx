@@ -60,6 +60,7 @@ const client = {
   async fetch(command: { type: string; sessionId: string }) {
     if (command.type === 'terminal.history.list') {
       requests.push(command);
+      if (state.historyError) throw new Error('模拟历史读取失败');
       return { items: state.historyItems ?? [] };
     }
     if (command.type === 'terminal.file.read') {

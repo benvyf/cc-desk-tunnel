@@ -35,6 +35,7 @@ const {
 const { copyFile, mkdtemp, readFile, stat, writeFile } = require('node:fs/promises');
 const { gitBranch } = require('./git-branch.cjs');
 const fileLinks = require('./file-links.cjs');
+const { readTerminalText } = require('./terminal-text.cjs');
 const { clearPastedPictures } = require('./pasted-images.cjs');
 const { asOnDisk } = require('./disk-path.cjs');
 const { openLog } = require('./client-log.cjs');
@@ -175,6 +176,7 @@ handle('files:choose', async (event) => {
   });
   return result.canceled ? [] : result.filePaths;
 });
+handle('terminal-file:text', (_event, path) => readTerminalText(path));
 // Decode off the renderer thread, limit source size and send only a small raster thumbnail over IPC.
 handle('attachment:preview', async (_event, file) => {
   if (

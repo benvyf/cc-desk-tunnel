@@ -374,6 +374,9 @@ export default function NativeTerminal({
               id &&
               client.state?.connectionId === connectionId &&
               phaseNow() === 'running' &&
+              !host.current?.ownerDocument.activeElement?.closest(
+                '.terminal-draft, .terminal-list',
+              ) &&
               !host.current?.ownerDocument.querySelector('dialog[open]')
             )
               terminal.paste(text);
@@ -424,6 +427,8 @@ export default function NativeTerminal({
           throw new Error('目标终端不可输入，草稿已保留。');
         if (/[\r\n]/.test(text) && !terminal.modes.bracketedPasteMode)
           throw new Error('终端未启用多行粘贴模式，请复制后手动粘贴并检查。');
+        if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text))
+          throw new Error('草稿含有终端控制字符，请移除后再粘贴。');
         terminal.paste(text);
         terminal.focus();
       },

@@ -19,7 +19,8 @@ export function terminalHistoryContext(
   return { config, key };
 }
 export function terminalHistoryPath(config: string, cwd: string, nativeId: string) {
-  if (!/^[0-9a-f]{8}-[0-9a-f-]{27}$/i.test(nativeId)) throw new Error('官方历史 ID 无效。');
+  if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(nativeId))
+    throw new Error('官方历史 ID 无效。');
   const project = resolve(cwd).replace(/[^a-zA-Z0-9]/g, '-');
   // CLI uses a hashed suffix for very long paths. Do not guess or scan other roots.
   if (project.length > 200)
@@ -42,7 +43,10 @@ export async function readTerminalHistory(config: string, cwd: string, nativeId:
         : actual !== expected
     )
       return null;
-    file = await open(actual, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    file = await open(
+      actual,
+      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
+    );
     const stat = await file.stat();
     if (!stat.isFile() || !stat.size) return null;
     const bytes = Buffer.alloc(Math.min(stat.size, 256 * 1024));
@@ -55,6 +59,8 @@ export async function readTerminalHistory(config: string, cwd: string, nativeId:
         continue;
       }
       if (
+        !value ||
+        typeof value !== 'object' ||
         value.type !== 'user' ||
         value.sessionId !== nativeId ||
         value.isMeta ||
@@ -67,8 +73,8 @@ export async function readTerminalHistory(config: string, cwd: string, nativeId:
           ? content
           : Array.isArray(content)
             ? content
-                .filter((block: { type: string }) => block.type === 'text')
-                .map((block: { text: string }) => block.text)
+                .filter((block) => block && block.type === 'text' && typeof block.text === 'string')
+                .map((block) => block.text)
                 .join(' ')
             : '';
       return {

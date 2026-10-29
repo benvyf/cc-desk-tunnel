@@ -31,7 +31,7 @@ export function terminalLinks(
         }
       }
       const pattern =
-        /https?:\/\/[^\s<>"']+|file:\/\/[^\s<>"']+|["']((?:[a-zA-Z]:[\\/]|\/)[^"'\r\n]+)["']|(?:[a-zA-Z]:[\\/]|\/)[^\s<>"'|]+/g;
+        /(?<![\p{L}\p{N}_.\/\\:~\-])(?:["']((?:https?:\/\/|file:\/\/|[a-z]:[\\/]|\\\\|\/|\.{1,2}[\\/]|~\/)[^"'\r\n]+)["']|https?:\/\/[^\s<>"']+|file:\/\/[^\s<>"']+|(?:[a-z]:[\\/]|\\\\|\/|\.{1,2}[\\/]|~\/)[^\s<>"'|]+)/giu;
       const links = Array.from(text.matchAll(pattern), (match) => {
         const target = match[1] ?? match[0].replace(/[.,;，。；]+$/, '');
         const offset = match.index! + (match[1] ? 1 : 0);

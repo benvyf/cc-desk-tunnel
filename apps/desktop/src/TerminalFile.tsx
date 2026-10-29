@@ -45,13 +45,19 @@ export default function TerminalFile({
             throw new Error('这是另一台设备的路径，不能按本机同名文件打开。');
           const info = await window.desktop!.inspectPath(path);
           if (info.kind === 'missing') throw new Error('本机找不到这个路径。');
+          if (disposed) return;
+          setLocal(true);
           const picture =
             isPicture(path) && info.kind === 'file'
               ? await window.desktop!.attachmentPreview(path)
               : null;
           if (disposed) return;
-          setLocal(true);
           if (picture) setPreview({ mime: 'image/*', data: picture, encoding: 'base64' });
+          else if (isPicture(path)) setError('图片无法预览，可能过大或格式暂不支持。');
+          else if (info.kind === 'file') {
+            const data = await window.desktop!.readTerminalText(path);
+            if (!disposed) setPreview({ mime: 'text/plain', data, encoding: 'utf8' });
+          }
         } else {
           if (!client.state.terminalFiles) throw new Error('此节点暂不支持文件预览，请复制路径。');
           const file = await client.fetch({
@@ -83,6 +89,7 @@ export default function TerminalFile({
             className="terminal-file-image"
             alt={path}
             src={local ? preview.data : `data:${preview.mime};base64,${preview.data}`}
+            onError={() => setError('图片内容无法解码，请下载或打开文件检查。')}
           />
         ) : (
           <pre className="terminal-file-text">{preview.data}</pre>

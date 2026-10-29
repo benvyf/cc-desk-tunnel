@@ -162,6 +162,36 @@ test('clipboard paste uses bracketed paste without submitting a command', async 
     .toBe('\x1b[200~第一行\rsecond line\x1b[201~');
 });
 
+test('delayed clipboard paste does not reach the terminal after its draft gains focus', async ({
+  page,
+}) => {
+  await mount(page);
+  await page.evaluate(() => {
+    Object.defineProperty(navigator.clipboard, 'readText', {
+      configurable: true,
+      value: () =>
+        new Promise((resolve) => {
+          (window as any).finishPaste = resolve;
+        }),
+    });
+  });
+  await page.keyboard.press('Control+v');
+  await page.waitForFunction(() => !!(window as any).finishPaste);
+  await page.evaluate(() => {
+    const draft = document.createElement('textarea');
+    draft.className = 'terminal-draft';
+    document.body.append(draft);
+    draft.focus();
+    (window as any).finishPaste('stale paste');
+  });
+  await expect(page.locator('textarea.terminal-draft')).toBeFocused();
+  expect(
+    await page.evaluate(() =>
+      window.terminalFixture.controls.filter((c) => c.type === 'terminal.input'),
+    ),
+  ).toEqual([]);
+});
+
 test('Ctrl+C copies a terminal selection and interrupts only without a selection', async ({
   page,
   context,

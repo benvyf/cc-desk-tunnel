@@ -82,3 +82,35 @@ test('links map soft wrapped CJK cells and activate only on click', () => {
   assert.equal(terminalTarget('file://other-server/share').kind, 'unknown');
   assert.equal(terminalTarget('file:///C:/a%20b.txt').value, 'C:/a b.txt');
 });
+
+test('link detection keeps relative paths relative and handles quoted URIs and UNC paths', () => {
+  const text =
+    'src/foo.ts ./relative.ts ../parent.ts ~/home.ts HTTPS://example.test "file:///C:/a b.txt" "\\\\host\\share\\a b.txt" /absolute.ts';
+  const terminal = {
+    buffer: {
+      active: {
+        length: 1,
+        getLine: () => ({
+          isWrapped: false,
+          length: text.length,
+          getCell: (x: number) => ({ getChars: () => text[x], getWidth: () => 1 }),
+        }),
+      },
+    },
+  } as unknown as Terminal;
+  terminalLinks(terminal, () => {}).provideLinks(1, (links) => {
+    assert.deepEqual(
+      links?.map((link) => link.text),
+      [
+        './relative.ts',
+        '../parent.ts',
+        '~/home.ts',
+        'HTTPS://example.test',
+        'file:///C:/a b.txt',
+        '\\\\host\\share\\a b.txt',
+        '/absolute.ts',
+      ],
+    );
+    assert.equal(terminalTarget(links![0].text).kind, 'unknown');
+  });
+});

@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { SessionStore } from '../src/store.ts';
+import { pathKey } from '@cc-desk-tunnel/protocol';
 
 test('terminal creation saves settings atomically and survives restart without reinterpreting its source', () => {
   const directory = mkdtempSync(join(tmpdir(), 'cc-terminal-create-'));
@@ -44,6 +45,42 @@ test('terminal creation saves settings atomically and survives restart without r
     assert.equal(store.created('failed'), undefined);
     assert.equal(store.terminalCreated('failed', 'signature'), undefined);
     assert.equal(store.list().length, 1);
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('continuation preserves a legacy history root instead of replacing it with the current project root', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'cc-terminal-legacy-'));
+  const store = new SessionStore(directory);
+  try {
+    const device = { id: randomUUID(), name: 'fixture', platform: 'linux' as const };
+    const original = store.create('old', 'old', '/project', device);
+    const now = new Date().toISOString();
+    const binding = {
+      sessionId: original.id,
+      nativeId: randomUUID(),
+      root: randomUUID(),
+      deviceId: device.id,
+      pathKey: pathKey(original.projectPath),
+      configKey: 'fixture',
+      mode: 'new' as const,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const resumed = store.createTerminal(
+      'resume',
+      'resume-signature',
+      'resume',
+      '/project',
+      device,
+      original,
+      binding,
+    );
+    assert.equal(resumed.nativeRoot, binding.root);
+    assert.equal(store.get(resumed.id).session.nativeRoot, binding.root);
+    assert.equal(store.terminalHistory(resumed.id)?.root, binding.root);
   } finally {
     store.close();
     rmSync(directory, { recursive: true, force: true });
