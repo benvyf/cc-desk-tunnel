@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-29 第一台基础镜像升级 TypeError 修复
+
+用户执行基础镜像升级在切换前报 TypeError；只读输出显示原容器仍 running/unpaused、启动时间未变，配置/运行环境检查通过，无 backup 记录，存在 Build 8 预检目录。根因是 `upgrade-terminal-base.py` 向 `offline_preflight` 传文件对象，而 helper 的 `command` 会再次调用 open，要求路径。已改传日志 Path；测试改为实际 helper 预检函数，并修正旧夹具写死 Build 7，Linux 隔离测试复现原 TypeError、修复后 4 项通过（Docker 调用模拟，不代表真实镜像安装验收）。兼容中心实际部署源码 `76e286fba505b2dce157a400e14ee7087d9febe3`，仅升级脚本一个运行文件改变；验证管理中心新生成命令包含修复后脚本，登录/权限/节点/发布索引和续期登记保留。备份 `/var/backups/cc-update-service/build22-compatible-20261029T141720Z`。用户须刷新管理中心重新复制命令，旧复制命令内嵌旧脚本，不能继续使用。未操作真实 Ubuntu 节点；02 已确认 Build 6→8 返回 manual-image-upgrade，03 待检查，第一台专用脚本仍不能用于 02/03。
+
 ### 2026-10-29 修复管理中心界面被旧 main 覆盖
 
 新版界面及用户启停代码此前仅在 `codex/email-login`，未进入 main，后续 main 部署覆盖了界面；Build 22 兼容部署沿用旧基线，未恢复新版。现已将原始 `c9ad2fc` / `ee6d3fe` 相关代码补入 main（`fba44d6`），并合并兼容部署提交（`4ed3d44`）。VPS 实际运行 `7a565a3728f818a2be937cf265c508754c4ca032`，仅 7 个运行文件改变，11 个页面/静态资源线上验证通过，登录/权限/节点/Build 22 与 Build 8 索引/续期登记保持正常。备份 `/var/backups/cc-update-service/build22-compatible-20261029T104803Z`。两项浏览器流程及升级指令回归通过（9 passed，1 Linux-only skipped），类型检查通过。旧全量中心暂存包标记作废，未来从修复后的 main 重打，不能再部署含旧界面的 `6e28782` 全量中心包。详见 [管理中心布局说明](docs/MANAGEMENT-CENTER-REDESIGN.md)。
