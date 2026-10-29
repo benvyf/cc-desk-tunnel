@@ -244,6 +244,18 @@ test('turn rail previews, bookmarks and navigates without being pulled back by n
   const rail = page.getByRole('navigation', { name: '对话导航' });
   const mark = rail.getByRole('button', { name: '跳转到第 20 条消息', exact: true });
   await expect(rail.locator('.turn-mark')).toHaveCount(43);
+  const expectCompact = async () => {
+    await expect
+      .poll(() =>
+        rail
+          .locator('.turn-mark span')
+          .evaluateAll((ticks) =>
+            ticks.every((tick) => Math.round(tick.getBoundingClientRect().width) === 6),
+          ),
+      )
+      .toBe(true);
+  };
+  await expectCompact();
   await mark.hover();
   const expectWave = async (peak: number) => {
     for (let offset = -4; offset <= 4; offset++) {
@@ -281,14 +293,21 @@ test('turn rail previews, bookmarks and navigates without being pulled back by n
   await preview.getByRole('button', { name: '添加消息书签' }).click();
   await expect(mark).toHaveAttribute('data-bookmarked', 'true');
   await expectWave(20);
+  await preview.hover();
+  await expectWave(20);
   await mark.click();
   await expect(mark).toHaveAttribute('aria-current', 'true');
+  await page.mouse.move(500, 120);
+  await expect(mark).toBeFocused();
+  await expectCompact();
+  await expect(preview).toHaveCount(0);
   const question = page
     .locator('.message.user')
     .filter({ hasText: '后续如果 Claude Code 更新，会影响吗？' });
   await expect(question).toBeInViewport();
   output('最新输出仍然继续，正在逐项落实交互细节。');
   await expect(page.locator('.transcript')).toContainText('最新输出仍然继续');
+  await expectCompact();
   await expect(question).toBeInViewport();
   await page.getByRole('textbox', { name: '消息', exact: true }).fill('先检查布局，再整理测试结果');
   await page.getByRole('button', { name: '排队发送', exact: true }).click();
@@ -326,13 +345,67 @@ test('turn rail previews, bookmarks and navigates without being pulled back by n
   await mark.press('ArrowDown');
   await expect(rail.getByRole('button', { name: '跳转到第 21 条消息', exact: true })).toBeFocused();
   await expectWave(21);
-  // Returning to the transcript restores the wave to the current reading position.
+  // Returning to the transcript collapses every mark, including the current reading position.
   await page.getByRole('textbox', { name: '消息', exact: true }).focus();
   await page.mouse.move(500, 120);
-  await expectWave(20);
+  await expectCompact();
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(mark.locator('span')).toHaveCSS('transition-duration', '0s');
 });
+
+for (const theme of ['light', 'dark']) {
+  for (const width of [390, 1280]) {
+    test('turn rail hover lifecycle in ' + theme + ' at ' + width + 'px', async ({ page }) => {
+      await page.addInitScript((theme) => {
+        localStorage.setItem('proxy-prefs', JSON.stringify({ theme }));
+      }, theme);
+      await fixture(page, 8);
+      await page.setViewportSize({ width, height: 800 });
+      const nav = page.locator('.turn-navigation');
+      const mark = nav.locator('.turn-mark').nth(4);
+      const compact = async () => {
+        await expect
+          .poll(() =>
+            nav
+              .locator('.turn-mark span')
+              .evaluateAll((ticks) =>
+                ticks.every((tick) => Math.round(tick.getBoundingClientRect().width) === 6),
+              ),
+          )
+          .toBe(true);
+        await expect(nav.locator('.turn-preview')).toHaveCount(0);
+      };
+      await compact();
+      await page.screenshot({
+        animations: 'disabled',
+        path: resolve(screenshots, 'turn-rail-' + theme + '-' + width + '-idle.png'),
+      });
+      await mark.hover();
+      await expect
+        .poll(async () => Math.round((await mark.locator('span').boundingBox())!.width))
+        .toBe(24);
+      const preview = nav.locator('.turn-preview');
+      await expect(preview).toBeVisible();
+      const bounds = (await preview.boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+      await page.screenshot({
+        animations: 'disabled',
+        path: resolve(screenshots, 'turn-rail-' + theme + '-' + width + '-hover.png'),
+      });
+      await page.mouse.move(100, 100);
+      await compact();
+      await mark.focus();
+      await expect(preview).toBeVisible();
+      await mark.press('Escape');
+      await compact();
+      await mark.hover();
+      await expect(preview).toBeVisible();
+      await page.mouse.move(100, 100);
+      await compact();
+    });
+  }
+}
 
 test('sidebar divider clamps, cancels and remembers width without disturbing chat', async ({
   page,

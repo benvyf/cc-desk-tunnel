@@ -92,7 +92,7 @@ export default function TurnNavigator({
   const turn = items.find((item) => item.id === preview?.id);
   const peakIndex = Math.max(
     0,
-    items.findIndex((item) => item.id === (preview?.id ?? active)),
+    items.findIndex((item) => item.id === preview?.id),
   );
   function show(id: string, element: HTMLElement) {
     previewAnchor.current = element;
@@ -171,7 +171,7 @@ export default function TurnNavigator({
             type="button"
             className="turn-mark"
             data-turn-mark={item.id}
-            data-wave-distance={Math.min(4, Math.abs(index - peakIndex))}
+            data-wave-distance={preview ? Math.min(4, Math.abs(index - peakIndex)) : undefined}
             data-bookmarked={bookmarks.has(item.id) || undefined}
             aria-label={`跳转到第 ${index + 1} 条消息`}
             aria-current={active === item.id ? 'true' : undefined}
