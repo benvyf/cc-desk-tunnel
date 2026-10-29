@@ -224,6 +224,36 @@ test('login only receives the session directory; content is loaded when selected
   assert.equal(client.state.events[sessions[5].id].length, 1);
 });
 
+test('history is confirmed loaded only after a successful snapshot, including after a failed reload', async (t) => {
+  const { client, socket, sessions, snapshot } = fixture(t);
+  const session = sessions[0];
+  const fail = async () => {
+    socket.message({
+      type: 'response',
+      requestId: socket.sent.at(-1).requestId,
+      ok: false,
+      code: 'history_unavailable',
+      message: 'History unavailable',
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    assert.equal(client.state.history[session.id].loading, false);
+    assert.equal(client.state.history[session.id].loaded, false);
+    assert.equal(client.state.error, 'History unavailable');
+  };
+  client.select(session.id);
+  assert.equal(client.state.history[session.id].loaded, false);
+  await fail();
+  client.select(session.id);
+  snapshot(session, []);
+  assert.equal(client.state.history[session.id].loaded, true);
+  client.select(session.id);
+  assert.equal(client.state.history[session.id].loaded, false);
+  await fail();
+  client.select(session.id);
+  snapshot(session, []);
+  assert.equal(client.state.history[session.id].loaded, true);
+});
+
 test('stream notifications are batched and pending events cannot cross a disconnect or deletion', async (t) => {
   const { client, socket, sessions, snapshot } = fixture(t);
   const session = sessions[0];

@@ -2491,6 +2491,48 @@ dialog:has(.picture-view) {
   overflow-wrap: anywhere;
   text-align: center;
 }
+/* A session with nothing sent yet greets from the middle of the conversation pane. */
+.transcript.is-empty {
+  container-type: inline-size;
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+/* Newsreader (OFL), cut down to Latin and fixed at the display size and weight the greeting uses. */
+@font-face {
+  font-family: 'CC Greeting';
+  src: url('./fonts/newsreader-greeting.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+.empty-greeting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: calc(10rem / 14);
+  padding-bottom: 6vh;
+  font-size: min(calc(40rem / 14), 13cqi);
+}
+.empty-greeting > svg.empty-greeting-mark {
+  flex: none;
+  width: 0.92em;
+  height: 0.92em;
+  color: var(--clay);
+}
+.empty-greeting h2 {
+  min-width: 0;
+  margin: 0;
+  font-family: 'CC Greeting', Georgia, serif;
+  font-size: 1em;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
+  text-align: center;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
 .empty-project {
   color: var(--faint);
   font-size: calc(12rem / 14);

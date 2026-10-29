@@ -111,6 +111,7 @@ export class RequestInterruptedError extends Error {
 }
 
 export type HistoryState = {
+  loaded?: boolean;
   firstSequence: number;
   lastSequence: number;
   hasEarlier: boolean;
@@ -583,6 +584,7 @@ export class ProxyClient {
         }
         const previous = this.state.history[id];
         const history = {
+          loaded: true,
           firstSequence:
             message.mode === 'append'
               ? (previous?.firstSequence ?? message.firstSequence)
@@ -799,6 +801,7 @@ export class ProxyClient {
             loadingEarlier: false,
           }),
           loading: true,
+          loaded: false,
         },
       },
     });

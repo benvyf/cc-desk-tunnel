@@ -25,6 +25,7 @@ import {
   Pencil,
   Plus,
   Search,
+  Spark,
   SquareTerminal,
   Wrench,
   X,
@@ -938,6 +939,14 @@ export default function Conversation({
     return () => observer.disconnect();
   }, [session?.id, findOpen]);
 
+  const showGreeting =
+    !!session &&
+    history?.loaded === true &&
+    turns.length === 0 &&
+    !history.loading &&
+    !history.hasEarlier &&
+    !loadError &&
+    !session.activeRun;
   return (
     <SearchExpanded.Provider value={searching}>
       {session && (
@@ -1113,7 +1122,7 @@ export default function Conversation({
               </button>
             </div>
           ) : (
-            <div className="transcript" ref={transcriptRoot}>
+            <div className={`transcript${showGreeting ? ' is-empty' : ''}`} ref={transcriptRoot}>
               {loadError && (
                 <div className="history-status" role="alert">
                   {loadError}
@@ -1135,11 +1144,10 @@ export default function Conversation({
                   同步会话
                 </div>
               )}
-              {turns.length === 0 && !history?.loading && (
-                <div className="empty-state">
-                  <MessageSquare />
-                  <h2>{session.title}</h2>
-                  <span className="empty-project">{session.projectPath}</span>
+              {showGreeting && (
+                <div className="empty-greeting">
+                  <Spark className="empty-greeting-mark" />
+                  <h2 lang="en">You’re here!</h2>
                 </div>
               )}
               <LinkPlace.Provider value={place}>
