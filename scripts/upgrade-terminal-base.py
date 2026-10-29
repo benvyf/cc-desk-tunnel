@@ -10,6 +10,7 @@ import socket
 import subprocess
 import tempfile
 import tarfile
+import traceback
 import urllib.request
 
 ROOT = Path('/var/lib/cc-space-terminal-upgrade')
@@ -125,4 +126,7 @@ if __name__ == '__main__':
         main()
     except Exception as error:
         print('Upgrade stopped: ' + type(error).__name__ + '. Keep backups and preflight logs; inspect locally before retry.', flush=True)
+        # File/function locations are enough to locate failures without exposing Docker env or credentials.
+        for frame in traceback.extract_tb(error.__traceback__):
+            print(f'  {Path(frame.filename).name}:{frame.lineno} in {frame.name}', flush=True)
         raise SystemExit(1)
