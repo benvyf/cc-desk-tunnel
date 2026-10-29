@@ -10,11 +10,20 @@ import type { Terminal } from '@xterm/xterm';
 test('terminal previews are bounded, read-only and confined after realpath', async () => {
   const base = await mkdtemp(join(tmpdir(), 'terminal-files-'));
   try {
-    const root = join(base, 'allowed'); await mkdir(root);
-    const text = join(root, '中文 file.html'); await writeFile(text, '<script>alert(1)</script>');
+    const root = join(base, 'allowed');
+    await mkdir(root);
+    const text = join(root, '中文 file.html');
+    await writeFile(text, '<script>alert(1)</script>');
     assert.deepEqual(await readTerminalFile(text, [root]), {
-      mime: 'text/plain', encoding: 'utf8', data: '<script>alert(1)</script>' });
-    const outside = join(base, 'secret.txt'); await writeFile(outside, 'secret');
+      mime: 'text/plain',
+      encoding: 'utf8',
+      data: '<script>alert(1)</script>',
+    });
+    await writeFile(text, '\ufeff中文\r\n');
+    const bom = await readTerminalFile(text, [root]);
+    assert.equal(bom.data, '\ufeff中文\r\n'); // Download retains UTF-8 BOM and line endings.
+    const outside = join(base, 'secret.txt');
+    await writeFile(outside, 'secret');
     await assert.rejects(readTerminalFile(outside, [root]), /工作区/);
     await assert.rejects(readTerminalFile('relative.txt', [root]), /绝对/);
     await assert.rejects(readTerminalFile(join(root, 'missing'), [root]));
@@ -27,17 +36,37 @@ test('terminal previews are bounded, read-only and confined after realpath', asy
     // Directory symlinks (junctions on Windows) do not require elevated symlink privileges.
     await symlink(base, join(root, 'escape'), process.platform === 'win32' ? 'junction' : 'dir');
     await assert.rejects(readTerminalFile(join(root, 'escape', 'secret.txt'), [root]), /工作区/);
-  } finally { await rm(base, { recursive: true, force: true }); }
+  } finally {
+    await rm(base, { recursive: true, force: true });
+  }
 });
 
 test('links map soft wrapped CJK cells and activate only on click', () => {
-  const rows = [['中', '', '文', '', ' ', '"', 'C', ':', '\\', '测', ''], ['试', '', ' ', 'a', '.', 't', 's', '"']];
+  const rows = [
+    ['中', '', '文', '', ' ', '"', 'C', ':', '\\', '测', ''],
+    ['试', '', ' ', 'a', '.', 't', 's', '"'],
+  ];
   const clicked: string[] = [];
-  const terminal = { buffer: { active: { length: 2, getLine(y: number) {
-    return { isWrapped: y === 1, length: rows[y].length, getCell(x: number) {
-      const chars = rows[y][x]; return { getChars: () => chars, getWidth: () => chars === '' ? 0 : /[中文测试]/.test(chars) ? 2 : 1 };
-    } };
-  } } } } as unknown as Terminal;
+  const terminal = {
+    buffer: {
+      active: {
+        length: 2,
+        getLine(y: number) {
+          return {
+            isWrapped: y === 1,
+            length: rows[y].length,
+            getCell(x: number) {
+              const chars = rows[y][x];
+              return {
+                getChars: () => chars,
+                getWidth: () => (chars === '' ? 0 : /[中文测试]/.test(chars) ? 2 : 1),
+              };
+            },
+          };
+        },
+      },
+    },
+  } as unknown as Terminal;
   const provider = terminalLinks(terminal, (value) => clicked.push(value));
   provider.provideLinks(2, (links) => {
     assert.equal(links?.length, 1);
