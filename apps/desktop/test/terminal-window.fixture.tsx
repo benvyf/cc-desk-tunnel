@@ -58,6 +58,10 @@ const client = {
     };
   },
   async fetch(command: { type: string; sessionId: string }) {
+    if (command.type === 'terminal.history.list') {
+      requests.push(command);
+      return { items: state.historyItems ?? [] };
+    }
     if (command.type === 'terminal.file.read') {
       requests.push(command);
       return { mime: 'text/plain', encoding: 'utf8', data: '<script>unsafe()</script>预览内容' };
@@ -69,7 +73,7 @@ const client = {
   },
   async request(command: any, requestId = crypto.randomUUID()) {
     requests.push(command);
-    if (command.type === 'terminal.session.create') {
+    if (command.type === 'terminal.session.create' || command.type === 'terminal.history.continue') {
       let id = created.get(requestId);
       if (!id) {
         id = `fixture-${created.size + 1}`;

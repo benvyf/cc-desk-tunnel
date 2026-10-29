@@ -10,6 +10,7 @@ import { terminalTarget } from './terminalLinks.ts';
 import { followLink } from './linkActions.ts';
 import TerminalFile from './TerminalFile.tsx';
 import TerminalDraft from './TerminalDraft.tsx';
+import TerminalHistory from './TerminalHistory.tsx';
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
@@ -25,6 +26,7 @@ type Tab = {
   error?: string;
   createId?: string;
   projectPath?: string;
+  historySessionId?: string;
 };
 const live = (tab: Tab) => !['ended', 'failed', 'disconnected'].includes(tab.phase);
 export default function TerminalWindow({
@@ -77,6 +79,7 @@ export default function TerminalWindow({
   const [closeError, setCloseError] = useState<string | null>(null);
   const [file, setFile] = useState<{ raw: string; source: Session } | null>(null);
   const [linkError, setLinkError] = useState('');
+  const [historySource, setHistorySource] = useState<Session | null>(null);
   useEffect(() => {
     (container?.ownerDocument ?? document)
       .getElementById(`tab-${activeId}`)
@@ -128,7 +131,10 @@ export default function TerminalWindow({
     const task = (async () => {
       try {
         const response = await client.request(
-          {
+          tab.historySessionId ? {
+            type: 'terminal.history.continue', sessionId: tab.source.id,
+            historySessionId: tab.historySessionId, confirmed: true,
+          } : {
             type: 'terminal.session.create',
             title: '新终端',
             ...(tab.projectPath
@@ -163,7 +169,7 @@ export default function TerminalWindow({
     creations.current.set(tab.tabId, task);
     await task;
   }
-  function add(source: Session, path?: string) {
+  function add(source: Session, path?: string, historySessionId?: string) {
     if (!multi || !connected || closing) return;
     const tab: Tab = {
       tabId: crypto.randomUUID(),
@@ -173,6 +179,7 @@ export default function TerminalWindow({
       detail: '正在创建',
       createId: crypto.randomUUID(),
       projectPath: path,
+      historySessionId,
     };
     setTabs((current) => [...current, tab]);
     setActiveId(tab.tabId);
@@ -476,6 +483,8 @@ export default function TerminalWindow({
           >
             标签别名
           </Button>
+          {state.terminalHistory && <Button size="sm" disabled={!connected || closing || !active}
+            onClick={() => { setHistorySource(active.source); setMenu(false); }}>继续官方历史</Button>}
         </div>
       )}
       {closeError && <p role="alert">{closeError}</p>}
@@ -553,6 +562,9 @@ export default function TerminalWindow({
         <span>CLI 工作区以终端实际显示为准</span>
       </footer>
       {linkError && <p role="alert">{linkError}</p>}
+      {historySource && <TerminalHistory client={client} source={historySource}
+        onClose={() => { setHistorySource(null); handles.current.get(activeId)?.focus(); }}
+        onContinue={(historySessionId) => { add(historySource, undefined, historySessionId); setHistorySource(null); }} />}
       {file && <TerminalFile key={`${file.source.id}:${file.raw}`} client={client} session={file.source}
         raw={file.raw} nodeName={nodeName} onClose={() => { setFile(null); handles.current.get(activeId)?.focus(); }} />}
       {confirm && (

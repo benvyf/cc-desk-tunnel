@@ -5750,3 +5750,6 @@ dialog:has(.web-settings-form) {
 .terminal-draft-body { display: grid; gap: 4px; padding: 4px 0; }
 .terminal-draft textarea { min-height: 44px; height: 70px; width: 100%; resize: vertical; max-height: 14vh; font-family: 'Cascadia Mono', Consolas, monospace; font-size: var(--code-font-size, 13px); }
 .terminal-draft p, .terminal-draft small { margin: 0; font-size: 11px; color: var(--muted); }
+.terminal-history-list { display: grid; gap: 8px; max-height: 40vh; overflow: auto; padding: 8px 0; }
+.terminal-history-list > div { display: grid; gap: 4px; border-bottom: 1px solid var(--line); padding: 8px 0; }
+.terminal-history-list small { color: var(--muted); }

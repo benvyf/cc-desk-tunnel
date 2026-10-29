@@ -44,6 +44,7 @@ import type {
 } from '@cc-desk-tunnel/protocol';
 import { runClaude, nativeDirectory, prepareNativeDirectory, readNativeStatus } from './claude.ts';
 import type { ClaudeOptions } from './claude.ts';
+import { terminalHistoryContext, readTerminalHistory } from './terminal-history.ts';
 import { readTerminalFile } from './terminal-files.ts';
 import { DomainError } from './errors.ts';
 import { accountMessageForClient } from './account-presentation.ts';
@@ -776,18 +777,42 @@ export function createProxyServer(options: ServerOptions) {
         if (!options.moderation) throw new Error('Native terminal review requires node moderation');
         executable = assertNativeTerminalReview(executable);
       }
+      const env = terminalEnvironment(options.claude);
+      const context = terminalHistoryContext(options.claude, env);
+      let history = store.terminalHistory(session.id);
+      if (!history) {
+        const now = new Date().toISOString();
+        history = { sessionId: session.id, nativeId: randomUUID(), root: nativeRoot(session.id),
+          deviceId: session.device!.id, pathKey: pathKey(session.projectPath), configKey: context.key,
+          mode: 'new', createdAt: now, updatedAt: now };
+        store.saveTerminalHistory(history);
+      }
+      if (history.configKey !== context.key || history.root !== nativeRoot(session.id) ||
+          history.deviceId !== session.device?.id || history.pathKey !== pathKey(session.projectPath))
+        throw new DomainError('history_environment_changed', '终端关联的 CLI 配置或项目已变化，请新开终端或在官方 CLI 中选择历史。');
+      if ([...terminals.keys()].some((id) => id !== session.id && store.terminalHistory(id)?.nativeId === history.nativeId))
+        throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
+      const cwd = prepareNativeDirectory(options.claude, store.directory, nativeRoot(session.id));
+      const saved = await readTerminalHistory(context.config, cwd, history.nativeId);
+      if (history.mode === 'resume' && !saved)
+        throw new DomainError('history_missing', '官方历史已删除或尚无有效消息，不会静默新建。');
+      if (history.mode === 'new' && saved)
+        throw new DomainError('history_exists', '此终端已有官方历史，请显式选择继续历史会话。');
+      if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
+        throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
       current.process = new NativeTerminal(
         executable,
         terminalArguments(
           options.claude,
           session,
           ssh ? sessionSsh(store.directory, session.id, ssh) : undefined,
+          history,
         ),
         {
-          cwd: prepareNativeDirectory(options.claude, store.directory, nativeRoot(session.id)),
+          cwd,
           cols: command.cols,
           rows: command.rows,
-          env: terminalEnvironment(options.claude),
+          env,
         },
         (data, bytes) =>
           send(peer, {
@@ -799,6 +824,7 @@ export function createProxyServer(options: ServerOptions) {
           }),
         (exitCode) => {
           if (terminals.get(current.sessionId) !== current) return;
+          store.touchTerminalHistory(current.sessionId);
           store.append(current.sessionId, current.id, {
             type: 'run.status',
             status: 'completed',
@@ -830,9 +856,11 @@ export function createProxyServer(options: ServerOptions) {
       });
       updated(command.sessionId);
       send(peer, { type: 'terminal.opened', sessionId: command.sessionId, terminalId: current.id });
-    } catch {
+      store.touchTerminalHistory(command.sessionId);
+    } catch (error) {
       await current.process?.close();
       if (terminals.get(current.sessionId) === current) terminals.delete(current.sessionId);
+      if (error instanceof DomainError) throw error;
       throw new DomainError('terminal_failed', '原生终端启动失败，请检查 Linux PTY 组件与 CLI。');
     }
   }
@@ -1159,6 +1187,56 @@ export function createProxyServer(options: ServerOptions) {
         broadcast({ type: 'session.updated', session });
         return session.id;
       }
+      case 'terminal.history.list': {
+        const session = store.get(command.sessionId).session;
+        target(peer, session);
+        if (!options.claude) throw new DomainError('native_unavailable', '模拟模式没有官方历史。');
+        const { terminalEnvironment } = await import('./native-terminal.ts');
+        const context = terminalHistoryContext(options.claude, terminalEnvironment(options.claude));
+        const seen = new Set<string>();
+        const items = [];
+        for (const entry of store.terminalHistories(session)) {
+          if (seen.has(entry.nativeId)) continue;
+          seen.add(entry.nativeId);
+          let reason = entry.configKey !== context.key ? 'CLI 配置已变化，请使用官方历史选择器确认。' : undefined;
+          if ([...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId)) reason = '此历史正在运行。';
+          let metadata = null;
+          if (!reason) {
+            try { metadata = await readTerminalHistory(context.config, nativeDirectory(store.directory, entry.root), entry.nativeId); }
+            catch { reason = '历史元数据无法读取或格式暂不支持。'; }
+            if (!metadata && !reason) reason = '尚无有效历史、文件已删除或超出元数据读取范围。';
+          }
+          items.push({ sessionId: entry.sessionId, nativeId: entry.nativeId, title: metadata?.title ?? '官方终端历史',
+            updatedAt: metadata?.updatedAt ?? entry.updatedAt, available: !reason, ...(reason ? { reason } : {}) });
+        }
+        send(peer, { type: 'terminal.histories', requestId: command.requestId, sessionId: session.id, items });
+        return session.id;
+      }
+      case 'terminal.history.continue': {
+        const source = store.get(command.sessionId).session;
+        target(peer, source);
+        const signature = JSON.stringify({ type: command.type, source: source.id, history: command.historySessionId,
+          user: peer.access?.userId ?? peer.browser ?? 'desktop' });
+        const previous = store.terminalCreated(command.requestId, signature);
+        if (previous) return previous.id;
+        if (!options.claude) throw new DomainError('native_unavailable', '模拟模式没有官方历史。');
+        if (options.moderation && !options.nativeTerminalReview)
+          throw new DomainError('moderation_terminal_disabled', '此节点暂不支持原生终端。');
+        const entry = store.terminalHistories(source).find((item) => item.sessionId === command.historySessionId);
+        if (!entry) throw new DomainError('history_unassociated', '没有与此项目和设备关联的官方历史。');
+        const { terminalEnvironment } = await import('./native-terminal.ts');
+        const context = terminalHistoryContext(options.claude, terminalEnvironment(options.claude));
+        if (entry.configKey !== context.key) throw new DomainError('history_environment_changed', 'CLI 配置已变化，请使用官方历史选择器确认。');
+        if ([...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId))
+          throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
+        if (!await readTerminalHistory(context.config, nativeDirectory(store.directory, entry.root), entry.nativeId))
+          throw new DomainError('history_missing', '官方历史不存在或尚无可读取的消息；未新建会话。');
+        room();
+        const session = store.createTerminal(command.requestId, signature, '继续官方历史', source.projectPath,
+          source.device!, source, entry);
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
       case 'terminal.file.read': {
         const session = store.get(command.sessionId).session;
         target(peer, session);
@@ -1408,6 +1486,7 @@ export function createProxyServer(options: ServerOptions) {
         adapter,
         terminalWorkspace: { version: 1 },
         terminalFiles: { version: 1 },
+        terminalHistory: { version: 1 },
         model: options.claude?.model,
         version,
         sessions: store.list(),
@@ -1478,7 +1557,8 @@ export function createProxyServer(options: ServerOptions) {
       connectionId: peer.id,
       adapter,
       terminalWorkspace: { version: 1 },
-        terminalFiles: { version: 1 },
+      terminalFiles: { version: 1 },
+      terminalHistory: { version: 1 },
       model: options.claude?.model,
       version,
       sessions: store.list(),
@@ -1973,7 +2053,8 @@ export function createProxyServer(options: ServerOptions) {
     managedMaintenance: options.managed ? managedMaintenance : undefined,
     async listen(port = 8787): Promise<string> {
       if (usageReceiver)
-        options.claude!.environment = telemetryEnvironment(await usageReceiver.listen());
+        options.claude!.environment = { ...options.claude!.environment,
+          ...telemetryEnvironment(await usageReceiver.listen()) };
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, options.host ?? '127.0.0.1', () => {

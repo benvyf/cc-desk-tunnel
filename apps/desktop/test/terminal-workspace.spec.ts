@@ -6,6 +6,39 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
 });
 
+test('official history is negotiated, explicitly confirmed and continued in a new tab with stable retry identity', async ({ page }) => {
+  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await expect(page.getByRole('button', { name: '继续官方历史', exact: true })).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).terminalTest.update({ terminalHistory: { version: 1 }, historyItems: [
+      { sessionId: 'history-cc', nativeId: '54c6cbb2-4ea7-4c98-9a57-1df184c459f1', title: '历史中文任务', updatedAt: '2026-10-29', available: true },
+      { sessionId: 'empty', nativeId: '71ece7b5-b52d-43b2-9cbf-3f574a4f1767', title: '空会话', updatedAt: '2026-10-29', available: false, reason: '尚无有效历史' },
+    ] });
+    (window as any).terminalTest.setCreateMode('lostResponse');
+    (window as any).terminalTest.emit({ type: 'terminal.closed', exitCode: 0 });
+  });
+  await page.getByRole('button', { name: '继续官方历史', exact: true }).click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog.getByText('历史中文任务')).toBeVisible();
+  await expect(dialog.getByRole('button', { name: '新开终端继续' }).first()).toBeDisabled();
+  await dialog.getByRole('checkbox').check();
+  await expect(dialog.getByRole('button', { name: '新开终端继续' }).nth(1)).toBeDisabled();
+  await dialog.getByRole('button', { name: '新开终端继续' }).first().click();
+  await expect(page.getByRole('tab')).toHaveCount(2);
+  await expect(page.getByText('创建结果尚未确认', { exact: true }).last()).toBeVisible();
+  await page.evaluate(() => (window as any).terminalTest.setCreateMode('normal'));
+  await page.getByRole('button', { name: '确认创建结果', exact: true }).click();
+  await expect(page.getByRole('tab').nth(1)).toContainText('Linux · Claude Code');
+  expect(await page.evaluate(() => (window as any).terminalTest.createdCount())).toBe(1);
+  const requests = await page.evaluate(() => (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.history.continue'));
+  expect(requests).toHaveLength(2);
+  expect(requests[0]).toEqual(requests[1]);
+  expect(requests[0].historySessionId).toBe('history-cc');
+  expect(requests[0].confirmed).toBe(true);
+  await page.getByRole('tab').first().click();
+  await expect(page.getByRole('button', { name: '新开同项目终端' })).toBeVisible();
+});
+
 test('attachment preparation stays with its original tab and errors block paste', async ({ page }) => {
   await page.evaluate(() => {
     (window as any).desktop = {

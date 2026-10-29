@@ -25,6 +25,10 @@ import type {
 } from '@cc-desk-tunnel/protocol';
 
 type StoredSession = SessionSnapshot & { createRequestId: string };
+export type TerminalHistoryBinding = {
+  sessionId: string; nativeId: string; root: string; deviceId: string; pathKey: string;
+  configKey: string; mode: 'new' | 'resume'; createdAt: string; updatedAt: string;
+};
 const pageEvents = 1000;
 const pageBytes = 512 * 1024;
 
@@ -93,6 +97,12 @@ export class SessionStore {
       CREATE TABLE IF NOT EXISTS native_roots (
         device_id TEXT NOT NULL, path_key TEXT NOT NULL, root TEXT NOT NULL,
         PRIMARY KEY (device_id, path_key)
+      );
+      CREATE TABLE IF NOT EXISTS terminal_history (
+        session_id TEXT PRIMARY KEY REFERENCES sessions(id) ON DELETE CASCADE,
+        native_id TEXT NOT NULL, root TEXT NOT NULL, device_id TEXT NOT NULL,
+        path_key TEXT NOT NULL, config_key TEXT NOT NULL, mode TEXT NOT NULL,
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL
       );
     `);
     try {
@@ -385,6 +395,28 @@ export class SessionStore {
     return this.get(String(row.session_id)).session;
   }
 
+  terminalHistory(sessionId: string): TerminalHistoryBinding | undefined {
+    const row = this.database.prepare('SELECT * FROM terminal_history WHERE session_id = ?').get(sessionId);
+    if (!row) return undefined;
+    return { sessionId: String(row.session_id), nativeId: String(row.native_id), root: String(row.root),
+      deviceId: String(row.device_id), pathKey: String(row.path_key), configKey: String(row.config_key),
+      mode: row.mode as 'new' | 'resume', createdAt: String(row.created_at), updatedAt: String(row.updated_at) };
+  }
+  saveTerminalHistory(binding: TerminalHistoryBinding) {
+    this.database.prepare('INSERT INTO terminal_history VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .run(binding.sessionId, binding.nativeId, binding.root, binding.deviceId, binding.pathKey,
+        binding.configKey, binding.mode, binding.createdAt, binding.updatedAt);
+  }
+  touchTerminalHistory(sessionId: string) {
+    this.database.prepare('UPDATE terminal_history SET updated_at = ? WHERE session_id = ?')
+      .run(new Date().toISOString(), sessionId);
+  }
+  terminalHistories(session: Session) {
+    return this.database.prepare(`SELECT session_id FROM terminal_history WHERE device_id = ? AND path_key = ?
+      AND root = ? ORDER BY updated_at DESC LIMIT 100`).all(session.device?.id ?? '', pathKey(session.projectPath), session.nativeRoot ?? session.id)
+      .map((row) => this.terminalHistory(String(row.session_id))!);
+  }
+
   createTerminal(
     requestId: string,
     signature: string,
@@ -392,6 +424,7 @@ export class SessionStore {
     projectPath: string,
     device: Device,
     settings: Pick<Session, 'permissionMode' | 'model' | 'effort'>,
+    history?: TerminalHistoryBinding,
   ): Session {
     const previous = this.terminalCreated(requestId, signature);
     if (previous) return previous;
@@ -399,13 +432,15 @@ export class SessionStore {
       throw new DomainError('request_conflict', '请求 ID 已被其他内容使用。');
     this.database.exec('BEGIN IMMEDIATE');
     try {
-      const session = { ...this.create(requestId, title, projectPath, device), ...settings };
+      const session = { ...this.create(requestId, title, projectPath, device),
+        permissionMode: settings.permissionMode, model: settings.model, effort: settings.effort };
       this.database
         .prepare('UPDATE sessions SET metadata = ? WHERE id = ?')
         .run(JSON.stringify(session), session.id);
       this.database
         .prepare('INSERT INTO terminal_creations VALUES (?, ?, ?)')
         .run(requestId, signature, session.id);
+      if (history) this.saveTerminalHistory({ ...history, sessionId: session.id, mode: 'resume', updatedAt: new Date().toISOString() });
       this.database.exec('COMMIT');
       return session;
     } catch (error) {

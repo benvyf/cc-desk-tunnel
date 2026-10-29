@@ -29,11 +29,12 @@ type DataMessage = Extract<
       | 'web.settings.state'
       | 'web.totp.setup'
       | 'web.certificate.state'
-      | 'terminal.state' | 'terminal.file';
+      | 'terminal.state' | 'terminal.file' | 'terminal.histories';
   }
 >;
 // Commands answered with a data frame, and the frame each one gets.
 type Replies = {
+  'terminal.history.list': 'terminal.histories';
   'terminal.file.read': 'terminal.file';
   'terminal.state': 'terminal.state';
   'usage.summary': 'usage.summary';
@@ -80,6 +81,7 @@ export class RequestInterruptedError extends Error {
       'session.status',
       'terminal.state',
       'terminal.file.read',
+      'terminal.history.list',
       'account.status',
       'usage.summary',
       'usage.query',
@@ -118,6 +120,7 @@ export type ClientState = {
   connectionId: string | null;
   terminalWorkspace?: { version: 1 };
   terminalFiles?: { version: 1 };
+  terminalHistory?: { version: 1 };
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
   browser: Extract<ServerMessage, { type: 'ready' }>['browser'] | null;
@@ -446,6 +449,7 @@ export class ProxyClient {
           connectionId: message.connectionId,
           terminalWorkspace: message.terminalWorkspace,
           terminalFiles: message.terminalFiles,
+          terminalHistory: message.terminalHistory,
           browser: message.browser ?? null,
           sessions: message.sessions,
           selectedId,
@@ -515,7 +519,7 @@ export class ProxyClient {
         message.type === 'web.settings.state' ||
         message.type === 'web.totp.setup' ||
         message.type === 'web.certificate.state' ||
-        message.type === 'terminal.state' || message.type === 'terminal.file'
+        message.type === 'terminal.state' || message.type === 'terminal.file' || message.type === 'terminal.histories'
       ) {
         if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
       } else if (message.type === 'service.update') {
