@@ -267,9 +267,21 @@ export function upgradeCommand(release: ServerRelease, script: Buffer) {
   const target = { build: release.build, sha256: release.sha256, protocol: release.protocol };
   const program = `const target = ${JSON.stringify(target)};\n${script.toString('utf8')}`;
   const encoded = deflateSync(program).toString('base64');
-  return (
-    'sudo docker exec -i cc-desk-tunnel-ba938975-proxy-1 /opt/runtime/node/bin/node ' +
-    '--env-file=/data/config/service.env --input-type=commonjs -e ' +
-    `'eval(require("node:zlib").inflateSync(Buffer.from("${encoded}","base64")).toString())'`
-  );
+  const loader =
+    'eval(require("node:zlib").inflateSync(Buffer.from("' + encoded + '","base64")).toString())';
+  const wrapper = `import subprocess,sys,json
+program = ${JSON.stringify(loader)}
+ids = subprocess.check_output(['docker','ps','--filter','label=com.docker.compose.service=proxy','--format','{{.ID}}'], text=True).split()
+candidates = []
+for container in ids:
+ info = json.loads(subprocess.check_output(['docker','inspect',container], text=True))[0]
+ project = (info.get('Config',{}).get('Labels') or {}).get('com.docker.compose.project','')
+ if project == 'cc-desk-tunnel' or project.startswith('cc-desk-tunnel-'):
+  candidates.append(container)
+if len(candidates) != 1:
+ raise SystemExit('Expected exactly one running CC Desk Tunnel service container; found '+str(len(candidates))+'. No upgrade requested.')
+print('Selected local CC container: '+candidates[0], flush=True)
+result = subprocess.run(['docker','exec','-i',candidates[0],'/opt/runtime/node/bin/node','--env-file=/data/config/service.env','--input-type=commonjs','-e',program])
+sys.exit(result.returncode)`;
+  return `sudo python3 -c 'import base64;exec(base64.b64decode("${Buffer.from(wrapper).toString('base64')}"))'`;
 }

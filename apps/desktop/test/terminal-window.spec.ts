@@ -27,6 +27,10 @@ test('detached terminal has native window controls, exact input, resize, focus a
     await owner.waitForLoadState();
     const errors: string[] = [];
     owner.on('pageerror', (error) => errors.push(error.message));
+    owner.on('console', (message) => {
+      if (message.type() === 'error' && message.text().includes('Content Security Policy'))
+        errors.push(message.text());
+    });
     await owner.waitForFunction(() => !!(window as any).terminalTest);
     await expect.poll(() => application.windows().length).toBe(2);
     const child = application.windows().find((page) => page !== owner)!;
