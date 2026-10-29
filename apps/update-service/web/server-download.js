@@ -33,7 +33,7 @@ export function setupServerDownload({ request, element, notice }) {
     root.append(
       element(
         'p',
-        '包含当前服务端、配套 Web 和部署文件。服务端升级适用于已接入受管更新、且每台虚拟机仅运行一个 CC 服务容器的兼容节点；首次接入仍仅适用于已审查的第一台 ubuntu-cc。执行前结束任务并完全退出所有 CC 连接（包括托盘）；升级期间保持 Ubuntu 终端打开。',
+        '包含当前服务端、配套 Web 和部署文件。服务端升级适用于已接入受管更新、且每台虚拟机仅运行一个 CC 服务容器的兼容节点；首次接入仍仅适用于已审查的第一台 ubuntu-cc。执行前结束任务；普通升级和首次接入还需完全退出所有 CC 连接（包括托盘），下方基础镜像升级命令会自动断开客户端。升级期间保持 Ubuntu 终端打开。',
         'muted',
       ),
     );
@@ -78,7 +78,7 @@ export function setupServerDownload({ request, element, notice }) {
       appendCommand(
         'server-base-upgrade-command',
         '清理并升级基础镜像（ubuntu-cc / 02 / 03）',
-        `完整命令：识别已核对的 ubuntu-cc、ubuntu-cc-02 或 ubuntu-cc-03 → 清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 冷备份 → 升级到 Build ${release.build}。第一台支持已核对的旧 Build 4 基础镜像，02、03 支持已核对的 Build 5 基础镜像；其他设备或镜像不匹配会停止。已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务并完全退出客户端，保持 Ubuntu 终端打开；成功后直接连接，无需再执行普通升级。`,
+        `完整命令：识别已核对的 ubuntu-cc、ubuntu-cc-02 或 ubuntu-cc-03 → 清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 确认无运行任务 → 强制断开客户端并阻止重连 → 冷备份 → 升级到 Build ${release.build}。第一台支持已核对的旧 Build 4 基础镜像，02、03 支持已核对的 Build 5 基础镜像；其他设备或镜像不匹配会停止。已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务（包括等待中的任务）；无需手动退出客户端，脚本会断开连接并在升级期间阻止重连。保留账号数据，升级失败会尝试恢复原服务；保持 Ubuntu 终端打开，成功后重新连接，无需再执行普通升级。`,
         status.baseUpgradeCommand,
       );
     appendCommand(

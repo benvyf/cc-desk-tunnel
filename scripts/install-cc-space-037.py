@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import sqlite3
 import subprocess
 import sys
 import tarfile
@@ -161,7 +162,7 @@ def busy(b, processes):
     return b.busy([[cell.replace('/apps/server/src/managed-server-child.ts', '/apps/server/src/managed-server-main.ts') for cell in row] for row in processes])
 
 
-def install(b):
+def install(b, disconnect_clients=False):
     engine = b.Engine()
     if DATA.is_symlink() or not DATA.is_dir():
         raise RuntimeError('Expected physical data directory is missing')
@@ -195,7 +196,17 @@ def install(b):
         paused = True
         if busy(b, engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20pid,args')['Processes']):
             raise RuntimeError('Finish Claude tasks and close clients before upgrading')
-        b.frozen_idle(original)
+        if disconnect_clients:
+            # The container is frozen: no new run can start between this check
+            # and network isolation. Idle client sockets will be closed by stop.
+            database = DATA / 'state/sessions.sqlite'
+            if not database.is_file():
+                raise RuntimeError('Expected local session state is missing')
+            with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=1) as db:
+                if any(json.loads(row[0]).get('activeRun') for row in db.execute('SELECT metadata FROM sessions')):
+                    raise RuntimeError('Finish Claude tasks, including waiting runs, before upgrading')
+        else:
+            b.frozen_idle(original)
         changed = True
         record['phase'] = 'stopping'
         save(b, backup, record)
@@ -205,6 +216,8 @@ def install(b):
         engine.request('POST', '/containers/' + original['Id'] + '/unpause')
         paused = False
         engine.request('POST', '/containers/' + original['Id'] + '/stop?t=30')
+        if disconnect_clients:
+            print('CLIENTS_DISCONNECTED: service stopped; reconnection blocked until upgrade or rollback completes.', flush=True)
         print('Creating full cold backup; keep this terminal open.', flush=True)
         with tarfile.open(backup / 'data.tar.gz', 'w:gz', dereference=False) as archive:
             archive.add(DATA, arcname='data')

@@ -267,7 +267,7 @@ files=json.loads(zlib.decompress(base64.b64decode("${encoded}")))
 with tempfile.TemporaryDirectory(prefix='cc-terminal-base-') as directory:
  for name,data in files.items():
   (pathlib.Path(directory)/name).write_bytes(base64.b64decode(data))
- subprocess.run(['python3',str(pathlib.Path(directory)/'upgrade-terminal-base.py'),'--cleanup','--install'],check=True)
+ subprocess.run(['python3',str(pathlib.Path(directory)/'upgrade-terminal-base.py'),'--cleanup','--disconnect-clients','--install'],check=True)
 `;
   return `sudo python3 -c 'import base64;exec(base64.b64decode("${Buffer.from(wrapper).toString('base64')}"))'`;
 }

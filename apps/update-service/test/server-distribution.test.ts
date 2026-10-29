@@ -195,7 +195,7 @@ test('base upgrade command embeds both scripts without executing migration', (t)
     process.platform === 'win32' ? 'python' : 'python3',
     [
       '-c',
-      "import shlex,sys,ast,base64,zlib,json; a=shlex.split(sys.stdin.read()); assert a[:3]==['sudo','python3','-c'] and len(a)==4; outer=ast.parse(a[3]); wrapper=base64.b64decode(outer.body[1].value.args[0].args[0].value); compile(wrapper,'<wrapper>','exec'); tree=ast.parse(wrapper); encoded=tree.body[1].value.args[0].args[0].args[0].value; files=json.loads(zlib.decompress(base64.b64decode(encoded))); assert set(files)=={'upgrade-terminal-base.py','install-cc-space-037.py'}; [compile(base64.b64decode(data),name,'exec') for name,data in files.items()]; assert b'--cleanup' in wrapper and b'--install' in wrapper",
+      "import shlex,sys,ast,base64,zlib,json; a=shlex.split(sys.stdin.read()); assert a[:3]==['sudo','python3','-c'] and len(a)==4; outer=ast.parse(a[3]); wrapper=base64.b64decode(outer.body[1].value.args[0].args[0].value); compile(wrapper,'<wrapper>','exec'); tree=ast.parse(wrapper); encoded=tree.body[1].value.args[0].args[0].args[0].value; files=json.loads(zlib.decompress(base64.b64decode(encoded))); assert set(files)=={'upgrade-terminal-base.py','install-cc-space-037.py'}; [compile(base64.b64decode(data),name,'exec') for name,data in files.items()]; assert b'--cleanup' in wrapper and b'--disconnect-clients' in wrapper and b'--install' in wrapper",
     ],
     { input: command, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
   );

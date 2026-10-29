@@ -42,6 +42,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--install', action='store_true', help='Cut over only after offline checks')
     parser.add_argument('--cleanup', action='store_true', help='Remove unused Docker build cache before checking space')
+    parser.add_argument('--disconnect-clients', action='store_true', help='Disconnect idle clients during cutover; active tasks still block installation')
     args = parser.parse_args()
     node = socket.gethostname().split('.')[0]
     if os.geteuid() != 0 or node not in ('ubuntu-cc', 'ubuntu-cc-02', 'ubuntu-cc-03'):
@@ -155,7 +156,7 @@ a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),'4503bfe11a6c7fcc1e0
             return
         legacy.ROOT, legacy.BASE, legacy.IMAGE = ROOT, current['Image'], image
         legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': TARGET_BUILD, 'protocol': 22}
-        legacy.install(b)
+        legacy.install(b, disconnect_clients=args.disconnect_clients)
 
 
 if __name__ == '__main__':
