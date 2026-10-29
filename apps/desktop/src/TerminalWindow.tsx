@@ -61,6 +61,8 @@ export default function TerminalWindow({
   const [fallback, setFallback] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [menu, setMenu] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [menuIndex, setMenuIndex] = useState(0);
   const [rename, setRename] = useState(false);
   const [alias, setAlias] = useState('');
   const [project, setProject] = useState(false);
@@ -304,6 +306,21 @@ export default function TerminalWindow({
     confirmResult.current = null;
     setConfirm(null);
   };
+  const matchingTabs = tabs.filter((tab) =>
+    [tab.alias, folderName(tab.source.projectPath), tab.source.projectPath, nodeName,
+      tab.source.device?.name ?? ''].join('\n').toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()),
+  );
+  const selectedMenuTab = matchingTabs[Math.min(menuIndex, matchingTabs.length - 1)];
+  useEffect(() => {
+    if (menu && selectedMenuTab)
+      (container?.ownerDocument ?? document).getElementById(`terminal-result-${selectedMenuTab.tabId}`)
+        ?.scrollIntoView({ block: 'nearest' });
+  }, [menu, selectedMenuTab?.tabId, container]);
+  const finishMenu = (tabId = activeId) => {
+    setMenu(false);
+    setActiveId(tabId);
+    handles.current.get(tabId)?.focus();
+  };
   const content = (
     <div className="terminal-workspace">
       <header
@@ -357,7 +374,10 @@ export default function TerminalWindow({
         <IconButton
           title="全部终端"
           aria-expanded={menu}
-          onClick={() => setMenu((value) => !value)}
+          onClick={() => {
+            if (menu) finishMenu();
+            else { setFilter(''); setMenuIndex(0); setMenu(true); }
+          }}
         >
           <ChevronDown scale="sm" />
         </IconButton>
@@ -391,19 +411,44 @@ export default function TerminalWindow({
         )}
       </header>
       {menu && (
-        <div className="terminal-list" aria-label="全部终端列表">
-          {tabs.map((tab) => (
+        <div className="terminal-list" aria-label="全部终端列表" onKeyDown={(event) => {
+          if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.stopPropagation();
+            finishMenu();
+          }
+        }}>
+          <input autoFocus aria-label="筛选终端" placeholder="搜索别名、项目或节点"
+            value={filter} aria-controls="terminal-results"
+            aria-activedescendant={selectedMenuTab ? `terminal-result-${selectedMenuTab.tabId}` : undefined}
+            onChange={(event) => { setFilter(event.target.value); setMenuIndex(0); }}
+            onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing) return;
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                if (matchingTabs.length) setMenuIndex((index) =>
+                  (Math.min(index, matchingTabs.length - 1) + (event.key === 'ArrowDown' ? 1 : matchingTabs.length - 1)) % matchingTabs.length);
+              } else if (event.key === 'Enter' && selectedMenuTab) {
+                event.preventDefault(); finishMenu(selectedMenuTab.tabId);
+              }
+            }} />
+          <div id="terminal-results" role="listbox" aria-label="匹配终端">
+          {!matchingTabs.length && <p role="status">没有匹配的终端</p>}
+          {matchingTabs.map((tab) => (
             <Button
               key={tab.tabId}
+              id={`terminal-result-${tab.tabId}`}
+              role="option"
+              aria-selected={selectedMenuTab?.tabId === tab.tabId}
+              title={`${tab.alias || folderName(tab.source.projectPath)} · ${tab.source.projectPath} · ${nodeName} · ${tab.source.device?.name ?? ''}`}
               size="sm"
-              onClick={() => {
-                setActiveId(tab.tabId);
-                setMenu(false);
-              }}
+              onClick={() => finishMenu(tab.tabId)}
             >
               {tab.alias || folderName(tab.source.projectPath)} · {tab.detail}
+              <small>{tab.source.projectPath} · {nodeName} · {tab.source.device?.name}</small>
             </Button>
           ))}
+          </div>
           <Button
             size="sm"
             disabled={!multi || !connected || closing}

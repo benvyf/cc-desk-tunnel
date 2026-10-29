@@ -6,6 +6,34 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
 });
 
+test('terminal filter searches device and aliases without restarting sessions and restores focus', async ({ page }) => {
+  for (let i = 0; i < 11; i++) {
+    await page.getByRole('button', { name: '新建终端', exact: true }).click();
+    await expect(page.getByRole('tab')).toHaveCount(i + 2);
+  }
+  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  const filter = page.getByRole('textbox', { name: '筛选终端' });
+  await expect(filter).toBeFocused();
+  await filter.fill('FIXTURE-NODE');
+  await expect(page.getByRole('option')).toHaveCount(12);
+  await filter.press('ArrowDown');
+  await filter.press('Enter');
+  await expect(page.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true');
+  await expect(page.locator('.terminal-panel:visible textarea')).toBeFocused();
+  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await page.getByRole('button', { name: '标签别名', exact: true }).click();
+  await page.getByRole('dialog').locator('input').fill('中文调查任务长标题');
+  await page.getByRole('button', { name: '保存', exact: true }).click();
+  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await filter.fill('调查');
+  await expect(page.getByRole('option')).toHaveCount(1);
+  await filter.fill('nothing-matches');
+  await expect(page.getByText('没有匹配的终端')).toBeVisible();
+  await filter.press('Escape');
+  await expect(page.locator('.terminal-panel:visible textarea')).toBeFocused();
+  expect(await page.evaluate(() => (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.open').length)).toBe(12);
+});
+
 test('tabs keep stable processes, route input and acknowledge hidden output', async ({ page }) => {
   await page.getByRole('button', { name: '新建终端', exact: true }).click();
   await expect(page.getByRole('tab')).toHaveCount(2);

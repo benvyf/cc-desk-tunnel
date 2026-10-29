@@ -130,7 +130,9 @@ export default function NativeTerminal({
       view.cancelAnimationFrame(resizeFrame);
       resizeFrame = view.requestAnimationFrame(() => {
         resize();
-        if (focus && visible.current && phaseNow() === 'running' && !host.current?.ownerDocument.querySelector('dialog[open]'))
+        const document = host.current?.ownerDocument;
+        if (focus && visible.current && phaseNow() === 'running' && !document?.querySelector('dialog[open]') &&
+            !document?.activeElement?.closest('.terminal-list, .terminal-draft'))
           terminal.focus();
       });
     };

@@ -5619,6 +5619,24 @@ dialog:has(.web-settings-form) {
   text-align: left;
   justify-content: flex-start;
 }
+.terminal-list [role='listbox'] {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+.terminal-list [role='option'] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.terminal-list [role='option'][aria-selected='true'] {
+  background: var(--selected);
+}
+.terminal-list small {
+  color: var(--muted);
+  font-size: 11px;
+}
 .terminal-panels {
   display: flex;
   flex-direction: column;
