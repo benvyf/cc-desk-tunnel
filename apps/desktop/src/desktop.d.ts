@@ -4,6 +4,7 @@ declare global {
   interface Window {
     desktop?: {
       terminalWindow: {
+        appearance?: (theme: 'light' | 'dark') => Promise<{ nativeControls: boolean }>;
         focus: () => Promise<boolean>;
         onClosed: (callback: () => void) => () => void;
         onRequestClose?: (callback: () => void) => () => void;

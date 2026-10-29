@@ -118,7 +118,7 @@ export type HistoryState = {
 export type ClientState = {
   status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   connectionId: string | null;
-  terminalWorkspace?: { version: 1 };
+  terminalWorkspace?: { version: 1; minRows?: 1 };
   terminalFiles?: { version: 1 };
   terminalHistory?: { version: 1 };
   // The computer this client signed in as; a session's commands run on the one it is on.

@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
   terminalWindow: {
+    appearance: (theme) => ipcRenderer.invoke('terminal-window:appearance', theme),
     focus: () => ipcRenderer.invoke('terminal-window:focus'),
     control: (action) => ipcRenderer.invoke('terminal-window:control', action),
     setActive: (active) => ipcRenderer.invoke('terminal-window:active', active),

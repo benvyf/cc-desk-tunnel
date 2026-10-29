@@ -5753,3 +5753,6 @@ dialog:has(.web-settings-form) {
 .terminal-history-list { display: grid; gap: 8px; max-height: 40vh; overflow: auto; padding: 8px 0; }
 .terminal-history-list > div { display: grid; gap: 4px; border-bottom: 1px solid var(--line); padding: 8px 0; }
 .terminal-history-list small { color: var(--muted); }
+.terminal-workspace[data-native-controls='true'] .terminal-tabs-header {
+  padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 6px);
+}

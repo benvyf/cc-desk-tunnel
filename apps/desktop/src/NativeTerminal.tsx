@@ -90,6 +90,7 @@ export default function NativeTerminal({
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     const connectionId = client.state?.connectionId;
+    const minimumRows = client.state?.terminalWorkspace?.minRows ?? 5;
     function status(next: TerminalPhase, text: string) {
       current = next;
       if (disposed) return;
@@ -126,7 +127,7 @@ export default function NativeTerminal({
       if (line !== null) terminal.scrollToLine(line);
       readingLine.current = null;
       const cols = Math.max(20, Math.min(400, terminal.cols)),
-        rows = Math.max(5, Math.min(160, terminal.rows));
+        rows = Math.max(minimumRows, Math.min(160, terminal.rows));
       const next = `${cols}:${rows}`;
       if (!id || closeRequested || phaseNow() !== 'running' || size === next) return;
       size = next;
@@ -192,7 +193,7 @@ export default function NativeTerminal({
           type: 'terminal.open',
           sessionId,
           cols: Math.max(20, Math.min(400, terminal.cols)),
-          rows: Math.max(5, Math.min(160, terminal.rows)),
+          rows: Math.max(minimumRows, Math.min(160, terminal.rows)),
         });
         if (opening && !disposed) {
           const result = await observe();

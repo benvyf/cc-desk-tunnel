@@ -131,6 +131,8 @@ function handle(channel, listener) {
 }
 
 handle('terminal-window:focus', (event) => terminalControllers.get(event.sender)?.focus() ?? false);
+handle('terminal-window:appearance', (event, theme) =>
+  terminalControllers.get(event.sender)?.appearance(theme) ?? { nativeControls: false });
 handle(
   'terminal-window:control',
   (event, action) => terminalControllers.get(event.sender)?.control(action) ?? false,

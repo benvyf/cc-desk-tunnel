@@ -66,6 +66,7 @@ export default function TerminalWindow({
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [fallback, setFallback] = useState(false);
   const [maximized, setMaximized] = useState(false);
+  const [nativeControls, setNativeControls] = useState(false);
   const [menu, setMenu] = useState(false);
   const [filter, setFilter] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
@@ -299,17 +300,26 @@ export default function TerminalWindow({
   }, [closeAll]);
   useEffect(() => {
     if (!container) return;
-    const observer = new MutationObserver(() => {
+    let disposed = false;
+    const media = window.matchMedia('(prefers-color-scheme: dark)');
+    const sync = () => {
       container.ownerDocument.documentElement.dataset.theme =
         document.documentElement.dataset.theme;
       container.ownerDocument.documentElement.style.cssText =
         document.documentElement.style.cssText;
-    });
+      const preference = document.documentElement.dataset.theme;
+      const theme = preference === 'dark' || preference === 'light' ? preference : media.matches ? 'dark' : 'light';
+      void window.desktop?.terminalWindow.appearance?.(theme).then((result) => {
+        if (!disposed) setNativeControls(result.nativeControls);
+      }, () => { if (!disposed) setNativeControls(false); });
+    };
+    const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme', 'style'],
     });
-    return () => observer.disconnect();
+    sync(); media.addEventListener('change', sync);
+    return () => { disposed = true; observer.disconnect(); media.removeEventListener('change', sync); };
   }, [container]);
   useEffect(() => {
     if (!tabs.some((tab) => tab.tabId === activeId) && tabs[0]) setActiveId(tabs[0].tabId);
@@ -335,7 +345,7 @@ export default function TerminalWindow({
     handles.current.get(tabId)?.focus();
   };
   const content = (
-    <div className="terminal-workspace">
+    <div className="terminal-workspace" data-native-controls={nativeControls}>
       <header
         className="terminal-tabs-header"
         onDoubleClick={(event) => {
@@ -394,7 +404,7 @@ export default function TerminalWindow({
         >
           <ChevronDown scale="sm" />
         </IconButton>
-        {!fallback && (
+        {!fallback && !nativeControls && (
           <div className="terminal-window-controls">
             <IconButton
               title="最小化"

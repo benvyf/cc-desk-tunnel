@@ -5,6 +5,7 @@ function isTerminalWindow(window) {
   return windows.has(window);
 }
 function installTerminalWindow(owner, Menu) {
+  const nativeControls = process.platform === 'win32';
   let terminal;
   let active = false;
   let approved = false;
@@ -29,7 +30,10 @@ function installTerminalWindow(owner, Menu) {
         title: 'CC SPACE · 原生终端',
         backgroundColor: '#0b0b0a',
         autoHideMenuBar: true,
-        frame: false,
+        frame: nativeControls,
+        ...(nativeControls ? { titleBarStyle: 'hidden', titleBarOverlay: {
+          color: '#1a1a19', symbolColor: '#dedcd6', height: 36,
+        } } : {}),
         resizable: true,
         minimizable: true,
         maximizable: true,
@@ -77,6 +81,14 @@ function installTerminalWindow(owner, Menu) {
   });
   return {
     focus,
+    appearance(theme) {
+      if (!terminal || terminal.isDestroyed() || !nativeControls ||
+          !['light', 'dark'].includes(theme)) return { nativeControls: false };
+      terminal.setTitleBarOverlay(theme === 'light'
+        ? { color: '#ffffff', symbolColor: '#20201e', height: 36 }
+        : { color: '#1a1a19', symbolColor: '#dedcd6', height: 36 });
+      return { nativeControls: true };
+    },
     setActive(value) {
       active = value === true;
     },

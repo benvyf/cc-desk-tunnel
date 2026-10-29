@@ -644,7 +644,7 @@ export const commandSchema = z.discriminatedUnion('type', [
       ...request,
       sessionId: id,
       cols: z.number().int().min(20).max(400),
-      rows: z.number().int().min(5).max(160),
+      rows: z.number().int().min(1).max(160),
     })
     .strict(),
   z
@@ -726,7 +726,7 @@ export const terminalControlSchema = z.discriminatedUnion('type', [
       sessionId: id,
       terminalId: id,
       cols: z.number().int().min(20).max(400),
-      rows: z.number().int().min(5).max(160),
+      rows: z.number().int().min(1).max(160),
     })
     .strict(),
   z
@@ -776,7 +776,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     protocolVersion: z.literal(PROTOCOL_VERSION),
     connectionId: id,
     adapter: z.enum(['simulation', 'claude-code']),
-    terminalWorkspace: z.object({ version: z.literal(1) }).optional(),
+    terminalWorkspace: z.object({ version: z.literal(1), minRows: z.literal(1).optional() }).optional(),
     terminalFiles: z.object({ version: z.literal(1) }).optional(),
     terminalHistory: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),

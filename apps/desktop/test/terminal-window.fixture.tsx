@@ -29,7 +29,7 @@ let state: any = {
   sessions: [session],
   status: 'connected',
   connectionId: 'fixture-connection',
-  terminalWorkspace: { version: 1 },
+  terminalWorkspace: { version: 1, minRows: 1 },
   browser: null,
 };
 function update(values: object) {
