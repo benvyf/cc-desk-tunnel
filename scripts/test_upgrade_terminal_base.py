@@ -46,7 +46,7 @@ class UpgradeTests(unittest.TestCase):
                 bootstrap.offline_preflight(*args)
                 calls.append('offline')
             helper = SimpleNamespace(CONTAINER='fixture', PROFILE={'files': {}}, Engine=lambda: SimpleNamespace(request=lambda *args: current), validate_runtime=lambda _: None, runtime_and_policy=lambda _: None, verify_index=lambda *args: {'release': release}, offline_preflight=offline_preflight)
-            legacy = SimpleNamespace(select_node=lambda host: cutover.select_node(host), REBUILT_DESCRIPTOR=cutover.REBUILT_DESCRIPTOR, DATA=root / 'data', helper=lambda *args, **kwargs: helper, install=lambda _: calls.append('install'))
+            legacy = SimpleNamespace(select_node=lambda host: cutover.select_node(host), REBUILT_DESCRIPTOR=cutover.REBUILT_DESCRIPTOR, DATA=root / 'data', helper=lambda *args, **kwargs: helper, install=lambda _, **kwargs: calls.extend(['install', kwargs['disconnect_clients']]))
             inspections = 0
             def command(args, **kwargs):
                 nonlocal inspections
@@ -66,7 +66,7 @@ class UpgradeTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0)
             download = lambda path, _: index if path.endswith('.json') else archive_bytes + (b'x' if corrupt else b'')
             create_temp = tempfile.mkdtemp
-            with patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=0 if low_space else 10 * 1024**3)), patch.object(upgrade, 'ROOT', root / 'private'), patch.object(upgrade.os, 'geteuid', create=True, return_value=0), patch.object(upgrade.socket, 'gethostname', return_value=node), patch.object(upgrade, 'load', return_value=legacy), patch.object(upgrade, 'download', side_effect=download), patch.object(upgrade.subprocess, 'run', side_effect=command), patch.object(upgrade.tempfile, 'mkdtemp', side_effect=lambda **_: create_temp(dir=root)), patch('sys.argv', ['upgrade', *(['--install'] if install else []), *(['--cleanup'] if cleanup else [])]):
+            with patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=0 if low_space else 10 * 1024**3)), patch.object(upgrade, 'ROOT', root / 'private'), patch.object(upgrade.os, 'geteuid', create=True, return_value=0), patch.object(upgrade.socket, 'gethostname', return_value=node), patch.object(upgrade, 'load', return_value=legacy), patch.object(upgrade, 'download', side_effect=download), patch.object(upgrade.subprocess, 'run', side_effect=command), patch.object(upgrade.tempfile, 'mkdtemp', side_effect=lambda **_: create_temp(dir=root)), patch('sys.argv', ['upgrade', *(['--install', '--disconnect-clients'] if install else []), *(['--cleanup'] if cleanup else [])]):
                 if corrupt or invalid_baseline or wrong_base or invalid_candidate or low_space or changed_image:
                     with self.assertRaises((RuntimeError, subprocess.CalledProcessError)): upgrade.main()
                     self.assertNotIn('offline', calls)
@@ -80,6 +80,7 @@ class UpgradeTests(unittest.TestCase):
                         self.assertLess(calls.index(['docker', 'builder']), calls.index(['docker', 'image']))
                     self.assertEqual(['docker', 'build'] in calls, not existing)
                     if install:
+                        self.assertIs(calls[-1], True)
                         self.assertEqual(legacy.TARGET, {'build': upgrade.TARGET_BUILD, 'protocol': 22})
                         self.assertEqual(legacy.BASE, current['Image'])
 
@@ -135,6 +136,46 @@ class NodeProfileTests(unittest.TestCase):
         with self.assertRaises(RuntimeError): b.validate_runtime(self.original('ubuntu-cc-03'))
         with self.assertRaises(RuntimeError): cutover.select_node('ubuntu-cc-04')
 
+    @unittest.skipUnless(os.name == 'posix', 'Linux filesystem required')
+    def test_force_disconnect_blocks_runs_and_restores_after_cutover_failure(self):
+        for state in ('idle', 'active', 'missing', 'disconnect-fails'):
+            with self.subTest(state=state), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                data = root / 'data'; (data / 'state').mkdir(parents=True)
+                if state != 'missing':
+                    with cutover.sqlite3.connect(data / 'state/sessions.sqlite') as db:
+                        db.execute('CREATE TABLE sessions(metadata TEXT)')
+                        db.execute('INSERT INTO sessions VALUES (?)', (json.dumps({'activeRun': state == 'active'}),))
+                (root / 'helper.py').write_text('# fixture')
+                original = self.original('ubuntu-cc-03')
+                calls = []
+                def request(method, path, *args):
+                    calls.append(path)
+                    if path.startswith('/images/'): return {'Id': 'candidate'}
+                    if '/top?' in path: return {'Processes': []}
+                    if state == 'disconnect-fails' and '/disconnect' in path:
+                        raise RuntimeError('network disconnect failed')
+                    return original
+                b = self.configured('ubuntu-cc-03')
+                b.Engine = lambda: SimpleNamespace(request=request)
+                b.runtime_and_policy = lambda _: None
+                b.urllib, b.durable_json, b.busy = bootstrap.urllib, bootstrap.durable_json, bootstrap.busy
+                b.endpoints = bootstrap.endpoints
+                # Idle sockets must not call the old blanket TCP rejection.
+                b.frozen_idle = lambda _: self.fail('legacy TCP guard used')
+                with patch.object(cutover, 'ROOT', root), patch.object(cutover, 'DATA', data), patch.object(cutover, 'BASE', original['Image']), patch.object(cutover.shutil, 'disk_usage', return_value=SimpleNamespace(free=10*1024**3)), patch.object(cutover.subprocess, 'run'), patch.object(cutover.tarfile, 'open', side_effect=RuntimeError('backup failed')), patch.object(cutover, 'rollback') as restore:
+                    with self.assertRaises(RuntimeError): cutover.install(b, disconnect_clients=True)
+                if state in ('active', 'missing'):
+                    restore.assert_not_called()
+                    self.assertFalse(any('/disconnect' in p or '/stop?' in p for p in calls))
+                else:
+                    restore.assert_called_once()
+                    self.assertIn('/networks/cc/disconnect', calls)
+                    if state == 'idle':
+                        self.assertLess(calls.index('/networks/cc/disconnect'), calls.index('/containers/original/unpause'))
+                        self.assertLess(calls.index('/containers/original/unpause'), calls.index('/containers/original/stop?t=30'))
+                self.assertIn('/containers/original/unpause', calls)
+
     @unittest.skipUnless(os.name == 'posix', 'Linux root filesystem and fcntl required')
     def test_generated_offline_rollback_retains_node_and_admission_failure_keeps_original(self):
         for node in cutover.REBUILT_NODES:
@@ -157,7 +198,7 @@ class NodeProfileTests(unittest.TestCase):
                 b.busy = bootstrap.busy
                 with patch.object(cutover, 'NODE', node), patch.object(cutover, 'ROOT', root), patch.object(cutover, 'DATA', data), patch.object(cutover, 'BASE', original['Image']), patch.object(cutover.shutil, 'disk_usage', return_value=SimpleNamespace(free=10*1024**3)), patch.object(cutover.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
                     with self.assertRaisesRegex(RuntimeError, 'Finish Claude tasks'):
-                        cutover.install(b)
+                        cutover.install(b, disconnect_clients=True)
                 self.assertIn(('POST', '/containers/original/unpause'), calls)
                 self.assertFalse(any('/stop?' in path or '/rename?' in path or '/update' in path for _, path in calls))
                 backup = next(root.glob('backup-*'))
