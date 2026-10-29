@@ -157,6 +157,7 @@ test('existing session databases migrate without invalidating login until the ne
   const before = await store.login(input, 'old-client');
   const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
   db.exec('DROP TABLE session_devices');
+  db.exec('DROP TABLE remembered_sessions');
   db.close();
   const migrated = new DesktopAccess(root);
   try {
@@ -212,4 +213,18 @@ test('a failed computer replacement rolls back old sessions, tickets and device 
   } finally {
     db.close();
   }
+});
+
+test('remembered sessions survive overnight and renew during use, while idle and ordinary sessions expire', async (t) => {
+  const { store, input } = await fixture(t);
+  const now = Date.now(),
+    day = 86400_000;
+  const deviceId = '11111111-1111-4111-8111-111111111111';
+  const remembered = await store.login({ ...input, deviceId, remember: true }, 'remembered', now);
+  const ordinary = await store.login({ ...input, deviceId }, 'ordinary', now);
+  assert.equal(store.workspaces(remembered.token, now + day / 2).length, 1);
+  assert.throws(() => store.workspaces(ordinary.token, now + 8 * 3600_000), /失效/);
+  assert.equal(store.workspaces(remembered.token, now + 2 * day).length, 1);
+  assert.equal(store.workspaces(remembered.token, now + 31 * day).length, 1);
+  assert.throws(() => store.workspaces(remembered.token, now + 61 * day), /失效/);
 });
