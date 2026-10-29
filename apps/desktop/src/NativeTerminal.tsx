@@ -138,16 +138,20 @@ export default function NativeTerminal({
     function resize() {
       if (!visible.current || !host.current?.clientWidth || !host.current.clientHeight || disposed)
         return;
+      const dimensions = fit.proposeDimensions();
+      // Character metrics can be unavailable while a window becomes visible or changes DPI.
+      if (!dimensions || !Number.isFinite(dimensions.cols) || !Number.isFinite(dimensions.rows))
+        return false;
+      const cols = Math.max(20, Math.min(400, dimensions.cols)),
+        rows = Math.max(minimumRows, Math.min(160, dimensions.rows));
       const line =
         readingLine.current ??
         (terminal.buffer.active.viewportY < terminal.buffer.active.baseY
           ? terminal.buffer.active.viewportY
           : null);
-      fit.fit();
+      terminal.resize(cols, rows);
       if (line !== null) terminal.scrollToLine(line);
       readingLine.current = null;
-      const cols = Math.max(20, Math.min(400, terminal.cols)),
-        rows = Math.max(minimumRows, Math.min(160, terminal.rows));
       const next = `${cols}:${rows}`;
       if (!id || closeRequested || phaseNow() !== 'running' || size === next) return;
       size = next;
@@ -156,7 +160,7 @@ export default function NativeTerminal({
     activate.current = (focus = false) => {
       view.cancelAnimationFrame(resizeFrame);
       resizeFrame = view.requestAnimationFrame(() => {
-        resize();
+        if (resize() === false) resizeFrame = view.requestAnimationFrame(() => resize());
         const document = host.current?.ownerDocument;
         if (
           focus &&
@@ -418,6 +422,11 @@ export default function NativeTerminal({
     });
     const observer = new view.ResizeObserver(() => activate.current());
     observer.observe(host.current!);
+    // xterm can finish measuring characters after the host has already stopped resizing.
+    const screen = terminal.element?.querySelector('.xterm-screen');
+    if (screen) observer.observe(screen);
+    const onWindowResize = () => activate.current();
+    view.addEventListener('resize', onWindowResize);
     handle.current = {
       close,
       focus: () => activate.current(true),
@@ -477,6 +486,7 @@ export default function NativeTerminal({
       disposed = true;
       clearTimeout(ackTimer);
       observer.disconnect();
+      view.removeEventListener('resize', onWindowResize);
       input.dispose();
       links.dispose();
       unwatch?.();

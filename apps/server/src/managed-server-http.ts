@@ -61,6 +61,7 @@ export function managedServerHandler(options: {
   address?: (request: IncomingMessage) => string;
   readiness?: () => unknown;
   nonce?: string;
+  authorizeDesktopTicket?: (ticket: string) => Promise<unknown>;
 }) {
   requireValue(options.token.length >= 24, 'Managed API requires existing strong service token');
   const expected = createHash('sha256').update(options.token).digest();
@@ -84,21 +85,39 @@ export function managedServerHandler(options: {
       return true;
     }
     const provided = request.headers.authorization ?? '';
-    if (
-      !provided.startsWith('Bearer ') ||
-      !timingSafeEqual(expected, createHash('sha256').update(provided.slice(7)).digest())
-    ) {
-      throttle.fail(address);
-      reply(401);
-      return true;
-    }
-    throttle.succeed(address);
     if (!throttle.enter(address)) {
       reply(429);
       return true;
     }
     const route = request.url.slice(PREFIX.length);
     const run = async () => {
+      let authorized =
+        provided.startsWith('Bearer ') &&
+        timingSafeEqual(expected, createHash('sha256').update(provided.slice(7)).digest());
+      if (
+        !authorized &&
+        options.authorizeDesktopTicket &&
+        /^Bearer ccs_[A-Za-z0-9_-]{43}$/.test(provided)
+      ) {
+        try {
+          await options.authorizeDesktopTicket(provided.slice(7));
+          authorized = true;
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          if (status !== 401 && status !== 403) {
+            // A validation outage is retryable and must not count as a bad login.
+            reply(503, { error: 'authorization-unavailable' });
+            return;
+          }
+          // Revoked, expired and wrong-node tickets cannot authorize maintenance.
+        }
+      }
+      if (!authorized) {
+        throttle.fail(address);
+        reply(401);
+        return;
+      }
+      throttle.succeed(address);
       if (request.method === 'GET' && route === 'status') {
         reply(200, await options.backend.status());
         return;

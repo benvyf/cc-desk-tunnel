@@ -15,7 +15,8 @@ export async function validateDesktopTicket(
     headers: { 'content-type': 'application/json', authorization: `Bearer ${options.token}` },
     body: JSON.stringify({ nodeId: options.nodeId, ticket, renewal }),
   });
-  if (!response.ok) throw new Error('Desktop authorization refused');
+  if (!response.ok)
+    throw Object.assign(new Error('Desktop authorization refused'), { status: response.status });
   const result = (await response.json()) as { userId?: unknown; validUntil?: unknown };
   if (
     typeof result.userId !== 'string' ||

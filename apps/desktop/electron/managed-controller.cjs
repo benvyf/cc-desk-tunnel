@@ -230,13 +230,11 @@ class ManagedController {
       const previous = this.state();
       if (['installing', 'preparing'].includes(previous.phase)) return previous;
       const last = read(this.file('last-check.json'), { at: 0 });
-      if (this.now() - last.at < (manual ? 30000 : 6 * 3600 * 1000)) {
-        if (manual)
-          throw Object.assign(new Error('请间隔至少 30 秒再检查更新'), {
-            code: 'UPDATE_THROTTLED',
-          });
-        return previous;
-      }
+      // Automatic checks are scheduled at startup and every six hours by start().
+      if (manual && this.now() - last.at < 30000)
+        throw Object.assign(new Error('请间隔至少 30 秒再检查更新'), {
+          code: 'UPDATE_THROTTLED',
+        });
       atomic(this.file('last-check.json'), { at: this.now() });
       this.publish({ phase: 'checking' });
       const selected = await this.loadIndex(signal);

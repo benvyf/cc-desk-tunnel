@@ -6,7 +6,6 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
   ArrowRight,
-  Folder,
   GitBranch,
   Play,
   Plus,
@@ -27,8 +26,8 @@ import { slashCommands } from './commands.ts';
 import ComposerControls from './ComposerControls.tsx';
 import PermissionMenu from './PermissionMenu.tsx';
 import { IconButton } from './ui.tsx';
-import type { MenuPosition } from './ui.tsx';
-import { usePrefs } from './prefs.ts';
+import { setPrefs, usePrefs } from './prefs.ts';
+import { isMac } from './platform.ts';
 
 export type Scenario = 'chat' | 'tool' | 'question' | 'error';
 // A draft that is only a slash and an optional command name opens the command menu.
@@ -63,9 +62,8 @@ function useBranch(path: string, running: boolean) {
 }
 
 export default function Composer({
+  queuedMessages,
   session,
-  projectName,
-  chooseProject,
   draft,
   focusDraft = false,
   onDraftFocusHandled,
@@ -96,11 +94,8 @@ export default function Composer({
   configure,
   stop,
 }: {
+  queuedMessages?: ReactNode;
   session: Session;
-  // Absent for a session that belongs to no project.
-  projectName: string | null;
-  // Opens the list of projects the session can be moved to; absent while it cannot be moved.
-  chooseProject?: (position: MenuPosition) => void;
   draft: string;
   focusDraft?: boolean;
   onDraftFocusHandled?: () => void;
@@ -125,7 +120,7 @@ export default function Composer({
   metrics: NativeMetrics | null;
   openAccount: () => void;
   // Sends the draft, or the text given instead of it.
-  send: (text?: string) => void;
+  send: (text?: string, mode?: 'queue' | 'steer') => void;
   // Present when the session's last turn was stopped or cut off: takes it up again without a message.
   resume?: () => void;
   compact: () => void;
@@ -138,20 +133,28 @@ export default function Composer({
   stop: () => void;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
-  const interfaceFontSize = usePrefs().fontSizes.interface;
+  const {
+    fontSizes: { interface: interfaceFontSize },
+    busyEnter,
+  } = usePrefs();
+  const following = !!session.activeRun && native;
+  const sendLabel = following ? (busyEnter === 'queue' ? '排队发送' : '插话发送') : '发送消息';
   const branch = useBranch(session.projectPath, !!session.activeRun);
   const [dropping, setDropping] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const attachmentBlocked = attachments.some((item) => item.status !== 'ready');
   const messageTooLong = attachmentMessage(draft, attachments).trim().length > messageLimit;
-  function submit() {
+  function submit(alternate = false) {
     if (
       !inputDisabled &&
       !attachmentBlocked &&
       !messageTooLong &&
       (draft.trim() || attachments.length)
     )
-      send();
+      send(
+        undefined,
+        following && alternate ? (busyEnter === 'queue' ? 'steer' : 'queue') : busyEnter,
+      );
   }
   useEffect(() => {
     setAttachmentError(null);
@@ -380,29 +383,15 @@ export default function Composer({
           </div>
         )}
       </Presence>
-      <div className="composer-context">
-        <button
-          type="button"
-          className="chip quiet"
-          aria-label="会话所在的项目"
-          aria-haspopup="menu"
-          title={session.projectPath}
-          disabled={!chooseProject}
-          onClick={(event) => {
-            const box = event.currentTarget.getBoundingClientRect();
-            chooseProject!({ x: box.left, y: box.top - 6, above: true });
-          }}
-        >
-          <Folder />
-          <span>{projectName ?? '普通会话'}</span>
-        </button>
-        {branch && (
+      {branch && (
+        <div className="composer-context">
           <span className="chip quiet" title="项目当前所在的 git 分支">
             <GitBranch />
             <span>{branch}</span>
           </span>
-        )}
-      </div>
+        </div>
+      )}
+      {queuedMessages}
       <form
         className={`composer ${dropping ? 'dropping' : ''}`}
         onSubmit={(event) => {
@@ -497,7 +486,7 @@ export default function Composer({
               }
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
                 event.preventDefault();
-                if (!menuShown) submit();
+                if (!menuShown) submit(isMac ? event.metaKey : event.ctrlKey);
                 else if (!items[at].disabled) items[at].run();
               }
             }}
@@ -569,20 +558,42 @@ export default function Composer({
             </IconButton>
           ) : (
             (!session.activeRun || native) && (
-              <button
-                type="submit"
-                className="icon-button send-button"
-                aria-label="发送消息"
-                title="发送消息"
-                disabled={
-                  (!draft.trim() && !attachments.length) ||
-                  inputDisabled ||
-                  attachmentBlocked ||
-                  messageTooLong
-                }
-              >
-                <ArrowRight />
-              </button>
+              <>
+                {following && (
+                  <select
+                    className="busy-send-mode"
+                    aria-label="繁忙时的发送行为"
+                    value={busyEnter}
+                    onChange={(event) =>
+                      setPrefs((prefs) => ({
+                        ...prefs,
+                        busyEnter: event.target.value === 'steer' ? 'steer' : 'queue',
+                      }))
+                    }
+                  >
+                    <option value="queue">排队发送</option>
+                    <option value="steer">插话发送</option>
+                  </select>
+                )}
+                <button
+                  type="submit"
+                  className="icon-button send-button"
+                  aria-label={sendLabel}
+                  title={
+                    following
+                      ? `${sendLabel} · ${isMac ? 'Cmd' : 'Ctrl'}+Enter ${busyEnter === 'queue' ? '插话发送' : '排队发送'}`
+                      : sendLabel
+                  }
+                  disabled={
+                    (!draft.trim() && !attachments.length) ||
+                    inputDisabled ||
+                    attachmentBlocked ||
+                    messageTooLong
+                  }
+                >
+                  <ArrowRight />
+                </button>
+              </>
             )
           )}
         </div>

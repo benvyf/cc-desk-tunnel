@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Brand from './Brand.tsx';
+import SidebarResize from './SidebarResize.tsx';
 import type { ReactNode } from 'react';
 import {
   ChevronDown,
@@ -312,6 +313,7 @@ export default function Sidebar({
   }
   return (
     <aside className="sidebar" inert={!sideOpen} ref={aside}>
+      <SidebarResize open={sideOpen} />
       <div className="sidebar-brand">
         <Brand connectionName={connectionName} />
         <NoticeBell notifications={notifications} open={select} />

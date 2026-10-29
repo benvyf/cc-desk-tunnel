@@ -56,7 +56,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '主题 外观 字体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端',
+      '主题 外观 字体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter',
   },
   {
     id: 'notifications',
@@ -520,7 +520,7 @@ function General({
   chooseWorkspace: (reset: boolean) => void;
 }) {
   const [closeToTray, setCloseToTray] = useState<boolean | null>(null);
-  const { connection, bypassPermissions, quota } = usePrefs();
+  const { connection, bypassPermissions, quota, busyEnter } = usePrefs();
   useEffect(() => {
     void window.desktop?.windowSettings().then((values) => setCloseToTray(values.closeToTray));
   }, []);
@@ -531,6 +531,27 @@ function General({
         <ThemeSettings />
         <FontSizeSettings />
         <SessionDefaultsSettings capabilities={capabilities} />
+        <h2 className="page-heading">消息发送</h2>
+        <div className="card">
+          <Row
+            title="繁忙时的发送行为"
+            detail="Enter 与发送按钮使用此方式；Ctrl/Cmd+Enter 使用另一种方式，Shift+Enter 换行。插话的接收时机由 Claude Code 决定。"
+          >
+            <select
+              aria-label="繁忙时的发送行为"
+              value={busyEnter}
+              onChange={(event) =>
+                setPrefs((prefs) => ({
+                  ...prefs,
+                  busyEnter: event.target.value === 'steer' ? 'steer' : 'queue',
+                }))
+              }
+            >
+              <option value="queue">排队发送</option>
+              <option value="steer">插话发送</option>
+            </select>
+          </Row>
+        </div>
         {web && <WebAccessSettings client={client} browser={browser} connectionUrl={form.url} />}
         {!window.desktop && !browser && (
           <p className="muted">窗口、会话和连接的设置只在桌面客户端里有。</p>

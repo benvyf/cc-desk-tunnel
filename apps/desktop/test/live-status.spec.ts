@@ -107,6 +107,7 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
     ],
   ]);
   let send: (value: unknown) => void = () => {};
+  let continuedSession: string | undefined;
   await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
     send = (value) => route.send(JSON.stringify(value));
     route.onMessage((raw) => {
@@ -132,6 +133,13 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
           lastSequence: events.length,
           hasEarlier: false,
           events,
+        });
+      }
+      if (message.type === 'run.continue') {
+        continuedSession = message.sessionId;
+        send({
+          type: 'session.updated',
+          session: { ...silent, activeRun: { ...silent.activeRun!, id: randomUUID() } },
         });
       }
       send({ type: 'response', requestId: message.requestId, ok: true });
@@ -226,4 +234,159 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
     payload: { type: 'text.delta', messageId: randomUUID(), text: '继续。' },
   });
   await expect(status).toHaveText('运行中', { timeout: 15000 });
+  const summary = page.getByLabel('当前任务状态', { exact: true });
+  await expect(summary).toContainText('正在执行');
+  expect(await summary.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
+    'rgba(0, 0, 0, 0)',
+  );
+  expect(await summary.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  send({
+    type: 'session.updated',
+    session: {
+      ...silent,
+      activeRun: { ...silent.activeRun!, status: 'awaiting_approval', waiting: 'question' },
+    },
+  });
+  await expect(summary).toContainText('等待你回答');
+  await expect(summary.locator('.running-dot')).not.toHaveClass(/breathing/);
+  let sequence = 3;
+  for (const outcome of ['cancelled', 'failed', 'completed'] as const) {
+    send({ type: 'session.updated', session: { ...silent, activeRun: null } });
+    const payload = {
+      type: 'run.status',
+      status: outcome,
+      connectionId,
+      ...(outcome === 'cancelled' ? { reason: '服务停止，运行未重放。' } : {}),
+    };
+    send({ type: 'session.event', event: event(silent, sequence++, 0, payload) });
+    const label =
+      outcome === 'cancelled' ? '本轮已停止' : outcome === 'failed' ? '本轮执行失败' : '本轮已完成';
+    await expect(summary).toContainText(label);
+    await expect(summary).toBeInViewport();
+    if (outcome === 'cancelled') await expect(summary).toContainText('服务停止，运行未重放。');
+    if (outcome !== 'completed')
+      await expect(summary.getByRole('button', { name: '继续上一轮' })).toBeEnabled();
+    else await expect(summary.getByRole('button')).toHaveCount(0);
+    if (outcome === 'failed') {
+      send({
+        type: 'session.event',
+        event: event(silent, sequence++, 0, {
+          type: 'run.error',
+          code: 'test_interrupted',
+          message: '模拟执行中断，请检查网络',
+        }),
+      });
+      await expect(summary).toHaveAttribute('role', 'alert');
+      await expect(summary).toContainText('模拟执行中断，请检查网络');
+      await shot(page, '07-任务失败-输入框上方状态');
+      await page.setViewportSize({ width: 390, height: 720 });
+      await expect(summary).toBeInViewport();
+      await expect(summary.getByRole('button', { name: '继续上一轮' })).toBeInViewport();
+      const longReason = '模拟执行中断：连接远程执行服务失败，请检查网络及工作空间状态。'.repeat(
+        12,
+      );
+      send({
+        type: 'session.event',
+        event: event(silent, sequence++, 0, {
+          type: 'run.error',
+          code: 'test_long_reason',
+          message: longReason,
+        }),
+      });
+      await expect(summary.locator('.run-summary-detail')).toHaveAttribute('title', longReason);
+      const bounds = await summary.boundingBox();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
+      expect(bounds!.height).toBeLessThan(100);
+      await expect(summary.getByRole('button', { name: '继续上一轮' })).toBeInViewport();
+      await shot(page, '08-任务失败-窄窗口');
+      await page.setViewportSize({ width: 1280, height: 900 });
+    }
+  }
+  const nextRunId = randomUUID();
+  send({
+    type: 'session.updated',
+    session: { ...silent, activeRun: { ...silent.activeRun!, id: nextRunId } },
+  });
+  await expect(summary).toContainText('正在执行');
+  await expect(summary).not.toContainText('模拟执行中断');
+  send({ type: 'session.updated', session: { ...silent, activeRun: null } });
+  send({
+    type: 'session.event',
+    event: {
+      ...event(silent, sequence++, 0, {
+        type: 'run.status',
+        status: 'failed',
+        connectionId,
+        reason: '新一轮任务中断',
+      }),
+      runId: nextRunId,
+    },
+  });
+  await expect(summary).toContainText('新一轮任务中断');
+  await expect(summary).not.toContainText('模拟执行中断');
+  await summary.getByRole('button', { name: '继续上一轮' }).click();
+  await expect.poll(() => continuedSession).toBe(silent.id);
+  await expect(summary).toContainText('正在执行');
+  await expect(summary).not.toContainText('新一轮任务中断');
+  send({ type: 'session.updated', session: { ...silent, activeRun: null } });
+  send({
+    type: 'session.event',
+    event: {
+      ...event(silent, sequence++, 0, {
+        type: 'run.status',
+        status: 'failed',
+        connectionId,
+        reason: '连接断开前已确认失败',
+      }),
+      runId: randomUUID(),
+    },
+  });
+  await expect(summary).toContainText('连接断开前已确认失败');
+  // This manual native fixture returns to login on socket close. Exercise the disconnected
+  // presentation directly so an already confirmed outcome remains visible in remote mode.
+  await page.evaluate(
+    async ({ session, events }) => {
+      const source = '/src/RunStatus.tsx';
+      const reactPath = '/node_modules/.vite/deps/react.js';
+      const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+      const [{ RunSummary }, react, dom] = await Promise.all([
+        import(source),
+        import(reactPath),
+        import(domPath),
+      ]);
+      const { createElement } = react.default ?? react;
+      const { createRoot } = dom.default ?? dom;
+      const container = document.createElement('div');
+      container.id = 'disconnected-status-fixture';
+      document.body.append(container);
+      createRoot(container).render(
+        createElement(RunSummary, {
+          session,
+          events,
+          connected: false,
+          clock: { now: () => Date.now(), activityAt: () => 0 },
+          resume: () => {},
+        }),
+      );
+    },
+    {
+      session: { ...silent, activeRun: null },
+      events: [
+        event(silent, sequence++, 0, {
+          type: 'run.status',
+          status: 'failed',
+          connectionId,
+          reason: '连接断开前已确认失败',
+        }),
+      ],
+    },
+  );
+  const disconnected = page
+    .locator('#disconnected-status-fixture')
+    .getByLabel('当前任务状态', { exact: true });
+  await expect(disconnected).toContainText('本轮执行失败');
+  await expect(disconnected).toContainText('连接断开前已确认失败');
+  await expect(disconnected).toHaveAttribute('role', 'alert');
+  await expect(disconnected.getByRole('button')).toHaveCount(0);
 });

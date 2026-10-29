@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 import type { TaskProgress } from './client.ts';
 
 // The service's clock as this window knows it, and when something last came from a session's run.
@@ -19,6 +20,98 @@ export function span(seconds: number) {
   if (whole < 60) return `${whole} 秒`;
   if (whole < 3600) return `${Math.floor(whole / 60)} 分 ${whole % 60} 秒`;
   return `${Math.floor(whole / 3600)} 小时 ${Math.floor((whole % 3600) / 60)} 分`;
+}
+
+// Outside the scrolling transcript, so a finished or interrupted turn cannot disappear from view.
+export function RunSummary({
+  session,
+  events,
+  clock,
+  connected,
+  resume,
+}: {
+  session: Session;
+  events: SessionEvent[];
+  clock: Clock;
+  connected: boolean;
+  resume?: () => void;
+}) {
+  const run = session.activeRun;
+  useTick(!!run && connected, 5000);
+  const last = events.findLast((event) => event.payload.type === 'run.status');
+  if (
+    run?.surface === 'terminal' ||
+    (!run && last?.payload.type === 'run.status' && last.payload.surface === 'terminal')
+  )
+    return null;
+  if (!run && !last) return null;
+  const status = last?.payload.type === 'run.status' ? last.payload : undefined;
+  let label: string,
+    detail = '',
+    kind = 'running';
+  if (
+    !connected &&
+    (run || !status || status.status === 'running' || status.status === 'awaiting_approval')
+  ) {
+    kind = 'uncertain';
+    label = '连接中断 · 任务状态待确认';
+  } else if (run) {
+    if (run.status === 'awaiting_approval') {
+      kind = 'waiting';
+      label = run.waiting === 'question' ? '等待你回答' : '等待你审批';
+    } else if (run.waiting === 'background') label = '后台任务进行中';
+    else {
+      label = '正在执行';
+      const since = Math.max(
+        clock.activityAt(session.id),
+        Date.parse(events.at(-1)?.createdAt ?? '') || 0,
+      );
+      const quiet = Math.max(0, clock.now() - since);
+      if (since && quiet >= 60_000) detail = `已 ${Math.floor(quiet / 60_000)} 分钟没有新输出`;
+    }
+  } else {
+    kind = status?.status ?? 'unknown';
+    label =
+      kind === 'completed'
+        ? '本轮已完成'
+        : kind === 'cancelled'
+          ? '本轮已停止'
+          : kind === 'failed'
+            ? '本轮执行失败'
+            : '任务状态待确认';
+    if (kind === 'failed') {
+      const error = events.findLast(
+        (event) => event.runId === last?.runId && event.payload.type === 'run.error',
+      )?.payload;
+      detail =
+        error?.type === 'run.error' ? error.message : (status?.reason ?? '请查看会话中的错误信息');
+    } else if (kind === 'cancelled') detail = status?.reason ?? '';
+  }
+  return (
+    <div
+      className={`run-summary ${kind}`}
+      role={kind === 'failed' ? 'alert' : 'status'}
+      aria-label="当前任务状态"
+    >
+      <span
+        className={`running-dot${kind === 'running' && connected && !detail ? ' breathing' : ''}`}
+        aria-hidden="true"
+      />
+      <div className="run-summary-copy">
+        <strong>{label}</strong>
+        {detail && (
+          <span className="run-summary-detail" title={detail}>
+            {detail}
+          </span>
+        )}
+      </div>
+      {connected && !run && resume && (
+        <button type="button" className="button" onClick={resume}>
+          继续上一轮
+        </button>
+      )}
+    </div>
+  );
 }
 
 // Whether a run is alive. A tool that takes long tells its time in its own row above, and counts as word of

@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-29 Build 22 / Build 8 发布
+
+用户授权提交、推送全部未提交改动，打包并替换 VPS 客户端下载入口，同时完善服务端升级指令。版本仍为 0.3.7 / 协议 22，pilot。发布范围与中心授权的部署顺序见 [Build 22 发布记录](docs/RELEASE-BUILD-22.md)。旧 Build 21 / Build 7 制品保留，不能覆盖旧身份。打包、部署及下载验证的实际结果在完成后补录。
+
 ### 2026-10-29 终端体验发布准备：Windows Build 21 / Linux Build 7
 
 用户已授权提交、推送、合并 main、打包并发布到 VPS，先测试已安装客户端接收更新，再测试客户端升级服务端。六项终端体验和两轮 review 已完成，详见 [验收记录](docs/TERMINAL-EXPERIENCE-IMPLEMENTATION-STATUS.md)。新版本继续 0.3.7 / 协议 22，pilot；不覆盖已发布 Build 20/6 的制品。

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Upgrade the confirmed ubuntu-cc baseline with verified Build 7 and offline rollback."""
+"""Upgrade the confirmed ubuntu-cc baseline with verified Build 8 and offline rollback."""
 import argparse
 import hashlib
 import importlib.util
@@ -16,6 +16,7 @@ ROOT = Path('/var/lib/cc-space-terminal-upgrade')
 ORIGIN = 'https://api.ghostapi.org'
 BASE_DESCRIPTOR = '27876f345c2992abf77b925686aedee2af9b151babeef46af2486afb361009ac'
 RUNTIME_LOCK = '3c85257d8835fb9016bb739df2f06b2097a2f171c2941b8569aa45ea005c5176'
+TARGET_BUILD = 8
 
 
 def load(name, path):
@@ -66,13 +67,13 @@ const d=JSON.parse(bytes);a.equal(d.files['package-lock.json'].sha256,process.ar
         envelope = json.loads(index)
         import base64
         untrusted = json.loads(base64.urlsafe_b64decode(envelope['payload'] + '==='))['release']
-        if untrusted['build'] != 7 or untrusted['protocol'] != 22:
-            raise RuntimeError('Expected Linux Build 7 / protocol 22; obtain a matching upgrade command')
-        release = b.verify_index(index, current['Image'], 7, untrusted['sha256'])['release']
-        work = Path(tempfile.mkdtemp(prefix='terminal-build7-', dir='/var/tmp'))
+        if untrusted['build'] != TARGET_BUILD or untrusted['protocol'] != 22:
+            raise RuntimeError(f'Expected Linux Build {TARGET_BUILD} / protocol 22; obtain a matching upgrade command')
+        release = b.verify_index(index, current['Image'], TARGET_BUILD, untrusted['sha256'])['release']
+        work = Path(tempfile.mkdtemp(prefix=f'terminal-build{TARGET_BUILD}-', dir='/var/tmp'))
         work.chmod(0o755)
         archive = work / 'server.tar.gz'
-        archive.write_bytes(download('/cc-updates/server/v1/artifacts/7/linux-x64/cc-desk-tunnel-server-0.3.7-build7.tar.gz', 64 * 1024 * 1024))
+        archive.write_bytes(download(f'/cc-updates/server/v1/artifacts/{TARGET_BUILD}/linux-x64/cc-desk-tunnel-server-0.3.7-build{TARGET_BUILD}.tar.gz', 64 * 1024 * 1024))
         if hashlib.sha256(archive.read_bytes()).hexdigest() != release['sha256']:
             raise RuntimeError('Archive digest mismatch')
         program = work / 'program'
@@ -94,13 +95,13 @@ const d=JSON.parse(bytes);a.equal(d.files['package-lock.json'].sha256,process.ar
         if hashlib.sha256(descriptor.read_bytes()).hexdigest() != release['descriptorSha256']:
             raise RuntimeError('Descriptor digest mismatch')
         d = json.loads(descriptor.read_bytes())
-        if (d['build'], d['protocol'], d['sourceCommit']) != (7, 22, release['sourceCommit']):
+        if (d['build'], d['protocol'], d['sourceCommit']) != (TARGET_BUILD, 22, release['sourceCommit']):
             raise RuntimeError('Unexpected candidate identity')
         for path, info in d['files'].items():
             data = (program / path).read_bytes()
             if len(data) != info['size'] or hashlib.sha256(data).hexdigest() != info['sha256']:
                 raise RuntimeError('Candidate inventory mismatch')
-        image = 'cc-space-terminal:build7-' + release['sha256'][:12]
+        image = f'cc-space-terminal:build{TARGET_BUILD}-' + release['sha256'][:12]
         base_tag = 'cc-space-terminal-base:' + current['Image'].split(':')[-1][:12]
         subprocess.run(['docker', 'tag', current['Image'], base_tag], check=True, capture_output=True)
         (work / 'Dockerfile').write_text('FROM ' + base_tag + '\nUSER root\nCOPY --chown=root:root program/ /app/\nCOPY --chown=root:root program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint\nRUN chmod 755 /usr/local/bin/proxy-entrypoint && chmod -R go-w /app\nUSER ccdesktunnel\n')
@@ -110,12 +111,12 @@ const d=JSON.parse(bytes);a.equal(d.files['package-lock.json'].sha256,process.ar
         after = engine.request('GET', '/containers/' + b.CONTAINER + '/json')
         if after['Id'] != current['Id'] or not after['State']['Running']:
             raise RuntimeError('Original container changed during preparation')
-        print('OFFLINE_PREFLIGHT_OK: Build 7 / protocol 22; zero Claude invocations. Logs: ' + str(work / 'preflight.log'), flush=True)
+        print(f'OFFLINE_PREFLIGHT_OK: Build {TARGET_BUILD} / protocol 22; zero Claude invocations. Logs: ' + str(work / 'preflight.log'), flush=True)
         if not args.install:
             print('Preparation only. Run again with --install after closing clients and Claude tasks.')
             return
         legacy.ROOT, legacy.BASE, legacy.IMAGE = ROOT, current['Image'], image
-        legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': 7, 'protocol': 22}
+        legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': TARGET_BUILD, 'protocol': 22}
         legacy.install(b)
 
 

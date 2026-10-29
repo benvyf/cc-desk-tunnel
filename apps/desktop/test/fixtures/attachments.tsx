@@ -64,7 +64,6 @@ export function mount() {
           setDraft={(text) => setDraft(id, text)}
           attachments={attachments[id] ?? []}
           setAttachments={setAttachments}
-          projectName="附件测试"
           native={false}
           connected
           busy={false}

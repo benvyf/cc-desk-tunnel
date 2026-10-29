@@ -325,6 +325,9 @@ export function createProxyServer(options: ServerOptions) {
         address: addressOf,
         readiness: options.managed.readiness,
         nonce: options.managed.nonce,
+        authorizeDesktopTicket: options.desktopAccess
+          ? (ticket) => validateDesktopTicket(options.desktopAccess!, ticket)
+          : undefined,
       })
     : undefined;
   const handler: RequestListener = (request, response) => {

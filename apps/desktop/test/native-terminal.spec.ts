@@ -1,7 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 
 type TerminalFixture = {
-  controls: { type: string; data?: string; bytes?: number }[];
+  controls: { type: string; data?: string; bytes?: number; cols?: number; rows?: number }[];
   requests: { type: string }[];
   receive: (message: object) => void;
   finishOpen: () => void;
@@ -97,6 +97,122 @@ test('resizing and changing code font preserves the process and editor focus', a
       () => window.terminalFixture.requests.filter((r) => r.type === 'terminal.open').length,
     ),
   ).toBe(1);
+});
+
+test('a temporarily unavailable character measurement does not leave the terminal at its old size', async ({
+  page,
+}) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await page.evaluate(async () => {
+    for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+  });
+  const before = await page.evaluate(
+    () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)!.cols!,
+  );
+  await page.evaluate(async () => {
+    const path = performance
+      .getEntriesByType('resource')
+      .find((entry) => entry.name.includes('/@xterm_addon-fit.js'))!.name;
+    const { FitAddon } = await import(path);
+    const original = FitAddon.prototype.proposeDimensions;
+    FitAddon.prototype.proposeDimensions = function () {
+      FitAddon.prototype.proposeDimensions = original;
+      return undefined;
+    };
+    // A single layout change: no second user resize to rescue the missed fit.
+    document.querySelector<HTMLElement>('.native-terminal')!.style.width = '1800px';
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)
+            ?.cols ?? 0,
+      ),
+    )
+    .toBeGreaterThan(before);
+  const remoteRows = await page.evaluate(
+    () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)!.rows,
+  );
+  await expect(page.locator('.xterm-rows > div')).toHaveCount(remoteRows!);
+  expect(
+    await page.evaluate(
+      () => window.terminalFixture.requests.filter((r) => r.type === 'terminal.open').length,
+    ),
+  ).toBe(1);
+});
+
+test('local and remote grids stay equal at size limits and after restoring the layout', async ({
+  page,
+}) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const cell = await page.evaluate(() => {
+    const size = window.terminalFixture.controls
+      .filter((r) => r.type === 'terminal.resize')
+      .at(-1)!;
+    const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect();
+    return { width: screen.width / size.cols!, height: screen.height / size.rows! };
+  });
+  for (const layout of [
+    { width: 6000, height: 4000, cols: 400, rows: 160 },
+    { width: 100, height: 80, cols: 20, rows: 5 },
+    { width: 1000, height: 600 },
+  ]) {
+    await page.evaluate(async ({ width, height }) => {
+      const terminal = document.querySelector<HTMLElement>('.native-terminal')!;
+      terminal.style.display = 'none';
+      await new Promise(requestAnimationFrame);
+      Object.assign(terminal.style, {
+        display: 'flex',
+        width: `${width}px`,
+        height: `${height}px`,
+        minHeight: '0',
+      });
+    }, layout);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          ({ cell, layout }) => {
+            const remote = window.terminalFixture.controls
+              .filter((r) => r.type === 'terminal.resize')
+              .at(-1)!;
+            const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect();
+            const localCols = Math.round(screen.width / cell.width);
+            const localRows = Math.round(screen.height / cell.height);
+            return {
+              cols: remote.cols,
+              rows: remote.rows,
+              synchronized: localCols === remote.cols && localRows === remote.rows,
+              fits:
+                layout.cols !== undefined ||
+                (screen.width < layout.width && screen.height < layout.height),
+            };
+          },
+          { cell, layout },
+        ),
+      )
+      .toMatchObject({
+        synchronized: true,
+        fits: true,
+        ...(layout.cols !== undefined ? { cols: layout.cols, rows: layout.rows } : {}),
+      });
+  }
 });
 
 test('font boundaries preserve the reading position in terminal scrollback', async ({ page }) => {

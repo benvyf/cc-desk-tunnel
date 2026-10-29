@@ -24,7 +24,11 @@ export const themes = [
   { theme: 'dark', label: '深色' },
 ] as const;
 export type Theme = (typeof themes)[number]['theme'];
+export const sidebarWidthRange = { min: 264, max: 420, default: 284 };
 export type Prefs = {
+  sidebarWidth: number;
+  busyEnter: 'queue' | 'steer';
+  bookmarkedMessages: string[];
   pinnedSessions: string[];
   // Projects are named by pathKey().
   pinnedProjects: string[];
@@ -59,6 +63,9 @@ export type Prefs = {
 
 const storageKey = 'proxy-prefs';
 const defaults: Prefs = {
+  sidebarWidth: sidebarWidthRange.default,
+  busyEnter: 'queue',
+  bookmarkedMessages: [],
   pinnedSessions: [],
   pinnedProjects: [],
   collapsedProjects: [],
@@ -100,6 +107,15 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
     const strings = (value: unknown) =>
       Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
     return {
+      sidebarWidth:
+        typeof saved.sidebarWidth === 'number' && Number.isFinite(saved.sidebarWidth)
+          ? Math.max(
+              sidebarWidthRange.min,
+              Math.min(sidebarWidthRange.max, Math.round(saved.sidebarWidth)),
+            )
+          : sidebarWidthRange.default,
+      busyEnter: saved.busyEnter === 'steer' ? 'steer' : 'queue',
+      bookmarkedMessages: strings(saved.bookmarkedMessages),
       pinnedSessions: strings(saved.pinnedSessions),
       pinnedProjects: strings(saved.pinnedProjects),
       collapsedProjects: strings(saved.collapsedProjects),

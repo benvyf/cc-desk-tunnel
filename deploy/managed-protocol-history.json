@@ -10,5 +10,17 @@
     "protocol": 22,
     "windowsBuilds": [11, 12, 13, 14, 15, 16, 17, 18, 19, 20],
     "serverBuild": 6
+  },
+  {
+    "appVersion": "0.3.7",
+    "protocol": 22,
+    "windowsBuilds": [21],
+    "serverBuild": 7
+  },
+  {
+    "appVersion": "0.3.7",
+    "protocol": 22,
+    "windowsBuilds": [22],
+    "serverBuild": 8
   }
 ]

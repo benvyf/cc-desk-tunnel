@@ -42,6 +42,10 @@ async function setup(
             if (mode === 'connected' && !disconnected)
               throw Error('Connection must close before checking');
             checks++;
+            if (reason === 'missing-credential')
+              throw Error(
+                "Error invoking remote method 'managed-server:check': Error: 请先在管理中心配置此工作空间的服务凭据。",
+              );
             if (reason === 'pending')
               await new Promise<void>((resolve) => {
                 finishCheck = resolve;
@@ -69,6 +73,24 @@ async function setup(
           activity: async () => {},
         },
       };
+      if (reason === 'missing-credential')
+        Object.assign(api, {
+          dev: false,
+          access: {
+            load: async () => null,
+            login: async () => ({
+              email: 'owner@example.com',
+              workspaces: [{ id: 'ubuntu-cc', name: 'Ubuntu' }],
+            }),
+            ticket: async () => ({
+              url: 'wss://service.example/ws',
+              fingerprint: '',
+              token: 'ccs_' + 'x'.repeat(43),
+            }),
+            logout: async () => {},
+            onExpired: () => noOp,
+          },
+        });
       Object.defineProperty(window, 'desktop', {
         value: new Proxy(api, {
           get: (target, key) =>
@@ -130,6 +152,13 @@ async function setup(
     });
   });
   await page.goto('/');
+  if (reason === 'missing-credential') {
+    await page.getByLabel('邮箱', { exact: true }).fill('owner@example.com');
+    await page.getByLabel('密码', { exact: true }).fill('fixture-password');
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await expect(page.getByRole('button', { name: '设置与账号', exact: true })).toBeVisible();
+    return;
+  }
   await page.getByLabel('服务地址', { exact: true }).fill('wss://service.example/ws');
   await page
     .getByLabel('服务凭据', { exact: true })
@@ -169,6 +198,31 @@ test('first Ubuntu bootstrap instruction links fixed CC management center for di
   await expect(page.getByText(/首次.*Ubuntu.*接入命令/)).toBeVisible();
   await expect(page.getByRole('button', { name: '打开 CC管理中心' })).toBeVisible();
   await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
+});
+
+test('legacy management failure shows concise text and spaced footer buttons', async ({
+  page,
+}, testInfo) => {
+  await setup(page, 'missing-credential');
+  await openMaintenance(page);
+  const dialog = page.getByRole('dialog', { name: '配套服务端更新' });
+  await expect(dialog.getByRole('status')).toHaveText('服务端暂时无法更新，请稍后重试。');
+  await expect(dialog.getByRole('status')).not.toContainText('Error invoking remote method');
+  await expect(dialog.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
+  const reconnect = dialog.getByRole('button', { name: '重新连接', exact: true });
+  const manager = dialog.getByRole('button', { name: '打开 CC管理中心', exact: true });
+  const a = (await reconnect.boundingBox())!;
+  const b = (await manager.boundingBox())!;
+  expect(Math.abs(a.y - b.y)).toBeLessThan(1);
+  expect(b.x - a.x - a.width).toBeCloseTo(8, 0);
+  await dialog.screenshot({ path: testInfo.outputPath('server-update-missing-credential.png') });
+  await page.setViewportSize({ width: 320, height: 560 });
+  expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await manager.scrollIntoViewIfNeeded();
+  await expect(manager).toBeInViewport();
+  expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
+    installed: false,
+  });
 });
 
 test('closing maintenance discards confirmation and reconnecting can recheck a rollback target', async ({

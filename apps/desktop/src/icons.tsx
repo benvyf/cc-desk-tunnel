@@ -48,6 +48,17 @@ export const ArrowRight = icon(paths.ArrowRightGlyph, 'ArrowRight');
 export const ArrowUp = icon(paths.ArrowUpGlyph, 'ArrowUp');
 export const ArrowUpToLine = icon(paths.ArrowUpToLineGlyph, 'ArrowUpToLine');
 export const Bell = icon(paths.BellGlyph, 'Bell');
+export const Bookmark = icon(
+  {
+    regular: (
+      <path
+        fillRule="evenodd"
+        d="M72 24h112a16 16 0 0 1 16 16v184a8 8 0 0 1-12.6 6.6L128 189l-59.4 41.6A8 8 0 0 1 56 224V40a16 16 0 0 1 16-16Zm0 16v168.6l51.4-36a8 8 0 0 1 9.2 0l51.4 36V40H72Z"
+      />
+    ),
+  },
+  'Bookmark',
+);
 export const Bot = icon(paths.BotGlyph, 'Bot');
 export const CalendarClock = icon(paths.CalendarClockGlyph, 'CalendarClock');
 export const Check = icon(paths.CheckGlyph, 'Check');

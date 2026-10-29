@@ -53,8 +53,10 @@ export async function desktopServerUpdate(
     if (status === 404)
       throw new UpdateError(409, '远端尚未接入受控升级，请在管理中心完成首次接入。');
     if (status === 401)
-      throw new UpdateError(409, '管理中心保存的服务凭据已失效，请更新工作空间配置。');
+      throw new UpdateError(409, '服务端暂不支持当前登录方式更新，请先升级服务端。');
     if (status === 409) throw new UpdateError(409, '服务繁忙或升级目标已变化，请重新检查后确认。');
     throw new UpdateError(502, '服务管理网络请求失败；服务重启期间请稍候查询状态。');
+  } finally {
+    access.releaseServerConnection(connection.token);
   }
 }

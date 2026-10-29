@@ -78,8 +78,16 @@ export default function ManagedServerUpgrade({
           fingerprint: form.fingerprint,
           token: form.token.trim(),
         };
-  const message = (error: unknown) =>
-    error instanceof Error ? error.message : '服务端升级失败，请重新检查。';
+  const message = (error: unknown) => {
+    const text = error instanceof Error ? error.message : '服务端升级失败，请重新检查。';
+    const detail = text.replace(
+      /^Error invoking remote method 'managed-server:(?:check|install|status|cancel)': (?:Error: )?/,
+      '',
+    );
+    return detail === '请先在管理中心配置此工作空间的服务凭据。'
+      ? '服务端暂时无法更新，请稍后重试。'
+      : detail;
+  };
   async function check() {
     const own = ++generation.current;
     setCandidate(null);
@@ -168,16 +176,14 @@ export default function ManagedServerUpgrade({
   return (
     <section className="managed-server-upgrade" aria-label="配套服务端升级">
       <button
-        className="button login-submit"
+        className="button"
         type="button"
         disabled={disabled || working}
         onClick={() => void check()}
       >
         检查服务端更新
       </button>
-      <p className="muted">
-        按构建号检查配套服务端；协议相同也可升级。先结束任务并关闭其他 CC 连接，确认目标后才安装。
-      </p>
+      <p className="muted">有新版时可直接更新。请先结束任务；更新期间会暂时断开连接。</p>
       {text && <p role="status">{text}</p>}
       {candidate && (
         <>
@@ -185,59 +191,63 @@ export default function ManagedServerUpgrade({
             目标版本 {candidate.appVersion} · Build {candidate.build} · 协议 {candidate.protocol}
           </p>
           <p>升级需要重启服务。确认后才会安装，完成后请手动连接。</p>
+        </>
+      )}
+      <div className="setting-actions">
+        {candidate && (
           <button
-            className="button login-submit"
+            className="button primary"
             type="button"
             disabled={disabled || working}
             onClick={() => void install()}
           >
             确认升级到 Build {candidate.build}
           </button>
-        </>
-      )}
-      {canReconnect && reconnect && (
-        <button
-          type="button"
-          className="button primary"
-          disabled={disabled || working}
-          onClick={reconnect}
-        >
-          重新连接
-        </button>
-      )}
-      {(working || candidate) && (
-        <button
-          className="button"
-          type="button"
-          onClick={() => {
-            generation.current++;
-            setCandidate(null);
-            setWorking(false);
-            activity(false);
-            setText('已取消等待。如已提交升级，服务端会继续，请检查服务端状态后手动连接。');
-            void api.cancel().catch(() => {});
-          }}
-        >
-          取消等待
-        </button>
-      )}
-      {help && (
-        <button
-          className="button"
-          type="button"
-          onClick={() => {
-            void api
-              .openManager()
-              .catch(() =>
-                setText(
-                  '无法打开 CC管理中心，请访问 https://api.ghostapi.org/cc-updates/admin/updates',
-                ),
-              );
-          }}
-        >
-          打开 CC管理中心
-        </button>
-      )}
+        )}
+        {canReconnect && reconnect && (
+          <button
+            type="button"
+            className={candidate ? 'button' : 'button primary'}
+            disabled={disabled || working}
+            onClick={reconnect}
+          >
+            重新连接
+          </button>
+        )}
+        {(working || candidate) && (
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              generation.current++;
+              setCandidate(null);
+              setWorking(false);
+              activity(false);
+              setText('已取消等待。如已提交升级，服务端会继续，请检查服务端状态后手动连接。');
+              void api.cancel().catch(() => {});
+            }}
+          >
+            取消等待
+          </button>
+        )}
+        {help && (
+          <button
+            className="button"
+            type="button"
+            onClick={() => {
+              void api
+                .openManager()
+                .catch(() =>
+                  setText(
+                    '无法打开 CC管理中心，请访问 https://api.ghostapi.org/cc-updates/admin/updates',
+                  ),
+                );
+            }}
+          >
+            打开 CC管理中心
+          </button>
+        )}
+      </div>
     </section>
   );
 }

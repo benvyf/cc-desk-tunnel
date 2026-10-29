@@ -94,6 +94,7 @@ function createDesktopAccess({
           session = {
             email: saved.email,
             token: storage.decryptString(Buffer.from(saved.token, 'base64')),
+            remembered: true,
           };
           return { email: session.email, remember: true, autoLogin: !!saved.autoLogin };
         }
@@ -112,12 +113,15 @@ function createDesktopAccess({
       )
         throw new Error('请输入邮箱和密码。');
       const turn = ++generation;
+      const remember = !!input.remember || !!input.autoLogin;
       signingIn++;
       try {
         const email = input.email.trim().toLowerCase();
         let next;
         if (!input.password && session?.email === email) {
           const current = session;
+          if (remember && !current.remembered)
+            throw new Error('启用记住登录或自动登录，请输入一次密码。');
           const value = await api('workspaces', undefined, current.token).catch((error) => {
             clearExpired(error, current, turn);
             throw error;
@@ -127,15 +131,15 @@ function createDesktopAccess({
           next = await api('login', {
             email,
             password: input.password,
-            remember: !!input.remember,
+            remember,
             ...(deviceId ? { deviceId: deviceId() } : {}),
           });
         }
         if (turn !== generation) throw new Error('登录已取消。');
         if (!next || typeof next.token !== 'string' || !Array.isArray(next.workspaces))
           throw new Error('管理中心返回了无效登录信息。');
-        session = { email: next.email, token: next.token };
-        persist(!!input.remember, !!input.autoLogin);
+        session = { email: next.email, token: next.token, remembered: next.remembered ?? remember };
+        persist(remember, !!input.autoLogin);
         return { email: next.email, workspaces: next.workspaces };
       } finally {
         signingIn--;

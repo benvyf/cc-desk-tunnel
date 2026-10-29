@@ -89,43 +89,6 @@ export default function ManagedUpdateDialog({
           <RichText text={release.notes} />
         </div>
       )}
-      <div className="setting-actions">
-        {phase === 'available' && !incompatible && (
-          <button
-            className="button primary"
-            disabled={working}
-            onClick={() => void run('download')}
-          >
-            下载更新
-          </button>
-        )}
-        {phase === 'downloading' && (
-          <button className="button" onClick={() => void run('cancel')}>
-            取消下载
-          </button>
-        )}
-        {phase === 'ready' && !incompatible && (
-          <>
-            {connected && (
-              <button className="button" disabled={!canDisconnect || working} onClick={disconnect}>
-                断开当前连接
-              </button>
-            )}
-            <button
-              className="button primary"
-              disabled={blocked || working}
-              onClick={() => void run('install')}
-            >
-              安装并重启
-            </button>
-          </>
-        )}
-        {['idle', 'error'].includes(phase) && (
-          <button className="button" disabled={working} onClick={() => void run('check')}>
-            重新检查
-          </button>
-        )}
-      </div>
       {server && (
         <section className="managed-update-server" aria-label="服务端更新">
           <h3>服务端</h3>
@@ -142,9 +105,44 @@ export default function ManagedUpdateDialog({
         </section>
       )}
       <div className="setting-actions">
-        <button className="button" onClick={onClose}>
-          关闭
-        </button>
+        {phase === 'ready' && !incompatible && connected && (
+          <button className="button" disabled={!canDisconnect || working} onClick={disconnect}>
+            断开当前连接
+          </button>
+        )}
+        <div className="managed-update-buttons">
+          {phase === 'available' && !incompatible && (
+            <button
+              className="button primary"
+              disabled={working}
+              onClick={() => void run('download')}
+            >
+              下载更新
+            </button>
+          )}
+          {phase === 'downloading' && (
+            <button className="button" onClick={() => void run('cancel')}>
+              取消下载
+            </button>
+          )}
+          {phase === 'ready' && !incompatible && (
+            <button
+              className="button primary"
+              disabled={blocked || working}
+              onClick={() => void run('install')}
+            >
+              安装并重启
+            </button>
+          )}
+          {['idle', 'error'].includes(phase) && (
+            <button className="button" disabled={working} onClick={() => void run('check')}>
+              重新检查
+            </button>
+          )}
+          <button className="button" onClick={onClose}>
+            关闭
+          </button>
+        </div>
       </div>
     </Modal>
   );

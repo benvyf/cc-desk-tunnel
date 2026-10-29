@@ -191,6 +191,36 @@ test('a newer Build exposes the rail action, downloads, then installs after disc
   ]);
 });
 
+test('ready update keeps install and close together on desktop and narrow windows', async ({
+  page,
+}, testInfo) => {
+  await page.evaluate(() => {
+    window.updateFixture.offer();
+    window.updateFixture.publish({ phase: 'ready' });
+  });
+  await page.getByRole('button', { name: '更新', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '更新', exact: true });
+  const install = dialog.getByRole('button', { name: '安装并重启', exact: true });
+  const close = dialog.getByRole('button', { name: '关闭', exact: true }).last();
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 900 });
+    await expect(install).toBeDisabled();
+    await expect(close).toBeInViewport();
+    const a = (await install.boundingBox())!;
+    const b = (await close.boundingBox())!;
+    expect(Math.abs(a.y - b.y)).toBeLessThan(1);
+    expect(b.x - a.x - a.width).toBeCloseTo(8, 0);
+    expect(b.x + b.width).toBeLessThanOrEqual(width);
+  }
+  await dialog.getByRole('button', { name: '断开当前连接' }).click();
+  await expect(install).toBeEnabled();
+  await page.setViewportSize({ width: 734, height: 600 });
+  await dialog.screenshot({ path: testInfo.outputPath('update-ready-footer.png') });
+  await close.click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => window.updateFixture.calls.includes('install'))).toBe(false);
+});
+
 test('incompatible releases direct the user to the management center without offering installation', async ({
   page,
 }) => {
@@ -266,7 +296,7 @@ test('initial state read failures have a visible retry entry', async ({ page }) 
   await expect(page.getByRole('button', { name: '下载更新' })).toBeEnabled();
 });
 
-test('email sign-in can disconnect to install without starting another automatic login', async ({
+test('email sign-in survives disconnecting for installation without starting another automatic login', async ({
   page,
 }) => {
   await page.addInitScript(() => {
@@ -300,7 +330,8 @@ test('email sign-in can disconnect to install without starting another automatic
   await page.evaluate(() => window.updateFixture.finish());
   await page.getByRole('button', { name: '断开当前连接' }).click();
   await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
-  await expect(page.getByLabel('自动登录', { exact: true })).not.toBeChecked();
+  await expect(page.getByLabel('自动登录', { exact: true })).toBeChecked();
+  await expect(page.getByLabel('记住登录', { exact: true })).toBeChecked();
   await expect(page.getByRole('button', { name: '安装并重启' })).toBeEnabled();
   await page.getByRole('button', { name: '关闭', exact: true }).last().click();
   await page.getByRole('button', { name: '更新', exact: true }).click();
@@ -309,7 +340,7 @@ test('email sign-in can disconnect to install without starting another automatic
   expect(
     await page.evaluate(() => window.updateFixture.calls.filter((call) => call === 'email-login')),
   ).toHaveLength(1);
-  expect(await page.evaluate(() => window.updateFixture.calls)).toContain('email-logout');
+  expect(await page.evaluate(() => window.updateFixture.calls)).not.toContain('email-logout');
 });
 
 for (const scenario of ['success', 'lost-response', 'current', 'skip', 'mismatch'] as const) {

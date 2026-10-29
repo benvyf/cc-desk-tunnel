@@ -9,10 +9,12 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { productName } from './Brand.tsx';
+import type { CSSProperties } from 'react';
 import {
   CircleHelp,
   Download,
   FileDown,
+  Folder,
   FolderInput,
   FolderOpen,
   FolderSymlink,
@@ -86,6 +88,9 @@ import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
+import { RunSummary } from './RunStatus.tsx';
+import { FollowUps } from './followUps.ts';
+import FollowUpQueue from './FollowUpQueue.tsx';
 
 import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
 
@@ -133,6 +138,9 @@ export function App({
   const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
   const emailOnly = !!window.desktop && !window.desktop.dev;
   const [client] = useState(() => new ProxyClient());
+  const [followUps] = useState(() => new FollowUps(client));
+  const queued = useSyncExternalStore(followUps.subscribe, followUps.getSnapshot);
+  useEffect(() => followUps.start(), [followUps]);
   useEffect(() => {
     if (!browser) return;
     client.connectBrowser(
@@ -408,7 +416,7 @@ export function App({
             !terminalsActive &&
             !state.sessions.some((session) => !!session.activeRun)
           }
-          disconnect={disconnect}
+          disconnect={() => void disconnect('update')}
           onClose={() => setManagedUpdateOpen(false)}
         />
       )}
@@ -805,11 +813,12 @@ export function App({
   function stopRun() {
     if (!selected?.activeRun) return;
     const { id: sessionId, activeRun } = selected;
+    followUps.pause(sessionId);
     void act(async () => {
       await client.request({ type: 'run.cancel', sessionId, runId: activeRun.id });
     });
   }
-  async function disconnect() {
+  async function disconnect(reason: 'logout' | 'update' = 'logout') {
     if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return false;
     setActiveWorkspace(null);
     loginInteracted.current = true;
@@ -821,8 +830,10 @@ export function App({
     client.disconnect();
     if (form.authMethod === 'email') {
       setLoginWorkspaces(null);
-      changeForm({ password: '', remember: false, autoLogin: false });
-      void window.desktop?.access.logout().catch((error) => setError(error.message));
+      if (reason === 'logout') {
+        changeForm({ password: '', remember: false, autoLogin: false });
+        void window.desktop?.access.logout().catch((error) => setError(error.message));
+      } else changeForm({ password: '', token: '' });
     }
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
@@ -1088,7 +1099,7 @@ export function App({
       }
     });
   }
-  async function send(override?: string) {
+  async function send(override?: string, mode = prefs.busyEnter) {
     const attached = selected ? (attachmentDrafts[selected.id] ?? []) : [];
     if (override === undefined && attached.some((item) => item.status !== 'ready')) return;
     const text = override ?? attachmentMessage(draft, attached);
@@ -1100,7 +1111,8 @@ export function App({
     const sessionId = selected.id;
     setSlashOpen(false);
     await act(async () => {
-      await client.request({ type: 'message.send', sessionId, text, scenario });
+      if (selected.activeRun && mode === 'queue') followUps.enqueue(sessionId, text, scenario);
+      else await client.request({ type: 'message.send', sessionId, text, scenario });
       setDraft(sessionId, '');
       if (override === undefined) {
         const sent = new Set(attached.map((item) => item.id));
@@ -1629,7 +1641,7 @@ export function App({
               重新连接
             </button>
           )}
-          <button className="button" onClick={disconnect}>
+          <button className="button" onClick={() => void disconnect()}>
             退出登录
           </button>
         </section>
@@ -1811,6 +1823,7 @@ export function App({
   return (
     <div
       className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''}`}
+      style={{ '--sidebar-width': `${prefs.sidebarWidth}px` } as CSSProperties}
     >
       {selfSigned && <CertificateWarning />}
       <TitleBar
@@ -1973,6 +1986,37 @@ export function App({
               </div>
             )}
             <Conversation
+              projectControl={
+                selected && (
+                  <button
+                    type="button"
+                    className="chip quiet session-project"
+                    aria-label="会话所在的项目"
+                    aria-haspopup="menu"
+                    aria-expanded={menu?.kind === 'move' && menu.sessionId === selected.id}
+                    title={selected.projectPath}
+                    disabled={controlsDisabled || away}
+                    onClick={(event) => {
+                      const box = event.currentTarget.getBoundingClientRect();
+                      setMenu({
+                        kind: 'move',
+                        sessionId: selected.id,
+                        x: box.left,
+                        y: box.bottom + 6,
+                      });
+                    }}
+                  >
+                    <Folder />
+                    <span>
+                      {state.devices.some(
+                        (device) => device.server && device.id === selected.device?.id,
+                      ) || isInside(selected.projectPath, workspaceRoots)
+                        ? '普通会话'
+                        : projectLabel(selected.projectPath)}
+                    </span>
+                  </button>
+                )
+              }
               findRequest={findRequest}
               session={selected}
               here={!!selected && onThis(selected)}
@@ -2039,7 +2083,7 @@ export function App({
                   与服务端的连接断开了，正在重新连接。运行中的任务仍在服务端继续，连上之后这里会补上期间的内容；
                   {state.error ? `原因：${state.error.split('\n')[0]}` : '不需要做什么。'}
                 </p>
-                <button type="button" className="button" onClick={disconnect}>
+                <button type="button" className="button" onClick={() => void disconnect()}>
                   断开并回到登录页
                 </button>
               </div>
@@ -2107,22 +2151,37 @@ export function App({
                 <p>设备“{selected.device?.name ?? '未知设备'}”未连接，当前只能查看会话。</p>
               </div>
             )}
+            {selected && (!away || remote) && !terminalsActive && !history?.loading && (
+              <RunSummary
+                session={selected}
+                events={state.events[selected.id] ?? []}
+                clock={clock}
+                connected={connected}
+                resume={stopped && !inputDisabled ? () => void resume() : undefined}
+              />
+            )}
+
             {selected && (!away || remote) && !terminalsActive && (
               <Composer
+                queuedMessages={
+                  <FollowUpQueue
+                    key={selected.id}
+                    items={queued.items[selected.id] ?? []}
+                    paused={queued.paused[selected.id]}
+                    sending={queued.sending[selected.id]}
+                    disabled={inputDisabled}
+                    running={!!selected.activeRun}
+                    remove={(id) => followUps.remove(selected.id, id)}
+                    edit={(id, text) => followUps.edit(selected.id, id, text)}
+                    beginEdit={() => followUps.pause(selected.id)}
+                    sendNow={(id) => {
+                      void followUps.sendNow(selected.id, id);
+                    }}
+                    resume={() => followUps.resume(selected.id)}
+                  />
+                }
                 openAccount={() => open('settings', 'account')}
                 session={selected}
-                projectName={
-                  state.devices.some(
-                    (device) => device.server && device.id === selected.device?.id,
-                  ) || isInside(selected.projectPath, workspaceRoots)
-                    ? null
-                    : projectLabel(selected.projectPath)
-                }
-                chooseProject={
-                  controlsDisabled || away
-                    ? undefined
-                    : (position) => setMenu({ kind: 'move', sessionId: selected.id, ...position })
-                }
                 draft={draft}
                 focusDraft={focusDraftSession === selected.id}
                 onDraftFocusHandled={() => setFocusDraftSession(null)}
@@ -2145,8 +2204,8 @@ export function App({
                 capabilities={capabilities}
                 nativeSession={nativeSession}
                 metrics={metrics}
-                send={(text) => {
-                  void send(text);
+                send={(text, mode) => {
+                  void send(text, mode);
                 }}
                 resume={stopped && !inputDisabled ? resume : undefined}
                 compact={() => {

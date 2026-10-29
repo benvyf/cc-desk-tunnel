@@ -886,8 +886,10 @@ button.chip.danger:hover:not(:disabled) {
 }
 /* The window: a title bar across the top, then the rail of pages, the side column and the page itself. */
 .shell {
+  --sidebar-max-width: max(264px, min(420px, calc(100vw - 452px)));
+  --sidebar-size: clamp(264px, var(--sidebar-width, 284px), var(--sidebar-max-width));
   display: grid;
-  grid-template-columns: 52px 284px minmax(0, 1fr);
+  grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr);
   grid-template-rows: var(--bar) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
@@ -897,7 +899,7 @@ button.chip.danger:hover:not(:disabled) {
   grid-template-columns: 52px 0 minmax(0, 1fr);
 }
 .shell > .sidebar {
-  width: 284px;
+  width: var(--sidebar-size);
   z-index: 12;
   opacity: 1;
   /* `none` releases fixed tooltip coordinates once the slide finishes. */
@@ -1067,6 +1069,11 @@ dialog:has(.release-notes) {
 .managed-update-summary {
   overflow-wrap: anywhere;
 }
+.managed-update-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
 .managed-update-summary progress {
   width: 100%;
   accent-color: var(--accent);
@@ -1148,6 +1155,31 @@ dialog:has(.release-notes) {
   min-width: 0;
   background: var(--side);
   border-radius: var(--radius-xl) 0 0 0;
+}
+.sidebar-resize {
+  position: absolute;
+  inset: 0 -4px 0 auto;
+  width: 8px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+.sidebar-resize::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms ease-out;
+}
+.sidebar-resize:is(:hover, :focus-visible)::after,
+.shell[data-sidebar-resizing] .sidebar-resize::after {
+  background: var(--line-strong);
+}
+.shell[data-sidebar-resizing],
+.shell[data-sidebar-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 .sidebar-brand {
   display: flex;
@@ -1940,12 +1972,145 @@ kbd {
   content-visibility: auto;
   contain-intrinsic-size: auto 120px;
 }
+.conversation-frame {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+.turn-navigation {
+  position: absolute;
+  z-index: 7;
+  inset: 12px 10px 12px auto;
+  width: 28px;
+  display: flex;
+  align-items: center;
+  pointer-events: none;
+}
+.turn-navigation-rail {
+  width: 28px;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  pointer-events: auto;
+  padding: 6px 0;
+}
+.turn-navigation-rail::-webkit-scrollbar {
+  display: none;
+}
+.turn-mark {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  width: 28px;
+  height: 10px;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.turn-mark span {
+  flex-shrink: 0;
+  width: 24px;
+  height: 2px;
+  background: var(--line-strong);
+  border-radius: 1px;
+  transform: scaleX(0.25);
+  transform-origin: right center;
+  transition:
+    transform 180ms ease-out,
+    background 180ms ease-out;
+}
+.turn-mark[data-bookmarked] span {
+  background: var(--muted);
+}
+.turn-mark[data-wave-distance='3'] span {
+  transform: scaleX(0.333333);
+}
+.turn-mark[data-wave-distance='2'] span {
+  transform: scaleX(0.5);
+}
+.turn-mark[data-wave-distance='1'] span {
+  transform: scaleX(0.75);
+  background: var(--text-2);
+}
+.turn-mark[data-wave-distance='0'] span {
+  transform: scaleX(1);
+  background: var(--text);
+}
+@media (prefers-reduced-motion: reduce) {
+  .turn-mark span {
+    transition: none;
+  }
+}
+.turn-load-earlier {
+  width: 28px;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  cursor: pointer;
+}
+.turn-preview {
+  position: absolute;
+  right: 34px;
+  width: min(320px, calc(100vw - 92px));
+  max-height: min(120px, 100%);
+  padding: 10px 12px;
+  border: 1px solid var(--line-soft);
+  border-radius: 12px;
+  background: var(--raised);
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  pointer-events: auto;
+  font-size: 12px;
+}
+/* Bridge the gap so the preview's bookmark remains reachable by the pointer. */
+.turn-preview::after {
+  content: '';
+  position: absolute;
+  left: 100%;
+  top: 0;
+  width: 6px;
+  height: 100%;
+}
+.turn-preview-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.turn-preview-heading strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.turn-preview-heading .icon-button {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+.turn-preview-heading [aria-pressed='true'] {
+  color: var(--text);
+  background: var(--selected);
+}
+.turn-preview p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
 .conversation {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 28px;
+  padding: 28px 48px 28px 28px;
 }
 /* Kept to the bottom of the view while it is scrolled up, taking no room at the end of the conversation. */
 .to-end {
@@ -1972,6 +2137,19 @@ kbd {
   padding: 0 20px;
   color: var(--muted);
   font-size: calc(12rem / 14);
+}
+.conversation-tools .session-project {
+  max-width: min(220px, 45vw);
+  min-width: 0;
+  margin-right: 4px;
+}
+.session-project > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-project > svg.app-icon {
+  flex-shrink: 0;
 }
 .conversation-find {
   display: flex;
@@ -3179,6 +3357,77 @@ details[open] > summary > .fold-chevron {
   font-size: calc(12rem / 14);
   color: var(--muted);
 }
+.run-summary {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  align-self: center;
+  width: calc(100% - 56px);
+  max-width: 820px;
+  min-height: 24px;
+  gap: 8px;
+  margin: 0 0 4px;
+  padding: 2px 0;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+.run-summary-copy {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  min-width: 0;
+}
+.run-summary strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.run-summary-detail {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+.run-summary > .running-dot {
+  width: 6px;
+  height: 6px;
+  background: currentColor;
+}
+.run-summary.running > .running-dot,
+.run-summary.waiting {
+  color: var(--accent);
+}
+.run-summary.completed > .running-dot {
+  color: var(--added);
+}
+.run-summary.failed strong,
+.run-summary.failed > .running-dot {
+  color: var(--danger);
+}
+.run-summary.waiting strong,
+.run-summary.cancelled strong {
+  color: var(--accent);
+}
+.run-summary button {
+  flex-shrink: 0;
+  padding: 3px 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--muted);
+  font-size: inherit;
+}
+.run-summary button:hover:not(:disabled) {
+  background: var(--hover);
+  color: var(--text);
+}
+@media (max-width: 700px) {
+  .run-summary {
+    width: calc(100% - 24px);
+  }
+}
 .run-indicator .running-dot {
   margin-top: 0;
 }
@@ -3267,6 +3516,7 @@ details[open] > summary > .fold-chevron {
 }
 .composer {
   position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -3506,6 +3756,101 @@ details[open] > summary > .fold-chevron {
   min-height: 48px;
   padding: 4px 9px 8px 10px;
   flex-shrink: 0;
+}
+.follow-up-queue {
+  width: calc(100% - 28px);
+  max-width: 792px;
+  min-width: 0;
+  flex-shrink: 0;
+  margin: 0 auto -14px;
+  padding: 2px 8px 14px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 16px 16px 0 0;
+  background: var(--hover);
+  font-size: 12px;
+}
+.follow-up-queue header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+}
+.follow-up-queue header span {
+  color: var(--muted);
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.follow-up-queue header .button {
+  font-size: 12px;
+  padding: 4px 8px;
+  flex-shrink: 0;
+}
+.follow-up-queue ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 160px;
+  overflow-y: auto;
+}
+.follow-up-queue li {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 34px;
+}
+.queued-message-icon {
+  width: 14px;
+  height: 14px;
+  margin: 0 6px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.queued-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.queued-text small {
+  color: var(--muted);
+}
+.follow-up-queue .icon-button {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--muted);
+}
+.queued-editor {
+  flex: 1;
+  min-width: 0;
+  padding-block: 4px;
+}
+.queued-editor textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  resize: vertical;
+  max-height: 100px;
+  font: inherit;
+}
+.busy-send-mode {
+  width: auto;
+  max-width: 106px;
+  padding: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  border: 0;
+  background: transparent;
+}
+@media (max-width: 700px) {
+  .turn-navigation {
+    right: 3px;
+  }
 }
 .toolbar-space {
   flex: 1;
@@ -4694,6 +5039,9 @@ dialog::backdrop {
     width: min(284px, calc(100vw - 60px));
     z-index: 12;
     box-shadow: var(--shadow-popover);
+  }
+  .sidebar-resize {
+    display: none;
   }
   .shell.side-closed > .sidebar {
     translate: -100% 0;

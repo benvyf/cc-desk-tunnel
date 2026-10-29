@@ -74,7 +74,7 @@ test('server management uses the private email session, bounded routes and rejec
 test('main process stores encrypted session only, restores and renews tickets, logs out', async () => {
   let saved,
     calls = [];
-  const access = createDesktopAccess({
+  const options = {
     read: () => saved,
     write: (value) => {
       saved = value;
@@ -102,16 +102,23 @@ test('main process stores encrypted session only, restores and renews tickets, l
         });
       return new Response(null, { status: 204 });
     },
-  });
+  };
+  let access = createDesktopAccess(options);
   const result = await access.login({
     email: 'me@example.com',
     password: 'password-not-stored',
-    remember: true,
+    remember: false,
     autoLogin: true,
   });
+  assert.equal(
+    JSON.parse(calls[0].options.body).remember,
+    true,
+    'auto-login always requests a remembered session',
+  );
   assert.ok(!JSON.stringify(result).includes('session-secret'));
   assert.ok(!JSON.stringify(saved).includes('password-not-stored'));
   assert.equal(saved.token, Buffer.from('encrypted:session-secret').toString('base64'));
+  access = createDesktopAccess(options);
   assert.equal(access.load().autoLogin, true);
   await access.login({ email: 'me@example.com', password: '', remember: true, autoLogin: true });
   assert.ok(calls.some((x) => x.url.endsWith('/workspaces')));
@@ -120,6 +127,15 @@ test('main process stores encrypted session only, restores and renews tickets, l
   assert.equal(saved, null);
   await assert.rejects(access.ticket('ubuntu-cc'), /先登录/);
   assert.equal(calls.at(-1).options.headers.authorization, 'Bearer session-secret');
+  await access.login({ email: 'me@example.com', password: 'password', remember: false });
+  await assert.rejects(
+    access.login({ email: 'me@example.com', password: '', autoLogin: true }),
+    /输入一次密码/,
+  );
+  assert.equal(saved, null, 'a short session is not silently saved as a long-lived auto-login');
+  await access.login({ email: 'me@example.com', password: 'password', autoLogin: true });
+  assert.equal(JSON.parse(calls.at(-1).options.body).remember, true);
+  assert.equal(access.load().autoLogin, true);
 });
 test('untrusted connection metadata and network errors are rejected', async () => {
   let bad = false;

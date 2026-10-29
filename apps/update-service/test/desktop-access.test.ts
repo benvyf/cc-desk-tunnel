@@ -113,6 +113,39 @@ test('ticket replacement, grant revocation and exact session expiry reject old a
   assert.throws(() => store.connect(renewedLogin.token, 'ubuntu-cc'), /未分配/);
 });
 
+test('remembered sessions survive overnight and renew during use, while idle and ordinary sessions expire', async (t) => {
+  const { store, input } = await fixture(t);
+  const now = Date.now(),
+    day = 86400_000;
+  const deviceId = '11111111-1111-4111-8111-111111111111';
+  const remembered = await store.login({ ...input, deviceId, remember: true }, 'remembered', now);
+  const ordinary = await store.login({ ...input, deviceId }, 'ordinary', now);
+  assert.equal(store.workspaces(remembered.token, now + day / 2).length, 1);
+  assert.throws(() => store.workspaces(ordinary.token, now + 8 * 3600_000), /失效/);
+  assert.equal(store.workspaces(remembered.token, now + 2 * day).length, 1);
+  assert.equal(store.workspaces(remembered.token, now + 31 * day).length, 1);
+  assert.throws(() => store.workspaces(remembered.token, now + 61 * day), /失效/);
+});
+
+test('reconnecting cannot revoke an in-flight maintenance ticket and maintenance cannot renew past expiry', async (t) => {
+  const { store, input } = await fixture(t);
+  const now = Date.now();
+  const login = await store.login(input, 'maintenance', now);
+  const old = store.connect(login.token, 'ubuntu-cc', now);
+  const management = store.serverConnection(login.token, 'ubuntu-cc', now);
+  const next = store.connect(login.token, 'ubuntu-cc', now + 1);
+  assert.throws(() => store.validate(old.token, 'ubuntu-cc', false, now + 2), /失效/);
+  assert.ok(store.validate(management.token, 'ubuntu-cc', false, now + 2));
+  assert.throws(() => store.validate(management.token, 'other', false, now + 2), /失效/);
+  assert.throws(() => store.validate(management.token, 'ubuntu-cc', true, now + 120001), /失效/);
+  store.releaseServerConnection(management.token);
+  assert.throws(() => store.validate(management.token, 'ubuntu-cc', false, now + 2), /失效/);
+  assert.ok(store.validate(next.token, 'ubuntu-cc', true, now + 120001));
+  const pending = store.serverConnection(login.token, 'ubuntu-cc', now + 3);
+  store.logout(login.token);
+  assert.throws(() => store.validate(pending.token, 'ubuntu-cc', false, now + 4), /失效/);
+});
+
 test('only the latest computer remains authorized; same-computer windows coexist and bad passwords cannot evict', async (t) => {
   const { root, store, input } = await fixture(t);
   const deviceA = '11111111-1111-4111-8111-111111111111';
@@ -155,12 +188,19 @@ test('only the latest computer remains authorized; same-computer windows coexist
 test('existing session databases migrate without invalidating login until the next computer signs in', async (t) => {
   const { root, store, input } = await fixture(t);
   const before = await store.login(input, 'old-client');
+  const connection = store.connect(before.token, 'ubuntu-cc');
   const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
   db.exec('DROP TABLE session_devices');
+  db.exec('DROP TABLE server_tickets');
+  db.exec('DROP TABLE remembered_sessions');
   db.close();
   const migrated = new DesktopAccess(root);
   try {
     assert.equal(migrated.workspaces(before.token).length, 1);
+    assert.ok(migrated.validate(connection.token, 'ubuntu-cc', false));
+    const management = migrated.serverConnection(before.token, 'ubuntu-cc');
+    assert.ok(migrated.validate(management.token, 'ubuntu-cc', false));
+    migrated.releaseServerConnection(management.token);
     const after = await migrated.login(
       { ...input, deviceId: '33333333-3333-4333-8333-333333333333' },
       'new-client',

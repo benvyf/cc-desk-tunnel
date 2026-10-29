@@ -197,15 +197,49 @@ test('packager binds clean source, version and protocol and refuses dirty releas
   assert.throws(() => managedBuildIdentity(root), /clean Git/);
 });
 
-test('manual throttle preserves candidate; automatic checks share the six-hour interval', async (t) => {
+test('manual throttle preserves candidate without suppressing scheduled checks', async (t) => {
   const f = fixture(t);
   assert.equal((await f.controller.check()).phase, 'available');
   await assert.rejects(f.controller.check(), /30 秒/);
   assert.equal(f.controller.state().phase, 'available');
   f.index(payload(2, null));
   f.advance(31000);
-  assert.equal((await f.controller.check(false)).phase, 'available');
+  assert.equal((await f.controller.check(false)).phase, 'idle');
+  await assert.rejects(f.controller.check(), /30 秒/);
+  f.advance(30000);
   assert.equal((await f.controller.check(true)).phase, 'idle');
+});
+
+test('startup check bypasses a recent persisted check after restart', async (t) => {
+  const f = fixture(t);
+  f.index(payload(1, null));
+  assert.equal((await f.controller.check()).phase, 'idle');
+  f.index(payload(2));
+  const restarted = new ManagedController(f.options);
+  t.after(() => restarted.stop());
+  assert.equal((await restarted.check(false)).phase, 'available');
+  await assert.rejects(restarted.check(), /30 秒/);
+  f.index(payload(3, null));
+  f.advance(6 * 3600 * 1000);
+  assert.equal((await restarted.check(false)).phase, 'idle');
+});
+
+test('automatic schedule checks after 30 seconds and every six hours', (t) => {
+  const f = fixture(t);
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] });
+  t.mock.method(f.controller, 'poll', () => {});
+  const calls = [];
+  t.mock.method(f.controller, 'check', async (...args) => calls.push(args));
+  f.controller.start(assert.fail);
+  t.mock.timers.tick(29999);
+  assert.deepEqual(calls, []);
+  t.mock.timers.tick(1);
+  assert.deepEqual(calls, [[false]]);
+  t.mock.timers.tick(6 * 3600 * 1000 - 30000);
+  assert.deepEqual(calls, [[false], [false]]);
+  t.mock.timers.tick(6 * 3600 * 1000);
+  assert.deepEqual(calls, [[false], [false], [false]]);
+  f.controller.stop();
 });
 
 test('same appVersion higher build downloads and installs; only new embedded build confirms pending', async (t) => {
