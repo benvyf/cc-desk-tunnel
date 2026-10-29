@@ -73,6 +73,64 @@ async function mount(page: Page, delayed = false) {
   await expect.poll(() => page.evaluate(() => window.terminalFixture.requests.length)).toBe(1);
 }
 
+test('resizing and changing code font preserves the process and editor focus', async ({ page }) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    input.id = 'draft-focus';
+    document.body.append(input);
+    input.focus();
+  });
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.evaluate(async () => {
+    const path = '/src/prefs.ts';
+    const { setPrefs } = await import(path);
+    setPrefs((prefs: any) => ({ ...prefs, fontSizes: { ...prefs.fontSizes, code: 24 } }));
+  });
+  await expect(page.locator('#draft-focus')).toBeFocused();
+  await expect.poll(() => page.locator('.xterm-rows').evaluate((el) => getComputedStyle(el).fontSize))
+    .toBe('24px');
+  expect(await page.evaluate(() => window.terminalFixture.requests.filter((r) => r.type === 'terminal.open').length)).toBe(1);
+});
+
+test('clipboard paste uses bracketed paste without submitting a command', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.evaluate(() => {
+    window.terminalFixture.receive({ type: 'terminal.data', data: '\x1b[?2004h', bytes: 8 });
+  });
+  await expect.poll(() => page.evaluate(() => window.terminalFixture.controls.some((r) => r.type === 'terminal.ack'))).toBe(true);
+  await page.evaluate(() => navigator.clipboard.writeText('第一行\nsecond line'));
+  await page.keyboard.press('Control+Shift+V');
+  await expect.poll(() => page.evaluate(() => window.terminalFixture.controls
+    .filter((r) => r.type === 'terminal.input').map((r) => r.data).join('')))
+    .toBe('\x1b[200~第一行\rsecond line\x1b[201~');
+});
+
+test('Ctrl+C copies a terminal selection and interrupts only without a selection', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await mount(page);
+  await page.evaluate(() => window.terminalFixture.receive({ type: 'terminal.data', data: 'copy-sample', bytes: 11 }));
+  await expect(page.locator('.xterm-rows')).toContainText('copy-sample');
+  const box = await page.locator('.xterm-screen').boundingBox();
+  const width = await page.locator('.xterm-rows').evaluate((el) => {
+    const context = document.createElement('canvas').getContext('2d')!;
+    context.font = getComputedStyle(el).font;
+    return context.measureText('W').width;
+  });
+  await page.mouse.move(box!.x + 1, box!.y + 7);
+  await page.mouse.down();
+  await page.mouse.move(box!.x + width * 11, box!.y + 7, { steps: 12 });
+  await page.mouse.up();
+  await page.keyboard.press('Control+c');
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe('copy-sample');
+  expect(await page.evaluate(() => window.terminalFixture.controls.filter((r) => r.type === 'terminal.input'))).toEqual([]);
+  await page.keyboard.press('Control+c');
+  await expect.poll(() => page.evaluate(() => window.terminalFixture.controls.filter((r) => r.type === 'terminal.input').map((r) => r.data))).toEqual(['\x03']);
+});
+
 test('native terminal focuses keyboard input and acknowledges rendered output', async ({
   page,
 }) => {

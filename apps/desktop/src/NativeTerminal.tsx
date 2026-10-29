@@ -4,11 +4,12 @@ import { FitAddon } from '@xterm/addon-fit';
 import { RequestFailedError, type ProxyClient } from './client.ts';
 import { X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
+import { usePrefs } from './prefs.ts';
 import '@xterm/xterm/css/xterm.css';
 
 export type TerminalPhase =
   'opening' | 'running' | 'closing' | 'ended' | 'failed' | 'unknown' | 'disconnected';
-export type TerminalHandle = { close: () => Promise<boolean>; retry: () => void };
+export type TerminalHandle = { close: () => Promise<boolean>; retry: () => void; focus: () => void };
 export default function NativeTerminal({
   client,
   sessionId,
@@ -29,19 +30,30 @@ export default function NativeTerminal({
   callbacks.current = { onClose, onStatus, register };
   const visible = useRef(active);
   visible.current = active;
-  const activate = useRef(() => {});
+  const activate = useRef((_focus = false) => {});
+  const terminalRef = useRef<Terminal | null>(null);
+  const readingLine = useRef<number | null>(null);
+  const fontSize = usePrefs().fontSizes.code;
   const handle = useRef<TerminalHandle | null>(null);
   const [phase, setPhase] = useState<TerminalPhase>('opening');
   const [detail, setDetail] = useState('正在启动');
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    if (active) activate.current();
+    if (active) activate.current(true);
   }, [active]);
+  useEffect(() => {
+    if (!terminalRef.current) return;
+    const terminal = terminalRef.current;
+    readingLine.current = terminal.buffer.active.viewportY < terminal.buffer.active.baseY
+      ? terminal.buffer.active.viewportY : null;
+    terminal.options.fontSize = fontSize;
+    activate.current();
+  }, [fontSize]);
   useEffect(() => {
     const view = host.current!.ownerDocument.defaultView ?? window;
     const terminal = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, monospace",
-      fontSize: 13,
+      fontSize,
       cursorBlink: true,
       scrollback: 2000,
       allowProposedApi: false,
@@ -55,6 +67,7 @@ export default function NativeTerminal({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current!);
+    terminalRef.current = terminal;
     let id: string | null = null,
       disposed = false,
       opening = false,
@@ -101,7 +114,11 @@ export default function NativeTerminal({
     function resize() {
       if (!visible.current || !host.current?.clientWidth || !host.current.clientHeight || disposed)
         return;
+      const line = readingLine.current ?? (terminal.buffer.active.viewportY < terminal.buffer.active.baseY
+        ? terminal.buffer.active.viewportY : null);
       fit.fit();
+      if (line !== null) terminal.scrollToLine(line);
+      readingLine.current = null;
       const cols = Math.max(20, Math.min(400, terminal.cols)),
         rows = Math.max(5, Math.min(160, terminal.rows));
       const next = `${cols}:${rows}`;
@@ -109,11 +126,11 @@ export default function NativeTerminal({
       size = next;
       client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
     }
-    activate.current = () => {
+    activate.current = (focus = false) => {
       view.cancelAnimationFrame(resizeFrame);
       resizeFrame = view.requestAnimationFrame(() => {
         resize();
-        if (phaseNow() === 'running' && !host.current?.ownerDocument.querySelector('dialog[open]'))
+        if (focus && visible.current && phaseNow() === 'running' && !host.current?.ownerDocument.querySelector('dialog[open]'))
           terminal.focus();
       });
     };
@@ -132,7 +149,7 @@ export default function NativeTerminal({
       for (const frame of early) if (frame.terminalId === id) write(frame);
       early.length = 0;
       bufferedBytes = 0;
-      if (visible.current) activate.current();
+      if (visible.current) activate.current(true);
     }
     async function observe() {
       if (!client.state?.terminalWorkspace) return null;
@@ -236,7 +253,7 @@ export default function NativeTerminal({
                 closeRequested = false;
                 status('running', 'Linux · Claude Code');
                 acknowledge();
-                activate.current();
+                activate.current(true);
               }
             } else status('unknown', '关闭结果尚未确认');
           } catch {
@@ -301,8 +318,37 @@ export default function NativeTerminal({
       }
     };
     const unwatch = client.subscribe?.(disconnected);
+    terminal.attachCustomKeyEventHandler((event) => {
+      if (event.type !== 'keydown' || event.isComposing) return true;
+      const copy = event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'c' &&
+        (event.shiftKey || terminal.hasSelection());
+      const paste = event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'v';
+      if (!copy && !paste) return true;
+      event.preventDefault();
+      const targetId = id;
+      void (async () => {
+        try {
+          if (copy) {
+            const text = terminal.getSelection();
+            if (!text) return;
+            if (window.desktop?.copyText) await window.desktop.copyText(text);
+            else await view.navigator.clipboard.writeText(text);
+            if (!disposed) terminal.clearSelection();
+          } else {
+            const text = await view.navigator.clipboard.readText();
+            if (!disposed && visible.current && id === targetId && id &&
+                client.state?.connectionId === connectionId && phaseNow() === 'running' &&
+                !host.current?.ownerDocument.querySelector('dialog[open]')) terminal.paste(text);
+          }
+        } catch {
+          if (!disposed) setError('无法访问剪贴板，请使用系统复制/粘贴菜单。');
+        }
+      })();
+      return false;
+    });
     const input = terminal.onData((data) => {
-      if (!visible.current || !id || closeRequested || phaseNow() !== 'running') return;
+      if (!visible.current || !id || closeRequested || phaseNow() !== 'running' ||
+          host.current?.ownerDocument.querySelector('dialog[open]')) return;
       for (let offset = 0; offset < data.length;) {
         let end = Math.min(offset + 4096, data.length);
         const last = data.charCodeAt(end - 1);
@@ -320,6 +366,7 @@ export default function NativeTerminal({
     observer.observe(host.current!);
     handle.current = {
       close,
+      focus: () => activate.current(true),
       retry: () => {
         if (phaseNow() === 'failed') {
           closeRequested = false;
@@ -372,6 +419,7 @@ export default function NativeTerminal({
         unsubscribe();
       });
       terminal.dispose();
+      if (terminalRef.current === terminal) terminalRef.current = null;
     };
   }, [client, sessionId]);
   return (
