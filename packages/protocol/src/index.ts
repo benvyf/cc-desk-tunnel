@@ -494,6 +494,26 @@ export const commandSchema = z.discriminatedUnion('type', [
   ...webCommandSchemas,
   z
     .object({
+      type: z.literal('terminal.session.create'),
+      ...request,
+      title: z.string().trim().min(1).max(120),
+      sourceSessionId: id.optional(),
+      projectPath: z.string().trim().min(1).max(2048).optional(),
+      permissionMode: permissionModeSchema,
+      model: z.string().trim().min(1).max(200).nullable(),
+      effort: effortSchema.nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal('terminal.state'),
+      ...request,
+      sessionId: id,
+      terminalId: id.optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('server.session.create'),
       ...request,
       title: z.string().trim().min(1).max(120),
@@ -751,6 +771,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     protocolVersion: z.literal(PROTOCOL_VERSION),
     connectionId: id,
     adapter: z.enum(['simulation', 'claude-code']),
+    terminalWorkspace: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),
     // The service's own release version, and where it stands against the published releases if it follows them.
     version: versionSchema,
@@ -806,6 +827,13 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     // The oldest record the call log holds at all. The log is pruned, so a session older than this is counted from here.
     firstRecordAt: timestamp.nullable(),
   }),
+  z.object({
+    type: z.literal('terminal.state'),
+    requestId: id,
+    sessionId: id,
+    state: z.enum(['opening', 'running', 'closing', 'absent', 'unavailable']),
+    terminalId: id.optional(),
+  }),
   z.object({ type: z.literal('terminal.opened'), sessionId: id, terminalId: id }),
   z.object({
     type: z.literal('terminal.data'),
@@ -819,6 +847,9 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     sessionId: id,
     terminalId: id,
     exitCode: z.number().int().nullable(),
+    reason: z
+      .enum(['process_exit', 'user_close', 'ack_timeout', 'disconnected', 'control_error'])
+      .optional(),
   }),
   // Every version must keep reading this frame: with code `version_mismatch` it is how a client of another
   // protocol version learns the service's version and the installer it may fetch.
@@ -826,6 +857,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('connection.error'),
     code: z.string(),
     message: z.string(),
+    sessionId: id.optional(),
+    terminalId: id.optional(),
     service: versionSchema.optional(),
     // The installer of the service's version, while the service is still fetching it.
     preparing: z

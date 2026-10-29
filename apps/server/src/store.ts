@@ -87,6 +87,9 @@ export class SessionStore {
       );
       CREATE INDEX IF NOT EXISTS events_run ON events(session_id, run_id, sequence);
       CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS terminal_creations (
+        request_id TEXT PRIMARY KEY, signature TEXT NOT NULL, session_id TEXT NOT NULL
+      );
       CREATE TABLE IF NOT EXISTS native_roots (
         device_id TEXT NOT NULL, path_key TEXT NOT NULL, root TEXT NOT NULL,
         PRIMARY KEY (device_id, path_key)
@@ -370,6 +373,45 @@ export class SessionStore {
       )
       .get(sessionId, messageId);
     return row ? (JSON.parse(String(row.data)) as SessionEvent) : undefined;
+  }
+
+  terminalCreated(requestId: string, signature: string): Session | undefined {
+    const row = this.database
+      .prepare('SELECT signature, session_id FROM terminal_creations WHERE request_id = ?')
+      .get(requestId);
+    if (!row) return undefined;
+    if (row.signature !== signature)
+      throw new DomainError('request_conflict', '请求 ID 已被其他内容使用。');
+    return this.get(String(row.session_id)).session;
+  }
+
+  createTerminal(
+    requestId: string,
+    signature: string,
+    title: string,
+    projectPath: string,
+    device: Device,
+    settings: Pick<Session, 'permissionMode' | 'model' | 'effort'>,
+  ): Session {
+    const previous = this.terminalCreated(requestId, signature);
+    if (previous) return previous;
+    if (this.created(requestId))
+      throw new DomainError('request_conflict', '请求 ID 已被其他内容使用。');
+    this.database.exec('BEGIN IMMEDIATE');
+    try {
+      const session = { ...this.create(requestId, title, projectPath, device), ...settings };
+      this.database
+        .prepare('UPDATE sessions SET metadata = ? WHERE id = ?')
+        .run(JSON.stringify(session), session.id);
+      this.database
+        .prepare('INSERT INTO terminal_creations VALUES (?, ?, ?)')
+        .run(requestId, signature, session.id);
+      this.database.exec('COMMIT');
+      return session;
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
   }
 
   create(requestId: string, title: string, projectPath: string, device: Device): Session {

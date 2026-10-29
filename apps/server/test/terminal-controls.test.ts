@@ -16,6 +16,8 @@ const state = {
   checks: 0,
   failPolicy: false,
   kills: 0,
+  args: [] as string[][],
+  onboardingReads: 0,
 };
 const key = Symbol.for('cc-terminal-control-test');
 Reflect.set(globalThis, key, state);
@@ -31,7 +33,8 @@ const hooks = registerHooks({
       source =
         shared +
         `
-      export function spawn() {
+      export function spawn(file, args) {
+        state.args.push(args);
         let exit;
         return {
           pid: 2147483647,
@@ -52,7 +55,10 @@ const hooks = registerHooks({
         if (state.failPolicy) throw new Error('fixture: invalid review policy');
         return file;
       }`;
-    if (url.endsWith('/native-onboarding.ts')) source = 'export function completeOnboarding() {}';
+    if (url.endsWith('/native-onboarding.ts'))
+      source =
+        shared +
+        'export function completeOnboarding() { state.onboardingReads++; throw new Error("Terminal must not access onboarding credentials"); }';
     return source === undefined
       ? next(url, context)
       : { format: 'module', source, shortCircuit: true };
@@ -70,6 +76,7 @@ test('reviewed terminal accepts keys, rejects foreign controls, and closes on di
     reverseProxy: true,
     tunnel: {},
     claude: { executable: 'fixture-never-launch-claude' },
+    maxRuns: 2,
     moderation: {
       endpoint: 'https://review.invalid/check',
       nodeId: 'fixture',
@@ -105,7 +112,9 @@ test('reviewed terminal accepts keys, rejects foreign controls, and closes on di
     await new Promise<void>((resolve) => socket.once('open', resolve));
     send({ type: 'auth', token, protocolVersion: PROTOCOL_VERSION, deviceName: 'fixture' });
     send({ type: 'device', id: randomUUID() });
-    await wait((message) => message.type === 'ready');
+    const ready = await wait((message) => message.type === 'ready');
+    assert.equal(ready.type, 'ready');
+    assert.equal(ready.terminalWorkspace?.version, 1);
     async function request(command: object) {
       const requestId = randomUUID();
       send({ ...command, requestId });
@@ -150,7 +159,118 @@ test('reviewed terminal accepts keys, rejects foreign controls, and closes on di
   assert.deepEqual(state.sizes, [[100, 35]]);
   assert.equal(state.kills, 1);
   assert.equal((await open()).ok, true);
+  // Creating a tab preserves the existing subscription and saves strict settings before spawn.
+  const createId = randomUUID();
+  const createTab = {
+    type: 'terminal.session.create',
+    requestId: createId,
+    sourceSessionId: sessionId,
+    title: 'second terminal',
+    permissionMode: 'default',
+    model: null,
+    effort: null,
+  };
+  owner.send(createTab);
+  const second = await owner.wait(
+    (message) => message.type === 'response' && message.requestId === createId,
+  );
+  assert.equal(second.type, 'response');
+  assert.equal(second.ok, true);
+  const secondId = second.sessionId!;
+  owner.send(createTab);
+  const repeated = await owner.wait(
+    (message) => message.type === 'response' && message.requestId === createId,
+  );
+  assert.equal(repeated.type, 'response');
+  assert.equal(repeated.sessionId, secondId);
+  owner.send({ ...createTab, title: 'conflict' });
+  const conflict = await owner.wait(
+    (message) => message.type === 'response' && message.requestId === createId,
+  );
+  assert.equal(conflict.type, 'response');
+  assert.equal(conflict.code, 'request_conflict');
+  assert.equal(
+    (await owner.request({ type: 'terminal.open', sessionId: secondId, cols: 80, rows: 24 })).ok,
+    true,
+  );
+  assert.equal(state.args.at(-1)?.[1], 'manual');
+  const secondOpened = await owner.wait(
+    (message) => message.type === 'terminal.opened' && message.sessionId === secondId,
+  );
+  assert.equal(secondOpened.type, 'terminal.opened');
+  const stateId = randomUUID();
+  owner.send({ type: 'terminal.state', sessionId: secondId, requestId: stateId });
+  const running = await owner.wait(
+    (message) => message.type === 'terminal.state' && message.requestId === stateId,
+  );
+  assert.equal(running.type, 'terminal.state');
+  assert.equal(running.state, 'running');
+  assert.equal(running.terminalId, secondOpened.terminalId);
+  const foreignStateId = randomUUID();
+  other.send({ type: 'terminal.state', sessionId: secondId, requestId: foreignStateId });
+  const foreignState = await other.wait(
+    (message) => message.type === 'terminal.state' && message.requestId === foreignStateId,
+  );
+  assert.equal(foreignState.type, 'terminal.state');
+  assert.equal(foreignState.state, 'unavailable');
+  assert.equal(foreignState.terminalId, undefined);
+  const third = await owner.request({ ...createTab, sourceSessionId: secondId });
+  assert.equal(third.ok, true);
+  assert.equal(
+    (
+      await owner.request({
+        type: 'terminal.open',
+        sessionId: third.sessionId!,
+        cols: 80,
+        rows: 24,
+      })
+    ).code,
+    'capacity',
+  );
+  assert.equal(
+    (
+      await owner.request({
+        type: 'terminal.close',
+        sessionId: secondId,
+        terminalId: secondOpened.terminalId,
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(
+    (
+      await owner.request({
+        type: 'terminal.open',
+        sessionId: third.sessionId!,
+        cols: 80,
+        rows: 24,
+      })
+    ).ok,
+    true,
+  );
+  const thirdOpened = await owner.wait(
+    (message) => message.type === 'terminal.opened' && message.sessionId === third.sessionId,
+  );
+  assert.equal(thirdOpened.type, 'terminal.opened');
+  owner.send({
+    type: 'terminal.ack',
+    sessionId: third.sessionId!,
+    terminalId: thirdOpened.terminalId,
+    bytes: 1,
+  });
+  const controlError = await owner.wait(
+    (message) => message.type === 'connection.error' && message.code === 'terminal_control_failed',
+  );
+  assert.equal(controlError.type, 'connection.error');
+  assert.equal(controlError.terminalId, thirdOpened.terminalId);
+  const controlExit = await owner.wait(
+    (message) =>
+      message.type === 'terminal.closed' && message.terminalId === thirdOpened.terminalId,
+  );
+  assert.equal(controlExit.type, 'terminal.closed');
+  assert.equal(controlExit.reason, 'control_error');
+  assert.equal(state.onboardingReads, 0);
   owner.socket.terminate();
-  for (let i = 0; i < 400 && state.kills < 2; i++) await delay(5);
-  assert.equal(state.kills, 2);
+  for (let i = 0; i < 400 && state.kills < 4; i++) await delay(5);
+  assert.equal(state.kills, 4);
 });

@@ -47,7 +47,6 @@ import type { ClaudeOptions } from './claude.ts';
 import { DomainError } from './errors.ts';
 import { accountMessageForClient } from './account-presentation.ts';
 import { NativeInput } from './native-input.ts';
-import { completeOnboarding } from './native-onboarding.ts';
 import { readNativeSettings, updateNativeSettings } from './native-settings.ts';
 import { readInstructions, writeInstructions } from './native-instructions.ts';
 import type { NativeTerminal } from './native-terminal.ts';
@@ -117,7 +116,13 @@ export type Run = {
   // Turn figures are reported one after another, so a later report for the same question never lands before an earlier one.
   stats: ReturnType<typeof inOrder>;
 };
-type Terminal = { id: string; sessionId: string; owner: Peer; process?: NativeTerminal };
+type Terminal = {
+  id: string;
+  sessionId: string;
+  owner: Peer;
+  process?: NativeTerminal;
+  closing?: boolean;
+};
 // One of the user's computers, while it is connected or expected back: its connections, the door its commands
 // go through, and the wait that ends its runs if it stays away.
 type Seat = {
@@ -740,6 +745,7 @@ export function createProxyServer(options: ServerOptions) {
     if (!terminal || terminal.id !== command.terminalId)
       throw new DomainError('terminal_inactive', '原生终端已结束。');
     if (terminal.owner !== peer) throw new DomainError('not_owner', '原生终端属于另一连接。');
+    terminal.closing = true;
     await terminal.process?.close();
   }
   // The terminal occupies its session like a run does, so other connections see it as busy.
@@ -769,7 +775,6 @@ export function createProxyServer(options: ServerOptions) {
         if (!options.moderation) throw new Error('Native terminal review requires node moderation');
         executable = assertNativeTerminalReview(executable);
       }
-      completeOnboarding();
       current.process = new NativeTerminal(
         executable,
         terminalArguments(
@@ -805,10 +810,17 @@ export function createProxyServer(options: ServerOptions) {
             sessionId: current.sessionId,
             terminalId: current.id,
             exitCode,
+            reason: current.process?.reason ?? 'process_exit',
           });
           terminals.delete(current.sessionId);
         },
       );
+      if (current.closing || peer.socket.readyState !== WebSocket.OPEN) {
+        await current.process.close(
+          peer.socket.readyState === WebSocket.OPEN ? 'user_close' : 'disconnected',
+        );
+        return;
+      }
       store.append(command.sessionId, current.id, {
         type: 'run.status',
         status: 'running',
@@ -1113,6 +1125,61 @@ export function createProxyServer(options: ServerOptions) {
       return undefined;
     }
     switch (command.type) {
+      case 'terminal.session.create': {
+        if (!!command.sourceSessionId === !!command.projectPath)
+          throw new DomainError('invalid_source', '请选择来源会话或本机项目目录。');
+        const signature = JSON.stringify({
+          user: peer.access?.userId ?? peer.browser ?? 'desktop',
+          source: command.sourceSessionId ?? null,
+          projectPath: command.projectPath ?? null,
+          device: command.projectPath ? deviceOf(peer).id : null,
+          title: command.title,
+          permissionMode: command.permissionMode,
+          model: command.model,
+          effort: command.effort,
+        });
+        const previous = store.terminalCreated(command.requestId, signature);
+        if (previous) return previous.id;
+        const source = command.sourceSessionId
+          ? store.get(command.sourceSessionId).session
+          : undefined;
+        if (source) target(peer, source);
+        const device = source?.device ?? deviceOf(peer);
+        if (peer.browser && device.id !== serverDevice.id)
+          throw new DomainError('web_forbidden', '浏览器只能创建服务器项目终端。');
+        const session = store.createTerminal(
+          command.requestId,
+          signature,
+          command.title,
+          source?.projectPath ?? command.projectPath!,
+          device,
+          command,
+        );
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
+      case 'terminal.state': {
+        store.get(command.sessionId);
+        const terminal = terminals.get(command.sessionId);
+        const owned =
+          terminal?.owner === peer && (!command.terminalId || command.terminalId === terminal.id);
+        send(peer, {
+          type: 'terminal.state',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          state: !terminal
+            ? 'absent'
+            : !owned
+              ? 'unavailable'
+              : terminal.closing || terminal.process?.closing
+                ? 'closing'
+                : terminal.process
+                  ? 'running'
+                  : 'opening',
+          ...(owned ? { terminalId: terminal!.id } : {}),
+        });
+        return command.sessionId;
+      }
       case 'server.session.create': {
         const session = store.createOnServer(command.requestId, command.title, serverDevice);
         peer.subscriptions.clear();
@@ -1324,6 +1391,7 @@ export function createProxyServer(options: ServerOptions) {
         protocolVersion: PROTOCOL_VERSION,
         connectionId: peer.id,
         adapter,
+        terminalWorkspace: { version: 1 },
         model: options.claude?.model,
         version,
         sessions: store.list(),
@@ -1393,6 +1461,7 @@ export function createProxyServer(options: ServerOptions) {
       protocolVersion: PROTOCOL_VERSION,
       connectionId: peer.id,
       adapter,
+      terminalWorkspace: { version: 1 },
       model: options.claude?.model,
       version,
       sessions: store.list(),
@@ -1498,6 +1567,8 @@ export function createProxyServer(options: ServerOptions) {
         type: 'connection.error',
         code: 'terminal_inactive',
         message: '原生终端已结束或属于另一连接。',
+        sessionId: control.sessionId,
+        terminalId: control.terminalId,
       });
       return;
     }
@@ -1507,7 +1578,14 @@ export function createProxyServer(options: ServerOptions) {
         current.process?.resize(control.cols, control.rows);
       else current.process?.acknowledge(control.bytes);
     } catch {
-      const task = current.process?.close();
+      send(peer, {
+        type: 'connection.error',
+        code: 'terminal_control_failed',
+        message: '终端控制失败，正在关闭该终端。',
+        sessionId: control.sessionId,
+        terminalId: control.terminalId,
+      });
+      const task = current.process?.close('control_error');
       if (task) track(task);
     }
   }
@@ -1620,7 +1698,8 @@ export function createProxyServer(options: ServerOptions) {
     peers.delete(peer);
     for (const terminal of terminals.values())
       if (terminal.owner === peer) {
-        const task = terminal.process?.close();
+        terminal.closing = true;
+        const task = terminal.process?.close('disconnected');
         if (task) track(task);
       }
     const seat = peer.device && seats.get(peer.device.id);

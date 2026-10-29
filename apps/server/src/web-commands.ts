@@ -18,6 +18,8 @@ export const browserCommands = new Set<Command['type']>([
   'run.task.background',
   'approval.reply',
   'terminal.open',
+  'terminal.session.create',
+  'terminal.state',
   'terminal.close',
   'usage.summary',
   'usage.query',
@@ -32,6 +34,7 @@ export const browserCommands = new Set<Command['type']>([
 
 // What a browser changes is its user's doing; reading is told apart by the page with \web.activity\.
 export const browserActivity = new Set<Command['type']>([
+  'terminal.session.create',
   'server.session.create',
   'session.rename',
   'session.delete',

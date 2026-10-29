@@ -62,6 +62,8 @@ export class NativeTerminal {
   paused = false;
   exited = false;
   closing = false;
+  reason: 'process_exit' | 'user_close' | 'ack_timeout' | 'disconnected' | 'control_error' =
+    'process_exit';
   closed: Promise<void>;
   private resolveClosed!: () => void;
   private killTimer?: ReturnType<typeof setTimeout>;
@@ -99,7 +101,7 @@ export class NativeTerminal {
         this.paused = true;
         this.process.pause();
         this.ackTimer = setTimeout(() => {
-          void this.close();
+          void this.close('ack_timeout');
         }, 30000);
       }
     });
@@ -138,8 +140,9 @@ export class NativeTerminal {
       this.process.resume();
     }
   }
-  close() {
+  close(reason: 'user_close' | 'ack_timeout' | 'disconnected' | 'control_error' = 'user_close') {
     if (this.exited || this.closing) return this.closed;
+    this.reason = reason;
     this.closing = true;
     clearTimeout(this.ackTimer);
     if (this.paused) this.process.resume();
