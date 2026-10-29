@@ -62,6 +62,8 @@ export function setupServerDownload({ request, element, notice }) {
               '命令，' +
               (id === 'server-upgrade-command'
                 ? '请在需要升级的 Ubuntu 控制台执行。'
+                : id === 'server-base-upgrade-command'
+                  ? '请在已核对的 ubuntu-cc、02 或 03 控制台执行。'
                 : '请在已审查的第一台 Ubuntu 控制台执行。'),
           );
         } catch {
@@ -75,8 +77,8 @@ export function setupServerDownload({ request, element, notice }) {
     if (status.baseUpgradeCommand)
       appendCommand(
         'server-base-upgrade-command',
-        '清理并升级基础镜像（仅 ubuntu-cc）',
-        `完整命令：清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 冷备份 → 升级到 Build ${release.build}。仅用于第一台旧 Build 4 基础镜像；不适用于 02、03，已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务并完全退出客户端，成功后直接连接，无需再执行普通升级。`,
+        '清理并升级基础镜像（ubuntu-cc / 02 / 03）',
+        `完整命令：识别已核对的 ubuntu-cc、ubuntu-cc-02 或 ubuntu-cc-03 → 清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 冷备份 → 升级到 Build ${release.build}。第一台支持已核对的旧 Build 4 基础镜像，02、03 支持已核对的 Build 5 基础镜像；其他设备或镜像不匹配会停止。已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务并完全退出客户端，保持 Ubuntu 终端打开；成功后直接连接，无需再执行普通升级。`,
         status.baseUpgradeCommand,
       );
     appendCommand(

@@ -18,11 +18,14 @@ spec.loader.exec_module(upgrade)
 helper_spec = importlib.util.spec_from_file_location('bootstrap', Path(__file__).parents[1] / 'apps/update-service/web/server-bootstrap.py')
 bootstrap = importlib.util.module_from_spec(helper_spec)
 helper_spec.loader.exec_module(bootstrap)
+legacy_spec = importlib.util.spec_from_file_location('cutover', Path(__file__).with_name('install-cc-space-037.py'))
+cutover = importlib.util.module_from_spec(legacy_spec)
+legacy_spec.loader.exec_module(cutover)
 
 
 @unittest.skipUnless(os.name == 'posix', 'Linux root filesystem and fcntl required')
 class UpgradeTests(unittest.TestCase):
-    def exercise(self, install=False, corrupt=False, invalid_baseline=False, existing=False, wrong_base=False, invalid_candidate=False, cleanup=False, low_space=False):
+    def exercise(self, install=False, corrupt=False, invalid_baseline=False, existing=False, wrong_base=False, invalid_candidate=False, cleanup=False, low_space=False, node='ubuntu-cc', changed_image=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             content = b'{}'
@@ -37,12 +40,13 @@ class UpgradeTests(unittest.TestCase):
             release = {'build': upgrade.TARGET_BUILD, 'protocol': 22, 'sourceCommit': 'a' * 40, 'sha256': hashlib.sha256(archive_bytes).hexdigest(), 'descriptorSha256': hashlib.sha256(descriptor).hexdigest()}
             index = json.dumps({'payload': base64.urlsafe_b64encode(json.dumps({'release': release}).encode()).decode().rstrip('=')}).encode()
             calls = []
-            current = {'Id': 'original', 'Image': 'sha256:' + 'b' * 64, 'State': {'Running': True}}
+            profile = cutover.REBUILT_NODES.get(node)
+            current = {'Id': 'original', 'Image': profile['image'] if profile and not changed_image else 'sha256:' + 'b' * 64, 'State': {'Running': True}}
             def offline_preflight(*args):
                 bootstrap.offline_preflight(*args)
                 calls.append('offline')
             helper = SimpleNamespace(CONTAINER='fixture', PROFILE={'files': {}}, Engine=lambda: SimpleNamespace(request=lambda *args: current), validate_runtime=lambda _: None, runtime_and_policy=lambda _: None, verify_index=lambda *args: {'release': release}, offline_preflight=offline_preflight)
-            legacy = SimpleNamespace(DATA=root / 'data', helper=lambda *args, **kwargs: helper, install=lambda _: calls.append('install'))
+            legacy = SimpleNamespace(select_node=lambda host: cutover.select_node(host), REBUILT_DESCRIPTOR=cutover.REBUILT_DESCRIPTOR, DATA=root / 'data', helper=lambda *args, **kwargs: helper, install=lambda _: calls.append('install'))
             inspections = 0
             def command(args, **kwargs):
                 nonlocal inspections
@@ -62,8 +66,8 @@ class UpgradeTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0)
             download = lambda path, _: index if path.endswith('.json') else archive_bytes + (b'x' if corrupt else b'')
             create_temp = tempfile.mkdtemp
-            with patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=0 if low_space else 10 * 1024**3)), patch.object(upgrade, 'ROOT', root / 'private'), patch.object(upgrade.os, 'geteuid', create=True, return_value=0), patch.object(upgrade.socket, 'gethostname', return_value='ubuntu-cc'), patch.object(upgrade, 'load', return_value=legacy), patch.object(upgrade, 'download', side_effect=download), patch.object(upgrade.subprocess, 'run', side_effect=command), patch.object(upgrade.tempfile, 'mkdtemp', side_effect=lambda **_: create_temp(dir=root)), patch('sys.argv', ['upgrade', *(['--install'] if install else []), *(['--cleanup'] if cleanup else [])]):
-                if corrupt or invalid_baseline or wrong_base or invalid_candidate or low_space:
+            with patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=0 if low_space else 10 * 1024**3)), patch.object(upgrade, 'ROOT', root / 'private'), patch.object(upgrade.os, 'geteuid', create=True, return_value=0), patch.object(upgrade.socket, 'gethostname', return_value=node), patch.object(upgrade, 'load', return_value=legacy), patch.object(upgrade, 'download', side_effect=download), patch.object(upgrade.subprocess, 'run', side_effect=command), patch.object(upgrade.tempfile, 'mkdtemp', side_effect=lambda **_: create_temp(dir=root)), patch('sys.argv', ['upgrade', *(['--install'] if install else []), *(['--cleanup'] if cleanup else [])]):
+                if corrupt or invalid_baseline or wrong_base or invalid_candidate or low_space or changed_image:
                     with self.assertRaises((RuntimeError, subprocess.CalledProcessError)): upgrade.main()
                     self.assertNotIn('offline', calls)
                     self.assertNotIn('install', calls)
@@ -79,6 +83,9 @@ class UpgradeTests(unittest.TestCase):
                         self.assertEqual(legacy.TARGET, {'build': upgrade.TARGET_BUILD, 'protocol': 22})
                         self.assertEqual(legacy.BASE, current['Image'])
 
+    def test_node02_uses_confirmed_image(self): self.exercise(install=True, cleanup=True, node='ubuntu-cc-02')
+    def test_node03_uses_confirmed_image(self): self.exercise(install=True, cleanup=True, node='ubuntu-cc-03')
+    def test_changed_node_image_cannot_install(self): self.exercise(install=True, node='ubuntu-cc-02', changed_image=True)
     def test_preparation_never_switches_container(self): self.exercise()
     def test_explicit_install_uses_verified_target(self): self.exercise(install=True)
     def test_corrupt_archive_stops_before_build(self): self.exercise(corrupt=True)
@@ -88,6 +95,81 @@ class UpgradeTests(unittest.TestCase):
     def test_retry_reuses_candidate_and_rechecks_offline(self): self.exercise(install=True, existing=True)
     def test_wrong_candidate_base_cannot_install(self): self.exercise(install=True, existing=True, wrong_base=True)
     def test_invalid_candidate_bytes_cannot_install(self): self.exercise(install=True, existing=True, invalid_candidate=True)
+
+
+class NodeProfileTests(unittest.TestCase):
+    def original(self, node):
+        return {
+            'Id': 'original', 'Image': cutover.REBUILT_NODES[node]['image'],
+            'State': {'Running': True, 'Paused': False},
+            'Config': {'Entrypoint': ['/usr/bin/tini', '-g', '--', '/usr/local/bin/proxy-entrypoint'],
+                       'Cmd': ['server'], 'User': 'ccdesktunnel', 'WorkingDir': '/data/workspace',
+                       'Healthcheck': {'Test': ['CMD', 'healthcheck']}},
+            'HostConfig': {'NetworkMode': 'bridge', 'RestartPolicy': {'Name': 'unless-stopped'}},
+            'NetworkSettings': {'Networks': {'cc': {}}},
+            'Mounts': [
+                {'Type': 'bind', 'Source': '/srv/cc-desk-tunnel', 'Destination': '/data', 'RW': True},
+                {'Type': 'bind', 'Source': cutover.REBUILT_NODES[node]['policy'],
+                 'Destination': '/etc/claude-code', 'RW': False},
+            ],
+        }
+
+    def configured(self, node):
+        with patch.object(cutover, 'NODE', node):
+            return cutover.configure_helper(SimpleNamespace(validate_runtime=bootstrap.validate_runtime))
+
+    def test_reviewed_nodes_preserve_mounts_and_validate_real_constraints(self):
+        for node in cutover.REBUILT_NODES:
+            with self.subTest(node=node):
+                original = self.original(node)
+                before = json.dumps(original, sort_keys=True)
+                b = self.configured(node)
+                b.validate_runtime(original)
+                self.assertEqual(b.CONTAINER, cutover.REBUILT_NODES[node]['container'])
+                self.assertEqual(json.dumps(original, sort_keys=True), before)
+                original['Mounts'][1]['RW'] = True
+                with self.assertRaises(bootstrap.InstallError): b.validate_runtime(original)
+
+    def test_other_node_policy_and_unknown_hosts_are_refused(self):
+        b = self.configured('ubuntu-cc-02')
+        with self.assertRaises(RuntimeError): b.validate_runtime(self.original('ubuntu-cc-03'))
+        with self.assertRaises(RuntimeError): cutover.select_node('ubuntu-cc-04')
+
+    @unittest.skipUnless(os.name == 'posix', 'Linux root filesystem and fcntl required')
+    def test_generated_offline_rollback_retains_node_and_admission_failure_keeps_original(self):
+        for node in cutover.REBUILT_NODES:
+            with self.subTest(node=node), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                data = root / 'data'; data.mkdir()
+                (root / 'helper.py').write_bytes((Path(__file__).parents[1] / 'apps/update-service/web/server-bootstrap.py').read_bytes())
+                original = self.original(node)
+                calls = []
+                def request(method, path, *args):
+                    calls.append((method, path))
+                    if path.startswith('/images/'): return {'Id': 'candidate'}
+                    if '/top?' in path: return {'Processes': [['claude']]}
+                    return original
+                b = self.configured(node)
+                b.Engine = lambda: SimpleNamespace(request=request)
+                b.runtime_and_policy = lambda _: None
+                b.urllib = bootstrap.urllib
+                b.durable_json = bootstrap.durable_json
+                b.busy = bootstrap.busy
+                with patch.object(cutover, 'NODE', node), patch.object(cutover, 'ROOT', root), patch.object(cutover, 'DATA', data), patch.object(cutover, 'BASE', original['Image']), patch.object(cutover.shutil, 'disk_usage', return_value=SimpleNamespace(free=10*1024**3)), patch.object(cutover.subprocess, 'run', return_value=SimpleNamespace(returncode=0)):
+                    with self.assertRaisesRegex(RuntimeError, 'Finish Claude tasks'):
+                        cutover.install(b)
+                self.assertIn(('POST', '/containers/original/unpause'), calls)
+                self.assertFalse(any('/stop?' in path or '/rename?' in path or '/update' in path for _, path in calls))
+                backup = next(root.glob('backup-*'))
+                self.assertFalse(json.loads((backup / 'record.json').read_text())['dataChanged'])
+                spec = importlib.util.spec_from_file_location('saved_rollback', backup / 'rollback.py')
+                saved = importlib.util.module_from_spec(spec); spec.loader.exec_module(saved)
+                self.assertEqual(saved.NODE, node)
+                self.assertEqual(saved.ROOT, root)
+                with patch.object(saved.socket, 'gethostname', return_value=node), patch('sys.argv', ['rollback', '--rollback', str(backup)]), patch.object(saved, 'rollback') as restore:
+                    saved.main()
+                    self.assertEqual(restore.call_args.args[0].CONTAINER, b.CONTAINER)
+                    self.assertEqual(restore.call_args.args[1], backup)
 
 
 if __name__ == '__main__': unittest.main()
