@@ -9,7 +9,8 @@ test('closing stops controls and an exit during the close request stays quiet', 
   page,
 }) => {
   await page.evaluate(() => (window as any).terminalTest.setCloseMode('pending'));
-  await page.getByRole('button', { name: '关闭原生终端' }).click();
+  await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+  await page.getByRole('button', { name: '结束终端', exact: true }).click();
   const before = await page.evaluate(() => (window as any).terminalTest.controls.length);
   await page.locator('.xterm-helper-textarea').press('Enter');
   await page.evaluate(() =>
@@ -24,13 +25,14 @@ test('closing stops controls and an exit during the close request stays quiet', 
     (window as any).terminalTest.finishClose(false);
   });
   await expect(page.locator('.native-terminal')).toHaveCount(0);
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.native-terminal [role=alert]')).toHaveCount(0);
 });
 
 test('a genuine close failure keeps the terminal usable and allows retry', async ({ page }) => {
   await page.evaluate(() => (window as any).terminalTest.setCloseMode('fail'));
-  await page.getByRole('button', { name: '关闭原生终端' }).click();
-  await expect(page.getByRole('alert')).toHaveText('测试：关闭失败');
+  await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+  await page.getByRole('button', { name: '结束终端', exact: true }).click();
+  await expect(page.locator('.native-terminal [role=alert]')).toContainText('测试：关闭失败');
   await page.locator('.xterm-helper-textarea').press('Enter');
   await expect
     .poll(() =>
@@ -42,23 +44,25 @@ test('a genuine close failure keeps the terminal usable and allows retry', async
     )
     .toBe(1);
   await page.evaluate(() => (window as any).terminalTest.setCloseMode('normal'));
-  await page.getByRole('button', { name: '关闭原生终端' }).click();
+  await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+  await page.getByRole('button', { name: '结束终端', exact: true }).click();
   await expect(page.locator('.native-terminal')).toHaveCount(0);
-  await expect(page.getByRole('alert')).toHaveCount(0);
+  await expect(page.locator('.native-terminal [role=alert]')).toHaveCount(0);
 });
 
 test('natural exit shows neutral status and closing it sends no duplicate close request', async ({
   page,
 }) => {
   await page.evaluate(() => (window as any).terminalTest.setCloseMode('fail'));
-  await page.getByRole('button', { name: '关闭原生终端' }).click();
-  await expect(page.getByRole('alert')).toHaveText('测试：关闭失败');
+  await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+  await page.getByRole('button', { name: '结束终端', exact: true }).click();
+  await expect(page.locator('.native-terminal [role=alert]')).toContainText('测试：关闭失败');
   await page.evaluate(() =>
     (window as any).terminalTest.emit({ type: 'terminal.closed', exitCode: 0 }),
   );
-  await expect(page.locator('.native-terminal')).toContainText('已结束 · 0');
-  await expect(page.getByRole('alert')).toHaveCount(0);
-  await page.getByRole('button', { name: '关闭原生终端' }).click();
+  await expect(page.locator('.native-terminal')).toContainText('已结束 · 退出码 0');
+  await expect(page.locator('.native-terminal [role=alert]')).toHaveCount(0);
+  await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
   await expect(page.locator('.native-terminal')).toHaveCount(0);
   expect(
     await page.evaluate(() => (window as any).terminalTest.requests.map((r: any) => r.type)),

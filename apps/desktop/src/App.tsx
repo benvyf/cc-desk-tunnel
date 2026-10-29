@@ -87,6 +87,8 @@ import type { MenuItem, MenuPosition } from './ui.tsx';
 import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
 
+import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
+
 const NativeTerminal = lazy(() => import('./TerminalWindow.tsx'));
 // The notes of every version so far are read only when asked for, and stay out of what the window starts with.
 const ReleaseNotes = lazy(() => import('./ReleaseNotes.tsx'));
@@ -236,7 +238,23 @@ export function App({
     void window.desktop?.version().then(setVersion);
   }, []);
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
-  const closeTerminal = useCallback(() => setTerminalSessionId(null), []);
+  const [terminalsActive, setTerminalsActive] = useState(false);
+  const terminalWorkspace = useRef<TerminalWorkspaceHandle | null>(null);
+  const registerTerminalWorkspace = useCallback((handle: TerminalWorkspaceHandle | null) => {
+    terminalWorkspace.current = handle;
+  }, []);
+  const closeTerminal = useCallback(() => {
+    setTerminalSessionId(null);
+    setTerminalsActive(false);
+  }, []);
+  const showTerminal = (id: string) => {
+    if (terminalWorkspace.current) {
+      terminalWorkspace.current.show(id);
+      return;
+    }
+    setTerminalsActive(true);
+    setTerminalSessionId(id);
+  };
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const [createOpen, setCreateOpen] = useState(false);
@@ -340,7 +358,7 @@ export function App({
       : (metrics ?? state.metrics);
   const canCompact = !!latest(events, 'native.context')?.persisted;
   // A native terminal anywhere keeps what the CLI holds for all sessions, the account and its status, from
-  // being read or changed; this window's own terminal, `terminalSessionId`, also takes the window.
+  // being read or changed; this window's active terminals also take the window.
   const anyTerminal = state.sessions.some((session) => session.activeRun?.surface === 'terminal');
   const updateBlocked =
     serverUpgradeWorking ||
@@ -348,7 +366,7 @@ export function App({
     proxyConnecting ||
     busy ||
     refreshing ||
-    !!terminalSessionId ||
+    terminalsActive ||
     state.sessions.some((session) => !!session.activeRun);
   const managedNotice = managedUpdateNotice(managedUpdate);
   const loginUpdateButton = managedNotice && (
@@ -374,7 +392,7 @@ export function App({
                   disabled:
                     busy ||
                     refreshing ||
-                    !!terminalSessionId ||
+                    terminalsActive ||
                     proxyConnecting ||
                     state.sessions.some((session) => !!session.activeRun),
                   open: openServerUpgrade,
@@ -387,7 +405,7 @@ export function App({
           canDisconnect={
             !busy &&
             !refreshing &&
-            !terminalSessionId &&
+            !terminalsActive &&
             !state.sessions.some((session) => !!session.activeRun)
           }
           disconnect={disconnect}
@@ -410,7 +428,7 @@ export function App({
     refreshing ||
     !!selected?.activeRun ||
     !!history?.loading ||
-    !!terminalSessionId;
+    terminalsActive;
   // A run is that of the computer its session is on, whichever window of whichever computer started it; any
   // of them answers and stops it while that computer can be reached.
   const ownsRun = !!selected?.activeRun && (!away || remote);
@@ -624,7 +642,6 @@ export function App({
   }, [state.status]);
   useEffect(() => {
     if (!connected) {
-      setTerminalSessionId(null);
       setMenu(null);
     }
   }, [connected]);
@@ -654,7 +671,7 @@ export function App({
       history?.loading ||
       selected.activeRun ||
       refreshing ||
-      terminalSessionId ||
+      terminalsActive ||
       anyTerminal ||
       refreshed.current.has(selected.id)
     )
@@ -669,7 +686,7 @@ export function App({
     selected?.activeRun,
     refreshing,
     anyTerminal,
-    terminalSessionId,
+    terminalsActive,
   ]);
   useEffect(() => {
     if (nativeMode && connected) void client.request({ type: 'account.status' }).catch(() => {});
@@ -677,7 +694,7 @@ export function App({
   useEffect(() => {
     if (
       !accountOpen ||
-      terminalSessionId ||
+      terminalsActive ||
       !nativeMode ||
       !connected ||
       state.capabilities ||
@@ -693,7 +710,7 @@ export function App({
     connected,
     state.capabilities,
     state.account?.loggedIn,
-    terminalSessionId,
+    terminalsActive,
   ]);
 
   async function act(action: () => Promise<void>) {
@@ -762,6 +779,7 @@ export function App({
     }
   }
   async function connectWorkspace(nodeId: string) {
+    if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return;
     setActiveWorkspace(nodeId);
     setError(null);
     setProxyConnecting(true);
@@ -791,13 +809,14 @@ export function App({
       await client.request({ type: 'run.cancel', sessionId, runId: activeRun.id });
     });
   }
-  function disconnect() {
+  async function disconnect() {
+    if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return false;
     setActiveWorkspace(null);
     loginInteracted.current = true;
     setServerUpgradeRequested(false);
     if (browser) {
       void act(browser.logout);
-      return;
+      return true;
     }
     client.disconnect();
     if (form.authMethod === 'email') {
@@ -807,9 +826,10 @@ export function App({
     }
     setForm((current) => (current.remember ? current : { ...current, token: '' }));
     void window.desktop?.disconnectProxy();
+    return true;
   }
-  function leaveEmailLogin() {
-    disconnect();
+  async function leaveEmailLogin() {
+    if (!(await disconnect())) return;
     setError(null);
     changeForm({ authMethod: 'email', password: '', token: '' });
   }
@@ -822,6 +842,7 @@ export function App({
     )
       return;
     void act(async () => {
+      if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return;
       setManagedUpdateOpen(false);
       // Keep credentials only in this window for the upgrade. Ordinary disconnect still clears
       // unremembered credentials; no additional login information is saved to disk here.
@@ -881,7 +902,7 @@ export function App({
     visit({ page, section, sessionId: client.state.selectedId });
   };
   async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id) {
-    if (!sessionId || statusReading.current || terminalSessionId) return;
+    if (!sessionId || statusReading.current || terminalsActive) return;
     statusReading.current = true;
     setRefreshing(true);
     try {
@@ -1122,7 +1143,7 @@ export function App({
     });
   }
   function sessionMenu(session: Session): MenuItem[] {
-    const idle = connected && !busy && !terminalSessionId;
+    const idle = connected && !busy && !terminalsActive;
     const anyRun = state.sessions.some((item) => !!item.activeRun);
     const pinned = prefs.pinnedSessions.includes(session.id);
     return [
@@ -1160,7 +1181,7 @@ export function App({
       {
         label: '导出为 Markdown',
         icon: <FileDown />,
-        disabled: !connected || !!terminalSessionId,
+        disabled: !connected || terminalsActive,
         run: () => {
           void act(async () => {
             await exportSession(client, session);
@@ -1191,7 +1212,7 @@ export function App({
               run: () => {
                 if (statusReading.current) return;
                 show(session.id);
-                setTerminalSessionId(session.id);
+                showTerminal(session.id);
               },
             },
             {
@@ -1209,7 +1230,7 @@ export function App({
         icon: <Trash2 />,
         danger: true,
         separated: true,
-        disabled: !connected || !!session.activeRun || !!terminalSessionId,
+        disabled: !connected || !!session.activeRun || terminalsActive,
         run: () => {
           setError(null);
           closeSide();
@@ -1225,7 +1246,7 @@ export function App({
       {
         label: '新建会话',
         icon: <Plus />,
-        disabled: !connected || busy || refreshing || !!terminalSessionId,
+        disabled: !connected || busy || refreshing || terminalsActive,
         run: () => {
           void createInProject(path);
         },
@@ -1240,7 +1261,7 @@ export function App({
       {
         label: '更改文件夹…',
         icon: <FolderInput />,
-        disabled: !connected || busy || !!terminalSessionId,
+        disabled: !connected || busy || terminalsActive,
         run: () => {
           if (!window.desktop) return setRepointProject(path);
           void act(async () => {
@@ -1380,7 +1401,7 @@ export function App({
             proxyConnecting ||
             busy ||
             refreshing ||
-            !!terminalSessionId ||
+            terminalsActive ||
             (connected && state.sessions.some((item) => !!item.activeRun)),
           run: openServerUpgrade,
         }
@@ -1431,7 +1452,7 @@ export function App({
   const toggleSide = () => setSideOpen((value) => !value);
   const openTerminal = () => {
     if (terminalSessionId) {
-      void window.desktop?.terminalWindow?.focus();
+      terminalWorkspace.current?.show(selected?.id);
       return;
     }
     if (
@@ -1444,13 +1465,13 @@ export function App({
     )
       return;
     show(selected.id);
-    setTerminalSessionId(selected.id);
+    showTerminal(selected.id);
   };
   const terminalAvailable =
     connected &&
     nativeMode &&
-    (!!terminalSessionId || (!!selected && !busy && !refreshing && !selected.activeRun));
-  const canCreate = connected && !busy && !refreshing && !terminalSessionId;
+    (terminalsActive || (!!selected && !busy && !refreshing && !selected.activeRun));
+  const canCreate = connected && !busy && !refreshing && !terminalsActive;
   const barMenus: BarMenu[] = [
     {
       label: '文件',
@@ -1467,7 +1488,7 @@ export function App({
           ? [
               {
                 label: '添加项目…',
-                disabled: !connected || busy || !!terminalSessionId,
+                disabled: !connected || busy || terminalsActive,
                 run: () => {
                   void addProject();
                 },
@@ -1476,7 +1497,7 @@ export function App({
           : []),
         {
           label: '导出当前会话…',
-          disabled: !selected || !connected || !!terminalSessionId,
+          disabled: !selected || !connected || terminalsActive,
           separated: true,
           run: () => {
             void act(async () => {
@@ -1494,7 +1515,7 @@ export function App({
         {
           label: '查找对话内容',
           hint: hint('find'),
-          disabled: !selected || place.page !== 'chat' || !!terminalSessionId,
+          disabled: !selected || place.page !== 'chat' || terminalsActive,
           run: () => setFindRequest((value) => value + 1),
         },
         { label: sideOpen ? '收起侧栏' : '展开侧栏', hint: hint('toggleSide'), run: toggleSide },
@@ -1562,15 +1583,15 @@ export function App({
       return;
     }
     const run: Record<Action, (() => void) | false | undefined> = {
-      back: !terminalSessionId && (() => step(-1)),
-      forward: !terminalSessionId && (() => step(1)),
+      back: !terminalsActive && (() => step(-1)),
+      forward: !terminalsActive && (() => step(1)),
       toggleSide,
       newSession: canCreate && (() => void newSession()),
       settings: () => open('settings'),
       find:
         !!selected &&
         place.page === 'chat' &&
-        !terminalSessionId &&
+        !terminalsActive &&
         (() => setFindRequest((value) => value + 1)),
       zoomIn: window.desktop && (() => window.desktop!.zoom(1)),
       zoomOut: window.desktop && (() => window.desktop!.zoom(-1)),
@@ -1635,7 +1656,7 @@ export function App({
       </main>
     );
 
-  if (state.status === 'disconnected' || state.status === 'connecting')
+  if ((state.status === 'disconnected' || state.status === 'connecting') && !terminalSessionId)
     return localSettings ? (
       <div className="settings-only">
         <div className="window-drag" />
@@ -1789,7 +1810,7 @@ export function App({
   };
   return (
     <div
-      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''}`}
+      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''}`}
     >
       {selfSigned && <CertificateWarning />}
       <TitleBar
@@ -1800,19 +1821,41 @@ export function App({
               ? '定时任务'
               : sectionNames[place.section]
         }
-        back={!terminalSessionId && stepAvailable(-1) ? () => step(-1) : undefined}
-        forward={!terminalSessionId && stepAvailable(1) ? () => step(1) : undefined}
+        back={!terminalsActive && stepAvailable(-1) ? () => step(-1) : undefined}
+        forward={!terminalsActive && stepAvailable(1) ? () => step(1) : undefined}
         sideOpen={sideOpen}
         toggleSide={toggleSide}
         menus={barMenus}
         openTerminal={openTerminal}
         terminalAvailable={terminalAvailable}
-        terminalOpen={!!terminalSessionId}
+        terminalOpen={terminalsActive}
         terminalRefreshing={refreshing}
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
         connected={connected}
         adapterName={adapterName}
       />
+      {terminalSessionId && (
+        <div className="terminal-workspace-slot">
+          <Suspense
+            fallback={
+              <div className="history-status" role="status">
+                加载原生终端
+              </div>
+            }
+          >
+            <NativeTerminal
+              client={client}
+              sessionId={terminalSessionId}
+              onClose={closeTerminal}
+              onActivity={setTerminalsActive}
+              register={registerTerminalWorkspace}
+              nodeName={
+                loginWorkspaces?.find((workspace) => workspace.id === activeWorkspace)?.name
+              }
+            />
+          </Suspense>
+        </div>
+      )}
       <Rail
         page={place.page}
         go={(page) => open(page)}
@@ -1889,7 +1932,7 @@ export function App({
             connected={connected}
             busy={busy}
             refreshing={refreshing}
-            terminalOpen={!!terminalSessionId}
+            terminalOpen={terminalsActive}
             notifications={notifications}
             select={show}
             newSession={() => {
@@ -1907,21 +1950,6 @@ export function App({
             projectMenu={(path, position) => setMenu({ kind: 'project', path, ...position })}
           />
           <main className="workspace">
-            {terminalSessionId && connected && (
-              <Suspense
-                fallback={
-                  <div className="history-status" role="status">
-                    加载原生终端
-                  </div>
-                }
-              >
-                <NativeTerminal
-                  client={client}
-                  sessionId={terminalSessionId}
-                  onClose={closeTerminal}
-                />
-              </Suspense>
-            )}
             {currentError && (
               <div className="error-banner" role="alert">
                 <span>{currentError}</span>
@@ -1939,7 +1967,9 @@ export function App({
             {!connected && (
               <div className="connection-banner" role="status">
                 <Unplug />
-                连接中断，等待恢复
+                {state.status === 'disconnected'
+                  ? '连接已结束，关闭终端后可重新登录'
+                  : '连接中断，等待恢复'}
               </div>
             )}
             <Conversation
@@ -2077,7 +2107,7 @@ export function App({
                 <p>设备“{selected.device?.name ?? '未知设备'}”未连接，当前只能查看会话。</p>
               </div>
             )}
-            {selected && (!away || remote) && !terminalSessionId && (
+            {selected && (!away || remote) && !terminalsActive && (
               <Composer
                 openAccount={() => open('settings', 'account')}
                 session={selected}
@@ -2129,7 +2159,7 @@ export function App({
                 stop={stopRun}
               />
             )}
-            {selected && (!away || (browser && remote)) && !terminalSessionId && (
+            {selected && (!away || (browser && remote)) && !terminalsActive && (
               <SessionBar
                 client={client}
                 sessionId={selected.id}

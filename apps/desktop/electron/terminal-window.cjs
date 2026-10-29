@@ -6,6 +6,9 @@ function isTerminalWindow(window) {
 }
 function installTerminalWindow(owner, Menu) {
   let terminal;
+  let active = false;
+  let approved = false;
+  let finishClose;
   const focus = () => {
     if (!terminal || terminal.isDestroyed()) return false;
     if (terminal.isMinimized()) terminal.restore();
@@ -26,7 +29,7 @@ function installTerminalWindow(owner, Menu) {
         title: 'CC SPACE · 原生终端',
         backgroundColor: '#0b0b0a',
         autoHideMenuBar: true,
-        frame: true,
+        frame: false,
         resizable: true,
         minimizable: true,
         maximizable: true,
@@ -45,19 +48,62 @@ function installTerminalWindow(owner, Menu) {
   owner.webContents.on('did-create-window', (child, details) => {
     if (details.frameName !== 'cc-native-terminal') return;
     terminal = child;
+    approved = false;
     windows.add(child);
     if (Menu) installEditMenu(child, Menu);
     child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     child.webContents.on('will-navigate', (event) => event.preventDefault());
+    const state = () => {
+      if (!owner.webContents.isDestroyed())
+        owner.webContents.send('terminal-window:state', { maximized: child.isMaximized() });
+    };
+    child.on('maximize', state);
+    child.on('unmaximize', state);
+    child.on('close', (event) => {
+      if (approved || !active) return;
+      event.preventDefault();
+      if (!owner.webContents.isDestroyed()) owner.webContents.send('terminal-window:request-close');
+    });
     child.on('closed', () => {
       if (terminal !== child) return;
       terminal = undefined;
+      finishClose?.(true);
+      finishClose = undefined;
       if (!owner.webContents.isDestroyed()) owner.webContents.send('terminal-window:closed');
     });
   });
   owner.on('closed', () => {
     if (terminal && !terminal.isDestroyed()) terminal.destroy();
   });
-  return { focus };
+  return {
+    focus,
+    setActive(value) {
+      active = value === true;
+    },
+    requestClose() {
+      if (!active || !terminal || terminal.isDestroyed()) return Promise.resolve(true);
+      focus();
+      owner.webContents.send('terminal-window:request-close');
+      return new Promise((resolve) => {
+        finishClose = resolve;
+      });
+    },
+    finishClose(allowed) {
+      finishClose?.(allowed === true);
+      finishClose = undefined;
+    },
+    control(action) {
+      if (!terminal || terminal.isDestroyed()) return false;
+      if (action === 'minimize') terminal.minimize();
+      else if (action === 'maximize') {
+        if (terminal.isMaximized()) terminal.unmaximize();
+        else terminal.maximize();
+      } else if (action === 'destroy') {
+        approved = true;
+        terminal.destroy();
+      } else return false;
+      return true;
+    },
+  };
 }
 module.exports = { installTerminalWindow, isTerminalWindow };

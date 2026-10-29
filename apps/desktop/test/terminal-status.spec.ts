@@ -20,6 +20,7 @@ test('terminal entry waits for status reading and does not start another read on
   }));
   const commands: { type: string; sessionId?: string; requestId: string }[] = [];
   let finishStatus = (_ok = true) => {};
+  let endTerminal = () => {};
   await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
     const send = (value: object) => route.send(JSON.stringify(value));
     route.onMessage((raw) => {
@@ -57,12 +58,12 @@ test('terminal entry waits for status reading and does not start another read on
           });
         return;
       }
-      if (command.type === 'terminal.open')
-        send({
-          type: 'terminal.opened',
-          sessionId: command.sessionId,
-          terminalId: randomUUID(),
-        });
+      if (command.type === 'terminal.open') {
+        const terminalId = randomUUID();
+        send({ type: 'terminal.opened', sessionId: command.sessionId, terminalId });
+        endTerminal = () =>
+          send({ type: 'terminal.closed', sessionId: command.sessionId, terminalId, exitCode: 0 });
+      }
       send({ type: 'response', requestId: command.requestId, ok: true });
     });
   });
@@ -103,8 +104,19 @@ test('terminal entry waits for status reading and does not start another read on
   await expect(page.locator('.native-terminal')).toBeVisible();
   await expect.poll(() => commands.filter((c) => c.type === 'terminal.open').length).toBe(1);
   expect(commands.filter((c) => c.type === 'session.status')).toHaveLength(2);
-  await page.getByRole('button', { name: '关闭原生终端', exact: true }).click();
-  // Deferred status reading resumes when the terminal has closed.
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await expect(page.locator('.native-terminal')).toBeVisible();
+  await page.getByRole('button', { name: '定时任务', exact: true }).click();
+  await expect(page.locator('.native-terminal')).toBeVisible();
+  await page.getByRole('button', { name: '会话', exact: true }).click();
+  expect(commands.filter((c) => c.type === 'terminal.open')).toHaveLength(1);
+  expect(commands.filter((c) => c.type === 'terminal.close')).toHaveLength(0);
+  endTerminal();
+  // Ended tabs keep their output without holding the node's status-reading lock.
   await expect.poll(() => commands.filter((c) => c.type === 'session.status').length).toBe(3);
   finishStatus();
+  await expect(page.locator('.native-terminal')).toBeVisible();
+  await page.getByRole('button', { name: /关闭terminal-test/ }).click();
+  expect(commands.filter((c) => c.type === 'terminal.close')).toHaveLength(0);
 });

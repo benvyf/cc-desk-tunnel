@@ -6,6 +6,11 @@ declare global {
       terminalWindow: {
         focus: () => Promise<boolean>;
         onClosed: (callback: () => void) => () => void;
+        onRequestClose?: (callback: () => void) => () => void;
+        control?: (action: 'minimize' | 'maximize' | 'destroy') => Promise<boolean>;
+        setActive?: (active: boolean) => Promise<void>;
+        finishClose?: (allowed: boolean) => Promise<void>;
+        onState?: (callback: (state: { maximized: boolean }) => void) => () => void;
       };
       // Run from the source tree, not installed: the login page then also offers the simulation service.
       dev: boolean;

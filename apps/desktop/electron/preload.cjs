@@ -2,6 +2,19 @@ const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
   terminalWindow: {
     focus: () => ipcRenderer.invoke('terminal-window:focus'),
+    control: (action) => ipcRenderer.invoke('terminal-window:control', action),
+    setActive: (active) => ipcRenderer.invoke('terminal-window:active', active),
+    finishClose: (allowed) => ipcRenderer.invoke('terminal-window:finish-close', allowed),
+    onState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('terminal-window:state', listener);
+      return () => ipcRenderer.removeListener('terminal-window:state', listener);
+    },
+    onRequestClose: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('terminal-window:request-close', listener);
+      return () => ipcRenderer.removeListener('terminal-window:request-close', listener);
+    },
     onClosed: (callback) => {
       const listener = () => callback();
       ipcRenderer.on('terminal-window:closed', listener);

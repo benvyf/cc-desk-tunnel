@@ -73,15 +73,18 @@ export function Modal({
   title,
   onClose,
   children,
+  initialFocus,
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
+  initialFocus?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useLayoutEffect(() => {
     const dialog = ref.current;
     dialog?.showModal();
+    if (initialFocus) dialog?.querySelector<HTMLElement>(initialFocus)?.focus();
     return () => dialog?.close();
   }, []);
   return (

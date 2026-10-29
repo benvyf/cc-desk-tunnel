@@ -109,3 +109,46 @@ test('the detached window keeps the native edit menu for copy and paste', () => 
   assert.equal(menu.find((item) => item.role === 'copy').enabled, true);
   assert.equal(menu.find((item) => item.role === 'paste').enabled, true);
 });
+
+test('active terminal close is coordinated and quit cancellation preserves the window', async () => {
+  const f = fixture();
+  f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
+  f.controller.setActive(true);
+  let prevented = false;
+  f.child.emit('close', {
+    preventDefault() {
+      prevented = true;
+    },
+  });
+  assert.equal(prevented, true);
+  assert.equal(f.child.destroyed, undefined);
+  assert.deepEqual(f.contents.messages.at(-1), ['terminal-window:request-close']);
+  const canceled = f.controller.requestClose();
+  f.controller.finishClose(false);
+  assert.equal(await canceled, false);
+  assert.equal(f.child.destroyed, undefined);
+  const accepted = f.controller.requestClose();
+  assert.equal(f.controller.control('destroy'), true);
+  assert.equal(await accepted, true);
+  assert.equal(f.child.destroyed, true);
+});
+
+test('window controls are restricted to the owning controller', () => {
+  const f = fixture();
+  assert.equal(f.controller.control('destroy'), false);
+  f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
+  assert.equal(f.controller.control('execute'), false);
+  f.child.minimize = () => {
+    f.child.minimized = true;
+  };
+  f.controller.control('minimize');
+  assert.equal(f.child.minimized, true);
+});
+
+test('maximize state is sent only to the owning renderer', () => {
+  const f = fixture();
+  f.child.isMaximized = () => true;
+  f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
+  f.child.emit('maximize');
+  assert.deepEqual(f.contents.messages, [['terminal-window:state', { maximized: true }]]);
+});

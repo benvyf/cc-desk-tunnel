@@ -131,6 +131,16 @@ function handle(channel, listener) {
 }
 
 handle('terminal-window:focus', (event) => terminalControllers.get(event.sender)?.focus() ?? false);
+handle(
+  'terminal-window:control',
+  (event, action) => terminalControllers.get(event.sender)?.control(action) ?? false,
+);
+handle('terminal-window:active', (event, active) =>
+  terminalControllers.get(event.sender)?.setActive(active),
+);
+handle('terminal-window:finish-close', (event, allowed) =>
+  terminalControllers.get(event.sender)?.finishClose(allowed),
+);
 
 handle('project:choose', async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
@@ -1021,7 +1031,26 @@ app.whenReady().then(() => {
 });
 let quitting = false;
 let exiting = false;
+let terminalQuitPending = false;
+let terminalsApproved = false;
 app.on('before-quit', (event) => {
+  if (!terminalsApproved) {
+    event.preventDefault();
+    if (terminalQuitPending) return;
+    terminalQuitPending = true;
+    Promise.all(
+      BrowserWindow.getAllWindows()
+        .filter((window) => !isTerminalWindow(window))
+        .map((window) => terminalControllers.get(window.webContents)?.requestClose() ?? true),
+    ).then((results) => {
+      terminalQuitPending = false;
+      if (results.every(Boolean)) {
+        terminalsApproved = true;
+        app.quit();
+      }
+    });
+    return;
+  }
   quitting = true;
   // Dispose portal windows while their owning renderer is still alive.
   for (const window of BrowserWindow.getAllWindows())
