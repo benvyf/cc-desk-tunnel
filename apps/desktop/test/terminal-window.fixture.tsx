@@ -73,7 +73,10 @@ const client = {
   },
   async request(command: any, requestId = crypto.randomUUID()) {
     requests.push(command);
-    if (command.type === 'terminal.session.create' || command.type === 'terminal.history.continue') {
+    if (
+      command.type === 'terminal.session.create' ||
+      command.type === 'terminal.history.continue'
+    ) {
       let id = created.get(requestId);
       if (!id) {
         id = `fixture-${created.size + 1}`;

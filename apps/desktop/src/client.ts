@@ -29,7 +29,9 @@ type DataMessage = Extract<
       | 'web.settings.state'
       | 'web.totp.setup'
       | 'web.certificate.state'
-      | 'terminal.state' | 'terminal.file' | 'terminal.histories';
+      | 'terminal.state'
+      | 'terminal.file'
+      | 'terminal.histories';
   }
 >;
 // Commands answered with a data frame, and the frame each one gets.
@@ -519,7 +521,9 @@ export class ProxyClient {
         message.type === 'web.settings.state' ||
         message.type === 'web.totp.setup' ||
         message.type === 'web.certificate.state' ||
-        message.type === 'terminal.state' || message.type === 'terminal.file' || message.type === 'terminal.histories'
+        message.type === 'terminal.state' ||
+        message.type === 'terminal.file' ||
+        message.type === 'terminal.histories'
       ) {
         if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
       } else if (message.type === 'service.update') {

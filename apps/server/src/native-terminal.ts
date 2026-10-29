@@ -39,8 +39,12 @@ export type TerminalSpawner = (
   options: { cwd: string; cols: number; rows: number; env: Record<string, string>; name: string },
 ) => TerminalProcess;
 
-export function terminalArguments(options: ClaudeOptions, session: Session, ssh?: SshConnection,
-  history?: { nativeId: string; mode: 'new' | 'resume' }) {
+export function terminalArguments(
+  options: ClaudeOptions,
+  session: Session,
+  ssh?: SshConnection,
+  history?: { nativeId: string; mode: 'new' | 'resume' },
+) {
   return [
     '--permission-mode',
     session.permissionMode === 'default' ? 'manual' : session.permissionMode,

@@ -10,8 +10,12 @@ import '@xterm/xterm/css/xterm.css';
 
 export type TerminalPhase =
   'opening' | 'running' | 'closing' | 'ended' | 'failed' | 'unknown' | 'disconnected';
-export type TerminalHandle = { close: () => Promise<boolean>; retry: () => void; focus: () => void;
-  paste: (text: string) => void };
+export type TerminalHandle = {
+  close: () => Promise<boolean>;
+  retry: () => void;
+  focus: () => void;
+  paste: (text: string) => void;
+};
 export default function NativeTerminal({
   client,
   sessionId,
@@ -48,8 +52,10 @@ export default function NativeTerminal({
   useEffect(() => {
     if (!terminalRef.current) return;
     const terminal = terminalRef.current;
-    readingLine.current = terminal.buffer.active.viewportY < terminal.buffer.active.baseY
-      ? terminal.buffer.active.viewportY : null;
+    readingLine.current =
+      terminal.buffer.active.viewportY < terminal.buffer.active.baseY
+        ? terminal.buffer.active.viewportY
+        : null;
     terminal.options.fontSize = fontSize;
     activate.current();
   }, [fontSize]);
@@ -61,7 +67,10 @@ export default function NativeTerminal({
       cursorBlink: true,
       scrollback: 2000,
       allowProposedApi: false,
-      linkHandler: { allowNonHttpProtocols: true, activate: (_event, target) => callbacks.current.onLink?.(target) },
+      linkHandler: {
+        allowNonHttpProtocols: true,
+        activate: (_event, target) => callbacks.current.onLink?.(target),
+      },
       theme: {
         background: '#0b0b0a',
         foreground: '#dedcd6',
@@ -72,7 +81,9 @@ export default function NativeTerminal({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current!);
-    const links = terminal.registerLinkProvider(terminalLinks(terminal, (target) => callbacks.current.onLink?.(target)));
+    const links = terminal.registerLinkProvider(
+      terminalLinks(terminal, (target) => callbacks.current.onLink?.(target)),
+    );
     terminalRef.current = terminal;
     let id: string | null = null,
       disposed = false,
@@ -121,8 +132,11 @@ export default function NativeTerminal({
     function resize() {
       if (!visible.current || !host.current?.clientWidth || !host.current.clientHeight || disposed)
         return;
-      const line = readingLine.current ?? (terminal.buffer.active.viewportY < terminal.buffer.active.baseY
-        ? terminal.buffer.active.viewportY : null);
+      const line =
+        readingLine.current ??
+        (terminal.buffer.active.viewportY < terminal.buffer.active.baseY
+          ? terminal.buffer.active.viewportY
+          : null);
       fit.fit();
       if (line !== null) terminal.scrollToLine(line);
       readingLine.current = null;
@@ -138,8 +152,13 @@ export default function NativeTerminal({
       resizeFrame = view.requestAnimationFrame(() => {
         resize();
         const document = host.current?.ownerDocument;
-        if (focus && visible.current && phaseNow() === 'running' && !document?.querySelector('dialog[open]') &&
-            !document?.activeElement?.closest('.terminal-list, .terminal-draft'))
+        if (
+          focus &&
+          visible.current &&
+          phaseNow() === 'running' &&
+          !document?.querySelector('dialog[open]') &&
+          !document?.activeElement?.closest('.terminal-list, .terminal-draft')
+        )
           terminal.focus();
       });
     };
@@ -329,7 +348,10 @@ export default function NativeTerminal({
     const unwatch = client.subscribe?.(disconnected);
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || event.isComposing) return true;
-      const copy = event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'c' &&
+      const copy =
+        event.ctrlKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === 'c' &&
         (event.shiftKey || terminal.hasSelection());
       const paste = event.ctrlKey && !event.altKey && event.key.toLowerCase() === 'v';
       if (!copy && !paste) return true;
@@ -345,9 +367,16 @@ export default function NativeTerminal({
             if (!disposed) terminal.clearSelection();
           } else {
             const text = await view.navigator.clipboard.readText();
-            if (!disposed && visible.current && id === targetId && id &&
-                client.state?.connectionId === connectionId && phaseNow() === 'running' &&
-                !host.current?.ownerDocument.querySelector('dialog[open]')) terminal.paste(text);
+            if (
+              !disposed &&
+              visible.current &&
+              id === targetId &&
+              id &&
+              client.state?.connectionId === connectionId &&
+              phaseNow() === 'running' &&
+              !host.current?.ownerDocument.querySelector('dialog[open]')
+            )
+              terminal.paste(text);
           }
         } catch {
           if (!disposed) setError('无法访问剪贴板，请使用系统复制/粘贴菜单。');
@@ -356,8 +385,14 @@ export default function NativeTerminal({
       return false;
     });
     const input = terminal.onData((data) => {
-      if (!visible.current || !id || closeRequested || phaseNow() !== 'running' ||
-          host.current?.ownerDocument.querySelector('dialog[open]')) return;
+      if (
+        !visible.current ||
+        !id ||
+        closeRequested ||
+        phaseNow() !== 'running' ||
+        host.current?.ownerDocument.querySelector('dialog[open]')
+      )
+        return;
       for (let offset = 0; offset < data.length;) {
         let end = Math.min(offset + 4096, data.length);
         const last = data.charCodeAt(end - 1);
@@ -377,8 +412,15 @@ export default function NativeTerminal({
       close,
       focus: () => activate.current(true),
       paste: (text) => {
-        if (disposed || !visible.current || !id || closeRequested || phaseNow() !== 'running' ||
-            client.state?.connectionId !== connectionId || host.current?.ownerDocument.querySelector('dialog[open]'))
+        if (
+          disposed ||
+          !visible.current ||
+          !id ||
+          closeRequested ||
+          phaseNow() !== 'running' ||
+          client.state?.connectionId !== connectionId ||
+          host.current?.ownerDocument.querySelector('dialog[open]')
+        )
           throw new Error('目标终端不可输入，草稿已保留。');
         if (/[\r\n]/.test(text) && !terminal.modes.bracketedPasteMode)
           throw new Error('终端未启用多行粘贴模式，请复制后手动粘贴并检查。');

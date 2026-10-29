@@ -132,19 +132,23 @@ export default function TerminalWindow({
     const task = (async () => {
       try {
         const response = await client.request(
-          tab.historySessionId ? {
-            type: 'terminal.history.continue', sessionId: tab.source.id,
-            historySessionId: tab.historySessionId, confirmed: true,
-          } : {
-            type: 'terminal.session.create',
-            title: '新终端',
-            ...(tab.projectPath
-              ? { projectPath: tab.projectPath }
-              : { sourceSessionId: tab.source.id }),
-            permissionMode: tab.source.permissionMode,
-            model: tab.source.model,
-            effort: tab.source.effort,
-          },
+          tab.historySessionId
+            ? {
+                type: 'terminal.history.continue',
+                sessionId: tab.source.id,
+                historySessionId: tab.historySessionId,
+                confirmed: true,
+              }
+            : {
+                type: 'terminal.session.create',
+                title: '新终端',
+                ...(tab.projectPath
+                  ? { projectPath: tab.projectPath }
+                  : { sourceSessionId: tab.source.id }),
+                permissionMode: tab.source.permissionMode,
+                model: tab.source.model,
+                effort: tab.source.effort,
+              },
           tab.createId,
         );
         if (client.state.connectionId !== generation) throw new Error('连接已变化，请确认原会话。');
@@ -308,18 +312,33 @@ export default function TerminalWindow({
       container.ownerDocument.documentElement.style.cssText =
         document.documentElement.style.cssText;
       const preference = document.documentElement.dataset.theme;
-      const theme = preference === 'dark' || preference === 'light' ? preference : media.matches ? 'dark' : 'light';
-      void window.desktop?.terminalWindow.appearance?.(theme).then((result) => {
-        if (!disposed) setNativeControls(result.nativeControls);
-      }, () => { if (!disposed) setNativeControls(false); });
+      const theme =
+        preference === 'dark' || preference === 'light'
+          ? preference
+          : media.matches
+            ? 'dark'
+            : 'light';
+      void window.desktop?.terminalWindow.appearance?.(theme).then(
+        (result) => {
+          if (!disposed) setNativeControls(result.nativeControls);
+        },
+        () => {
+          if (!disposed) setNativeControls(false);
+        },
+      );
     };
     const observer = new MutationObserver(sync);
     observer.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ['data-theme', 'style'],
     });
-    sync(); media.addEventListener('change', sync);
-    return () => { disposed = true; observer.disconnect(); media.removeEventListener('change', sync); };
+    sync();
+    media.addEventListener('change', sync);
+    return () => {
+      disposed = true;
+      observer.disconnect();
+      media.removeEventListener('change', sync);
+    };
   }, [container]);
   useEffect(() => {
     if (!tabs.some((tab) => tab.tabId === activeId) && tabs[0]) setActiveId(tabs[0].tabId);
@@ -330,13 +349,22 @@ export default function TerminalWindow({
     setConfirm(null);
   };
   const matchingTabs = tabs.filter((tab) =>
-    [tab.alias, folderName(tab.source.projectPath), tab.source.projectPath, nodeName,
-      tab.source.device?.name ?? ''].join('\n').toLocaleLowerCase().includes(filter.trim().toLocaleLowerCase()),
+    [
+      tab.alias,
+      folderName(tab.source.projectPath),
+      tab.source.projectPath,
+      nodeName,
+      tab.source.device?.name ?? '',
+    ]
+      .join('\n')
+      .toLocaleLowerCase()
+      .includes(filter.trim().toLocaleLowerCase()),
   );
   const selectedMenuTab = matchingTabs[Math.min(menuIndex, matchingTabs.length - 1)];
   useEffect(() => {
     if (menu && selectedMenuTab)
-      (container?.ownerDocument ?? document).getElementById(`terminal-result-${selectedMenuTab.tabId}`)
+      (container?.ownerDocument ?? document)
+        .getElementById(`terminal-result-${selectedMenuTab.tabId}`)
         ?.scrollIntoView({ block: 'nearest' });
   }, [menu, selectedMenuTab?.tabId, container]);
   const finishMenu = (tabId = activeId) => {
@@ -399,7 +427,11 @@ export default function TerminalWindow({
           aria-expanded={menu}
           onClick={() => {
             if (menu) finishMenu();
-            else { setFilter(''); setMenuIndex(0); setMenu(true); }
+            else {
+              setFilter('');
+              setMenuIndex(0);
+              setMenu(true);
+            }
           }}
         >
           <ChevronDown scale="sm" />
@@ -434,43 +466,65 @@ export default function TerminalWindow({
         )}
       </header>
       {menu && (
-        <div className="terminal-list" aria-label="全部终端列表" onKeyDown={(event) => {
-          if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
-            event.preventDefault();
-            event.stopPropagation();
-            finishMenu();
-          }
-        }}>
-          <input autoFocus aria-label="筛选终端" placeholder="搜索别名、项目或节点"
-            value={filter} aria-controls="terminal-results"
-            aria-activedescendant={selectedMenuTab ? `terminal-result-${selectedMenuTab.tabId}` : undefined}
-            onChange={(event) => { setFilter(event.target.value); setMenuIndex(0); }}
+        <div
+          className="terminal-list"
+          aria-label="全部终端列表"
+          onKeyDown={(event) => {
+            if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+              event.preventDefault();
+              event.stopPropagation();
+              finishMenu();
+            }
+          }}
+        >
+          <input
+            autoFocus
+            aria-label="筛选终端"
+            placeholder="搜索别名、项目或节点"
+            value={filter}
+            aria-controls="terminal-results"
+            aria-activedescendant={
+              selectedMenuTab ? `terminal-result-${selectedMenuTab.tabId}` : undefined
+            }
+            onChange={(event) => {
+              setFilter(event.target.value);
+              setMenuIndex(0);
+            }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing) return;
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
                 event.preventDefault();
-                if (matchingTabs.length) setMenuIndex((index) =>
-                  (Math.min(index, matchingTabs.length - 1) + (event.key === 'ArrowDown' ? 1 : matchingTabs.length - 1)) % matchingTabs.length);
+                if (matchingTabs.length)
+                  setMenuIndex(
+                    (index) =>
+                      (Math.min(index, matchingTabs.length - 1) +
+                        (event.key === 'ArrowDown' ? 1 : matchingTabs.length - 1)) %
+                      matchingTabs.length,
+                  );
               } else if (event.key === 'Enter' && selectedMenuTab) {
-                event.preventDefault(); finishMenu(selectedMenuTab.tabId);
+                event.preventDefault();
+                finishMenu(selectedMenuTab.tabId);
               }
-            }} />
+            }}
+          />
           <div id="terminal-results" role="listbox" aria-label="匹配终端">
-          {!matchingTabs.length && <p role="status">没有匹配的终端</p>}
-          {matchingTabs.map((tab) => (
-            <Button
-              key={tab.tabId}
-              id={`terminal-result-${tab.tabId}`}
-              role="option"
-              aria-selected={selectedMenuTab?.tabId === tab.tabId}
-              title={`${tab.alias || folderName(tab.source.projectPath)} · ${tab.source.projectPath} · ${nodeName} · ${tab.source.device?.name ?? ''}`}
-              size="sm"
-              onClick={() => finishMenu(tab.tabId)}
-            >
-              {tab.alias || folderName(tab.source.projectPath)} · {tab.detail}
-              <small>{tab.source.projectPath} · {nodeName} · {tab.source.device?.name}</small>
-            </Button>
-          ))}
+            {!matchingTabs.length && <p role="status">没有匹配的终端</p>}
+            {matchingTabs.map((tab) => (
+              <Button
+                key={tab.tabId}
+                id={`terminal-result-${tab.tabId}`}
+                role="option"
+                aria-selected={selectedMenuTab?.tabId === tab.tabId}
+                title={`${tab.alias || folderName(tab.source.projectPath)} · ${tab.source.projectPath} · ${nodeName} · ${tab.source.device?.name ?? ''}`}
+                size="sm"
+                onClick={() => finishMenu(tab.tabId)}
+              >
+                {tab.alias || folderName(tab.source.projectPath)} · {tab.detail}
+                <small>
+                  {tab.source.projectPath} · {nodeName} · {tab.source.device?.name}
+                </small>
+              </Button>
+            ))}
           </div>
           <Button
             size="sm"
@@ -493,8 +547,18 @@ export default function TerminalWindow({
           >
             标签别名
           </Button>
-          {state.terminalHistory && <Button size="sm" disabled={!connected || closing || !active}
-            onClick={() => { setHistorySource(active.source); setMenu(false); }}>继续官方历史</Button>}
+          {state.terminalHistory && (
+            <Button
+              size="sm"
+              disabled={!connected || closing || !active}
+              onClick={() => {
+                setHistorySource(active.source);
+                setMenu(false);
+              }}
+            >
+              继续官方历史
+            </Button>
+          )}
         </div>
       )}
       {closeError && <p role="alert">{closeError}</p>}
@@ -531,7 +595,8 @@ export default function TerminalWindow({
                 onStatus={(phase, detail) => patch(tab.tabId, { phase, detail })}
                 onLink={(raw) => {
                   const target = terminalTarget(raw);
-                  if (target.kind === 'web') void followLink({ kind: 'web', url: target.value }, setLinkError);
+                  if (target.kind === 'web')
+                    void followLink({ kind: 'web', url: target.value }, setLinkError);
                   else setFile({ raw, source: tab.source });
                 }}
               />
@@ -558,10 +623,17 @@ export default function TerminalWindow({
                 新开同项目终端
               </Button>
             )}
-            <TerminalDraft session={tab.source} phase={tab.phase}
+            <TerminalDraft
+              session={tab.source}
+              phase={tab.phase}
               handle={() => handles.current.get(tab.tabId)}
-              attachmentsAllowed={!!window.desktop && !state.browser && connected &&
-                tab.source.device?.id === state.device?.id} />
+              attachmentsAllowed={
+                !!window.desktop &&
+                !state.browser &&
+                connected &&
+                tab.source.device?.id === state.device?.id
+              }
+            />
           </div>
         ))}
       </div>
@@ -572,11 +644,33 @@ export default function TerminalWindow({
         <span>CLI 工作区以终端实际显示为准</span>
       </footer>
       {linkError && <p role="alert">{linkError}</p>}
-      {historySource && <TerminalHistory client={client} source={historySource}
-        onClose={() => { setHistorySource(null); handles.current.get(activeId)?.focus(); }}
-        onContinue={(historySessionId) => { add(historySource, undefined, historySessionId); setHistorySource(null); }} />}
-      {file && <TerminalFile key={`${file.source.id}:${file.raw}`} client={client} session={file.source}
-        raw={file.raw} nodeName={nodeName} onClose={() => { setFile(null); handles.current.get(activeId)?.focus(); }} />}
+      {historySource && (
+        <TerminalHistory
+          client={client}
+          source={historySource}
+          onClose={() => {
+            setHistorySource(null);
+            handles.current.get(activeId)?.focus();
+          }}
+          onContinue={(historySessionId) => {
+            add(historySource, undefined, historySessionId);
+            setHistorySource(null);
+          }}
+        />
+      )}
+      {file && (
+        <TerminalFile
+          key={`${file.source.id}:${file.raw}`}
+          client={client}
+          session={file.source}
+          raw={file.raw}
+          nodeName={nodeName}
+          onClose={() => {
+            setFile(null);
+            handles.current.get(activeId)?.focus();
+          }}
+        />
+      )}
       {confirm && (
         <Modal
           initialFocus="[data-terminal-cancel]"

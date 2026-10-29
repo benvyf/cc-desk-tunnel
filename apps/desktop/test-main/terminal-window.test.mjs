@@ -66,8 +66,11 @@ test('caption appearance is bounded to the terminal controller and declared only
   f.child.setTitleBarOverlay = (options) => overlays.push(options);
   f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
   assert.deepEqual(f.controller.appearance('execute'), { nativeControls: false });
-  assert.deepEqual(f.controller.appearance('light'), { nativeControls: process.platform === 'win32' });
-  if (process.platform === 'win32') assert.deepEqual(overlays, [{ color: '#ffffff', symbolColor: '#20201e', height: 36 }]);
+  assert.deepEqual(f.controller.appearance('light'), {
+    nativeControls: process.platform === 'win32',
+  });
+  if (process.platform === 'win32')
+    assert.deepEqual(overlays, [{ color: '#ffffff', symbolColor: '#20201e', height: 36 }]);
 });
 test('terminal restores on focus, refuses navigation, and closes with its owner', () => {
   const f = fixture();

@@ -131,8 +131,11 @@ function handle(channel, listener) {
 }
 
 handle('terminal-window:focus', (event) => terminalControllers.get(event.sender)?.focus() ?? false);
-handle('terminal-window:appearance', (event, theme) =>
-  terminalControllers.get(event.sender)?.appearance(theme) ?? { nativeControls: false });
+handle(
+  'terminal-window:appearance',
+  (event, theme) =>
+    terminalControllers.get(event.sender)?.appearance(theme) ?? { nativeControls: false },
+);
 handle(
   'terminal-window:control',
   (event, action) => terminalControllers.get(event.sender)?.control(action) ?? false,
@@ -211,10 +214,16 @@ handle('image:save', async (_event, type, bytes) => {
 });
 // Writes text the page produced (an exported session) where the user chooses.
 handle('terminal-file:save', async (event, name, data, encoding) => {
-  if (typeof name !== 'string' || typeof data !== 'string' || data.length > 6 * 1024 * 1024 ||
-      !['utf8', 'base64'].includes(encoding)) throw new Error('文件数据无效。');
+  if (
+    typeof name !== 'string' ||
+    typeof data !== 'string' ||
+    data.length > 6 * 1024 * 1024 ||
+    !['utf8', 'base64'].includes(encoding)
+  )
+    throw new Error('文件数据无效。');
   const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
-    title: '下载节点文件', defaultPath: path.join(app.getPath('downloads'), path.basename(name)),
+    title: '下载节点文件',
+    defaultPath: path.join(app.getPath('downloads'), path.basename(name)),
   });
   if (result.canceled || !result.filePath) return false;
   await writeFile(result.filePath, Buffer.from(data, encoding));

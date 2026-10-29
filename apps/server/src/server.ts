@@ -778,19 +778,42 @@ export function createProxyServer(options: ServerOptions) {
         executable = assertNativeTerminalReview(executable);
       }
       const env = terminalEnvironment(options.claude);
-      const context = terminalHistoryContext(options.claude, env);
+      const context = terminalHistoryContext(
+        options.claude,
+        env,
+        nativeDirectory(store.directory, nativeRoot(session.id)),
+      );
       let history = store.terminalHistory(session.id);
       if (!history) {
         const now = new Date().toISOString();
-        history = { sessionId: session.id, nativeId: randomUUID(), root: nativeRoot(session.id),
-          deviceId: session.device!.id, pathKey: pathKey(session.projectPath), configKey: context.key,
-          mode: 'new', createdAt: now, updatedAt: now };
+        history = {
+          sessionId: session.id,
+          nativeId: randomUUID(),
+          root: nativeRoot(session.id),
+          deviceId: session.device!.id,
+          pathKey: pathKey(session.projectPath),
+          configKey: context.key,
+          mode: 'new',
+          createdAt: now,
+          updatedAt: now,
+        };
         store.saveTerminalHistory(history);
       }
-      if (history.configKey !== context.key || history.root !== nativeRoot(session.id) ||
-          history.deviceId !== session.device?.id || history.pathKey !== pathKey(session.projectPath))
-        throw new DomainError('history_environment_changed', '终端关联的 CLI 配置或项目已变化，请新开终端或在官方 CLI 中选择历史。');
-      if ([...terminals.keys()].some((id) => id !== session.id && store.terminalHistory(id)?.nativeId === history.nativeId))
+      if (
+        history.configKey !== context.key ||
+        history.root !== nativeRoot(session.id) ||
+        history.deviceId !== session.device?.id ||
+        history.pathKey !== pathKey(session.projectPath)
+      )
+        throw new DomainError(
+          'history_environment_changed',
+          '终端关联的 CLI 配置或项目已变化，请新开终端或在官方 CLI 中选择历史。',
+        );
+      if (
+        [...terminals.keys()].some(
+          (id) => id !== session.id && store.terminalHistory(id)?.nativeId === history.nativeId,
+        )
+      )
         throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
       const cwd = prepareNativeDirectory(options.claude, store.directory, nativeRoot(session.id));
       const saved = await readTerminalHistory(context.config, cwd, history.nativeId);
@@ -1192,48 +1215,111 @@ export function createProxyServer(options: ServerOptions) {
         target(peer, session);
         if (!options.claude) throw new DomainError('native_unavailable', '模拟模式没有官方历史。');
         const { terminalEnvironment } = await import('./native-terminal.ts');
-        const context = terminalHistoryContext(options.claude, terminalEnvironment(options.claude));
+        const context = terminalHistoryContext(
+          options.claude,
+          terminalEnvironment(options.claude),
+          nativeDirectory(store.directory, nativeRoot(session.id)),
+        );
         const seen = new Set<string>();
         const items = [];
         for (const entry of store.terminalHistories(session)) {
           if (seen.has(entry.nativeId)) continue;
           seen.add(entry.nativeId);
-          let reason = entry.configKey !== context.key ? 'CLI 配置已变化，请使用官方历史选择器确认。' : undefined;
-          if ([...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId)) reason = '此历史正在运行。';
+          let reason =
+            entry.configKey !== context.key
+              ? 'CLI 配置已变化，请使用官方历史选择器确认。'
+              : undefined;
+          if (
+            [...terminals.keys()].some(
+              (id) => store.terminalHistory(id)?.nativeId === entry.nativeId,
+            )
+          )
+            reason = '此历史正在运行。';
           let metadata = null;
           if (!reason) {
-            try { metadata = await readTerminalHistory(context.config, nativeDirectory(store.directory, entry.root), entry.nativeId); }
-            catch { reason = '历史元数据无法读取或格式暂不支持。'; }
+            try {
+              metadata = await readTerminalHistory(
+                context.config,
+                nativeDirectory(store.directory, entry.root),
+                entry.nativeId,
+              );
+            } catch {
+              reason = '历史元数据无法读取或格式暂不支持。';
+            }
             if (!metadata && !reason) reason = '尚无有效历史、文件已删除或超出元数据读取范围。';
           }
-          items.push({ sessionId: entry.sessionId, nativeId: entry.nativeId, title: metadata?.title ?? '官方终端历史',
-            updatedAt: metadata?.updatedAt ?? entry.updatedAt, available: !reason, ...(reason ? { reason } : {}) });
+          items.push({
+            sessionId: entry.sessionId,
+            nativeId: entry.nativeId,
+            title: metadata?.title ?? '官方终端历史',
+            updatedAt: metadata?.updatedAt ?? entry.updatedAt,
+            available: !reason,
+            ...(reason ? { reason } : {}),
+          });
         }
-        send(peer, { type: 'terminal.histories', requestId: command.requestId, sessionId: session.id, items });
+        send(peer, {
+          type: 'terminal.histories',
+          requestId: command.requestId,
+          sessionId: session.id,
+          items,
+        });
         return session.id;
       }
       case 'terminal.history.continue': {
         const source = store.get(command.sessionId).session;
         target(peer, source);
-        const signature = JSON.stringify({ type: command.type, source: source.id, history: command.historySessionId,
-          user: peer.access?.userId ?? peer.browser ?? 'desktop' });
+        const signature = JSON.stringify({
+          type: command.type,
+          source: source.id,
+          history: command.historySessionId,
+          user: peer.access?.userId ?? peer.browser ?? 'desktop',
+        });
         const previous = store.terminalCreated(command.requestId, signature);
         if (previous) return previous.id;
         if (!options.claude) throw new DomainError('native_unavailable', '模拟模式没有官方历史。');
         if (options.moderation && !options.nativeTerminalReview)
           throw new DomainError('moderation_terminal_disabled', '此节点暂不支持原生终端。');
-        const entry = store.terminalHistories(source).find((item) => item.sessionId === command.historySessionId);
-        if (!entry) throw new DomainError('history_unassociated', '没有与此项目和设备关联的官方历史。');
+        const entry = store
+          .terminalHistories(source)
+          .find((item) => item.sessionId === command.historySessionId);
+        if (!entry)
+          throw new DomainError('history_unassociated', '没有与此项目和设备关联的官方历史。');
         const { terminalEnvironment } = await import('./native-terminal.ts');
-        const context = terminalHistoryContext(options.claude, terminalEnvironment(options.claude));
-        if (entry.configKey !== context.key) throw new DomainError('history_environment_changed', 'CLI 配置已变化，请使用官方历史选择器确认。');
-        if ([...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId))
+        const context = terminalHistoryContext(
+          options.claude,
+          terminalEnvironment(options.claude),
+          nativeDirectory(store.directory, entry.root),
+        );
+        if (entry.configKey !== context.key)
+          throw new DomainError(
+            'history_environment_changed',
+            'CLI 配置已变化，请使用官方历史选择器确认。',
+          );
+        if (
+          [...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId)
+        )
           throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
-        if (!await readTerminalHistory(context.config, nativeDirectory(store.directory, entry.root), entry.nativeId))
-          throw new DomainError('history_missing', '官方历史不存在或尚无可读取的消息；未新建会话。');
+        if (
+          !(await readTerminalHistory(
+            context.config,
+            nativeDirectory(store.directory, entry.root),
+            entry.nativeId,
+          ))
+        )
+          throw new DomainError(
+            'history_missing',
+            '官方历史不存在或尚无可读取的消息；未新建会话。',
+          );
         room();
-        const session = store.createTerminal(command.requestId, signature, '继续官方历史', source.projectPath,
-          source.device!, source, entry);
+        const session = store.createTerminal(
+          command.requestId,
+          signature,
+          '继续官方历史',
+          source.projectPath,
+          source.device!,
+          source,
+          entry,
+        );
         broadcast({ type: 'session.updated', session });
         return session.id;
       }
@@ -1241,13 +1327,24 @@ export function createProxyServer(options: ServerOptions) {
         const session = store.get(command.sessionId).session;
         target(peer, session);
         try {
-          const roots = [nativeDirectory(store.directory, nativeRoot(session.id)),
-            ...(session.device?.id === serverDevice.id ? [session.projectPath] : [])];
+          const roots = [
+            nativeDirectory(store.directory, nativeRoot(session.id)),
+            ...(session.device?.id === serverDevice.id ? [session.projectPath] : []),
+          ];
           const file = await readTerminalFile(command.path, roots);
-          send(peer, { type: 'terminal.file', requestId: command.requestId, sessionId: session.id, ...file });
+          send(peer, {
+            type: 'terminal.file',
+            requestId: command.requestId,
+            sessionId: session.id,
+            ...file,
+          });
         } catch (error) {
-          throw new DomainError('terminal_file_unavailable', error instanceof Error && !('code' in error)
-            ? error.message : '节点文件不可用或无法读取。');
+          throw new DomainError(
+            'terminal_file_unavailable',
+            error instanceof Error && !('code' in error)
+              ? error.message
+              : '节点文件不可用或无法读取。',
+          );
         }
         return session.id;
       }
@@ -2053,8 +2150,10 @@ export function createProxyServer(options: ServerOptions) {
     managedMaintenance: options.managed ? managedMaintenance : undefined,
     async listen(port = 8787): Promise<string> {
       if (usageReceiver)
-        options.claude!.environment = { ...options.claude!.environment,
-          ...telemetryEnvironment(await usageReceiver.listen()) };
+        options.claude!.environment = {
+          ...options.claude!.environment,
+          ...telemetryEnvironment(await usageReceiver.listen()),
+        };
       await new Promise<void>((resolve, reject) => {
         server.once('error', reject);
         server.listen(port, options.host ?? '127.0.0.1', () => {

@@ -43,7 +43,8 @@ contextBridge.exposeInMainWorld('desktop', {
   foldersExist: (folders) => ipcRenderer.invoke('folders:exist', folders),
   chooseFiles: () => ipcRenderer.invoke('files:choose'),
   pathForFile: (file) => webUtils.getPathForFile(file),
-  saveTerminalFile: (name, data, encoding) => ipcRenderer.invoke('terminal-file:save', name, data, encoding),
+  saveTerminalFile: (name, data, encoding) =>
+    ipcRenderer.invoke('terminal-file:save', name, data, encoding),
   saveFile: (name, text) => ipcRenderer.invoke('file:save', name, text),
   saveImage: (type, bytes) => ipcRenderer.invoke('image:save', type, bytes),
   attachmentPreview: (path) => ipcRenderer.invoke('attachment:preview', path),

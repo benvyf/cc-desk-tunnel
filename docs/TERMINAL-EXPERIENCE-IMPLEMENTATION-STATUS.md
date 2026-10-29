@@ -4,7 +4,7 @@
 
 | 阶段 | 当前状态 | 审查及验证 |
 | --- | --- | --- |
-| A 键盘、焦点、字号 | 源码完成 | 审查修正 resize 强制抢焦点；剪贴板异步读取校验原终端和连接身份；字号变更复用 xterm。6 项 native-terminal 浏览器用例通过（5 项集合及 1 项独立复制回归），TypeScript 通过。IME 编辑框用例随 D 验收。 |
+| A 键盘、焦点、字号 | 完成并审查 | 审查修正 resize 强制抢焦点；剪贴板异步读取校验原终端和连接身份；字号变更复用 xterm。最终 7 项 native-terminal 浏览器用例通过，包括选区复制、字号 10/13/24、滚动阅读位置不变、无额外 open。TypeScript 通过；IME 编辑框用例随 D 一并通过。 |
 | B 全部终端筛选 | 完成并审查 | 大小写无关筛选、中文别名、空结果、方向键/Enter/Escape、焦点恢复均通过；工作区 8 项浏览器测试及 TypeScript 通过。审查确认筛选不创建/关闭 PTY，菜单及输入法按键不误发终端。 |
 | C 链接、路径和预览 | 完成并审查 | HTTP(S)/OSC 8 点击回调，逻辑行/CJK 路径识别；本机沿用受限文件操作，节点只读预览按会话 root 和 realpath 限界、文本 256 KiB/图片 4 MiB，支持主动下载。2 项 Node 核心测试和 1 项实际 xterm 点击/安全文本展示/焦点浏览器测试通过，TypeScript 通过。审查修正 OSC 文件链接默认被忽略和 StrictMode 重复读取；子窗仍无 bridge。 |
 | D 编辑框、草稿、附件 | 完成并审查 | 每 tab 独立组件内存草稿，默认收起、最高 33vh；显式 paste 经过原 xterm 输入分段，检查终端/连接/可见性和 bracketed paste，保留草稿且不加 Enter。复用附件保存/去重/预览/错误状态和 SSH 图片读取说明。2 项浏览器核心测试覆盖中文/IME、双标签、长文本、断线、异步选附件切换及准备失败；TypeScript 通过。审查确认异步附件仅更新来源组件，关闭后不更新/发送，粘贴同步固定目标，不触发 provider。 |
@@ -15,6 +15,12 @@
 
 历史首版采用有界本地 JSONL 元数据读取：只读已关联 ID 对应文件的前 256 KiB；长于 200 字符的 CLI 项目编码目录暂不猜测哈希格式，提示使用官方选择器。配置目录/可执行文件/设置路径变化会阻止继续；不读取 token 判断外部换号，用户须在继续前确认当前 CLI 环境与账号。未纳入 CC 管理的外部占用交由官方 CLI 自身处理，启动拒绝时保留错误，不强制接管。
 
+E 项收尾审查：相对 CLAUDE_CONFIG_DIR 按 PTY 的工作目录解析，避免与服务进程 cwd 混淆；对应断言及历史核心场景通过，TypeScript 通过。
+
 C 项收尾审查补充：宽字符结尾和 CJK 软换行占位按实际 cell 宽度映射；引号内路径保留结尾标点。节点读取使用 nonblocking open 后拒绝非普通文件，避免命名管道阻塞；下载保留 UTF-8 BOM 与换行。相关 2 项 Node 核心用例通过。
 
-实际窗口截图：`.local/terminal-experience-native.png`（Windows PrintWindow，包括系统按钮；模拟 PTY、12 标签和编辑框）。最终回归与构建结果将在收尾后补记。
+实际窗口截图：`.local/terminal-experience-native.png`（Windows PrintWindow，包括系统按钮；模拟 PTY、12 标签和编辑框）。
+
+最终验收：25 项相关 Node 测试、19 项浏览器测试、1 项实际 Electron 综合场景全部通过；TypeScript 与客户端生产构建通过。生产构建仍有既有 RichText 动态导入和大分包提示，不影响构建成功，未扩展到无关分包重构。源码按项目 Prettier 规则整理。
+
+交付提交：`ec30682` A，`da21563` B，`b80a4dc` C，`fb4b3d4` D，`39ea06d` E，`5af9aa9` F；`35d7580` 为 C 收尾修正。分支 `codex/terminal-status-coordination`，工作树 `.local/terminal-status-fix`。以上是源码交付与模拟验收，不等同于安装包、服务上线或真实 Claude 账号验收。

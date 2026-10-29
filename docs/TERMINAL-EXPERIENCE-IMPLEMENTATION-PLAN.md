@@ -1,6 +1,6 @@
 # CC 终端体验改进实施方案
 
-日期：2026-10-29（香港时间）。状态：待实施。本轮只制定方案，不修改产品代码、不打包部署。
+日期：2026-10-29（香港时间）。状态：六个阶段已实施并逐项审查，详见 [实施与验收记录](TERMINAL-EXPERIENCE-IMPLEMENTATION-STATUS.md)。本文件保留原始范围和验收要求；未打包、部署或调用真实账号/provider。
 
 CC 检查基线：`172ce028bbccc73229ce54d031c840c0ff51dfe4`，分支 `codex/terminal-status-coordination`。参考 Crew `2.5.2`，提交 `64bc7d49a6e3ce53cf82b9fe33b1fa6ac3a6aca3`。用户采纳前次分析的第 1、2、3、4、5、7 点；明确排除第 6 点分屏。
 
