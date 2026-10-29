@@ -5481,11 +5481,16 @@ dialog:has(.web-settings-form) {
   justify-content: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 16px;
+  padding: 12px 16px;
   color: var(--muted);
   border-bottom: 1px solid var(--line);
 }
-.terminal-window-notice button {
-  padding: 6px 12px;
-  border-radius: 6px;
+.terminal-window-notice > span {
+  font-size: var(--font-caption);
+}
+.terminal-window-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }

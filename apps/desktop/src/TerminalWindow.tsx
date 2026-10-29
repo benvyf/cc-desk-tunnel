@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import NativeTerminal from './NativeTerminal.tsx';
 import type { ProxyClient } from './client.ts';
+import { SquareTerminal, X } from './icons.tsx';
+import { Button } from './ui.tsx';
 
 export default function TerminalWindow({
   client,
@@ -64,17 +66,21 @@ export default function TerminalWindow({
     <>
       <div className="terminal-window-notice" role="status">
         <span>{container ? '原生终端已在独立窗口打开' : '正在打开终端窗口…'}</span>
-        <button
-          type="button"
-          onClick={() => {
-            void window.desktop?.terminalWindow.focus();
-          }}
-        >
-          显示终端
-        </button>
-        <button type="button" onClick={onClose}>
-          关闭终端
-        </button>
+        <div className="terminal-window-actions">
+          <Button
+            size="sm"
+            onClick={() => {
+              void window.desktop?.terminalWindow.focus();
+            }}
+          >
+            <SquareTerminal scale="sm" />
+            显示终端
+          </Button>
+          <Button size="sm" variant="ghost" onClick={onClose}>
+            <X scale="sm" />
+            关闭终端
+          </Button>
+        </div>
       </div>
       {container &&
         createPortal(
