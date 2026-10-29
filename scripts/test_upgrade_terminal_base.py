@@ -22,7 +22,7 @@ helper_spec.loader.exec_module(bootstrap)
 
 @unittest.skipUnless(os.name == 'posix', 'Linux root filesystem and fcntl required')
 class UpgradeTests(unittest.TestCase):
-    def exercise(self, install=False, corrupt=False, invalid_baseline=False, existing=False, wrong_base=False, invalid_candidate=False):
+    def exercise(self, install=False, corrupt=False, invalid_baseline=False, existing=False, wrong_base=False, invalid_candidate=False, cleanup=False, low_space=False):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             content = b'{}'
@@ -42,7 +42,7 @@ class UpgradeTests(unittest.TestCase):
                 bootstrap.offline_preflight(*args)
                 calls.append('offline')
             helper = SimpleNamespace(CONTAINER='fixture', PROFILE={'files': {}}, Engine=lambda: SimpleNamespace(request=lambda *args: current), validate_runtime=lambda _: None, runtime_and_policy=lambda _: None, verify_index=lambda *args: {'release': release}, offline_preflight=offline_preflight)
-            legacy = SimpleNamespace(helper=lambda *args, **kwargs: helper, install=lambda _: calls.append('install'))
+            legacy = SimpleNamespace(DATA=root / 'data', helper=lambda *args, **kwargs: helper, install=lambda _: calls.append('install'))
             inspections = 0
             def command(args, **kwargs):
                 nonlocal inspections
@@ -62,8 +62,8 @@ class UpgradeTests(unittest.TestCase):
                 return SimpleNamespace(returncode=0)
             download = lambda path, _: index if path.endswith('.json') else archive_bytes + (b'x' if corrupt else b'')
             create_temp = tempfile.mkdtemp
-            with patch.object(upgrade, 'ROOT', root / 'private'), patch.object(upgrade.os, 'geteuid', create=True, return_value=0), patch.object(upgrade.socket, 'gethostname', return_value='ubuntu-cc'), patch.object(upgrade, 'load', return_value=legacy), patch.object(upgrade, 'download', side_effect=download), patch.object(upgrade.subprocess, 'run', side_effect=command), patch.object(upgrade.tempfile, 'mkdtemp', side_effect=lambda **_: create_temp(dir=root)), patch('sys.argv', ['upgrade', *(['--install'] if install else [])]):
-                if corrupt or invalid_baseline or wrong_base or invalid_candidate:
+            with patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=0 if low_space else 10 * 1024**3)), patch.object(upgrade, 'ROOT', root / 'private'), patch.object(upgrade.os, 'geteuid', create=True, return_value=0), patch.object(upgrade.socket, 'gethostname', return_value='ubuntu-cc'), patch.object(upgrade, 'load', return_value=legacy), patch.object(upgrade, 'download', side_effect=download), patch.object(upgrade.subprocess, 'run', side_effect=command), patch.object(upgrade.tempfile, 'mkdtemp', side_effect=lambda **_: create_temp(dir=root)), patch('sys.argv', ['upgrade', *(['--install'] if install else []), *(['--cleanup'] if cleanup else [])]):
+                if corrupt or invalid_baseline or wrong_base or invalid_candidate or low_space:
                     with self.assertRaises((RuntimeError, subprocess.CalledProcessError)): upgrade.main()
                     self.assertNotIn('offline', calls)
                     self.assertNotIn('install', calls)
@@ -71,6 +71,9 @@ class UpgradeTests(unittest.TestCase):
                     upgrade.main()
                     self.assertIn('offline', calls)
                     self.assertEqual('install' in calls, install)
+                    self.assertEqual(['docker', 'builder'] in calls, cleanup)
+                    if cleanup:
+                        self.assertLess(calls.index(['docker', 'builder']), calls.index(['docker', 'image']))
                     self.assertEqual(['docker', 'build'] in calls, not existing)
                     if install:
                         self.assertEqual(legacy.TARGET, {'build': upgrade.TARGET_BUILD, 'protocol': 22})
@@ -79,6 +82,8 @@ class UpgradeTests(unittest.TestCase):
     def test_preparation_never_switches_container(self): self.exercise()
     def test_explicit_install_uses_verified_target(self): self.exercise(install=True)
     def test_corrupt_archive_stops_before_build(self): self.exercise(corrupt=True)
+    def test_cleanup_precedes_candidate_preparation(self): self.exercise(install=True, existing=True, cleanup=True)
+    def test_low_space_stops_before_build_or_install(self): self.exercise(install=True, cleanup=True, low_space=True)
     def test_unknown_baseline_stops_before_download(self): self.exercise(invalid_baseline=True)
     def test_retry_reuses_candidate_and_rechecks_offline(self): self.exercise(install=True, existing=True)
     def test_wrong_candidate_base_cannot_install(self): self.exercise(install=True, existing=True, wrong_base=True)
