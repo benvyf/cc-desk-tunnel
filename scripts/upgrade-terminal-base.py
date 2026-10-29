@@ -103,11 +103,28 @@ const d=JSON.parse(bytes);a.equal(d.files['package-lock.json'].sha256,process.ar
             if len(data) != info['size'] or hashlib.sha256(data).hexdigest() != info['sha256']:
                 raise RuntimeError('Candidate inventory mismatch')
         image = f'cc-space-terminal:build{TARGET_BUILD}-' + release['sha256'][:12]
-        base_tag = 'cc-space-terminal-base:' + current['Image'].split(':')[-1][:12]
-        subprocess.run(['docker', 'tag', current['Image'], base_tag], check=True, capture_output=True)
-        (work / 'Dockerfile').write_text('FROM ' + base_tag + '\nUSER root\nCOPY --chown=root:root program/ /app/\nCOPY --chown=root:root program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint\nRUN chmod 755 /usr/local/bin/proxy-entrypoint && chmod -R go-w /app\nUSER ccdesktunnel\n')
-        with open(work / 'preflight.log', 'ab') as log:
-            subprocess.run(['docker', 'build', '--network=none', '--pull=false', '-t', image, str(work)], check=True, stdout=log, stderr=log, timeout=600)
+        inspected = subprocess.run(['docker', 'image', 'inspect', image, current['Image']], capture_output=True, timeout=30)
+        if inspected.returncode:
+            base_tag = 'cc-space-terminal-base:' + current['Image'].split(':')[-1][:12]
+            subprocess.run(['docker', 'tag', current['Image'], base_tag], check=True, capture_output=True)
+            (work / 'Dockerfile').write_text('FROM ' + base_tag + '\nUSER root\nCOPY --chown=root:root program/ /app/\nCOPY --chown=root:root program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint\nRUN chmod 755 /usr/local/bin/proxy-entrypoint && chmod -R go-w /app\nUSER ccdesktunnel\n')
+            with open(work / 'preflight.log', 'ab') as log:
+                subprocess.run(['docker', 'build', '--network=none', '--pull=false', '-t', image, str(work)], check=True, stdout=log, stderr=log, timeout=600)
+            inspected = subprocess.run(['docker', 'image', 'inspect', image, current['Image']], check=True, capture_output=True, timeout=30)
+        else:
+            print('Existing candidate found; verifying it without rebuilding.', flush=True)
+        candidate, base = json.loads(inspected.stdout)
+        layers = base['RootFS']['Layers']
+        if not layers or candidate['RootFS']['Layers'][:len(layers)] != layers:
+            raise RuntimeError('Candidate does not inherit the confirmed base image')
+        # Pin the immutable image ID, verify signed application bytes, and rerun offline preflight on every retry.
+        image = candidate['Id']
+        verify = r"""const f=require('fs'),c=require('crypto'),a=require('assert/strict');
+const hash=b=>c.createHash('sha256').update(b).digest('hex'),bytes=f.readFileSync('/app/SERVER-RELEASE.json');a.equal(hash(bytes),process.argv[1]);
+const d=JSON.parse(bytes);for(const[p,v]of Object.entries(d.files)){const b=f.readFileSync('/app/'+p);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
+a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/docker/entrypoint.sh'].sha256);
+a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358');"""
+        subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint', '/opt/runtime/node/bin/node', image, '-e', verify, release['descriptorSha256']], check=True, capture_output=True, timeout=90)
         b.offline_preflight(image, work, release, work / 'preflight.log')
         after = engine.request('GET', '/containers/' + b.CONTAINER + '/json')
         if after['Id'] != current['Id'] or not after['State']['Running']:
