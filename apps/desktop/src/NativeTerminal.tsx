@@ -5,6 +5,7 @@ import { RequestFailedError, type ProxyClient } from './client.ts';
 import { X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
+import { terminalLinks } from './terminalLinks.ts';
 import '@xterm/xterm/css/xterm.css';
 
 export type TerminalPhase =
@@ -17,6 +18,7 @@ export default function NativeTerminal({
   active = true,
   onStatus,
   register,
+  onLink,
 }: {
   client: ProxyClient;
   sessionId: string;
@@ -24,10 +26,11 @@ export default function NativeTerminal({
   active?: boolean;
   onStatus?: (phase: TerminalPhase, detail: string) => void;
   register?: (handle: TerminalHandle | null) => void;
+  onLink?: (target: string) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onClose, onStatus, register });
-  callbacks.current = { onClose, onStatus, register };
+  const callbacks = useRef({ onClose, onStatus, register, onLink });
+  callbacks.current = { onClose, onStatus, register, onLink };
   const visible = useRef(active);
   visible.current = active;
   const activate = useRef((_focus = false) => {});
@@ -57,6 +60,7 @@ export default function NativeTerminal({
       cursorBlink: true,
       scrollback: 2000,
       allowProposedApi: false,
+      linkHandler: { allowNonHttpProtocols: true, activate: (_event, target) => callbacks.current.onLink?.(target) },
       theme: {
         background: '#0b0b0a',
         foreground: '#dedcd6',
@@ -67,6 +71,7 @@ export default function NativeTerminal({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current!);
+    const links = terminal.registerLinkProvider(terminalLinks(terminal, (target) => callbacks.current.onLink?.(target)));
     terminalRef.current = terminal;
     let id: string | null = null,
       disposed = false,
@@ -408,6 +413,7 @@ export default function NativeTerminal({
       clearTimeout(ackTimer);
       observer.disconnect();
       input.dispose();
+      links.dispose();
       unwatch?.();
       view.cancelAnimationFrame(resizeFrame);
       callbacks.current.register?.(null);

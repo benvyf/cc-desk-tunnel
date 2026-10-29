@@ -40,6 +40,7 @@ declare global {
       chooseFiles: () => Promise<string[]>;
       pathForFile: (file: File) => string;
       // Asks where to save and writes the text there; false when the dialog was cancelled.
+      saveTerminalFile: (name: string, data: string, encoding: 'utf8' | 'base64') => Promise<boolean>;
       saveFile: (name: string, text: string) => Promise<boolean>;
       openFolder: (path: string) => Promise<void>;
       openLogs: () => Promise<void>;

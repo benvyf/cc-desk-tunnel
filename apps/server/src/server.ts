@@ -44,6 +44,7 @@ import type {
 } from '@cc-desk-tunnel/protocol';
 import { runClaude, nativeDirectory, prepareNativeDirectory, readNativeStatus } from './claude.ts';
 import type { ClaudeOptions } from './claude.ts';
+import { readTerminalFile } from './terminal-files.ts';
 import { DomainError } from './errors.ts';
 import { accountMessageForClient } from './account-presentation.ts';
 import { NativeInput } from './native-input.ts';
@@ -1158,6 +1159,20 @@ export function createProxyServer(options: ServerOptions) {
         broadcast({ type: 'session.updated', session });
         return session.id;
       }
+      case 'terminal.file.read': {
+        const session = store.get(command.sessionId).session;
+        target(peer, session);
+        try {
+          const roots = [nativeDirectory(store.directory, nativeRoot(session.id)),
+            ...(session.device?.id === serverDevice.id ? [session.projectPath] : [])];
+          const file = await readTerminalFile(command.path, roots);
+          send(peer, { type: 'terminal.file', requestId: command.requestId, sessionId: session.id, ...file });
+        } catch (error) {
+          throw new DomainError('terminal_file_unavailable', error instanceof Error && !('code' in error)
+            ? error.message : '节点文件不可用或无法读取。');
+        }
+        return session.id;
+      }
       case 'terminal.state': {
         store.get(command.sessionId);
         const terminal = terminals.get(command.sessionId);
@@ -1392,6 +1407,7 @@ export function createProxyServer(options: ServerOptions) {
         connectionId: peer.id,
         adapter,
         terminalWorkspace: { version: 1 },
+        terminalFiles: { version: 1 },
         model: options.claude?.model,
         version,
         sessions: store.list(),
@@ -1462,6 +1478,7 @@ export function createProxyServer(options: ServerOptions) {
       connectionId: peer.id,
       adapter,
       terminalWorkspace: { version: 1 },
+        terminalFiles: { version: 1 },
       model: options.claude?.model,
       version,
       sessions: store.list(),

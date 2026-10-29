@@ -492,6 +492,8 @@ export type ServiceUpdate = z.infer<typeof serviceUpdateSchema>;
 const request = { requestId: id };
 export const commandSchema = z.discriminatedUnion('type', [
   ...webCommandSchemas,
+  z.object({ type: z.literal('terminal.file.read'), ...request, sessionId: id,
+    path: z.string().min(1).max(4096) }).strict(),
   z
     .object({
       type: z.literal('terminal.session.create'),
@@ -772,6 +774,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     connectionId: id,
     adapter: z.enum(['simulation', 'claude-code']),
     terminalWorkspace: z.object({ version: z.literal(1) }).optional(),
+    terminalFiles: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),
     // The service's own release version, and where it stands against the published releases if it follows them.
     version: versionSchema,
@@ -834,6 +837,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     state: z.enum(['opening', 'running', 'closing', 'absent', 'unavailable']),
     terminalId: id.optional(),
   }),
+  z.object({ type: z.literal('terminal.file'), requestId: id, sessionId: id,
+    mime: z.string(), encoding: z.enum(['utf8', 'base64']), data: z.string() }),
   z.object({ type: z.literal('terminal.opened'), sessionId: id, terminalId: id }),
   z.object({
     type: z.literal('terminal.data'),

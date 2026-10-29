@@ -6,6 +6,9 @@ import { RequestFailedError, type ProxyClient } from './client.ts';
 import { SquareTerminal, X, Plus, ChevronDown } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { folderName } from './paths.ts';
+import { terminalTarget } from './terminalLinks.ts';
+import { followLink } from './linkActions.ts';
+import TerminalFile from './TerminalFile.tsx';
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
@@ -71,6 +74,8 @@ export default function TerminalWindow({
   const [confirm, setConfirm] = useState<Tab[] | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
+  const [file, setFile] = useState<{ raw: string; source: Session } | null>(null);
+  const [linkError, setLinkError] = useState('');
   useEffect(() => {
     (container?.ownerDocument ?? document)
       .getElementById(`tab-${activeId}`)
@@ -504,6 +509,11 @@ export default function TerminalWindow({
                   } else handles.current.delete(tab.tabId);
                 }}
                 onStatus={(phase, detail) => patch(tab.tabId, { phase, detail })}
+                onLink={(raw) => {
+                  const target = terminalTarget(raw);
+                  if (target.kind === 'web') void followLink({ kind: 'web', url: target.value }, setLinkError);
+                  else setFile({ raw, source: tab.source });
+                }}
               />
             ) : (
               <div className="terminal-create-status">
@@ -537,6 +547,9 @@ export default function TerminalWindow({
         <span>项目设备：{active?.source.device?.name ?? '未知'}</span>
         <span>CLI 工作区以终端实际显示为准</span>
       </footer>
+      {linkError && <p role="alert">{linkError}</p>}
+      {file && <TerminalFile key={`${file.source.id}:${file.raw}`} client={client} session={file.source}
+        raw={file.raw} nodeName={nodeName} onClose={() => { setFile(null); handles.current.get(activeId)?.focus(); }} />}
       {confirm && (
         <Modal
           initialFocus="[data-terminal-cancel]"

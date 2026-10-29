@@ -5742,3 +5742,6 @@ dialog:has(.web-settings-form) {
 .shell.web-self-signed.has-terminal-workspace > .workspace {
   grid-row: 4;
 }
+.terminal-file-path { overflow-wrap: anywhere; }
+.terminal-file-image { display: block; max-width: 100%; max-height: 45vh; object-fit: contain; }
+.terminal-file-text { max-height: 45vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }

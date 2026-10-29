@@ -6,6 +6,26 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
 });
 
+test('OSC file links read only on click and preview markup as text', async ({ page }) => {
+  await page.evaluate(() => {
+    (window as any).terminalTest.update({ terminalFiles: { version: 1 } });
+    const data = '\x1b]8;;file:///tmp/preview.html\x07查看文件\x1b]8;;\x07\r\n';
+    (window as any).terminalTest.emit({ type: 'terminal.data', data, bytes: new TextEncoder().encode(data).length });
+  });
+  await expect(page.locator('.xterm-screen')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as any).terminalTest.controls.some((c: any) => c.type === 'terminal.ack'))).toBe(true);
+  expect(await page.evaluate(() => (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.file.read').length)).toBe(0);
+  const screen = await page.locator('.xterm-screen').boundingBox();
+  await page.mouse.move(screen!.x + 7, screen!.y + 7);
+  await page.mouse.click(screen!.x + 7, screen!.y + 7);
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.locator('.terminal-file-text')).toHaveText('<script>unsafe()</script>预览内容');
+  expect(await page.locator('.terminal-file-text script').count()).toBe(0);
+  expect(await page.evaluate(() => (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.file.read').length)).toBe(1);
+  await page.getByRole('dialog').locator('.dialog-actions').getByRole('button', { name: '关闭', exact: true }).click();
+  await expect(page.locator('.terminal-panel:visible textarea')).toBeFocused();
+});
+
 test('terminal filter searches device and aliases without restarting sessions and restores focus', async ({ page }) => {
   for (let i = 0; i < 11; i++) {
     await page.getByRole('button', { name: '新建终端', exact: true }).click();

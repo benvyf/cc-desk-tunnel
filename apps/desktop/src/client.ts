@@ -29,11 +29,12 @@ type DataMessage = Extract<
       | 'web.settings.state'
       | 'web.totp.setup'
       | 'web.certificate.state'
-      | 'terminal.state';
+      | 'terminal.state' | 'terminal.file';
   }
 >;
 // Commands answered with a data frame, and the frame each one gets.
 type Replies = {
+  'terminal.file.read': 'terminal.file';
   'terminal.state': 'terminal.state';
   'usage.summary': 'usage.summary';
   'usage.query': 'usage.page';
@@ -78,6 +79,7 @@ export class RequestInterruptedError extends Error {
       'session.history',
       'session.status',
       'terminal.state',
+      'terminal.file.read',
       'account.status',
       'usage.summary',
       'usage.query',
@@ -115,6 +117,7 @@ export type ClientState = {
   status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   connectionId: string | null;
   terminalWorkspace?: { version: 1 };
+  terminalFiles?: { version: 1 };
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
   browser: Extract<ServerMessage, { type: 'ready' }>['browser'] | null;
@@ -442,6 +445,7 @@ export class ProxyClient {
           status: 'connected',
           connectionId: message.connectionId,
           terminalWorkspace: message.terminalWorkspace,
+          terminalFiles: message.terminalFiles,
           browser: message.browser ?? null,
           sessions: message.sessions,
           selectedId,
@@ -511,7 +515,7 @@ export class ProxyClient {
         message.type === 'web.settings.state' ||
         message.type === 'web.totp.setup' ||
         message.type === 'web.certificate.state' ||
-        message.type === 'terminal.state'
+        message.type === 'terminal.state' || message.type === 'terminal.file'
       ) {
         if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
       } else if (message.type === 'service.update') {
