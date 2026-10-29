@@ -6,6 +6,56 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
 });
 
+test('pending local inspection stops reading after device changes and an open preview expires on reconnect', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    (window as any).previewReads = 0;
+    (window as any).desktop = {
+      terminalWindow: { focus() {}, setActive() {} },
+      inspectPath: () =>
+        new Promise((resolve) => {
+          (window as any).finishInspect = resolve;
+        }),
+      readTerminalText: async () => {
+        (window as any).previewReads++;
+        return '本机文本';
+      },
+    };
+    (window as any).terminalTest.update({ device: { id: 'device' } });
+    const data = '\x1b]8;;file:///D:/fixture/report.txt\x07查看文件\x1b]8;;\x07\r\n';
+    (window as any).terminalTest.emit({
+      type: 'terminal.data',
+      data,
+      bytes: new TextEncoder().encode(data).length,
+    });
+  });
+  await expect(page.locator('.xterm-rows')).toContainText('查看文件');
+  const screen = await page.locator('.xterm-screen').boundingBox();
+  await page.mouse.click(screen!.x + 25, screen!.y + 7);
+  await page.waitForFunction(() => !!(window as any).finishInspect);
+  await page.evaluate(() => {
+    (window as any).terminalTest.update({ device: { id: 'another-device' } });
+    (window as any).finishInspect({ kind: 'file', runs: false });
+  });
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('另一台设备');
+  expect(await page.evaluate(() => (window as any).previewReads)).toBe(0);
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: '打开', exact: true }),
+  ).toHaveCount(0);
+  await page.evaluate(() => {
+    (window as any).desktop.inspectPath = async () => ({ kind: 'file', runs: false });
+    (window as any).terminalTest.update({ device: { id: 'device' } });
+  });
+  await expect(page.locator('.terminal-file-text')).toHaveText('本机文本');
+  await page.evaluate(() => (window as any).terminalTest.update({ connectionId: 'changed-node' }));
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('连接已变化');
+  await expect(page.locator('.terminal-file-text')).toHaveCount(0);
+  await expect(
+    page.getByRole('dialog').getByRole('button', { name: '打开', exact: true }),
+  ).toHaveCount(0);
+});
+
 test('local file preview renders text safely and never reads same-named files on another device', async ({
   page,
 }) => {
@@ -18,9 +68,13 @@ test('local file preview renders text safely and never reads same-named files on
         return { kind: 'file', runs: false };
       },
       readTerminalText: async () => '<script>unsafe()</script>本机文本',
+      actOnPath: async (_action: string, path: string) => {
+        (window as any).openedPreviewPath = path;
+        return '';
+      },
     };
     (window as any).terminalTest.update({ device: { id: 'device' } });
-    const data = '\x1b]8;;file:///D:/fixture/report.html\x07查看文件\x1b]8;;\x07\r\n';
+    const data = '\x1b]8;;file:///D:/fixture/report%2520.html\x07查看文件\x1b]8;;\x07\r\n';
     (window as any).terminalTest.emit({
       type: 'terminal.data',
       data,
@@ -38,6 +92,13 @@ test('local file preview renders text safely and never reads same-named files on
   await page.mouse.click(screen!.x + 7, screen!.y + 7);
   await expect(page.locator('.terminal-file-text')).toHaveText('<script>unsafe()</script>本机文本');
   await expect(page.locator('.terminal-file-text script')).toHaveCount(0);
+  await page.getByRole('dialog').getByRole('button', { name: '打开', exact: true }).click();
+  expect(await page.evaluate(() => (window as any).openedPreviewPath)).toBe(
+    'D:/fixture/report%20.html',
+  );
+  expect(await page.evaluate(() => (window as any).localPreviewReads)).toEqual([
+    'D:/fixture/report%20.html',
+  ]);
   await page
     .getByRole('dialog')
     .locator('.dialog-actions')
@@ -326,10 +387,12 @@ test('per-tab drafts keep Chinese input, refuse unsafe multiline and paste brack
   await expect(draft).toHaveValue(text);
 });
 
-test('OSC file links read only on click and preview markup as text', async ({ page }) => {
+test('OSC file links read only on click, preserve URI filenames and reject late replies after reconnect', async ({
+  page,
+}) => {
   await page.evaluate(() => {
     (window as any).terminalTest.update({ terminalFiles: { version: 1 } });
-    const data = '\x1b]8;;file:///tmp/preview.html\x07查看文件\x1b]8;;\x07\r\n';
+    const data = '\x1b]8;;file:///tmp/preview%3A2026\x07查看文件\x1b]8;;\x07\r\n';
     (window as any).terminalTest.emit({
       type: 'terminal.data',
       data,
@@ -355,6 +418,9 @@ test('OSC file links read only on click and preview markup as text', async ({ pa
   await page.mouse.move(screen!.x + 7, screen!.y + 7);
   await page.mouse.click(screen!.x + 7, screen!.y + 7);
   await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog').locator('.terminal-file-path')).toHaveText(
+    '/tmp/preview:2026',
+  );
   await expect(page.locator('.terminal-file-text')).toHaveText('<script>unsafe()</script>预览内容');
   expect(await page.locator('.terminal-file-text script').count()).toBe(0);
   expect(
@@ -370,6 +436,50 @@ test('OSC file links read only on click and preview markup as text', async ({ pa
     .getByRole('button', { name: '关闭', exact: true })
     .click();
   await expect(page.locator('.terminal-panel:visible textarea')).toBeFocused();
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({
+      fileResult: new Promise((resolve) => {
+        (window as any).finishRead = resolve;
+      }),
+    }),
+  );
+  await page.mouse.move(screen!.x + 80, screen!.y + 80);
+  await page.mouse.move(screen!.x + 25, screen!.y + 7, { steps: 5 });
+  await expect(page.locator('.xterm-screen')).toHaveClass(/xterm-cursor-pointer/);
+  await page.mouse.click(screen!.x + 25, screen!.y + 7);
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.file.read')
+            .length,
+      ),
+    )
+    .toBe(2);
+  await page.evaluate(() => {
+    (window as any).terminalTest.update({ connectionId: 'new-node' });
+    (window as any).finishRead({ mime: 'text/plain', encoding: 'utf8', data: '过期文件内容' });
+  });
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('连接已变化');
+  await expect(page.locator('.terminal-file-text')).toHaveCount(0);
+  await page
+    .getByRole('dialog')
+    .locator('.dialog-actions')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click();
+  await page.mouse.move(screen!.x + 80, screen!.y + 80);
+  await page.mouse.move(screen!.x + 25, screen!.y + 7, { steps: 5 });
+  await expect(page.locator('.xterm-screen')).toHaveClass(/xterm-cursor-pointer/);
+  await page.mouse.click(screen!.x + 25, screen!.y + 7);
+  await expect(page.locator('.native-terminal').getByRole('alert')).toContainText('连接已变化');
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.file.read')
+          .length,
+    ),
+  ).toBe(2);
 });
 
 test('terminal filter searches device and aliases without restarting sessions and restores focus', async ({
@@ -535,6 +645,17 @@ test('disconnect retains output and old services offer only one terminal', async
   await page.evaluate(() =>
     (window as any).terminalTest.update({ status: 'connected', connectionId: 'new-owner' }),
   );
+  await page.evaluate(() => {
+    (window as any).terminalTest.emit({ type: 'terminal.opened', terminalId: 'new-pty' });
+    (window as any).terminalTest.emit({
+      type: 'terminal.data',
+      terminalId: 'new-pty',
+      data: 'foreign output',
+      bytes: 14,
+    });
+  });
+  await expect(page.getByRole('tab')).toContainText('连接中断');
+  await expect(page.locator('.xterm-rows')).not.toContainText('foreign output');
   expect(
     await page.evaluate(
       () =>

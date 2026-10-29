@@ -69,7 +69,7 @@ export default function NativeTerminal({
       allowProposedApi: false,
       linkHandler: {
         allowNonHttpProtocols: true,
-        activate: (_event, target) => callbacks.current.onLink?.(target),
+        activate: (_event, target) => followLink(target),
       },
       theme: {
         background: '#0b0b0a',
@@ -81,9 +81,7 @@ export default function NativeTerminal({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current!);
-    const links = terminal.registerLinkProvider(
-      terminalLinks(terminal, (target) => callbacks.current.onLink?.(target)),
-    );
+    const links = terminal.registerLinkProvider(terminalLinks(terminal, followLink));
     terminalRef.current = terminal;
     let id: string | null = null,
       disposed = false,
@@ -102,6 +100,14 @@ export default function NativeTerminal({
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     const connectionId = client.state?.connectionId;
     const minimumRows = client.state?.terminalWorkspace?.minRows ?? 5;
+    function followLink(target: string) {
+      if (disposed) return;
+      if (client.state?.connectionId !== connectionId || phaseNow() === 'disconnected') {
+        setError('连接已变化，请在当前连接新开终端后访问链接。');
+        return;
+      }
+      callbacks.current.onLink?.(target);
+    }
     function status(next: TerminalPhase, text: string) {
       current = next;
       if (disposed) return;
@@ -297,6 +303,7 @@ export default function NativeTerminal({
     }
     const unsubscribe = client.onTerminal((message) => {
       if (message.sessionId !== sessionId) return;
+      if (client.state?.connectionId !== connectionId || phaseNow() === 'disconnected') return;
       if (disposed && !opening) return;
       if (message.type === 'terminal.opened') accept(message.terminalId);
       else if (message.type === 'terminal.data' && !disposed) {

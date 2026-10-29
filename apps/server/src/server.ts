@@ -886,6 +886,11 @@ export function createProxyServer(options: ServerOptions) {
       await current.process?.close();
       if (terminals.get(current.sessionId) === current) terminals.delete(current.sessionId);
       if (error instanceof DomainError) throw error;
+      console.error(
+        'Native terminal startup failed',
+        { requestId: command.requestId, sessionId: session.id, terminalId: current.id },
+        error instanceof Error ? error.stack : String(error),
+      );
       throw new DomainError('terminal_failed', '原生终端启动失败，请检查 Linux PTY 组件与 CLI。');
     }
   }

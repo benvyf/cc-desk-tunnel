@@ -65,6 +65,7 @@ const client = {
     }
     if (command.type === 'terminal.file.read') {
       requests.push(command);
+      if (state.fileResult) return await state.fileResult;
       return { mime: 'text/plain', encoding: 'utf8', data: '<script>unsafe()</script>预览内容' };
     }
     return {

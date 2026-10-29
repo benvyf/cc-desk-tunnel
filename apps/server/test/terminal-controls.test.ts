@@ -67,6 +67,7 @@ const hooks = registerHooks({
 const { createProxyServer } = await import('../src/server.ts');
 
 test('reviewed terminal accepts keys, rejects foreign controls, and closes on disconnect', async (t) => {
+  const diagnostics = t.mock.method(console, 'error', () => {});
   const directory = mkdtempSync(join(tmpdir(), 'cc-terminal-control-'));
   const token = randomUUID();
   const server = createProxyServer({
@@ -134,6 +135,14 @@ test('reviewed terminal accepts keys, rejects foreign controls, and closes on di
   const open = () => owner.request({ type: 'terminal.open', sessionId, cols: 80, rows: 24 });
   state.failPolicy = true;
   assert.equal((await open()).code, 'terminal_failed');
+  const failure = diagnostics.mock.calls.find(
+    (call) => call.arguments[0] === 'Native terminal startup failed',
+  );
+  assert.ok(failure);
+  assert.equal(failure.arguments[1].sessionId, sessionId);
+  assert.equal(typeof failure.arguments[1].requestId, 'string');
+  assert.equal(typeof failure.arguments[1].terminalId, 'string');
+  assert.match(failure.arguments[2], /fixture: invalid review policy/);
   state.failPolicy = false;
   assert.equal((await open()).ok, true);
   assert.equal(state.checks, 2);
