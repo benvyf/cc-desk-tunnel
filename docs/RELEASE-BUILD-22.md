@@ -20,4 +20,16 @@
 
 构建必须来自干净提交，包内 build、协议和 sourceCommit 与签名索引一致。新安装包使用独立 Build 22 路径，将 pilot 和管理中心下载入口指向新包；保留 Build 21 的原始文件，不覆盖旧 build 的身份与 hash。服务端 Build 8 同样使用独立路径。更新 VPS 两套自动续期的精确登记，保留 stable 状态。
 
-实际发布结果、校验和和生产备份位置在发布后补录。用户本机安装和 Ubuntu 节点升级由用户随后执行，发布过程不代为重启节点或测试真实模型。
+用户本机安装和 Ubuntu 节点升级由用户随后执行，发布过程不代为重启节点或测试真实模型。
+
+## 实际发布结果（2026-10-29，香港时间）
+
+全部功能提交 `6e287825154d5e82e29430881e132b689642b7c5` 已推送 main；生产兼容命令分支随后以 `e89b931` 合并 main，合并结果与上述功能提交的文件树一致。因此已构建制品仍正确登记功能提交作为 sourceCommit，无需重新打包。
+
+- Windows Build 22：pilot revision 24，安装包 201185273 字节，SHA-256 `9af19ae5619d6b9eef9a084805d3543be77038f626dd845f28f7ec8fcd587f95`。[下载安装包](https://api.ghostapi.org/cc-updates/v1/artifacts/22/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe)。公开下载全量 hash、索引签名及管理中心下载入口的发布身份验证通过。
+- Linux Build 8：pilot revision 11，归档 1633737 字节，SHA-256 `16e005826584ff43217f2eb01084a4ab113cce2c7ce643d833375c34ba6e7d02`。公开索引签名和归档下载 hash 验证通过。
+- 管理中心实际运行兼容提交 `84af18e2e02394d6c69e49e8fb00a8b8a8809255`，已更新普通升级和基础镜像升级命令，两条命令的语法及目标 Build 8 均已验证，未执行真实节点升级。完整新中心包仅留存在 VPS，待节点升级后部署。
+- Windows / Linux 自动续期登记与已发布 release 完全一致，两套 timer 及中心服务均 active；无残留候选项，stable 未改变，旧 Build 21 安装包保留。
+- 兼容中心备份：`/var/backups/cc-update-service/build22-compatible-20261029T100347Z`；最终发布登记备份：`/var/backups/cc-update-service/build22-publish-20261029T103958Z`。首次 Windows 候选创建因磁盘空间不足未成功，确认空间恢复后继续原签名发布，完成后可用空间约 2.5 GB。
+
+验证：类型检查、仓库检查通过；关键单元测试失败项修正及 Windows 组件超时项顺序复测通过（13 项），46 项浏览器回归、1 项实际打包 EXE 隔离配置启动冒烟通过。未安装用户客户端、未调用真实模型、未升级 Ubuntu 节点。发布证据和两条完整命令在本地 `.local/release-20261029/` 与 VPS `/root/.cc-update-admin/release-build22/` 留存；管理中心可直接复制当前命令。
