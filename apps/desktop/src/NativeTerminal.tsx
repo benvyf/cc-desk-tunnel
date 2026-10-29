@@ -1,26 +1,43 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
-import { X, SquareTerminal } from './icons.tsx';
-import type { ProxyClient } from './client.ts';
-import { IconButton } from './ui.tsx';
+import { RequestFailedError, type ProxyClient } from './client.ts';
+import { X } from './icons.tsx';
+import { Button, IconButton } from './ui.tsx';
 import '@xterm/xterm/css/xterm.css';
 
+export type TerminalPhase =
+  'opening' | 'running' | 'closing' | 'ended' | 'failed' | 'unknown' | 'disconnected';
+export type TerminalHandle = { close: () => Promise<boolean>; retry: () => void };
 export default function NativeTerminal({
   client,
   sessionId,
   onClose,
+  active = true,
+  onStatus,
+  register,
 }: {
   client: ProxyClient;
   sessionId: string;
   onClose: () => void;
+  active?: boolean;
+  onStatus?: (phase: TerminalPhase, detail: string) => void;
+  register?: (handle: TerminalHandle | null) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const [status, setStatus] = useState('连接中');
+  const callbacks = useRef({ onClose, onStatus, register });
+  callbacks.current = { onClose, onStatus, register };
+  const visible = useRef(active);
+  visible.current = active;
+  const activate = useRef(() => {});
+  const handle = useRef<TerminalHandle | null>(null);
+  const [phase, setPhase] = useState<TerminalPhase>('opening');
+  const [detail, setDetail] = useState('正在启动');
   const [error, setError] = useState<string | null>(null);
-  const stop = useRef<() => void>(() => {});
   useEffect(() => {
-    // Portal terminals live in another document; its rendering clock must drive sizing.
+    if (active) activate.current();
+  }, [active]);
+  useEffect(() => {
     const view = host.current!.ownerDocument.defaultView ?? window;
     const terminal = new Terminal({
       fontFamily: "'Cascadia Mono', Consolas, monospace",
@@ -38,18 +55,33 @@ export default function NativeTerminal({
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(host.current!);
-    fit.fit();
     let id: string | null = null,
       disposed = false,
-      closeRequested = false,
-      opening = true,
-      closing = false;
-    let pendingBytes = 0;
+      opening = false,
+      closeRequested = false;
+    let current: TerminalPhase = 'opening';
+    const phaseNow = (): TerminalPhase => current;
+    let closeTask: Promise<boolean> | null = null;
+    let openTask: Promise<void> = Promise.resolve();
+    let pendingBytes = 0,
+      bufferedBytes = 0,
+      size = '',
+      resizeFrame = 0;
+    let outputLost = false;
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
+    const early: { terminalId: string; data: string; bytes: number }[] = [];
+    const connectionId = client.state?.connectionId;
+    function status(next: TerminalPhase, text: string) {
+      current = next;
+      if (disposed) return;
+      setPhase(next);
+      setDetail(text);
+      callbacks.current.onStatus?.(next, text);
+    }
     function acknowledge() {
       clearTimeout(ackTimer);
       ackTimer = undefined;
-      if (!id || !pendingBytes || disposed || closeRequested) return;
+      if (!id || !pendingBytes || disposed || closeRequested || phaseNow() !== 'running') return;
       client.terminalControl({
         type: 'terminal.ack',
         sessionId,
@@ -58,72 +90,219 @@ export default function NativeTerminal({
       });
       pendingBytes = 0;
     }
-    async function close() {
+    function write(frame: { terminalId: string; data: string; bytes: number }) {
+      terminal.write(frame.data, () => {
+        if (disposed || id !== frame.terminalId || closeRequested) return;
+        pendingBytes += frame.bytes;
+        if (pendingBytes >= 16 * 1024) acknowledge();
+        else ackTimer ??= setTimeout(acknowledge, 20);
+      });
+    }
+    function resize() {
+      if (!visible.current || !host.current?.clientWidth || !host.current.clientHeight || disposed)
+        return;
+      fit.fit();
+      const cols = Math.max(20, Math.min(400, terminal.cols)),
+        rows = Math.max(5, Math.min(160, terminal.rows));
+      const next = `${cols}:${rows}`;
+      if (!id || closeRequested || phaseNow() !== 'running' || size === next) return;
+      size = next;
+      client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
+    }
+    activate.current = () => {
+      view.cancelAnimationFrame(resizeFrame);
+      resizeFrame = view.requestAnimationFrame(() => {
+        resize();
+        if (phaseNow() === 'running' && !host.current?.ownerDocument.querySelector('dialog[open]'))
+          terminal.focus();
+      });
+    };
+    function accept(terminalId: string) {
+      id = terminalId;
+      if (disposed) return;
+      opening = false;
+      if (outputLost) {
+        status('unknown', '输出未完整接收');
+        return;
+      }
+      status(
+        closeRequested ? 'closing' : 'running',
+        closeRequested ? '正在关闭' : 'Linux · Claude Code',
+      );
+      for (const frame of early) if (frame.terminalId === id) write(frame);
+      early.length = 0;
+      bufferedBytes = 0;
+      if (visible.current) activate.current();
+    }
+    async function observe() {
+      if (!client.state?.terminalWorkspace) return null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const result = await client.fetch({
+          type: 'terminal.state',
+          sessionId,
+          ...(id ? { terminalId: id } : {}),
+        });
+        if (disposed || client.state.connectionId !== connectionId) return null;
+        if (result.state !== 'opening' && result.state !== 'closing') return result;
+        if (attempt < 2) await new Promise<void>((resolve) => setTimeout(resolve, 250));
+      }
+      return null;
+    }
+    async function start() {
+      if (
+        opening ||
+        id ||
+        disposed ||
+        closeRequested ||
+        (phaseNow() !== 'failed' && phaseNow() !== 'opening')
+      )
+        return;
+      opening = true;
+      closeRequested = false;
+      setError(null);
+      status('opening', '正在启动');
+      try {
+        resize();
+        await client.request({
+          type: 'terminal.open',
+          sessionId,
+          cols: Math.max(20, Math.min(400, terminal.cols)),
+          rows: Math.max(5, Math.min(160, terminal.rows)),
+        });
+        if (opening && !disposed) {
+          const result = await observe();
+          if (result?.state === 'running' && result.terminalId) accept(result.terminalId);
+          else if (phaseNow() !== 'ended') status('unknown', '启动结果尚未确认');
+        }
+      } catch (failure) {
+        if (disposed || phaseNow() === 'ended' || phaseNow() === 'disconnected') return;
+        if (id && phaseNow() === 'running') return;
+        if (failure instanceof RequestFailedError && !id) {
+          opening = false;
+          status('failed', '启动失败');
+          setError(failure.message);
+          return;
+        }
+        try {
+          const result = await observe();
+          if (result?.state === 'running' && result.terminalId) {
+            accept(result.terminalId);
+            return;
+          }
+          if (result?.state === 'absent') {
+            opening = false;
+            status('failed', '启动失败');
+          } else status('unknown', '启动结果尚未确认');
+        } catch {
+          status('unknown', '启动结果尚未确认');
+        }
+        setError(failure instanceof Error ? failure.message : '启动失败');
+      }
+    }
+    async function close(): Promise<boolean> {
+      if (closeTask) return closeTask;
+      if (phaseNow() === 'ended' || phaseNow() === 'failed' || phaseNow() === 'disconnected')
+        return true;
       closeRequested = true;
       clearTimeout(ackTimer);
       view.cancelAnimationFrame(resizeFrame);
-      if (!id) {
-        if (!opening && !disposed) onClose();
-        return;
-      }
-      if (closing) return;
-      closing = true;
-      const terminalId = id;
-      try {
-        await client.request({ type: 'terminal.close', sessionId, terminalId });
-        if (id === terminalId) id = null;
-        if (!disposed) onClose();
-      } catch (error) {
-        // The process can exit while the close request is in flight.
-        if (id !== terminalId) {
-          if (!disposed) onClose();
-          return;
+      closeTask = (async () => {
+        try {
+          if (opening) await openTask;
+          if (!id) {
+            const result = await observe();
+            if (result?.state === 'absent' || phaseNow() === 'ended') return true;
+            if (result?.terminalId) id = result.terminalId;
+            if (!id) throw new Error('终端状态尚未确认，请再次确认后关闭。');
+          }
+          status('closing', '正在关闭');
+          await client.request({ type: 'terminal.close', sessionId, terminalId: id });
+          id = null;
+          status('ended', '已关闭');
+          return true;
+        } catch (failure) {
+          if (phaseNow() === 'ended' || phaseNow() === 'disconnected') return true;
+          try {
+            const result = await observe();
+            if (result?.state === 'absent') {
+              id = null;
+              status('ended', '已结束 · 退出原因未知');
+              return true;
+            }
+            if (result?.state === 'running' && result.terminalId) {
+              id = result.terminalId;
+              if (outputLost) status('unknown', '输出未完整接收，请关闭终端');
+              else {
+                closeRequested = false;
+                status('running', 'Linux · Claude Code');
+                acknowledge();
+                activate.current();
+              }
+            } else status('unknown', '关闭结果尚未确认');
+          } catch {
+            status('unknown', '关闭结果尚未确认');
+          }
+          if (!disposed) setError(failure instanceof Error ? failure.message : '关闭失败');
+          return false;
+        } finally {
+          closeTask = null;
         }
-        closeRequested = false;
-        if (!disposed) {
-          acknowledge();
-          resizeFrame = view.requestAnimationFrame(resize);
-          setError(error instanceof Error ? error.message : '关闭失败');
-        }
-      } finally {
-        closing = false;
-      }
+      })();
+      return closeTask;
     }
-    stop.current = () => {
-      void close();
-    };
     const unsubscribe = client.onTerminal((message) => {
       if (message.sessionId !== sessionId) return;
-      if (message.type === 'terminal.opened') {
-        opening = false;
-        id = message.terminalId;
-        if (disposed || closeRequested) {
-          void close();
-          return;
+      if (disposed && !opening) return;
+      if (message.type === 'terminal.opened') accept(message.terminalId);
+      else if (message.type === 'terminal.data' && !disposed) {
+        if (message.terminalId === id) write(message);
+        else if (!id && opening && bufferedBytes + message.bytes <= 128 * 1024) {
+          early.push(message);
+          bufferedBytes += message.bytes;
+        } else if (!id && opening) {
+          id = message.terminalId;
+          outputLost = true;
+          status('unknown', '输出未完整接收');
+          setError('输出未完整接收，正在关闭此终端；请新开终端继续。');
+          void Promise.resolve().then(() => close());
         }
-        setStatus('Linux · Claude Code');
-        resizeFrame = view.requestAnimationFrame(resize);
-        terminal.focus();
-      } else if (message.type === 'terminal.data' && message.terminalId === id && !disposed) {
-        terminal.write(message.data, () => {
-          if (disposed || message.terminalId !== id) return;
-          pendingBytes += message.bytes;
-          if (pendingBytes >= 16 * 1024) acknowledge();
-          else ackTimer ??= setTimeout(acknowledge, 20);
-        });
-      } else if (message.type === 'terminal.closed' && message.terminalId === id) {
+      } else if (
+        message.type === 'terminal.closed' &&
+        (message.terminalId === id || (!id && opening))
+      ) {
         id = null;
+        opening = false;
+        pendingBytes = 0;
         clearTimeout(ackTimer);
         view.cancelAnimationFrame(resizeFrame);
-        pendingBytes = 0;
-        if (!disposed) {
-          setError(null);
-          setStatus(`已结束 · ${message.exitCode ?? '未知'}`);
-        }
-      }
+        if (!outputLost && message.reason !== 'control_error') setError(null);
+        const reason =
+          message.reason === 'ack_timeout'
+            ? '输出确认超时'
+            : message.reason === 'user_close'
+              ? '已关闭'
+              : message.reason === 'disconnected'
+                ? '连接中断'
+                : message.reason === 'control_error'
+                  ? '终端控制失败'
+                  : `退出码 ${message.exitCode ?? '未知'}`;
+        status('ended', `已结束 · ${reason}`);
+      } else if (message.type === 'connection.error' && message.terminalId === id)
+        setError(message.message);
     });
+    const disconnected = () => {
+      if (client.state.status !== 'connected' || client.state.connectionId !== connectionId) {
+        id = null;
+        opening = false;
+        closeRequested = true;
+        clearTimeout(ackTimer);
+        if (phaseNow() !== 'ended' && phaseNow() !== 'failed')
+          status('disconnected', '连接中断 · 终端不会续接');
+      }
+    };
+    const unwatch = client.subscribe?.(disconnected);
     const input = terminal.onData((data) => {
-      if (!id || closeRequested) return;
+      if (!visible.current || !id || closeRequested || phaseNow() !== 'running') return;
       for (let offset = 0; offset < data.length;) {
         let end = Math.min(offset + 4096, data.length);
         const last = data.charCodeAt(end - 1);
@@ -137,65 +316,91 @@ export default function NativeTerminal({
         offset = end;
       }
     });
-    let size = '',
-      resizeFrame = 0;
-    const resize = () => {
-      fit.fit();
-      const cols = Math.max(20, Math.min(400, terminal.cols)),
-        rows = Math.max(5, Math.min(160, terminal.rows));
-      const current = `${cols}:${rows}`;
-      if (!id || closeRequested || size === current) return;
-      size = current;
-      client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
-    };
-    const observer = new view.ResizeObserver(() => {
-      view.cancelAnimationFrame(resizeFrame);
-      resizeFrame = view.requestAnimationFrame(resize);
-    });
+    const observer = new view.ResizeObserver(() => activate.current());
     observer.observe(host.current!);
-    // A deferred start avoids launching a throwaway CLI during React's development effect check.
-    const openTask = Promise.resolve()
-      .then(() => {
-        if (disposed) return;
-        return client.request({
-          type: 'terminal.open',
-          sessionId,
-          cols: Math.max(20, Math.min(400, terminal.cols)),
-          rows: Math.max(5, Math.min(160, terminal.rows)),
-        });
-      })
-      .catch((error: Error) => {
-        opening = false;
-        if (!disposed) {
-          setError(error.message);
-          setStatus('未连接');
-          if (closeRequested) onClose();
+    handle.current = {
+      close,
+      retry: () => {
+        if (phaseNow() === 'failed') {
+          closeRequested = false;
+          openTask = start();
+          return;
         }
-      });
+        if (phaseNow() !== 'unknown') return;
+        void observe()
+          .then((result) => {
+            if (result?.state === 'running' && result.terminalId) {
+              if (outputLost) {
+                id = result.terminalId;
+                void close();
+              } else {
+                closeRequested = false;
+                setError(null);
+                accept(result.terminalId);
+              }
+            } else if (result?.state === 'absent') {
+              id = null;
+              opening = false;
+              status(
+                closeRequested ? 'ended' : 'failed',
+                closeRequested ? '已结束 · 退出原因未知' : '终端不存在，可重试',
+              );
+            }
+          })
+          .catch(() => setError('状态确认失败，请稍后重试。'));
+      },
+    };
+    callbacks.current.register?.(handle.current);
+    openTask = Promise.resolve().then(() => {
+      if (!disposed) return start();
+    });
     return () => {
       disposed = true;
       clearTimeout(ackTimer);
       observer.disconnect();
-      view.cancelAnimationFrame(resizeFrame);
       input.dispose();
-      void close();
-      // A late opened frame still needs an owner to send its close request.
-      void openTask.finally(unsubscribe);
+      unwatch?.();
+      view.cancelAnimationFrame(resizeFrame);
+      callbacks.current.register?.(null);
+      handle.current = null;
+      // A late open still needs its listener until its request settles, then close only this instance.
+      void openTask.finally(() => {
+        if (id)
+          void client
+            .request({ type: 'terminal.close', sessionId, terminalId: id })
+            .catch(() => {});
+        unsubscribe();
+      });
       terminal.dispose();
     };
-  }, [client, sessionId, onClose]);
+  }, [client, sessionId]);
   return (
     <section className="native-terminal" aria-label="原生 Claude Code 终端">
-      <header>
-        <span>
-          <SquareTerminal />
-          {status}
+      {!register ? (
+        <header>
+          <span role="status">{detail}</span>
+          <IconButton
+            title="关闭原生终端"
+            onClick={() => {
+              void handle.current?.close().then((done) => {
+                if (done) callbacks.current.onClose();
+              });
+            }}
+          >
+            <X />
+          </IconButton>
+        </header>
+      ) : (
+        <span className="sr-only" role="status">
+          {detail}
         </span>
-        <IconButton title="关闭原生终端" onClick={() => stop.current()}>
-          <X />
-        </IconButton>
-      </header>
+      )}
       {error && <p role="alert">{error}</p>}
+      {(phase === 'failed' || phase === 'unknown') && (
+        <Button size="sm" onClick={() => handle.current?.retry()}>
+          {phase === 'failed' ? '重试启动' : '确认终端状态'}
+        </Button>
+      )}
       <div className="terminal-host" ref={host} />
     </section>
   );

@@ -28,11 +28,13 @@ type DataMessage = Extract<
       | 'instructions.state'
       | 'web.settings.state'
       | 'web.totp.setup'
-      | 'web.certificate.state';
+      | 'web.certificate.state'
+      | 'terminal.state';
   }
 >;
 // Commands answered with a data frame, and the frame each one gets.
 type Replies = {
+  'terminal.state': 'terminal.state';
   'usage.summary': 'usage.summary';
   'usage.query': 'usage.page';
   'session.stats': 'session.stats';
@@ -52,13 +54,20 @@ type Replies = {
 };
 type TerminalMessage = Extract<
   ServerMessage,
-  { type: 'terminal.opened' | 'terminal.data' | 'terminal.closed' }
+  { type: 'terminal.opened' | 'terminal.data' | 'terminal.closed' | 'connection.error' }
 >;
 type NewCommand = Command extends infer C
   ? C extends Command
     ? Omit<C, 'requestId'>
     : never
   : never;
+export class RequestFailedError extends Error {
+  readonly code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
 // Losing a reply says nothing about whether the operation reached the service. Keep that uncertainty
 // separate from the current connection state, which can recover while the warning is still displayed.
 export class RequestInterruptedError extends Error {
@@ -68,6 +77,7 @@ export class RequestInterruptedError extends Error {
       'session.subscribe',
       'session.history',
       'session.status',
+      'terminal.state',
       'account.status',
       'usage.summary',
       'usage.query',
@@ -104,6 +114,7 @@ export type HistoryState = {
 export type ClientState = {
   status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   connectionId: string | null;
+  terminalWorkspace?: { version: 1 };
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
   browser: Extract<ServerMessage, { type: 'ready' }>['browser'] | null;
@@ -214,7 +225,7 @@ export class ProxyClient {
       type: Command['type'];
     }
   >();
-  private terminal: { id: string; ended: boolean } | null = null;
+  private terminals = new Map<string, { sessionId: string; ended: boolean }>();
   getSnapshot = () => this.state;
   subscribe = (listener: () => void) => {
     this.listeners.add(listener);
@@ -430,6 +441,7 @@ export class ProxyClient {
         this.update({
           status: 'connected',
           connectionId: message.connectionId,
+          terminalWorkspace: message.terminalWorkspace,
           browser: message.browser ?? null,
           sessions: message.sessions,
           selectedId,
@@ -449,11 +461,20 @@ export class ProxyClient {
         if (message.ok) request.resolve(message);
         else {
           this.results.delete(message.requestId);
-          request.reject(new Error(message.message ?? '请求失败。'));
+          request.reject(new RequestFailedError(message.message ?? '请求失败。', message.code));
         }
       } else if (message.type === 'connection.error') {
         // A final resize/ack can reach the server after it has announced the terminal's exit.
-        if (message.code === 'terminal_inactive' && this.terminal?.ended) return;
+        const ended = message.terminalId
+          ? this.terminals.get(message.terminalId)?.ended
+          : !this.state.terminalWorkspace &&
+            this.terminals.size === 1 &&
+            [...this.terminals.values()][0].ended;
+        if (message.code === 'terminal_inactive' && ended) return;
+        if (message.sessionId && message.terminalId) {
+          for (const listener of this.terminalListeners) listener(message);
+          return;
+        }
         this.update({ error: message.message });
         if (message.code === 'unauthorized' && credentials.browser) credentials.browser();
         if (message.code === 'version_mismatch')
@@ -489,7 +510,8 @@ export class ProxyClient {
         message.type === 'instructions.state' ||
         message.type === 'web.settings.state' ||
         message.type === 'web.totp.setup' ||
-        message.type === 'web.certificate.state'
+        message.type === 'web.certificate.state' ||
+        message.type === 'terminal.state'
       ) {
         if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
       } else if (message.type === 'service.update') {
@@ -511,9 +533,11 @@ export class ProxyClient {
         message.type === 'terminal.closed'
       ) {
         if (message.type === 'terminal.opened')
-          this.terminal = { id: message.terminalId, ended: false };
-        else if (message.type === 'terminal.closed' && this.terminal?.id === message.terminalId)
-          this.terminal.ended = true;
+          this.terminals.set(message.terminalId, { sessionId: message.sessionId, ended: false });
+        else if (message.type === 'terminal.closed') {
+          const terminal = this.terminals.get(message.terminalId);
+          if (terminal) terminal.ended = true;
+        }
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
         const events = { ...this.state.events };
@@ -641,7 +665,7 @@ export class ProxyClient {
     this.update({ status: 'disconnected', connectionId: null, error: null });
   }
   private rejectPending() {
-    this.terminal = null;
+    this.terminals.clear();
     for (const [requestId, request] of this.pending) {
       clearTimeout(request.timer);
       this.results.delete(requestId);
@@ -838,10 +862,9 @@ export class ProxyClient {
     if (!result) throw new Error('服务没有返回数据。');
     return result as Extract<ServerMessage, { type: Replies[T] }>;
   }
-  async request(command: NewCommand): Promise<Response> {
+  async request(command: NewCommand, requestId: string = crypto.randomUUID()): Promise<Response> {
     if (this.state.status !== 'connected' || this.socket?.readyState !== WebSocket.OPEN)
       throw new Error('服务未连接。');
-    const requestId = crypto.randomUUID();
     return new Promise<Response>((resolve, reject) => {
       const timer = setTimeout(
         () => {

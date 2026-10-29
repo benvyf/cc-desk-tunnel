@@ -123,7 +123,7 @@ test('native terminal can be dismissed after the remote process exits', async ({
   await page.evaluate(() =>
     window.terminalFixture.receive({ type: 'terminal.closed', exitCode: 0 }),
   );
-  await expect(page.getByText('已结束 · 0')).toBeVisible();
+  await expect(page.getByText('已结束 · 退出码 0')).toBeVisible();
   await page.getByRole('button', { name: '关闭原生终端', exact: true }).click();
   await expect.poll(() => page.evaluate(() => window.terminalFixture.closed)).toBe(1);
   expect(

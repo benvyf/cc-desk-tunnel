@@ -114,6 +114,52 @@ test('late terminal controls after exit do not show a connection error, but acti
   assert.equal(client.state.error, '原生终端属于另一连接。');
 });
 
+test('terminal errors are attributed individually while connection errors remain global', (t) => {
+  const { client, socket, sessions } = fixture(t);
+  client.update({ terminalWorkspace: { version: 1 } });
+  const a = { sessionId: sessions[0].id, terminalId: randomUUID() };
+  const b = { sessionId: sessions[1].id, terminalId: randomUUID() };
+  const errors = [];
+  client.onTerminal((message) => {
+    if (message.type === 'connection.error') errors.push(message);
+  });
+  socket.message({ type: 'terminal.opened', ...a });
+  socket.message({ type: 'terminal.opened', ...b });
+  socket.message({ type: 'terminal.closed', ...a, exitCode: 0 });
+  socket.message({ type: 'connection.error', ...a, code: 'terminal_inactive', message: 'late A' });
+  socket.message({
+    type: 'connection.error',
+    ...b,
+    code: 'terminal_inactive',
+    message: 'active B error',
+  });
+  assert.equal(errors.length, 1);
+  assert.equal(errors[0].terminalId, b.terminalId);
+  assert.equal(client.state.error, null);
+  socket.message({ type: 'connection.error', code: 'test_fault', message: 'connection failure' });
+  assert.equal(client.state.error, 'connection failure');
+});
+
+test('each terminal state observation uses a fresh request and returns its own data', async (t) => {
+  const { client, socket, sessions } = fixture(t);
+  for (const state of ['running', 'absent']) {
+    const request = client.fetch({ type: 'terminal.state', sessionId: sessions[0].id });
+    const command = socket.sent.at(-1);
+    socket.message({
+      type: 'terminal.state',
+      requestId: command.requestId,
+      sessionId: sessions[0].id,
+      state,
+    });
+    socket.message({ type: 'response', requestId: command.requestId, ok: true });
+    assert.equal((await request).state, state);
+  }
+  const ids = socket.sent
+    .filter((command) => command.type === 'terminal.state')
+    .map((command) => command.requestId);
+  assert.equal(new Set(ids).size, 2);
+});
+
 for (const type of [
   'session.status',
   'session.history',
