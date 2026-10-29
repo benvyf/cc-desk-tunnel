@@ -186,7 +186,11 @@ test('base upgrade command embeds both scripts without executing migration', (t)
   const script = readFileSync('scripts/upgrade-terminal-base.py');
   const legacy = readFileSync('scripts/install-cc-space-037.py');
   assert.equal(baseUpgradeCommand(f.release, script, legacy), undefined);
-  const command = baseUpgradeCommand({ ...f.release, build: 7, protocol: 22 }, script, legacy)!;
+  assert.equal(
+    baseUpgradeCommand({ ...f.release, build: 7, protocol: 22 }, script, legacy),
+    undefined,
+  );
+  const command = baseUpgradeCommand({ ...f.release, build: 8, protocol: 22 }, script, legacy)!;
   execFileSync(
     process.platform === 'win32' ? 'python' : 'python3',
     [

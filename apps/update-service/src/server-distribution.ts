@@ -256,7 +256,7 @@ export function bootstrapCommand(release: ServerRelease, installerHash: string) 
 }
 
 export function baseUpgradeCommand(release: ServerRelease, script: Buffer, legacy: Buffer) {
-  if (release.build !== 7 || release.protocol !== 22) return undefined;
+  if (release.build !== 8 || release.protocol !== 22) return undefined;
   const files = {
     'upgrade-terminal-base.py': script.toString('base64'),
     'install-cc-space-037.py': legacy.toString('base64'),
