@@ -1,0 +1,89 @@
+{
+  "reviewDate": "2026-10-29",
+  "capturedManifestAt": "2026-10-29T11:40:35.522460+08:00",
+  "sourceCommit": "172ce028bbccc73229ce54d031c840c0ff51dfe4",
+  "method": "Anonymous HTTPS reads and official version-history navigation; no production access or model calls. Dates record page labels, not independent legal certification. HTML/text snapshots are local and not packaged.",
+  "sources": [
+    {
+      "url": "https://code.claude.com/docs/en/legal-and-compliance",
+      "pageDateLabel": null,
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "baeb92dfd156c5556a551156a52f0959d92e4ab50ac874dac0205bff0e6224b1",
+        "txt": "aa2da0aeea73d45e859e6f631f728f9085e72734f1a260041a8f7742848c491c"
+      }
+    },
+    {
+      "url": "https://code.claude.com/docs/en/agent-sdk/overview",
+      "pageDateLabel": null,
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "fea2a11fc873a655d93649cc4ff87f5885ad046a6ffcbbcdd9de55dec75ea7bd",
+        "txt": "212f9fa4022ca876e3b589bab578cb0535fcb2bb7b4b3e416cbd9d7bbbb51374"
+      }
+    },
+    {
+      "url": "https://www.anthropic.com/legal/consumer-terms",
+      "pageDateLabel": "2025-10-08",
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "6614d5e757b7a4d1578ede5e47e757b1cf6b5c1967be49738db7155664835ace",
+        "txt": "9f9ba047c61dca725ebe2e003b5d0fb4024a2229b4e78fe77e03736ec9ca39f8"
+      }
+    },
+    {
+      "url": "https://www.anthropic.com/legal/commercial-terms",
+      "pageDateLabel": "2025-06-17",
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "370cfab4bbd195d1e28cbb1e0c0a2af9a8cc2d2598b1285d6041896b8ae4d865",
+        "txt": "5116ff266805499db2731ba31dae8c5f250bec5a2d40bd5f5943afb597d50f8b"
+      }
+    },
+    {
+      "url": "https://www.anthropic.com/legal/archive/22742366-2ef0-4c7a-a833-6523f10d3944",
+      "pageDateLabel": "2025-09-15",
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "81df4a64b62d3fa2bdc4529882bc131848b84fb989bdc2b343bb24b67e38fd62",
+        "txt": "6d3bf114f3771b2387bba10708abfdd6b10008f38fb93f4b101133b31116ac77"
+      }
+    },
+    {
+      "url": "https://www.anthropic.com/legal/aup",
+      "pageDateLabel": "2026-11-12",
+      "futureDatedAtReview": true,
+      "sha256": {
+        "html": "c168031632dc64a2ea7d5c23f26b8efd91ce9ea81f633a00375c5e324dcebe98",
+        "txt": "decc439ca89e09e76946ed182b8d70e816dc7d14de69f5ff6c1de75f7e4e1f94"
+      }
+    },
+    {
+      "url": "https://www.anthropic.com/legal/supported-regions",
+      "pageDateLabel": "2026-11-12",
+      "futureDatedAtReview": true,
+      "sha256": {
+        "html": "d7c3407909f0d177a23698484d2a64fd3bd4a65401fb12ef581435a6044509bd",
+        "txt": "45d8b410ed124bf98cabe90c53feea549865243fcbc68961fe653aee0011b09e"
+      }
+    },
+    {
+      "url": "https://support.claude.com/en/articles/8461763-where-can-i-access-claude",
+      "pageDateLabel": "2026-03-16",
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "f72d6e9ae0e2d76caa8ae2450012c8817d3671b49ffded07867a27dc979abb26",
+        "txt": "6fc9f16d472a3464715793681bd3048e9688cb900d58610bfea5e940756abd89"
+      }
+    },
+    {
+      "url": "https://code.claude.com/docs/en/common-workflows",
+      "pageDateLabel": null,
+      "futureDatedAtReview": false,
+      "sha256": {
+        "html": "175ceabad67c1e59594dcde40eb2ca8774d13ef56afc3538cd10ca7c8b6daef4",
+        "txt": "5f3f7ae95e4c22936978ed5e10329ad1e27e40d8bed3fba93b9347215ed13047"
+      }
+    }
+  ]
+}
