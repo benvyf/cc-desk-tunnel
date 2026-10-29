@@ -28,7 +28,7 @@
 
 - Windows Build 22：pilot revision 24，安装包 201185273 字节，SHA-256 `9af19ae5619d6b9eef9a084805d3543be77038f626dd845f28f7ec8fcd587f95`。[下载安装包](https://api.ghostapi.org/cc-updates/v1/artifacts/22/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe)。公开下载全量 hash、索引签名及管理中心下载入口的发布身份验证通过。
 - Linux Build 8：pilot revision 11，归档 1633737 字节，SHA-256 `16e005826584ff43217f2eb01084a4ab113cce2c7ce643d833375c34ba6e7d02`。公开索引签名和归档下载 hash 验证通过。
-- 管理中心实际运行兼容提交 `84af18e2e02394d6c69e49e8fb00a8b8a8809255`，已更新普通升级和基础镜像升级命令，两条命令的语法及目标 Build 8 均已验证，未执行真实节点升级。完整新中心包仅留存在 VPS，待节点升级后部署。
+- 管理中心首次运行兼容提交 `84af18e2e02394d6c69e49e8fb00a8b8a8809255`，已更新普通升级和基础镜像升级命令。随后发现新版管理界面留在另一分支而被 main 部署覆盖，已补回主分支，并部署兼容提交 `7a565a3728f818a2be937cf265c508754c4ca032` 恢复界面；升级命令、Build 22/8 索引及登录均保留。两条命令的语法及目标 Build 8 已验证，未执行真实节点升级。此前暂存的完整中心包含旧界面，已标记作废；待节点升级后从修复后的 main 重打完整包再部署。
 - Windows / Linux 自动续期登记与已发布 release 完全一致，两套 timer 及中心服务均 active；无残留候选项，stable 未改变，旧 Build 21 安装包保留。
 - 兼容中心备份：`/var/backups/cc-update-service/build22-compatible-20261029T100347Z`；最终发布登记备份：`/var/backups/cc-update-service/build22-publish-20261029T103958Z`。首次 Windows 候选创建因磁盘空间不足未成功，确认空间恢复后继续原签名发布，完成后可用空间约 2.5 GB。
 

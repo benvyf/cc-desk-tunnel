@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-29 修复管理中心界面被旧 main 覆盖
+
+新版界面及用户启停代码此前仅在 `codex/email-login`，未进入 main，后续 main 部署覆盖了界面；Build 22 兼容部署沿用旧基线，未恢复新版。现已将原始 `c9ad2fc` / `ee6d3fe` 相关代码补入 main（`fba44d6`），并合并兼容部署提交（`4ed3d44`）。VPS 实际运行 `7a565a3728f818a2be937cf265c508754c4ca032`，仅 7 个运行文件改变，11 个页面/静态资源线上验证通过，登录/权限/节点/Build 22 与 Build 8 索引/续期登记保持正常。备份 `/var/backups/cc-update-service/build22-compatible-20261029T104803Z`。两项浏览器流程及升级指令回归通过（9 passed，1 Linux-only skipped），类型检查通过。旧全量中心暂存包标记作废，未来从修复后的 main 重打，不能再部署含旧界面的 `6e28782` 全量中心包。详见 [管理中心布局说明](docs/MANAGEMENT-CENTER-REDESIGN.md)。
+
 ### 2026-10-29 Build 22 / Build 8 发布
 
 用户授权提交、推送全部未提交改动，打包并替换 VPS 客户端下载入口，同时完善服务端升级指令。版本仍为 0.3.7 / 协议 22，pilot。功能提交 `6e28782` 与兼容中心分支已合并并推送 main（合并提交 `e89b931`，文件树相同）。Windows Build 22 / Linux Build 8 已发布，公开下载 hash、索引签名和精确续期登记验证通过；旧 Build 21 / Build 7 制品保留，stable 不变。生产中心实际运行 `84af18e` 兼容版本，仅更新 Build 8 升级指令；完整中心包待真实节点升级后切换。用户安装和 Ubuntu 节点升级尚未执行。校验和、测试、备份及部署顺序见 [Build 22 发布记录](docs/RELEASE-BUILD-22.md)，后续不重复审查已验收部分。
