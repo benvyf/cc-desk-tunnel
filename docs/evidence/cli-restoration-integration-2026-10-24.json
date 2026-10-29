@@ -1,0 +1,28 @@
+{
+  "scope": "Isolated Docker overlay, network=none, no account mounts; entrypoint=/bin/sleep; never invoked Claude",
+  "repairScriptSha256": "7ba79ff8407b695bc3c0f4282eed224bc87589413ba5eca6392b8225f12191c2",
+  "officialSha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
+  "observedSha256": "f66a66b89fa1c229ff9edce0065277a2d0897ebd6710f6d3e8b722c6e1d9ec2e",
+  "results": [
+    {
+      "test": "full pinned official restoration on Docker overlay + backup + resumed service",
+      "passed": true
+    },
+    {
+      "test": "second invocation makes no changes",
+      "passed": true
+    },
+    {
+      "test": "active run refuses modification and unpauses",
+      "passed": true
+    },
+    {
+      "test": "failure after atomic replacement rolls back exact original and unpauses",
+      "passed": true
+    },
+    {
+      "test": "Ctrl+C during staging preserves original and unpauses",
+      "passed": true
+    }
+  ]
+}

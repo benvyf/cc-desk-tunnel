@@ -1,0 +1,23 @@
+{
+  "checkedAt": "2026-10-24T03:14:37.253797+00:00",
+  "source": "Read-only VPS monitor cache API; no node or provider requests",
+  "configuredNodeCount": 6,
+  "reportedNodeCount": 1,
+  "accountCount": 1,
+  "nodes": [
+    {
+      "nodeId": "ubuntu-cc",
+      "schema": 2,
+      "observedAt": "2026-10-24T03:13:30.053Z",
+      "receivedAt": "2026-10-24T03:13:30.967Z",
+      "identityState": "identified",
+      "emailPresent": true,
+      "subscriptionType": "Claude Pro",
+      "quotaState": "ok",
+      "quotaAvailable": true,
+      "quotaMeasuredAt": "2026-10-24T03:13:29.650Z",
+      "quotaWindowCount": 2,
+      "usagePresent": true
+    }
+  ]
+}

@@ -29,6 +29,7 @@ coverage/
 .tmp/
 .tools/
 artifacts/
+/CC Desk Tunnel/
 apps/desktop/vendor/
 test-results/
 playwright-report/

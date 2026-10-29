@@ -1,0 +1,13 @@
+{
+  "published": true,
+  "expired": false,
+  "build": 2,
+  "releaseSha256": "19f4a60538b1fea67a9f4438d13c4cf75a821bed0b9973d93af7d5c69d852f11",
+  "bootstrapSha256": "270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0",
+  "checkedOn": "2026-10-24",
+  "source": "Authenticated loopback admin API on VPS and public HTTPS bootstrap",
+  "launcherEncodingRoundtripVerified": true,
+  "localProgressIntervalSeconds": 15,
+  "originalManagementLauncherUnchanged": true,
+  "ubuntuBootstrapCompleted": false
+}

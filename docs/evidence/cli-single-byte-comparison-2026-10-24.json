@@ -1,0 +1,12 @@
+{
+  "source": "User-provided output from ubuntu-cc; cached archive validated before full byte comparison",
+  "officialArchiveSha256": "d45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95",
+  "officialBinarySha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
+  "observedBinarySha256": "f66a66b89fa1c229ff9edce0065277a2d0897ebd6710f6d3e8b722c6e1d9ec2e",
+  "differentBytes": 1,
+  "firstDifferences": [
+    {"offset": 194437468, "officialHex": "9f", "observedHex": "f5"}
+  ],
+  "cause": "Unknown",
+  "productionRestoration": "User reported successful same-version official restoration; see cli-production-restoration-2026-10-24.json"
+}

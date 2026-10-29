@@ -1,0 +1,24 @@
+{
+  "source": "User clarified pressing Ctrl+C before the first status check; subsequent read-only comparison against original.json supplied by user",
+  "backup": "/var/lib/cc-server-bootstrap/backup-20261024T025834Z-a7e5958b",
+  "sameOriginalContainer": true,
+  "sameImage": true,
+  "sameName": true,
+  "sameConfig": true,
+  "sameHostConfig": true,
+  "sameMounts": true,
+  "sameNetworkNames": true,
+  "running": true,
+  "paused": false,
+  "health": "healthy",
+  "backupFiles": {
+    "data.tar.gz": true,
+    "snapshot-id": true,
+    "replacement-intent.json": false,
+    "replacement-record.json": false,
+    "replacement-id": false,
+    "offline-build.log": true
+  },
+  "installedMarkerExists": false,
+  "managedBootstrapCompleted": false
+}
