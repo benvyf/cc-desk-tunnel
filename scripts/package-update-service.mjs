@@ -7,6 +7,8 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const runtimeFiles = [
+  'scripts/upgrade-terminal-base.py',
+  'scripts/install-cc-space-037.py',
   'apps/update-service/src/config.ts',
   'apps/update-service/src/http.ts',
   'apps/update-service/src/main.ts',

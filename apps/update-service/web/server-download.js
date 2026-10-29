@@ -72,6 +72,13 @@ export function setupServerDownload({ request, element, notice }) {
       });
       root.append(label, command, copy);
     }
+    if (status.baseUpgradeCommand)
+      appendCommand(
+        'server-base-upgrade-command',
+        '基础镜像升级（ubuntu-cc）',
+        '当前 Build 4 基础镜像上的 Build 5/6 节点升级到 Build 7，需先执行此命令。仅适用于已审查的 ubuntu-cc：先结束任务并完全退出客户端；脚本验证签名、离线检查，保存冷备份后切换，失败自动回退。成功后再连接客户端。后续兼容版本可从客户端升级。',
+        status.baseUpgradeCommand,
+      );
     appendCommand(
       'server-upgrade-command',
       '已接入服务端升级',

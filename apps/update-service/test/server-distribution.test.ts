@@ -20,6 +20,7 @@ import {
 import {
   ServerDistribution,
   bootstrapCommand,
+  baseUpgradeCommand,
   releaseFromArchive,
   renewalPayload,
   upgradeCommand,
@@ -178,6 +179,22 @@ test('bootstrap command pins installer and exact signed release and uses POSIX s
     assert.match(parsed, new RegExp(f.release.sha256));
   }
   assert.throws(() => bootstrapCommand({ ...f.release, build: NaN }, 'b'.repeat(64)));
+});
+
+test('base upgrade command embeds both scripts without executing migration', (t) => {
+  const f = fixture(t);
+  const script = readFileSync('scripts/upgrade-terminal-base.py');
+  const legacy = readFileSync('scripts/install-cc-space-037.py');
+  assert.equal(baseUpgradeCommand(f.release, script, legacy), undefined);
+  const command = baseUpgradeCommand({ ...f.release, build: 7, protocol: 22 }, script, legacy)!;
+  execFileSync(
+    process.platform === 'win32' ? 'python' : 'python3',
+    [
+      '-c',
+      "import shlex,sys,ast,base64,zlib,json; a=shlex.split(sys.stdin.read()); assert a[:3]==['sudo','python3','-c'] and len(a)==4; outer=ast.parse(a[3]); wrapper=base64.b64decode(outer.body[1].value.args[0].args[0].value); compile(wrapper,'<wrapper>','exec'); tree=ast.parse(wrapper); encoded=tree.body[1].value.args[0].args[0].args[0].value; files=json.loads(zlib.decompress(base64.b64decode(encoded))); assert set(files)=={'upgrade-terminal-base.py','install-cc-space-037.py'}; [compile(base64.b64decode(data),name,'exec') for name,data in files.items()]; assert b'--install' in wrapper",
+    ],
+    { input: command, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] },
+  );
 });
 
 test('publication derives exact descriptor and compatibility from a complete validated archive', (t) => {

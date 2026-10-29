@@ -19,6 +19,7 @@ import {
   ServerDistribution,
   SERVER_INDEX_PATH,
   bootstrapCommand,
+  baseUpgradeCommand,
   upgradeCommand,
 } from './server-distribution.ts';
 
@@ -465,6 +466,15 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
                   upgradeCommand: upgradeCommand(
                     status.payload.release,
                     assets.get(base + '/server-upgrade.cjs')!.bytes,
+                  ),
+                  baseUpgradeCommand: baseUpgradeCommand(
+                    status.payload.release,
+                    await readFile(
+                      new URL('../../../scripts/upgrade-terminal-base.py', import.meta.url),
+                    ),
+                    await readFile(
+                      new URL('../../../scripts/install-cc-space-037.py', import.meta.url),
+                    ),
                   ),
                 }
               : {}),
