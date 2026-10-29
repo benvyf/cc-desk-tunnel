@@ -8,18 +8,16 @@
 </head>
 <body>
   <div class="shell">
-    <header><div><p class="eyebrow">CC DESK TUNNEL</p><h1>CC 管理中心</h1></div><div class="header-actions"><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
-    <nav id="primary-navigation" class="main-nav" aria-label="管理分区" hidden><a id="show-accounts" href="/cc-updates/admin/accounts">账号监控</a><a id="show-updates" href="/cc-updates/admin/updates">客户端更新</a><a id="show-moderation" href="/cc-updates/admin/moderation">内容审核</a></nav>
+    <header class="app-header"><a class="brand" href="/cc-updates/admin/" aria-label="CC 管理中心首页"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 116 237.21" focusable="false"><path d="M116 29.07L36.5 68.82A19 19 0 0 0 26 85.81L26 116.83A2 2 0 0 0 28.89 118.62L52.5 106.82L52.5 135.89L40.52 141.88A28 28 0 0 1 0 116.83L0 85.81A45 45 0 0 1 24.88 45.56L116 0Z"/><path d="M63.5 101.32L75.48 95.33A28 28 0 0 1 116 120.37L116 151.4A45 45 0 0 1 91.12 191.64L0 237.21L0 208.14L79.5 168.39A19 19 0 0 0 90 151.4L90 120.37A2 2 0 0 0 87.11 118.58L63.5 130.39Z"/></svg></span><div><p class="eyebrow">CC SPACE</p><h1>管理中心</h1></div></a><div class="header-actions"><span class="console-label">你的工作空间，尽在掌握</span><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
+    <nav id="primary-navigation" class="main-nav" aria-label="管理分区" hidden><p class="nav-label">工作空间管理</p><a id="show-accounts" href="/cc-updates/admin/accounts"><span class="nav-icon" aria-hidden="true">▦</span>账号监控<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-updates" href="/cc-updates/admin/updates"><span class="nav-icon" aria-hidden="true">↓</span>客户端更新<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-moderation" href="/cc-updates/admin/moderation"><span class="nav-icon" aria-hidden="true">◇</span>内容审核<span class="nav-arrow" aria-hidden="true">›</span></a><div class="nav-footnote"><span class="status-dot" aria-hidden="true"></span>CC SPACE 控制台<p>连接设备 · 管理账号 · 持续创作</p></div></nav>
     <p id="notice" role="status" aria-live="polite"></p>
     <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>登录管理中心</h2><p class="muted">使用你设置的管理员密码登录。首次设置或忘记密码时，通过 SSH 打开临时密码设置页面。</p><form id="password-login"><label for="admin-password">管理员密码</label><input id="admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><button type="submit">登录管理</button></form><details><summary>使用旧管理令牌</summary><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit" class="quiet">使用令牌登录</button></form></details></section>
     <section id="password-setup-panel" class="card login" hidden><p class="eyebrow">管理员密码</p><h2>设置管理员密码</h2><p class="muted">请设置 8–128 个字符的密码，可以包含中文。设置链接十分钟内有效，仅能使用一次；设置后自动登录。</p><form id="password-setup"><label for="new-admin-password">新管理员密码</label><input id="new-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-admin-password">确认管理员密码</label><input id="confirm-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存密码并登录</button></form></section>
     <main id="dashboard" hidden>
       <section id="monitor-panel" aria-labelledby="monitor-heading" hidden>
-        <div class="section-heading"><div><p class="eyebrow">ACCOUNTS</p><h2 id="monitor-heading">账号监控</h2></div><button id="monitor-refresh" class="quiet">刷新账号数据</button></div>
-        <p class="muted">正常使用时被动更新，刷新只读取 VPS。换号后保留历史账号；同账号各节点额度分别显示。超过 15 分钟未采集标为过期，不代表离线或封禁。</p>
-        <div id="monitor-node-status" class="muted" aria-live="polite"></div>
+        <div class="section-heading page-heading"><div><p class="eyebrow">WORKSPACE OVERVIEW</p><h2 id="monitor-heading">账号监控</h2><p class="muted">设备、账号与额度，一目了然。</p></div><div class="heading-actions"><span id="monitor-updated" class="muted" aria-live="polite"></span><button id="monitor-refresh" class="quiet">刷新账号数据</button></div></div>
         <section id="desktop-access-panel" class="card" aria-labelledby="desktop-access-heading" hidden>
-          <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="desktop-access-heading"></h3></div><button id="desktop-access-close" class="quiet">返回账号监控</button></div>
+          <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="desktop-access-heading"></h3><p class="muted">查看账号详情，管理连接和访问权限。</p></div><button id="desktop-access-close" class="quiet">返回账号监控</button></div>
           <div class="access-tabs" role="tablist" aria-label="设备管理">
             <button id="access-claude-tab" type="button" role="tab" aria-selected="false" aria-controls="access-claude">Claude 账号</button>
             <button id="access-connection-tab" type="button" role="tab" aria-selected="true" aria-controls="access-connection">连接配置</button>
@@ -50,10 +48,16 @@
             <div class="table-scroll"><table><thead><tr><th>邮箱</th><th>状态</th><th>授权设备</th><th>最近登录</th><th>操作</th></tr></thead><tbody id="access-user-list"></tbody></table></div>
           </div>
         </section>
-        <section class="card" aria-labelledby="enrollment-heading">
-          <div class="section-heading"><h3 id="enrollment-heading">接入 Ubuntu 节点</h3><button id="enrollment-open" class="quiet">一键接入</button></div>
-          <p class="muted">生成一条命令，在 Ubuntu 控制台执行。目前仅准备了第一台 ubuntu-cc 的 v0.3.6 安装包。先结束 Claude 任务并关闭 CC 客户端；安装会短暂重启 CC 服务，自动备份，失败时尝试回滚。</p>
+        <div id="monitor-overview">
+          <div id="monitor-node-status" class="overview-stats" aria-label="设备与账号概况" aria-live="polite"></div>
+          <div class="monitor-toolbar"><div><h3>我的设备</h3><p id="monitor-count" class="muted"></p></div><div class="monitor-filters"><label class="search-field"><span class="sr-only">搜索设备或账号</span><input id="monitor-search" aria-label="搜索设备或账号" type="search" placeholder="搜索设备、邮箱、备注…" maxlength="254"></label><label><span class="sr-only">设备状态</span><select id="monitor-filter" aria-label="设备状态"><option value="all">全部设备</option><option value="recent">近期上报</option><option value="attention">需要关注</option><option value="waiting">等待接入</option></select></label></div></div>
+          <p class="monitor-caption"><span class="status-dot" aria-hidden="true"></span>每 30 秒读取已有数据。额度超过 15 分钟未采集会标为过期，不代表设备离线。</p>
+          <div id="monitor-nodes" class="device-grid"></div>
+          <details id="monitor-history" class="card history-panel"><summary><span>全部账号记录</span><span class="muted">查看历史账号与备注</span></summary><div id="monitor-history-list" class="account-list"></div></details>
+        <section class="card enrollment-card" aria-labelledby="enrollment-heading">
+          <div class="section-heading"><div><h3 id="enrollment-heading">接入更多设备</h3><p class="muted">已有 Ubuntu 接入监控，在这里生成安装命令。</p></div><button id="enrollment-open" class="quiet">一键接入</button></div>
           <div id="enrollment-options" hidden>
+            <p class="muted">先结束 Claude 任务并关闭 CC 客户端。安装会短暂重启服务，自动备份，失败时尝试回滚；可用节点以列表为准。</p>
             <label for="enrollment-node">选择接入节点</label><select id="enrollment-node"></select>
             <button id="enrollment-generate">生成接入命令</button>
             <div id="enrollment-result" hidden>
@@ -64,9 +68,7 @@
             </div>
           </div>
         </section>
-        <label for="monitor-search">搜索账号<input id="monitor-search" type="search" placeholder="邮箱、备注、节点、套餐或组织" maxlength="254"></label>
-        <p id="monitor-count" class="muted"></p>
-        <div id="monitor-nodes" class="channels"></div>
+        </div>
       </section>
       <section id="password-change-panel" class="card password-change" hidden><h2>修改管理员密码</h2><p class="muted">新密码为 8–128 个字符，可包含中文。修改后其他登录会话将失效。</p><form id="password-change"><label for="current-admin-password">当前管理员密码</label><input id="current-admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><label for="changed-admin-password">新密码</label><input id="changed-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-changed-password">确认新密码</label><input id="confirm-changed-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存新密码</button><button id="cancel-password-change" type="button" class="quiet">取消修改</button></form></section>
       <section id="updates-panel" hidden>

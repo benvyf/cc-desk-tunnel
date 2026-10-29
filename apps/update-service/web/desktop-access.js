@@ -1,18 +1,13 @@
-export function setupDesktopAccess({ request, action, notice, date }) {
+export function setupDesktopAccess({ request, action, notice, date, monitor }) {
   const $ = (id) => document.getElementById(id);
   let data, nodeId, userId;
-  const accounts = $('monitor-nodes');
-  const position = document.createComment('Account monitor original position');
-  accounts.after(position);
   const node = () => data.nodes.find((item) => item.id === nodeId);
   function tab(selected) {
     for (const name of ['claude', 'connection', 'users']) {
       $('access-' + name).hidden = name !== selected;
       $('access-' + name + '-tab').setAttribute('aria-selected', String(name === selected));
+      $('access-' + name + '-tab').tabIndex = name === selected ? 0 : -1;
     }
-    if (selected === 'claude') $('access-claude').append(accounts);
-    else position.before(accounts);
-    accounts.hidden = selected !== 'claude';
   }
   function render() {
     const current = node();
@@ -24,7 +19,7 @@ export function setupDesktopAccess({ request, action, notice, date }) {
     $('access-node-credential').value = '';
     $('access-credential-state').textContent = current.credentialSaved
       ? '凭据已加密保存，不回显。'
-      : '尚未保存传统凭据；邮箱登录不依赖此凭据。';
+      : '尚未保存服务凭据；从客户端管理远端升级前，请先补全。';
     $('access-user-list').replaceChildren();
     for (const user of data.users) {
       const row = document.createElement('tr');
@@ -44,7 +39,27 @@ export function setupDesktopAccess({ request, action, notice, date }) {
       button.className = 'quiet';
       button.textContent = '编辑 / 重置密码';
       button.onclick = () => edit(user);
-      cell.append(button);
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'quiet';
+      toggle.textContent = user.enabled ? '停用' : '启用';
+      toggle.onclick = () => {
+        void action(async () => {
+          data = await request(`/desktop-access/users/${user.id}`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              email: user.email,
+              enabled: !user.enabled,
+              nodes: user.nodes,
+            }),
+          });
+          if (userId === user.id) $('access-user-form').hidden = true;
+          render();
+          notice(user.enabled ? '用户已停用，原有登录已撤销。' : '用户已启用。');
+        });
+      };
+      cell.append(toggle, button);
       row.append(cell);
       $('access-user-list').append(row);
     }
@@ -72,12 +87,27 @@ export function setupDesktopAccess({ request, action, notice, date }) {
   $('access-users-tab').onclick = () => tab('users');
   $('access-connection-tab').onclick = () => tab('connection');
   $('access-claude-tab').onclick = () => tab('claude');
+  for (const [index, name] of ['claude', 'connection', 'users'].entries()) {
+    $('access-' + name + '-tab').addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const next =
+        event.key === 'Home'
+          ? 0
+          : event.key === 'End'
+            ? 2
+            : (index + (event.key === 'ArrowRight' ? 1 : 2)) % 3;
+      const target = ['claude', 'connection', 'users'][next];
+      tab(target);
+      $('access-' + target + '-tab').focus();
+    });
+  }
   $('desktop-access-close').onclick = () => {
-    position.before(accounts);
-    accounts.hidden = false;
+    monitor?.closeNode();
     $('desktop-access-panel').hidden = true;
     $('access-user-form').reset();
     $('access-node-credential').value = '';
+    $('monitor-nodes').querySelector(`[data-node-id="${nodeId}"] button`)?.focus();
   };
   $('access-user-add').onclick = () => edit();
   $('access-user-cancel').onclick = () => {
@@ -122,19 +152,18 @@ export function setupDesktopAccess({ request, action, notice, date }) {
     });
   };
   return {
-    async open(id) {
+    async open(id, selected = 'connection') {
       data = await request('/desktop-access');
       nodeId = id;
       if (!node()) throw new Error('设备不存在，请刷新账号监控。');
       $('access-user-form').hidden = true;
       render();
-      tab('connection');
+      monitor?.showNode(id);
+      tab(selected);
       $('desktop-access-panel').hidden = false;
       $('desktop-access-panel').scrollIntoView({ behavior: 'smooth', block: 'start' });
     },
     clear() {
-      position.before(accounts);
-      accounts.hidden = false;
       data = null;
       nodeId = undefined;
       userId = undefined;

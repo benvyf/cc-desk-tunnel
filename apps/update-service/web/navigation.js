@@ -12,6 +12,7 @@ export function setupNavigation({ changed, authenticated }) {
   };
   let current = readPage();
   function show() {
+    document.body.classList.add('authenticated');
     document.getElementById('primary-navigation').hidden = false;
     for (const [name, page] of Object.entries(pages)) {
       document.getElementById(page.panel).hidden = name !== current;
@@ -30,6 +31,7 @@ export function setupNavigation({ changed, authenticated }) {
       current = name;
       history.pushState(null, '', base + name);
       show();
+      window.scrollTo({ top: 0, behavior: 'instant' });
       changed();
     });
   }
@@ -50,6 +52,7 @@ export function setupNavigation({ changed, authenticated }) {
       show();
     },
     clear() {
+      document.body.classList.remove('authenticated');
       document.getElementById('primary-navigation').hidden = true;
       for (const page of Object.values(pages)) document.getElementById(page.panel).hidden = true;
       document.title = 'CC 管理中心';

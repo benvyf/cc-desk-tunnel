@@ -35,6 +35,7 @@ export const runtimeFiles = [
   'apps/update-service/web/moderation.js',
   'apps/update-service/web/password-login.js',
   'apps/update-service/web/desktop-access.js',
+  'apps/update-service/web/monitor.js',
   'apps/update-service/web/navigation.js',
   'apps/update-service/web/enrollment.js',
   'apps/update-service/web/monitor-install.py',
