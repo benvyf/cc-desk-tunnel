@@ -652,19 +652,29 @@ export function App({
       !connected ||
       history?.loading ||
       selected.activeRun ||
+      terminalSessionId ||
       anyTerminal ||
       refreshed.current.has(selected.id)
     )
       return;
     refreshed.current.add(selected.id);
     void refreshStatus(selected.id);
-  }, [nativeMode, selected?.id, connected, history?.loading, selected?.activeRun, anyTerminal]);
+  }, [
+    nativeMode,
+    selected?.id,
+    connected,
+    history?.loading,
+    selected?.activeRun,
+    anyTerminal,
+    terminalSessionId,
+  ]);
   useEffect(() => {
     if (nativeMode && connected) void client.request({ type: 'account.status' }).catch(() => {});
   }, [nativeMode, connected, accountOpen]);
   useEffect(() => {
     if (
       !accountOpen ||
+      terminalSessionId ||
       !nativeMode ||
       !connected ||
       state.capabilities ||
@@ -674,7 +684,14 @@ export function App({
     )
       return;
     void refreshStatus();
-  }, [accountOpen, nativeMode, connected, state.capabilities, state.account?.loggedIn]);
+  }, [
+    accountOpen,
+    nativeMode,
+    connected,
+    state.capabilities,
+    state.account?.loggedIn,
+    terminalSessionId,
+  ]);
 
   async function act(action: () => Promise<void>) {
     setError(null);
@@ -861,7 +878,7 @@ export function App({
     visit({ page, section, sessionId: client.state.selectedId });
   };
   async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id) {
-    if (!sessionId || refreshing) return;
+    if (!sessionId || refreshing || terminalSessionId) return;
     setRefreshing(true);
     try {
       await client.request({ type: 'session.status', sessionId });
@@ -1163,8 +1180,9 @@ export function App({
             {
               label: '原生终端',
               icon: <SquareTerminal />,
+              detail: refreshing ? '正在读取会话状态，完成后可打开终端' : undefined,
               // A terminal takes only its own session; others may be running.
-              disabled: !idle || !!session.activeRun,
+              disabled: !idle || refreshing || !!session.activeRun,
               run: () => {
                 show(session.id);
                 setTerminalSessionId(session.id);
@@ -1410,14 +1428,14 @@ export function App({
       void window.desktop?.terminalWindow?.focus();
       return;
     }
-    if (!selected || !connected || !nativeMode || busy || selected.activeRun) return;
+    if (!selected || !connected || !nativeMode || busy || refreshing || selected.activeRun) return;
     show(selected.id);
     setTerminalSessionId(selected.id);
   };
   const terminalAvailable =
     connected &&
     nativeMode &&
-    (!!terminalSessionId || (!!selected && !busy && !selected.activeRun));
+    (!!terminalSessionId || (!!selected && !busy && !refreshing && !selected.activeRun));
   const canCreate = connected && !busy && !refreshing && !terminalSessionId;
   const barMenus: BarMenu[] = [
     {
@@ -1776,6 +1794,7 @@ export function App({
         openTerminal={openTerminal}
         terminalAvailable={terminalAvailable}
         terminalOpen={!!terminalSessionId}
+        terminalRefreshing={refreshing}
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
         connected={connected}
         adapterName={adapterName}

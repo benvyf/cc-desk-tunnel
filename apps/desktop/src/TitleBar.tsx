@@ -19,6 +19,7 @@ export default function TitleBar({
   openTerminal,
   terminalAvailable = false,
   terminalOpen = false,
+  terminalRefreshing = false,
 }: {
   title: string;
   // Absent while there is nowhere to go.
@@ -33,6 +34,7 @@ export default function TitleBar({
   openTerminal?: () => void;
   terminalAvailable?: boolean;
   terminalOpen?: boolean;
+  terminalRefreshing?: boolean;
 }) {
   return (
     <header className="titlebar">
@@ -63,7 +65,13 @@ export default function TitleBar({
           type="button"
           disabled={!terminalAvailable}
           onClick={openTerminal}
-          title={terminalOpen ? '显示已打开的终端' : '打开当前会话的原生终端'}
+          title={
+            terminalOpen
+              ? '显示已打开的终端'
+              : terminalRefreshing
+                ? '正在读取会话状态，完成后可打开终端'
+                : '打开当前会话的原生终端'
+          }
         >
           终端
         </button>
