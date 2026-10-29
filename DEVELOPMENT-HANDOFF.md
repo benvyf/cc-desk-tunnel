@@ -1,5 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-29 根据用户现场检查适配 02 / 03 基础镜像升级
+
+用户已提供两台实际配置，基础描述符均 `fc8afc4c71fe556135fc356aca8186a104943afe021fdc27bd4f43d41a86cad6`（Build 5 / protocol 22 / source `12b2da3`），Node v24.21.0、CLI hash、SDK 0.3.286 与锁文件匹配。分别固定 02 容器 `cc-desk-tunnel-96ccb91a-proxy-1`、镜像 `cb3822893e9da5bd3c21c68810309b9238c263e2a227c5207d875b12f5484697` 和 03 容器 `cc-desk-tunnel-4b35c593-proxy-1`、镜像 `ae2d8b77a5dde6bced39f93ffcbe281def8f117c9b262b69580a0cd4faa40aca`，策略源目录为各自 `/var/lib/cc-node-rebuild-<hostname>/policy`。
+
+统一命令现支持 01/02/03 主机识别，02/03 额外核对已确认的原镜像 ID 和基础描述符；保持固定 helper 的运行约束，仅为明确核实的策略源做副本归一化验证，实际容器配置和挂载不改写。冷备份生成的独立 rollback.py 固化当前 NODE 和 ROOT，离线回滚会重新选择正确容器；未知设备、镜像变化、策略源变化或可写策略挂载拒绝。15 项 Linux 隔离测试通过（Docker 模拟，含02/03流程、真实validator、生成回滚脚本加载/路由、忙碌时解除暂停但不切换），14 项发布/命令/UI 回归通过、1 Linux-only skipped，类型检查通过。真实02/03未执行安装。
+
+生产兼容中心源码 `d7d983900ab4d5aab1a323582c80ace8e21307e3` 已部署，备份 `/var/backups/cc-update-service/build22-compatible-20261029T155043Z`；仅两份升级脚本及 server-download.js 改变。在线完整命令双脚本和 --cleanup/--install 参数已验证，原配置/登录/权限/节点/Build22与8索引/续期登记保持。用户刷新管理中心复制「清理并升级基础镜像（ubuntu-cc / 02 / 03）」，先02成功后03；结束任务并完全退出客户端，等待 UPGRADE_OK，成功后无需再次普通升级。第一台已成功，不重跑。
+
 ### 2026-10-29 第一台升级成功；管理中心增加清理后升级完整命令
 
 用户已反馈第一台 `ubuntu-cc` 输出 `UPGRADE_OK: Linux Build 8 / protocol 22`，冷备份 `/var/lib/cc-space-terminal-upgrade/backup-20261029T150004Z-294e50da`，原容器/镜像保留；无需再执行普通升级，客户端聊天/终端体验待用户测试。02 仍需适配、03 待检查，不能误用第一台脚本。
