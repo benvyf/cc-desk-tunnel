@@ -6,7 +6,7 @@ test('terminal entry waits for status reading and does not start another read on
   page,
 }) => {
   const now = new Date().toISOString();
-  const sessions: Session[] = ['当前会话', '其他会话'].map((title) => ({
+  const sessions: Session[] = ['当前会话', '读取中切换的会话', '其他会话'].map((title) => ({
     id: randomUUID(),
     title,
     autoTitle: false,
@@ -19,7 +19,7 @@ test('terminal entry waits for status reading and does not start another read on
     activeRun: null,
   }));
   const commands: { type: string; sessionId?: string; requestId: string }[] = [];
-  let finishStatus = () => {};
+  let finishStatus = (_ok = true) => {};
   await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
     const send = (value: object) => route.send(JSON.stringify(value));
     route.onMessage((raw) => {
@@ -48,7 +48,13 @@ test('terminal entry waits for status reading and does not start another read on
           events: [],
         });
       if (command.type === 'session.status') {
-        finishStatus = () => send({ type: 'response', requestId: command.requestId, ok: true });
+        finishStatus = (ok = true) =>
+          send({
+            type: 'response',
+            requestId: command.requestId,
+            ok,
+            ...(!ok && { code: 'native_status_failed', message: '测试：状态读取失败' }),
+          });
         return;
       }
       if (command.type === 'terminal.open')
@@ -76,7 +82,18 @@ test('terminal entry waits for status reading and does not start another read on
   await row.getByRole('button', { name: '会话操作', exact: true }).click();
   await expect(page.getByRole('menuitem', { name: /原生终端/ })).toBeDisabled();
   await page.keyboard.press('Escape');
+  // Switching while the first read is pending must defer, rather than lose, the next read.
+  await page.locator('.session-row').filter({ hasText: '读取中切换的会话' }).click();
+  await expect(page.locator('.session-row.selected strong')).toHaveText('读取中切换的会话');
+  expect(commands.filter((c) => c.type === 'session.status')).toHaveLength(1);
   finishStatus();
+  await expect.poll(() => commands.filter((c) => c.type === 'session.status').length).toBe(2);
+  expect(commands.filter((c) => c.type === 'session.status').at(-1)?.sessionId).toBe(
+    sessions[1].id,
+  );
+  await expect(terminal).toBeDisabled();
+  finishStatus(false);
+  await expect(page.locator('.error-banner')).toContainText('测试：状态读取失败');
   await expect(terminal).toBeEnabled();
   // Open a different, never-selected session directly from its menu: no automatic status read races it.
   const other = page.locator('.session-row').filter({ hasText: '其他会话' });
@@ -85,9 +102,9 @@ test('terminal entry waits for status reading and does not start another read on
   await page.getByRole('menuitem', { name: '原生终端', exact: true }).click();
   await expect(page.locator('.native-terminal')).toBeVisible();
   await expect.poll(() => commands.filter((c) => c.type === 'terminal.open').length).toBe(1);
-  expect(commands.filter((c) => c.type === 'session.status')).toHaveLength(1);
+  expect(commands.filter((c) => c.type === 'session.status')).toHaveLength(2);
   await page.getByRole('button', { name: '关闭原生终端', exact: true }).click();
   // Deferred status reading resumes when the terminal has closed.
-  await expect.poll(() => commands.filter((c) => c.type === 'session.status').length).toBe(2);
+  await expect.poll(() => commands.filter((c) => c.type === 'session.status').length).toBe(3);
   finishStatus();
 });

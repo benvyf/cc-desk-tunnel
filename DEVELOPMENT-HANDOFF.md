@@ -1,6 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
 
+
+### 2026-10-29 终端/状态读取定向 review 补充（源码，待打包）
+
+复查 e84ee7a 发现可复现遗漏：读取 A 期间切换 B，自动读取 effect 会先把 B 标为已读取，再因 refreshing 返回，导致 B 丢失自动读取。已将 refreshing 纳入自动读取前置条件及 effect 依赖，A 结束后继续 B；增加同步 statusReading ref 防止同一次 React 更新中的重复读取，顶栏和菜单处理函数也检查该 ref。finally 在成功/失败/请求拒绝时释放本地读取状态。
+
+浏览器回归扩展至三个合成会话，先在上一版复现 A→B 后缺少第二次读取，再验证修复后读取按序进行、第二次读取返回错误后错误可见且终端入口恢复、从未选择会话直接开终端不触发读取、关闭终端后恢复延后读取。扩展回归与 TypeScript 检查均通过；未调用真实 CLI/Claude/JEV，未再次跑与修改无关的旧逻辑测试。服务端 mutations 保护保留，本修复不承诺其他客户端或实际会话修改占用时强制打开终端。代码仍待打包及真实安装验收。
+
 ### 2026-10-29 原生终端与状态读取冲突修复（源码，待打包）
 
 基于 VPS 已发布 Windows Build 20 源码 bd5c58c 创建分支 codex/terminal-status-coordination，本地位置 D:/cc-desk-tunnel/.local/terminal-status-fix。修复 App 后台 session.status 使用服务端 mutations 锁时，终端入口仍然可点造成 session_busy：顶栏与会话菜单在 refreshing 时禁用并显示“正在读取会话状态，完成后可打开终端”；入口处理也检查 refreshing。terminalSessionId 已设置或终端打开期间跳过自动/手动状态读取，避免从其他会话直接打开终端时同时启动状态读取。关闭终端后恢复尚未执行的自动读取。

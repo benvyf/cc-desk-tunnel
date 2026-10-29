@@ -193,6 +193,7 @@ export function App({
   }, [serverUpgradeOpen]);
   const serverUpgradeChecked = useCallback(() => setServerUpgradeRequested(false), []);
   const [refreshing, setRefreshing] = useState(false);
+  const statusReading = useRef(false);
   const [findRequest, setFindRequest] = useState(0);
   // Which of this computer's settings is open on the login page.
   const [localSettings, setLocalSettings] = useState<Section | null>(null);
@@ -652,6 +653,7 @@ export function App({
       !connected ||
       history?.loading ||
       selected.activeRun ||
+      refreshing ||
       terminalSessionId ||
       anyTerminal ||
       refreshed.current.has(selected.id)
@@ -665,6 +667,7 @@ export function App({
     connected,
     history?.loading,
     selected?.activeRun,
+    refreshing,
     anyTerminal,
     terminalSessionId,
   ]);
@@ -878,7 +881,8 @@ export function App({
     visit({ page, section, sessionId: client.state.selectedId });
   };
   async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id) {
-    if (!sessionId || refreshing || terminalSessionId) return;
+    if (!sessionId || statusReading.current || terminalSessionId) return;
+    statusReading.current = true;
     setRefreshing(true);
     try {
       await client.request({ type: 'session.status', sessionId });
@@ -891,6 +895,7 @@ export function App({
             : '原生状态读取失败',
       );
     } finally {
+      statusReading.current = false;
       setRefreshing(false);
     }
   }
@@ -1184,6 +1189,7 @@ export function App({
               // A terminal takes only its own session; others may be running.
               disabled: !idle || refreshing || !!session.activeRun,
               run: () => {
+                if (statusReading.current) return;
                 show(session.id);
                 setTerminalSessionId(session.id);
               },
@@ -1428,7 +1434,15 @@ export function App({
       void window.desktop?.terminalWindow?.focus();
       return;
     }
-    if (!selected || !connected || !nativeMode || busy || refreshing || selected.activeRun) return;
+    if (
+      !selected ||
+      !connected ||
+      !nativeMode ||
+      busy ||
+      statusReading.current ||
+      selected.activeRun
+    )
+      return;
     show(selected.id);
     setTerminalSessionId(selected.id);
   };
