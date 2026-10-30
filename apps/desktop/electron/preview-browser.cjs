@@ -11,6 +11,12 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
   const origins = new Map();
   const current = new Map();
   const panes = new Map();
+  const revisions = new Map();
+  const invalidate = (key) => {
+    const revision = (revisions.get(key) ?? 0) + 1;
+    revisions.set(key, revision);
+    return revision;
+  };
   // Static files cannot act as a network proxy. Unknown worker requests have no
   // associated trusted view and are denied as well. Preview sessions are isolated from sign-in.
   partition.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
@@ -60,8 +66,13 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
     show({ key, url, bounds, pane = 'primary' }) {
       if (typeof key !== 'string' || key.length > 200 || !allowed(url))
         throw new Error('无效的本机预览地址。');
+      invalidate(key);
       let view = views.get(key);
-      for (const [id, other] of views) if (panes.get(id) === pane) other.setVisible(id === key);
+      for (const [id, other] of views)
+        if (panes.get(id) === pane) {
+          other.setVisible(id === key);
+          if (id !== key) invalidate(id);
+        }
       panes.set(key, pane);
       if (!view) {
         view = new WebContentsView({
@@ -79,6 +90,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
         owner.contentView.addChildView(view);
         view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
         const prevent = (event, target) => {
+          const revision = invalidate(key);
           const initial = urls.get(key);
           if (files.owns(initial)) {
             if (!view.getVisible()) {
@@ -90,6 +102,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
               void Promise.all([files.target(initial), files.target(target)]).then(
                 ([original, next]) => {
                   if (
+                    revisions.get(key) !== revision ||
                     views.get(key) !== view ||
                     urls.get(key) !== initial ||
                     !files.owns(initial) ||
@@ -151,6 +164,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
       const view = views.get(key);
       if (!view) return;
       if (!bounds) {
+        invalidate(key);
         view.setVisible(false);
         return;
       }
@@ -167,7 +181,11 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
       view.setVisible(width > 0 && height > 0);
     },
     hide(pane) {
-      for (const [key, view] of views) if (!pane || panes.get(key) === pane) view.setVisible(false);
+      for (const [key, view] of views)
+        if (!pane || panes.get(key) === pane) {
+          invalidate(key);
+          view.setVisible(false);
+        }
     },
     action({ key, action, url }) {
       const view = views.get(key);
@@ -187,6 +205,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
     release(key) {
       const view = views.get(key);
       if (!view) return;
+      revisions.delete(key);
       views.delete(key);
       urls.delete(key);
       origins.delete(key);
@@ -213,6 +232,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
     origins.clear();
     panes.clear();
     current.clear();
+    revisions.clear();
   });
   return controller;
 }

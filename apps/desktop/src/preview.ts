@@ -187,10 +187,10 @@ export function usePreviewWorkspace(
       const target = previewWebsite(url);
       if (target) open('web', target);
     },
-    follow(link: Link, root?: string) {
+    follow(link: Link, root?: string, restricted?: boolean) {
       if (!window.desktop?.preview || !session || !workspace) return false;
       if (link.kind === 'path') {
-        open('file', link.path, root);
+        open('file', link.path, root, restricted);
         return true;
       }
       if (link.kind === 'web') {

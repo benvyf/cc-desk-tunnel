@@ -48,3 +48,5 @@ npx playwright test apps/desktop/test/preview-sidebar.spec.ts apps/desktop/test/
 参考：[DeepSeek Harness Sidebar](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/sidebar-right.zh.md)、[Office 转 PDF](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/office-to-pdf.zh.md)。未引入 Harness 的插件/停靠运行时。
 
 详细复核与本轮修正见 [2026-10-31 审查记录](PREVIEW-WORKSPACE-REVIEW-2026-10-31.md)。
+
+模型接口边界的再次复核见 [预览边界审查](PREVIEW-BOUNDARY-REVIEW-2026-10-31.md)。

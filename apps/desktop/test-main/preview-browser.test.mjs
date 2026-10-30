@@ -199,3 +199,17 @@ test('static file navigation and redirects cannot open another loopback service'
   assert(!f.messages.some((m) => m.open?.kind === 'web'));
   assert(f.messages.some((m) => m.error.includes('手动打开')));
 });
+
+test('hiding then revealing a tab cancels its earlier asynchronous file navigation', async () => {
+  const f = fixture();
+  f.navigate();
+  f.browser.hide();
+  f.browser.show({
+    key: 'file',
+    url: 'http://file.localhost/index.html',
+    bounds: { x: 0, y: 0, width: 400, height: 500 },
+  });
+  f.finish();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert(!f.messages.some((m) => m.open));
+});

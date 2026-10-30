@@ -21,6 +21,7 @@ const {
   protocol,
 } = require('electron');
 const path = require('node:path');
+const { isTrustedRenderer } = require('./renderer-origin.cjs');
 const { name: productName, appId, legacyProfileName, configureBrand } = require('./branding.cjs');
 const {
   closeSync,
@@ -124,10 +125,17 @@ function keepAwake(on) {
   }
 }
 
-// These channels answer only the application's own page.
+// These channels answer only the primary application entry frame.
+function appRenderer(event) {
+  return isTrustedRenderer(
+    event,
+    primaryWindow?.webContents,
+    path.join(__dirname, '../dist/index.html'),
+  );
+}
 function handle(channel, listener) {
   ipcMain.handle(channel, (event, ...args) => {
-    if (!event.senderFrame.url.startsWith('file://')) throw new Error('Untrusted renderer');
+    if (!appRenderer(event)) throw new Error('Untrusted renderer');
     return listener(event, ...args);
   });
 }
@@ -870,7 +878,7 @@ function takeShared() {
 }
 // What the page needs before it draws anything.
 ipcMain.on('boot', (event) => {
-  event.returnValue = event.senderFrame.url.startsWith('file://')
+  event.returnValue = appRenderer(event)
     ? {
         connection: connectionId,
         shared: Object.fromEntries(Object.keys(seen).map((key) => [key, snapshot(key)])),
@@ -987,7 +995,7 @@ async function disconnectProxy() {
   bridge = null;
   await previous?.close();
 }
-ipcMain.handle('proxy:disconnect', disconnectProxy);
+handle('proxy:disconnect', disconnectProxy);
 
 // Windows files notifications under this identity; the installer gives the shortcut the same one.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? appId : process.execPath);

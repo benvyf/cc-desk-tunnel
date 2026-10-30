@@ -44,6 +44,9 @@ test(
     await writeFile(join(project, 'assets/style.css'), 'h1{color:rgb(12, 34, 56)}');
     await writeFile(join(project, 'assets/app.js'), 'document.body.dataset.loaded="yes"');
     await writeFile(markdown, '# 项目说明\n\n本机 Markdown 预览。');
+    await writeFile(join(project, 'restricted.md'), '# 目录内文档\n\n[范围外文档](../outside.md)');
+    const unrelated = join(root, 'unrelated.html');
+    await writeFile(unrelated, '<!doctype html><title>Unrelated test page</title>');
     let probeRequests = 0;
     const server = createServer((request, response) => {
       if (request.url?.startsWith('/probe')) probeRequests++;
@@ -113,6 +116,50 @@ test(
       const errors = [];
       page.on('pageerror', (error) => errors.push(error.message));
       const device = await page.evaluate(() => window.desktop.device());
+      const trustedListing = await page.evaluate(
+        (root) => window.desktop.preview.list({ root }),
+        project,
+      );
+      assert(trustedListing.some((entry) => entry.name === 'index.html'));
+      const extraPromise = app.waitForEvent('window');
+      await app.evaluate(
+        async ({ BrowserWindow }, input) => {
+          global.fixtureOther = new BrowserWindow({
+            show: false,
+            webPreferences: {
+              preload: input.preload,
+              nodeIntegration: false,
+              contextIsolation: true,
+              sandbox: true,
+            },
+          });
+          await global.fixtureOther.loadFile(input.file);
+        },
+        { preload: resolve('apps/desktop/electron/preload.cjs'), file: unrelated },
+      );
+      const extra = await extraPromise;
+      const denied = await extra.evaluate(
+        async (input) => {
+          const result = { boot: window.desktop.boot, read: '', list: '', disconnect: '' };
+          for (const [key, action] of [
+            ['read', () => window.desktop.preview.read({ path: input.file })],
+            ['list', () => window.desktop.preview.list({ root: input.root })],
+            ['disconnect', () => window.desktop.disconnectProxy()],
+          ])
+            try {
+              await action();
+            } catch (error) {
+              result[key] = String(error);
+            }
+          return result;
+        },
+        { root: project, file: markdown },
+      );
+      assert.equal(denied.boot, null);
+      for (const key of ['read', 'list', 'disconnect'])
+        assert.match(denied[key], /Untrusted renderer/);
+      await app.evaluate(() => global.fixtureOther.destroy());
+
       await page.evaluate(() => {
         window.fixtureStates = [];
         window.desktop.preview.onState((state) => window.fixtureStates.push(state));
@@ -272,6 +319,13 @@ test(
       // The tree and watchers use only trusted client IPC, never model requests.
       await page.getByRole('button', { name: '工作区目录', exact: true }).click();
       await expect(page.getByRole('treeitem', { name: 'report.pdf', exact: true })).toBeVisible();
+      await page.getByRole('treeitem', { name: 'restricted.md', exact: true }).click();
+      await page.getByRole('link', { name: '范围外文档', exact: true }).click();
+      await expect(page.locator('.preview-error')).toContainText('原预览工作区');
+      await page.getByRole('button', { name: '关闭预览 outside.md', exact: true }).click();
+      await page.getByRole('button', { name: '关闭预览 restricted.md', exact: true }).click();
+      await page.getByRole('tab', { name: '说明.md', exact: true }).click();
+
       await writeFile(markdown, '# 项目说明\n\n自动刷新标记');
       await expect(page.locator('.preview-markdown')).toContainText('自动刷新标记');
       await page.getByRole('treeitem', { name: 'report.pdf', exact: true }).click();

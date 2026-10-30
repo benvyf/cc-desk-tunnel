@@ -375,7 +375,8 @@ export default function PreviewContent({
               here: true,
               browser: false,
             });
-            if (link && !workspace.follow(link, tab.root)) void followLink(link, setError);
+            if (link && !workspace.follow(link, tab.root, tab.restricted))
+              void followLink(link, setError);
           }}
         >
           {!file && !error && (

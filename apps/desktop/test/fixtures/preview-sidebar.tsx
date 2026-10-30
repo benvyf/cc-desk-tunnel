@@ -65,7 +65,7 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
         return {
           path,
           kind: 'markdown',
-          text: '# 项目说明\n\n在这里查看生成的文件，继续在左侧讨论。\n\n## 使用方式\n\n- 支持中文与长文件名\n- 选择 `localhost` 本机地址\n\n```js\nconst preview = "CC SPACE";\n```',
+          text: '# 项目说明\n\n在这里查看生成的文件，继续在左侧讨论。\n\n## 使用方式\n\n- 支持中文与长文件名\n- 选择 `localhost` 本机地址\n\n```js\nconst preview = "CC SPACE";\n```\n\n[项目外文档](../outside.md)',
         };
       return {
         path,
