@@ -20,6 +20,8 @@ export default function TitleBar({
   terminalAvailable = false,
   terminalOpen = false,
   terminalRefreshing = false,
+  togglePreview,
+  previewOpen = false,
 }: {
   title: string;
   // Absent while there is nowhere to go.
@@ -35,6 +37,8 @@ export default function TitleBar({
   terminalAvailable?: boolean;
   terminalOpen?: boolean;
   terminalRefreshing?: boolean;
+  togglePreview?: () => void;
+  previewOpen?: boolean;
 }) {
   return (
     <header className="titlebar">
@@ -76,6 +80,16 @@ export default function TitleBar({
           终端
         </button>
       </nav>
+      {togglePreview && (
+        <IconButton
+          title={previewOpen ? '收起预览侧栏' : '打开预览侧栏'}
+          data-preview-toggle
+          aria-expanded={previewOpen}
+          onClick={togglePreview}
+        >
+          <PanelLeft style={{ transform: 'scaleX(-1)' }} />
+        </IconButton>
+      )}
       <h1>{title}</h1>
       <span className="connection-status" title={adapterName}>
         <span className={`connection-dot ${connected ? 'online' : ''}`} />

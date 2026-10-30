@@ -11,6 +11,8 @@ import { followLink } from './linkActions.ts';
 import TerminalFile from './TerminalFile.tsx';
 import TerminalDraft from './TerminalDraft.tsx';
 import TerminalHistory from './TerminalHistory.tsx';
+import PreviewSidebar from './PreviewSidebar.tsx';
+import { previewWebsite, usePreviewWorkspace } from './preview.ts';
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
@@ -98,6 +100,18 @@ export default function TerminalWindow({
     setTabs((current) => current.map((tab) => (tab.tabId === tabId ? { ...tab, ...values } : tab)));
   }, []);
   const active = tabs.find((tab) => tab.tabId === activeId) ?? tabs[0];
+  const preview = usePreviewWorkspace(
+    state.status === 'disconnected' ? null : 'terminal',
+    active?.source.id,
+    fallback ? 'inline-terminal' : 'terminal',
+    tabs
+      .map((tab) => tab.source.id)
+      .sort()
+      .join('\n'),
+  );
+  const previewAvailable =
+    !!window.desktop?.preview && !state.browser && active?.source.device?.id === state.device?.id;
+  const previewShown = previewAvailable && preview.expanded;
   const multi = state.terminalWorkspace?.version === 1;
   const connected = state.status === 'connected';
   const anyLive = tabs.some(live);
@@ -422,6 +436,11 @@ export default function TerminalWindow({
         >
           <Plus scale="sm" />
         </IconButton>
+        {previewAvailable && (
+          <Button size="xs" variant="ghost" data-preview-toggle onClick={preview.toggle}>
+            预览
+          </Button>
+        )}
         <IconButton
           title="全部终端"
           aria-expanded={menu}
@@ -595,9 +614,21 @@ export default function TerminalWindow({
                 onStatus={(phase, detail) => patch(tab.tabId, { phase, detail })}
                 onLink={(raw) => {
                   const target = terminalTarget(raw);
-                  if (target.kind === 'web')
-                    void followLink({ kind: 'web', url: target.value }, setLinkError);
-                  else setFile({ raw, source: tab.source });
+                  const here =
+                    !!window.desktop?.preview &&
+                    !state.browser &&
+                    tab.source.device?.id === state.device?.id;
+                  if (target.kind === 'web') {
+                    if (here && previewWebsite(target.value)) preview.openWebsite(target.value);
+                    else if (previewWebsite(target.value))
+                      setLinkError('这是远端设备的网址，不能按 Windows 本机网站预览。');
+                    else void followLink({ kind: 'web', url: target.value }, setLinkError);
+                  } else if (here && /^(?:[a-z]:[\\/])/i.test(target.value)) {
+                    const path = /^file:/i.test(raw)
+                      ? target.value
+                      : target.value.replace(/:\d+(?::\d+)?$/, '');
+                    preview.openFile(path, tab.source.projectPath);
+                  } else setFile({ raw, source: tab.source });
                 }}
               />
             ) : (
@@ -798,7 +829,33 @@ export default function TerminalWindow({
           </div>
         </div>
       )}
-      {fallback ? content : container && createPortal(content, container)}
+      {fallback ? (
+        <div className="terminal-preview-layout">
+          {content}
+          {previewShown && (
+            <PreviewSidebar
+              workspace={preview}
+              surface="inline-terminal"
+              root={active?.source.projectPath}
+            />
+          )}
+        </div>
+      ) : (
+        container &&
+        createPortal(
+          <div className="terminal-preview-layout">
+            {content}
+            {previewShown && (
+              <PreviewSidebar
+                workspace={preview}
+                surface="terminal"
+                root={active?.source.projectPath}
+              />
+            )}
+          </div>,
+          container,
+        )
+      )}
     </>
   );
 }

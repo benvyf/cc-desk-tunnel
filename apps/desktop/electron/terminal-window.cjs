@@ -87,6 +87,7 @@ function installTerminalWindow(owner, Menu) {
     if (terminal && !terminal.isDestroyed()) terminal.destroy();
   });
   return {
+    window: () => terminal,
     focus,
     appearance(theme) {
       if (

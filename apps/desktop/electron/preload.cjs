@@ -24,6 +24,21 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   dev: process.argv.includes('--cc-desk-tunnel-dev'),
   platform: process.platform,
+  preview: {
+    read: (input) => ipcRenderer.invoke('preview:file', input),
+    releaseFile: (token) => ipcRenderer.invoke('preview:file-release', token),
+    pick: (surface) => ipcRenderer.invoke('preview:pick', surface),
+    show: (input) => ipcRenderer.invoke('preview:show', input),
+    bounds: (input) => ipcRenderer.invoke('preview:bounds', input),
+    hide: (surface) => ipcRenderer.invoke('preview:hide', surface),
+    action: (input) => ipcRenderer.invoke('preview:action', input),
+    release: (input) => ipcRenderer.invoke('preview:release', input),
+    onState: (callback) => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('preview:state', listener);
+      return () => ipcRenderer.removeListener('preview:state', listener);
+    },
+  },
   // Read once, before the page draws: see `boot` in main.cjs.
   boot: ipcRenderer.sendSync('boot'),
   saveShared: (key, value) => ipcRenderer.invoke('shared:save', key, value),

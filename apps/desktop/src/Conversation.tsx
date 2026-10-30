@@ -54,6 +54,7 @@ import { splitAttachmentMessage } from './attachments.ts';
 import { LinkPlace, linkTarget } from './links.ts';
 import type { Link } from './links.ts';
 import { followLink, linkMenu } from './linkActions.ts';
+import { previewWebsite } from './preview.ts';
 import { pictureUrl, toolPictures } from './pictures.ts';
 import { Picture } from './Picture.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
@@ -663,11 +664,13 @@ export default function Conversation({
   edit,
   findRequest,
   here,
+  preview,
 }: {
   projectControl?: ReactNode;
   session: Session | undefined;
   // This window can open the files of the session's project: a desktop on the computer they are on.
   here: boolean;
+  preview?: (link: Link) => boolean;
   events: SessionEvent[];
   history: HistoryState | undefined;
   connected: boolean;
@@ -1028,7 +1031,22 @@ export default function Conversation({
                   x,
                   y,
                   heading: menu.heading,
-                  items: [...menu.items, { ...items[0], separated: true }, ...items.slice(1)],
+                  items: [
+                    ...(preview &&
+                    (link.kind === 'path' || (link.kind === 'web' && previewWebsite(link.url)))
+                      ? [
+                          {
+                            label: '在侧栏预览',
+                            run: () => {
+                              preview(link);
+                            },
+                          },
+                        ]
+                      : []),
+                    ...menu.items,
+                    { ...items[0], separated: true },
+                    ...items.slice(1),
+                  ],
                 }),
               () => setContextMenu({ x, y, items }),
             );
@@ -1040,7 +1058,8 @@ export default function Conversation({
             event.preventDefault();
             const link = anchor.dataset.link ? linkTarget(anchor.dataset.link, place) : null;
             clearTimeout(resting.current);
-            if (link) void followLink(link, (note) => showLink(anchor, link, note));
+            if (link && !preview?.(link))
+              void followLink(link, (note) => showLink(anchor, link, note));
           }}
           onPointerOver={(event) => {
             const anchor = (event.target as HTMLElement).closest<HTMLElement>('a[data-link]');

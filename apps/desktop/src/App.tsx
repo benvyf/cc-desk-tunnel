@@ -91,6 +91,8 @@ import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
 import { RunSummary } from './RunStatus.tsx';
 import { FollowUps } from './followUps.ts';
 import FollowUpQueue from './FollowUpQueue.tsx';
+import PreviewSidebar from './PreviewSidebar.tsx';
+import { usePreviewWorkspace } from './preview.ts';
 
 import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
 
@@ -305,6 +307,17 @@ export function App({
   const sessions = state.sessions.filter((session) => onThis(session));
   const elsewhere = state.sessions.filter((session) => !onThis(session));
   const away = !!selected && !onThis(selected);
+  const preview = usePreviewWorkspace(
+    state.status === 'disconnected' ? null : (activeWorkspace ?? form.url),
+    selected ? `${selected.device?.id ?? ''}:${selected.id}` : undefined,
+    'main',
+    state.sessions
+      .map((session) => `${session.device?.id ?? ''}:${session.id}`)
+      .sort()
+      .join('\n'),
+  );
+  const previewAvailable = !!window.desktop?.preview && !!selected && onThis(selected);
+  const previewShown = previewAvailable && preview.expanded && place.page === 'chat';
   // Another computer's session is worked on from here while that computer is connected and its commands
   // reach it: what is sent here runs there, as if sent there.
   const reachable = (session: Session) =>
@@ -1822,8 +1835,13 @@ export function App({
   };
   return (
     <div
-      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''}`}
-      style={{ '--sidebar-width': `${prefs.sidebarWidth}px` } as CSSProperties}
+      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''} ${previewShown ? 'has-preview' : ''}`}
+      style={
+        {
+          '--sidebar-width': `${prefs.sidebarWidth}px`,
+          '--preview-width': `${preview.width}px`,
+        } as CSSProperties
+      }
     >
       {selfSigned && <CertificateWarning />}
       <TitleBar
@@ -1846,6 +1864,8 @@ export function App({
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
         connected={connected}
         adapterName={adapterName}
+        togglePreview={previewAvailable && place.page === 'chat' ? preview.toggle : undefined}
+        previewOpen={previewShown}
       />
       {terminalSessionId && (
         <div className="terminal-workspace-slot">
@@ -2020,6 +2040,9 @@ export function App({
               findRequest={findRequest}
               session={selected}
               here={!!selected && onThis(selected)}
+              preview={
+                previewAvailable ? (link) => preview.follow(link, selected?.projectPath) : undefined
+              }
               events={events}
               history={history}
               connected={connected}
@@ -2245,6 +2268,7 @@ export function App({
           />
         )}
       </Presence>
+      {previewShown && <PreviewSidebar workspace={preview} root={selected?.projectPath} />}
       <Presence kind="dialog">
         {repointProject && (
           <AddProjectDialog

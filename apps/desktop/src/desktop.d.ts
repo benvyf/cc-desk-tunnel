@@ -16,6 +16,36 @@ declare global {
       // Run from the source tree, not installed: the login page then also offers the simulation service.
       dev: boolean;
       platform: 'win32' | 'darwin' | 'linux';
+      preview: {
+        read: (input: {
+          path: string;
+          root?: string;
+          restricted?: boolean;
+        }) => Promise<import('./preview.ts').PreviewFile>;
+        releaseFile: (token: string) => Promise<void>;
+        pick: (surface?: import('./preview.ts').PreviewSurface) => Promise<string | null>;
+        show: (
+          input: import('./preview.ts').PreviewView & {
+            url: string;
+            bounds: import('./preview.ts').PreviewBounds;
+          },
+        ) => Promise<void>;
+        bounds: (input: {
+          surface: import('./preview.ts').PreviewSurface;
+          bounds: import('./preview.ts').PreviewBounds | null;
+        }) => Promise<void>;
+        hide: (surface: import('./preview.ts').PreviewSurface) => Promise<void>;
+        action: (
+          input: import('./preview.ts').PreviewView & {
+            action: 'go' | 'back' | 'forward' | 'reload';
+            url?: string;
+          },
+        ) => Promise<void>;
+        release: (input: import('./preview.ts').PreviewView) => Promise<void>;
+        onState: (
+          callback: (state: import('./preview.ts').PreviewBrowserState) => void,
+        ) => () => void;
+      };
       // Which of this computer's connections the window is ('' the first), and what they all share.
       boot: { connection: string; shared: import('./shared.ts').Shared };
       saveShared: (key: 'prefs' | 'projects', value: unknown) => Promise<void>;

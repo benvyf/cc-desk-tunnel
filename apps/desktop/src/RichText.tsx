@@ -21,7 +21,7 @@ function drawing(children: ReactNode) {
   return /<svg[\s>]/.test(source) && source.includes('</svg>') ? source : null;
 }
 
-function CodeBlock({ children }: { children?: ReactNode }) {
+export function CodeBlock({ children }: { children?: ReactNode }) {
   const block = useRef<HTMLPreElement>(null);
   const language = isValidElement<{ className?: string }>(children)
     ? (/\blanguage-([^\s]+)/.exec(children.props.className ?? '')?.[1] ?? 'text')

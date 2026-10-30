@@ -4,6 +4,7 @@ const terminalControllers = new WeakMap();
 const {
   app,
   BrowserWindow,
+  WebContentsView,
   Menu,
   Notification,
   Tray,
@@ -130,6 +131,65 @@ function handle(channel, listener) {
     return listener(event, ...args);
   });
 }
+
+const previewFiles = require('./preview-files.cjs').createPreviewFiles();
+const previewBrowsers = new WeakMap();
+function previewBrowser(event, surface = 'main', create = true) {
+  if (!['main', 'terminal', 'inline-terminal'].includes(surface))
+    throw new Error('无效的预览区域。');
+  const parent = BrowserWindow.fromWebContents(event.sender);
+  const owner = surface === 'terminal' ? terminalControllers.get(event.sender)?.window() : parent;
+  if (!owner || owner.isDestroyed()) {
+    if (!create) return;
+    throw new Error('预览窗口已关闭。');
+  }
+  let surfaces = previewBrowsers.get(owner);
+  if (!surfaces && create) {
+    surfaces = new Map();
+    previewBrowsers.set(owner, surfaces);
+  }
+  let browser = surfaces?.get(surface);
+  if (!browser && create) {
+    browser = require('./preview-browser.cjs').createPreviewBrowser({
+      owner,
+      recipient: event.sender,
+      surface,
+      WebContentsView,
+      session,
+      files: previewFiles,
+    });
+    surfaces.set(surface, browser);
+  }
+  return browser;
+}
+handle('preview:file', (_event, input) => previewFiles.read(input));
+handle('preview:file-release', (_event, token) => previewFiles.release(token));
+handle('preview:pick', async (event, surface = 'main') => {
+  const owner =
+    surface === 'terminal'
+      ? terminalControllers.get(event.sender)?.window()
+      : BrowserWindow.fromWebContents(event.sender);
+  if (!owner || owner.isDestroyed()) return null;
+  const result = await dialog.showOpenDialog(owner, {
+    title: '选择要预览的文件',
+    properties: ['openFile'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
+handle('preview:show', (event, input) => previewBrowser(event, input.surface).show(input));
+handle('preview:bounds', (event, input) =>
+  previewBrowser(event, input.surface, false)?.bounds(input.bounds),
+);
+handle('preview:hide', (event, surface) => previewBrowser(event, surface, false)?.hide());
+handle('preview:action', (event, input) =>
+  previewBrowser(event, input.surface, false)?.action(input),
+);
+handle('preview:release', (event, input) =>
+  previewBrowser(event, input.surface, false)?.release(input.key),
+);
+app.on('will-quit', () => {
+  void previewFiles.close();
+});
 
 handle('terminal-window:focus', (event) => terminalControllers.get(event.sender)?.focus() ?? false);
 handle(
@@ -989,6 +1049,10 @@ app.whenReady().then(() => {
   // Electron does not provide an editing menu by default. Native roles keep text selection, undo and paste
   // in the focused input, without exposing clipboard reads to the renderer.
   installEditMenu(window, Menu);
+  window.webContents.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+    if (mainFrame && !inPlace) previewFiles.reset();
+  });
+  window.webContents.on('render-process-gone', () => previewFiles.reset());
   window.webContents.on('will-navigate', (event) => event.preventDefault());
   window.loadFile(path.join(__dirname, '../dist/index.html'));
 
