@@ -162,7 +162,7 @@ export default function UsagePanel({
   const totals = page?.totals;
   const pages = Math.max(Math.ceil((totals?.requests ?? 0) / pageSize), 1);
   return (
-    <section className="account-page" aria-label="调用日志">
+    <section className="account-page usage-page" aria-label="调用日志">
       <header className="account-heading">
         <IconButton title="返回账号" onClick={back}>
           <ArrowLeft />

@@ -1827,6 +1827,7 @@ dialog:has(.release-notes) {
   justify-content: flex-end;
   gap: 8px;
 }
+.setting-row > select,
 .settings-list select,
 .session-defaults select,
 .settings-list input {
@@ -4439,6 +4440,9 @@ details[open] > summary > .fold-chevron {
 }
 .quota-period:hover {
   color: var(--accent);
+}
+.usage-page > .account-heading {
+  padding-inline: max(28px, calc((100% - 1120px) / 2));
 }
 .account-body.usage-body {
   padding: 24px max(28px, calc((100% - 1120px) / 2));
