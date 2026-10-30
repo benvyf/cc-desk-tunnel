@@ -1,5 +1,15 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-30 Windows Build 24 与跨电脑登录确认已发布
+
+Windows 0.3.7 / Build 24 / protocol 22 已替换 VPS pilot 下载；制品源码为干净提交 `4d55cd20b9f13d3d21d9799766f5a4c28884ab11`，201199466 字节，SHA256 `465b43e8570c8f16a813e6d9af1492c68781ae5a7f0a9c1d5d0c892254a50726`。包含跨电脑登录确认、消息发送下拉框样式统一、调用日志标题对齐、上游 Windows SSH 临时目录权限修复，并保留 Build 23 界面功能。实际打包 EXE 隔离启动通过，包内身份和 26 个模块逐字节核对通过。
+
+管理中心从当前生产基线 `b1340a1` 制作兼容源码 `baa6fa5ffca0f8b5a06e3103f04bca62737f4402`，只改变运行文件 `apps/update-service/src/desktop-access.ts`；保留管理页面、基础镜像升级命令和其他线上修复。14 项鉴权/HTTP/WebSocket 配套测试通过，配置、已有账号/权限/会话及发布索引保持；旧运行目录 `/opt/cc-update-service.previous-build24-login`，数据库备份 `/var/backups/cc-update-service/build24-login-20261030T065438Z`。两份精确源码 bundle 保存于 VPS `/root/.cc-update-admin/release-build24/`。Ubuntu Build 8 / protocol 22 不变，未操作节点或调用 Claude。
+
+pilot revision 28，发布时有效至 `2026-11-02T06:56:14.763Z`，自动续期登记为 Build 24 的精确源码和公开安装包，强制续签及 systemd 检查通过；stable 和 Linux 索引保持。公网完整下载/hash 校验通过，本机另行验签并核对 HEAD、首/中/尾三个 Range。随后删除旧 Build 23 公开安装包和 Build 24 临时上传副本，共 402397211 字节（约 383.76 MiB）；VPS 仅保留一个最新公开 Windows 安装包，旧 Build 23 下载返回 404。清理后可用空间 7998820352 字节（约 7.45 GiB）。未删除历史构建身份、审计、配置或源码记录。
+
+本机安装包：`artifacts/windows/CC-Desk-Tunnel-Setup-0.3.7-x64.exe`；带 Build 名称副本：`.local/release-20261030-build24/CC-SPACE-Setup-0.3.7-Build24.exe`。用户本机安装和两台真实电脑的人工切换验收仍待正常使用反馈；Windows SSH 回归测试使用管理员权限，不能宣称已覆盖所有普通用户环境。详细脱敏证据见 [Build 24 发布记录](docs/evidence/windows-build24-production-2026-10-30.json)。
+
 ### 2026-10-30 基础镜像升级自动断开客户端（已部署）
 
 用户确认 02 已 UPGRADE_OK，备份 `/var/lib/cc-space-terminal-upgrade/backup-20261029T155758Z-02db46ca`；03 在 frozen_idle 的 TCP 检查处停止，尚未完成升级。按用户要求，管理中心完整命令新增 `--disconnect-clients`：清理构建缓存、校验/预检后，暂停原容器检查 Claude 进程及只读会话 activeRun；无任务才隔离网络、停止原服务并关闭客户端连接，随后冷备份/升级。网络隔离阻止切换期间重连；连接本身不再阻止此显式模式。运行或等待中的任务、缺失会话库仍拒绝；默认非强制路径及离线回滚保留原约束。切换失败沿用恢复原容器/网络/重启策略流程。
