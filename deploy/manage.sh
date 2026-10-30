@@ -25,7 +25,7 @@ Usage:
   manage.sh renew
 
 Requires Docker Engine + Compose v2+, Bash, Python 3, OpenSSL, curl, tar.
-Reviewed production setup/init and moderation-config require sudo/root.
+Reviewed production setup/init, moderation-config and restore require sudo/root.
 Use sudo if your user cannot access Docker. Config defaults to .local/docker.env;
 set PROXY_DEPLOY_CONFIG to manage a different isolated installation.
 Set PROXY_COMPOSE_FILE when managing an image-only standalone compose.yml.
@@ -47,6 +47,15 @@ review_config() {
 review_ready() {
   [[ -n "${MANAGED_CONFIG_DIR:-}" ]] || fail "Import an existing node JSON with sudo manage.sh moderation-config FILE before starting or upgrading."
   review_config check >/dev/null
+}
+
+restore_ownership() {
+  if [[ "$(id -u)" = 0 ]]; then
+    # tar --no-same-owner restored administrator files as root. Keep them protected
+    # while returning only application data to the container user; do not follow links.
+    chown 1000:1000 -- "$1"
+    find "$1" -mindepth 1 -maxdepth 1 ! -name .managed -exec chown -hR 1000:1000 -- {} +
+  fi
 }
 load() {
   [[ -f "$CONFIG" ]] || fail "Run init first."
@@ -336,6 +345,7 @@ case "$command" in
     echo "Backup saved; contains private credentials and conversation data."
     ;;
   restore)
+    [[ "$(id -u)" = 0 ]] || fail "Use sudo to restore root-managed review configuration; no data changed."
     [[ $# = 1 && "$1" = /* && -f "$1" ]] || fail "Specify an absolute backup path."
     running && fail "Stop the service first."
     [[ -z "$(find "$DATA_DIR/state" "$DATA_DIR/home" "$DATA_DIR/workspace" -mindepth 1 -print -quit)" ]] \
@@ -343,7 +353,7 @@ case "$command" in
     tar -tzf "$1" | grep -Fx './.cc-desk-tunnel-data' >/dev/null || fail "Not a managed backup."
     if tar -tzf "$1" | grep -E '(^/|(^|/)\.\.(/|$))' >/dev/null; then fail "Unsafe archive paths."; fi
     tar -xzf "$1" -C "$DATA_DIR" --no-same-owner
-    [[ "$(id -u)" != 0 ]] || chown -R 1000:1000 "$DATA_DIR"
+    restore_ownership "$DATA_DIR"
     node_config="$DATA_DIR/.managed/claude-code/moderation-node.json"
     if ! tar -tzf "$1" | grep -Fx './.managed/claude-code/moderation-node.json' >/dev/null; then
       [[ ! -f "$DATA_DIR/config/moderation-node.json" ]] || node_config="$DATA_DIR/config/moderation-node.json"

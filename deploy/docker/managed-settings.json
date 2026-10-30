@@ -11,42 +11,6 @@
           }
         ]
       }
-    ],
-    "PostToolBatch": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/runtime/node/bin/node /app/apps/server/src/native-moderation-hook.ts",
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
-      }
-    ],
-    "UserPromptExpansion": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/runtime/node/bin/node /app/apps/server/src/native-moderation-hook.ts",
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
-      }
-    ],
-    "PreCompact": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "/opt/runtime/node/bin/node /app/apps/server/src/native-moderation-hook.ts",
-            "timeout": 10,
-            "onFailure": "block"
-          }
-        ]
-      }
     ]
   }
 }

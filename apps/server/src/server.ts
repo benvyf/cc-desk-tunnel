@@ -207,7 +207,7 @@ export function createProxyServer(options: ServerOptions) {
     sessionId: string,
     text: string,
   ) {
-    if (!options.moderation) return;
+    if (!options.moderation || command.type !== 'message.send') return;
     if (closing || peer.left || peer.socket.readyState !== WebSocket.OPEN)
       throw new DomainError('connection_closed', '连接已关闭，本次未发送。');
     const run = runs.get(sessionId);
@@ -1017,17 +1017,8 @@ export function createProxyServer(options: ServerOptions) {
         throw new DomainError('request_conflict', '请求 ID 已被其他内容使用。');
       return;
     }
-    if (options.moderation) {
-      // Continue/compact reuse old input. Review all recorded user turns without truncating them.
-      const history =
-        command.type === 'message.send'
-          ? ''
-          : store
-              .get(session.id)
-              .events.filter((event) => event.payload.type === 'message.user')
-              .map((event) => (event.payload.type === 'message.user' ? event.payload.text : ''))
-              .join('\n\n');
-      await review(peer, command, session.id, history ? `${history}\n\n${text}` : text);
+    if (options.moderation && command.type === 'message.send') {
+      await review(peer, command, session.id, text);
       session = store.get(session.id).session;
       if (mutations.has(session.id) || terminals.has(session.id))
         throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
@@ -1133,14 +1124,6 @@ export function createProxyServer(options: ServerOptions) {
     if (options.claude) {
       const decide = run.approvals.get(command.approvalId);
       if (!decide) throw new DomainError('approval_inactive', '审批已失效。');
-      if (command.allowed && command.answers && Object.keys(command.answers).length) {
-        await review(peer, command, command.sessionId, JSON.stringify(command.answers));
-        if (
-          run.approvals.get(command.approvalId) !== decide ||
-          run.answered.has(command.approvalId)
-        )
-          throw new DomainError('approval_inactive', '审批已失效。');
-      }
       run.approvals.delete(command.approvalId);
       run.answered.add(command.approvalId);
       decide(command.allowed, command.answers);
@@ -1151,11 +1134,6 @@ export function createProxyServer(options: ServerOptions) {
     if (!run.decide || run.approvalId !== command.approvalId)
       throw new DomainError('approval_inactive', '审批已失效。');
     const decide = run.decide;
-    if (command.allowed && command.answers && Object.keys(command.answers).length) {
-      await review(peer, command, command.sessionId, JSON.stringify(command.answers));
-      if (run.decide !== decide || run.answered.has(command.approvalId))
-        throw new DomainError('approval_inactive', '审批已失效。');
-    }
     run.decide = undefined;
     run.answered.add(command.approvalId);
     decide(command.allowed, command.answers);
@@ -1416,8 +1394,6 @@ export function createProxyServer(options: ServerOptions) {
       case 'instructions.update': {
         if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有全局说明。');
         try {
-          if (command.type === 'instructions.update' && command.text.trim())
-            await review(peer, command, 'global-instructions', command.text);
           const state =
             command.type === 'instructions.get'
               ? readInstructions()
@@ -1813,16 +1789,8 @@ export function createProxyServer(options: ServerOptions) {
         });
       return;
     }
-    // Serialize model inputs across connections; keep cancellation responsive during network review.
-    const queued =
-      options.moderation &&
-      [
-        'message.send',
-        'session.compact',
-        'run.continue',
-        'approval.reply',
-        'instructions.update',
-      ].includes(command.type);
+    // Serialize reviewed messages across connections; keep cancellation and answers responsive.
+    const queued = options.moderation && command.type === 'message.send';
     const queueId = 'sessionId' in command ? command.sessionId : 'global-instructions';
     if (queued) reviewDeadlines.set(command, Date.now() + 8000);
     const task = queued

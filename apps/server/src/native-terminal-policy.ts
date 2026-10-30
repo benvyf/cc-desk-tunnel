@@ -4,12 +4,7 @@ import { isDeepStrictEqual } from 'node:util';
 
 export const nativeHookCommand =
   '/opt/runtime/node/bin/node /app/apps/server/src/native-moderation-hook.ts';
-export const nativeHookEvents = [
-  'UserPromptSubmit',
-  'PostToolBatch',
-  'UserPromptExpansion',
-  'PreCompact',
-];
+export const nativeHookEvents = ['UserPromptSubmit'];
 
 export function nativeTerminalPolicy() {
   return {
@@ -33,6 +28,41 @@ export function nativeTerminalPolicy() {
   };
 }
 
+export function assertNativeReviewPolicy(policy: unknown) {
+  const value = policy as {
+    disableAllHooks?: boolean;
+    hooks?: Record<string, { hooks?: { command?: string }[] }[]>;
+  } | null;
+  const groups = value?.hooks?.UserPromptSubmit;
+  if (
+    value?.disableAllHooks === true ||
+    !Array.isArray(groups) ||
+    !groups.some((group) =>
+      isDeepStrictEqual(group, nativeTerminalPolicy().hooks.UserPromptSubmit[0]),
+    )
+  )
+    throw new Error('Required native review policy is not installed');
+  // Reject stale CC registrations so large tool results never enter this hook.
+  // Other administrator hooks remain independent of CC message moderation.
+  for (const [event, old] of Object.entries(value?.hooks ?? {})) {
+    if (event === 'UserPromptSubmit') continue;
+    if (
+      Array.isArray(old) &&
+      old.some(
+        (group) =>
+          Array.isArray(group?.hooks) &&
+          group.hooks.some(
+            (hook) =>
+              typeof hook?.command === 'string' &&
+              (hook.command === nativeHookCommand ||
+                hook.command.startsWith(nativeHookCommand + ' ')),
+          ),
+      )
+    )
+      throw new Error('Legacy CC review hooks must be removed before starting');
+  }
+}
+
 // File and policy checks shared by startup and terminal opening; this function never runs Claude.
 export function assertNativeTerminalPolicy(executable: string) {
   const binary = executable === 'claude' ? '/opt/runtime/cli/bin/claude' : executable;
@@ -48,19 +78,7 @@ export function assertNativeTerminalPolicy(executable: string) {
     if (!owner.isFile() || owner.uid !== 0 || owner.mode & 0o022)
       throw new Error('Native review files must be administrator owned');
   }
-  const policy = JSON.parse(readFileSync(file, 'utf8'));
-  const expected = nativeTerminalPolicy();
-  if (
-    policy.disableAllHooks === true ||
-    !nativeHookEvents.every(
-      (event) =>
-        Array.isArray(policy.hooks?.[event]) &&
-        policy.hooks[event].some((group: unknown) =>
-          isDeepStrictEqual(group, expected.hooks[event][0]),
-        ),
-    )
-  )
-    throw new Error('Required native review policy is not installed');
+  assertNativeReviewPolicy(JSON.parse(readFileSync(file, 'utf8')));
   return binary;
 }
 

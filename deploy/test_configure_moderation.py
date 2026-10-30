@@ -77,6 +77,58 @@ class ConfigurationTest(unittest.TestCase):
         self.assertFalse(result['changed'])
         self.assertEqual(list((self.data/'.managed/backups').iterdir()),backups)
 
+    def test_policy_migration_keeps_independent_hooks_settings_and_a_backup(self):
+        self.configure()
+        target = self.data/'.managed/claude-code/managed-settings.json'
+        original = copy.deepcopy(m.EXPECTED_POLICY)
+        own = copy.deepcopy(original['hooks']['UserPromptSubmit'][0]['hooks'][0])
+        independent = {'type':'command','command':'/administrator/independent-hook'}
+        original['env'] = {'EXAMPLE_SETTING':'preserved'}
+        original['hooks']['UserPromptSubmit'][0]['hooks'].append(independent)
+        for event in ('PostToolBatch','UserPromptExpansion','PreCompact','Stop'):
+            original['hooks'][event] = [{'matcher':'fixture','hooks':[own,independent]}]
+        before = json.dumps(original).encode()
+        target.write_bytes(before)
+        result = self.configure()
+        migrated = json.loads(target.read_bytes())
+        self.assertEqual(migrated['env'],original['env'])
+        self.assertIn(m.EXPECTED_POLICY['hooks']['UserPromptSubmit'][0],
+                      migrated['hooks']['UserPromptSubmit'])
+        for event in ('UserPromptSubmit','PostToolBatch','UserPromptExpansion','PreCompact','Stop'):
+            self.assertTrue(any(independent in group['hooks'] for group in migrated['hooks'][event]))
+        for event in ('PostToolBatch','UserPromptExpansion','PreCompact','Stop'):
+            self.assertEqual(migrated['hooks'][event],[{'matcher':'fixture','hooks':[independent]}])
+        self.assertEqual((Path(result['backupDirectory'])/'0-managed-settings.json').read_bytes(),before)
+        m.check(self.data,self.config)
+        self.assertFalse(self.configure()['changed'])
+
+    def test_policy_migration_reads_the_configured_mount_and_leaves_it_intact(self):
+        external = self.root/'original-policy'
+        external.mkdir()
+        policy = copy.deepcopy(m.EXPECTED_POLICY)
+        policy['hooks']['PreCompact'] = [{'hooks':[{'type':'command','command':'/administrator/independent-hook'}]}]
+        before = json.dumps(policy).encode()
+        (external/'managed-settings.json').write_bytes(before)
+        self.config.write_bytes(self.before_config + ("MANAGED_CONFIG_DIR='"+str(external)+"'\n").encode())
+        self.configure()
+        migrated = json.loads((self.data/'.managed/claude-code/managed-settings.json').read_bytes())
+        self.assertEqual(migrated['hooks']['PreCompact'],policy['hooks']['PreCompact'])
+        self.assertEqual((external/'managed-settings.json').read_bytes(),before)
+
+    def test_migration_does_not_reenable_globally_disabled_independent_hooks(self):
+        self.configure()
+        target = self.data/'.managed/claude-code/managed-settings.json'
+        policy = copy.deepcopy(m.EXPECTED_POLICY)
+        policy['disableAllHooks'] = True
+        policy['hooks']['Stop'] = [{'hooks':[{'type':'command','command':'/administrator/independent-hook'}]}]
+        before = json.dumps(policy).encode()
+        target.write_bytes(before)
+        service = self.service.read_bytes()
+        with self.assertRaisesRegex(RuntimeError,'disables all hooks'):
+            self.configure()
+        self.assertEqual(target.read_bytes(),before)
+        self.assertEqual(self.service.read_bytes(),service)
+
     def test_invalid_nodes_fail_before_creating_managed_state(self):
         for node in [{}, {**self.node_data,'token':'short'},
                      {**self.node_data,'endpoint':'http://127.0.0.1/cc-updates/v1/moderation/check'},
@@ -112,6 +164,11 @@ class ConfigurationTest(unittest.TestCase):
     def test_reconfiguration_failure_keeps_previous_issued_credential(self):
         self.configure()
         old = (self.data/'.managed/claude-code/moderation-node.json').read_bytes()
+        policy_path = self.data/'.managed/claude-code/managed-settings.json'
+        original_policy = copy.deepcopy(m.EXPECTED_POLICY)
+        original_policy['hooks']['PreCompact'] = [{'hooks':[{'type':'command','command':'/administrator/independent-hook'}]}]
+        old_policy = json.dumps(original_policy).encode()
+        policy_path.write_bytes(old_policy)
         self.node.write_text(json.dumps({**self.node_data,'token':'y'*43}))
         real_atomic = m.atomic
         failed = False
@@ -125,11 +182,12 @@ class ConfigurationTest(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 self.configure()
         self.assertEqual((self.data/'.managed/claude-code/moderation-node.json').read_bytes(),old)
+        self.assertEqual(policy_path.read_bytes(),old_policy)
 
     def test_policy_with_disabled_or_missing_hook_is_rejected_before_mutation(self):
         policy = self.root/'bad-policy.json'
         changed = copy.deepcopy(m.EXPECTED_POLICY)
-        changed['hooks']['PostToolBatch'][0]['hooks'][0]['onFailure'] = 'ignore'
+        changed['hooks']['UserPromptSubmit'][0]['hooks'][0]['onFailure'] = 'ignore'
         policy.write_text(json.dumps(changed))
         with self.assertRaisesRegex(RuntimeError,'policy'):
             m.configure(self.data,self.config,self.node,policy)
@@ -142,6 +200,46 @@ class ConfigurationTest(unittest.TestCase):
         m.configure(self.data,self.config,saved)
         self.assertEqual(saved.read_bytes(),self.node.read_bytes())
         m.check(self.data,self.config)
+
+    @unittest.skipUnless(sys.platform == 'linux', 'requires Linux ownership and Bash')
+    def test_restore_ownership_keeps_admin_policy_protected_before_reimport(self):
+        self.configure()
+        managed = self.data/'.managed/claude-code'
+        previous_policy = copy.deepcopy(m.EXPECTED_POLICY)
+        previous_policy['hooks']['PostToolBatch'] = copy.deepcopy(previous_policy['hooks']['UserPromptSubmit'])
+        independent = {'hooks':[{'type':'command','command':'/administrator/independent-hook'}]}
+        previous_policy['hooks']['PreCompact'] = [independent]
+        (managed/'managed-settings.json').write_text(json.dumps(previous_policy))
+        workspace = self.data/'workspace'
+        workspace.mkdir()
+        user_file = workspace/'keep.txt'
+        user_file.write_text('preserve user data')
+        outside = self.root/'outside.txt'
+        outside.write_text('do not change ownership')
+        (workspace/'outside-link').symlink_to(outside)
+        script = Path(__file__).with_name('manage.sh').read_text()
+        start = script.index('restore_ownership() {')
+        function = script[start:script.index('\n}',start)+2]
+        result = subprocess.run(['bash','-eu','-c',function+'\nrestore_ownership "$1"',
+                                 'restore-test',str(self.data)],capture_output=True,text=True,timeout=10)
+        self.assertEqual(result.returncode,0,result.stderr)
+        m.configure(self.data,self.config,managed/'moderation-node.json')
+        m.check(self.data,self.config)
+        self.assertEqual(user_file.stat().st_uid,1000)
+        self.assertEqual(outside.stat().st_uid,0)
+        self.assertEqual((managed/'managed-settings.json').stat().st_uid,0)
+        self.assertEqual(json.loads((managed/'managed-settings.json').read_bytes())['hooks']['PreCompact'],[independent])
+
+    @unittest.skipUnless(sys.platform == 'linux', 'requires Linux uid isolation and Bash')
+    def test_nonroot_restore_stops_before_extracting_data(self):
+        script = Path(__file__).with_name('manage.sh').read_text()
+        branch = script.split('\n  restore)\n',1)[1].split('    running &&',1)[0]
+        code = 'fail() { echo "$*" >&2; exit 1; }\n'+branch+'\nprintf RESTORE_WOULD_CONTINUE'
+        result = subprocess.run(['bash','-eu','-c',code,'restore-test','/unused-backup'],
+                                preexec_fn=lambda: os.setuid(1000),capture_output=True,text=True,timeout=10)
+        self.assertNotEqual(result.returncode,0)
+        self.assertIn('Use sudo',result.stderr)
+        self.assertNotIn('RESTORE_WOULD_CONTINUE',result.stdout)
 
     def test_removed_review_setting_is_rejected_by_read_only_check(self):
         self.configure()

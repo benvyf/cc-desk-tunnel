@@ -203,7 +203,7 @@ export async function runClaude(
           ],
         },
         maxTurns: options.maxTurns,
-        env: { ...process.env, ...options.environment },
+        env: { ...process.env, ...options.environment, CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' },
         stderr: (text) => {
           stderr = (stderr + text).slice(-8192);
         },
@@ -492,7 +492,11 @@ export async function readNativeStatus(
         abortController: controller,
         settings: options.settingsPath,
         settingSources: ['user', 'project', 'local'],
-        env: { ...globalThis.process.env, ...options.environment },
+        env: {
+          ...globalThis.process.env,
+          ...options.environment,
+          CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+        },
       },
     });
     // Keep draining while control requests are in flight; no model prompt is submitted.

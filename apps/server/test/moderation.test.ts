@@ -130,7 +130,7 @@ test('review denies errors and malformed responses, enforces HTTPS, and removes 
   }
 });
 
-test('blocked inputs create no user message/run; allow executes once, continue includes old input, terminals denied', async (t) => {
+test('only newly sent messages are reviewed; continue does not resubmit history', async (t) => {
   const reviews: Record<string, string>[] = [];
   const f = await fixture(t, async (_url, init) => {
     const input = JSON.parse(String(init?.body));
@@ -155,7 +155,7 @@ test('blocked inputs create no user message/run; allow executes once, continue i
       m.event.payload.status === 'completed',
   );
   assert.equal((await f.client.request({ type: 'run.continue', sessionId: f.sessionId })).ok, true);
-  assert.ok(reviews.at(-1)!.text!.includes('normal offline fixture'));
+  assert.equal(reviews.length, 2, 'Continue must not review prior messages or its generated text');
   assert.equal(
     (await f.client.request({ type: 'terminal.open', sessionId: f.sessionId, cols: 80, rows: 24 }))
       .code,
@@ -201,10 +201,13 @@ test('review waits before persistence, blocks mutations and serializes other con
   assert.equal(calls, 2);
 });
 
-test('question answers are reviewed before resolving and rejected answers may be corrected', async (t) => {
-  const f = await fixture(t, async (_url, init) =>
-    decision(!JSON.parse(String(init?.body)).text.includes('BLOCK')),
-  );
+test('question replies are outside new-message moderation', async (t) => {
+  const reviews: string[] = [];
+  const f = await fixture(t, async (_url, init) => {
+    const text = JSON.parse(String(init?.body)).text;
+    reviews.push(text);
+    return decision(!text.includes('BLOCK'));
+  });
   assert.equal(
     (
       await f.client.request({
@@ -229,14 +232,8 @@ test('question answers are reviewed before resolving and rejected answers may be
     approvalId: approval.event.payload.approvalId,
     allowed: true,
   };
-  assert.equal(
-    (await f.client.request({ ...reply, answers: { question: 'BLOCK' } })).code,
-    'operation_failed',
-  );
-  assert.equal(
-    (await f.client.request({ ...reply, answers: { question: 'normal offline answer' } })).ok,
-    true,
-  );
+  assert.equal((await f.client.request({ ...reply, answers: { question: 'BLOCK' } })).ok, true);
+  assert.deepEqual(reviews, ['offline question']);
 });
 
 test('disconnect during review cannot start a run when the review later allows it', async (t) => {

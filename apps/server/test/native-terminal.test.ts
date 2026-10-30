@@ -127,11 +127,16 @@ test('terminal provider environment stays inside the child process and does not 
     settingsPath,
     JSON.stringify({ env: { TEST_PROVIDER: 'private-value', INVALID: 5 }, unrelated: 'ignored' }),
   );
-  const inherited = { LANG: 'C.UTF-8', TEST_PROVIDER: 'old-value' };
+  const inherited = {
+    LANG: 'C.UTF-8',
+    TEST_PROVIDER: 'old-value',
+    CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+  };
   const env = terminalEnvironment({ executable: 'claude', settingsPath }, inherited);
   assert.equal(env.TEST_PROVIDER, 'private-value');
   assert.equal(env.LANG, 'C.UTF-8');
   assert.equal(env.TERM, 'xterm-256color');
+  assert.equal(env.CLAUDE_CODE_ENTRYPOINT, 'cli');
   assert.equal(env.INVALID, undefined);
   assert.equal(inherited.TEST_PROVIDER, 'old-value');
 });

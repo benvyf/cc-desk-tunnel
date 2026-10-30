@@ -129,7 +129,7 @@ test('exact input shares approval across entry points; new input, policy and ses
   assert.equal(calls, 9, 'Errors cannot be cached as approvals');
 });
 
-test('desktop input and native hooks share exact content, while extra history and feedback require review', async () => {
+test('desktop and terminal messages reuse exact approvals without adding history or excluded input', async () => {
   const reviews = new NodeReviews();
   let calls = 0;
   const store = {
@@ -147,97 +147,35 @@ test('desktop input and native hooks share exact content, while extra history an
   const first = await reviews.check('node', value, store);
   const hook = {
     session_id: 'session',
-    transcript_path: '/unused',
+    transcript_path: '/unread-history',
     hook_event_name: 'UserPromptSubmit',
     prompt: value.text,
+    custom_instructions: 'OUTSIDE_SCOPE',
   };
+  const current = nativeReviewText(hook, { CLAUDE_CODE_ENTRYPOINT: 'cli' })!;
+  assert.equal(current.text, value.text);
   assert.deepEqual(
     await reviews.check(
       'node',
-      { ...value, ...nativeReviewText(hook, ''), requestId: 'native', deviceId: 'native-terminal' },
+      { ...value, ...current, requestId: 'native', deviceId: 'native-terminal' },
       store,
     ),
     first,
   );
   assert.equal(calls, 1);
-  const history = JSON.stringify({ type: 'user', message: { content: 'Earlier context' } });
+  assert.equal(nativeReviewText(hook, { CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' }), undefined);
+  for (const event of ['PostToolBatch', 'PreCompact', 'UserPromptExpansion'])
+    assert.equal(
+      nativeReviewText({ ...hook, hook_event_name: event }, { CLAUDE_CODE_ENTRYPOINT: 'cli' }),
+      undefined,
+    );
   await reviews.check(
     'node',
-    {
-      ...value,
-      ...nativeReviewText(hook, history),
-      requestId: 'with-history',
-      deviceId: 'native-terminal',
-    },
+    { ...value, requestId: 'next', text: 'A different new message' },
     store,
   );
-  assert.equal(calls, 2, 'A single-message approval cannot authorize a larger history');
-  const row = (type: string, content: unknown) => JSON.stringify({ type, message: { content } });
-  const answers = [
-    history,
-    row('assistant', [
-      { type: 'tool_use', id: 'a', name: 'AskUserQuestion' },
-      { type: 'tool_use', id: 'b', name: 'AskUserQuestion' },
-    ]),
-    row('user', [
-      { type: 'tool_result', tool_use_id: 'a', content: 'Answer A' },
-      { type: 'tool_result', tool_use_id: 'b', content: 'Answer B' },
-    ]),
-  ].join('\n');
-  const batch = {
-    ...hook,
-    hook_event_name: 'PostToolBatch',
-    tool_calls: [
-      { tool_use_id: 'a', tool_name: 'AskUserQuestion', tool_response: 'Answer A' },
-      { tool_use_id: 'b', tool_name: 'AskUserQuestion', tool_response: 'Answer B' },
-    ],
-  };
-  const checked = await reviews.check(
-    'node',
-    {
-      ...value,
-      ...nativeReviewText(batch, answers),
-      requestId: 'answers',
-      deviceId: 'native-terminal',
-    },
-    store,
-  );
-  const after =
-    answers +
-    '\n' +
-    row('user', [{ type: 'tool_result', tool_use_id: 'c', content: 'ordinary output' }]);
-  const ordinary = {
-    ...batch,
-    tool_calls: [{ tool_use_id: 'c', tool_name: 'Read', tool_response: 'ordinary output' }],
-  };
-  assert.deepEqual(
-    await reviews.check(
-      'node',
-      {
-        ...value,
-        ...nativeReviewText(ordinary, after),
-        requestId: 'after-answers',
-        deviceId: 'native-terminal',
-      },
-      store,
-    ),
-    checked,
-  );
-  assert.equal(calls, 3, 'Persisted answers and the following tool batch pay for one review');
-  const amended = after + '\n' + row('user', 'New permission amendment');
-  await reviews.check(
-    'node',
-    {
-      ...value,
-      ...nativeReviewText(ordinary, amended),
-      requestId: 'amended',
-      deviceId: 'native-terminal',
-    },
-    store,
-  );
-  assert.equal(calls, 4, 'New user permission text must still be reviewed');
+  assert.equal(calls, 2);
 });
-
 test('full content cache retains policy-refreshed approvals and evicts the oldest entry', async (t) => {
   t.mock.timers.enable({ apis: ['Date'], now: Date.now() });
   const reviews = new NodeReviews();

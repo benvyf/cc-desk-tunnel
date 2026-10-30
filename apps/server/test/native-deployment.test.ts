@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { enforceManagedDeployment } from '../src/native-deployment.ts';
-import { nativeTerminalPolicy } from '../src/native-terminal-policy.ts';
+import {
+  assertNativeReviewPolicy,
+  nativeHookCommand,
+  nativeTerminalPolicy,
+} from '../src/native-terminal-policy.ts';
 
 const node = {
   endpoint: 'https://127.0.0.1/cc-updates/v1/moderation/check',
@@ -92,6 +96,24 @@ test('packaged installation policy exactly matches the native terminal policy', 
     readFileSync(new URL('../../../deploy/docker/managed-settings.json', import.meta.url), 'utf8'),
   );
   assert.deepEqual(packaged, nativeTerminalPolicy());
+  assert.deepEqual(Object.keys(packaged.hooks), ['UserPromptSubmit']);
+  assert.doesNotThrow(() => assertNativeReviewPolicy(packaged));
+});
+
+test('stale CC registrations require migration while unrelated administrator hooks are preserved', () => {
+  for (const event of ['PostToolBatch', 'UserPromptExpansion', 'PreCompact', 'Stop']) {
+    const policy = {
+      hooks: {
+        ...nativeTerminalPolicy().hooks,
+        [event]: [{ hooks: [{ type: 'command', command: nativeHookCommand }] }],
+      },
+    };
+    assert.throws(() => assertNativeReviewPolicy(policy), /Legacy CC review hooks/);
+    policy.hooks[event][0].hooks[0].command += ' /administrator/node.json';
+    assert.throws(() => assertNativeReviewPolicy(policy), /Legacy CC review hooks/);
+    policy.hooks[event][0].hooks[0].command = '/administrator/independent-hook';
+    assert.doesNotThrow(() => assertNativeReviewPolicy(policy));
+  }
 });
 
 test('malformed credential diagnostics never echo credential text', () => {

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Import an already issued node credential; never enroll nodes or call a model."""
 import argparse
+import copy
 import json
 import os
 from pathlib import Path
@@ -13,7 +14,7 @@ from urllib.parse import urlsplit
 TARGET = '/etc/claude-code'
 NODE_PATH = TARGET + '/moderation-node.json'
 POLICY = Path(__file__).parent / 'docker/managed-settings.json'
-EVENTS = ('UserPromptSubmit', 'PostToolBatch', 'UserPromptExpansion', 'PreCompact')
+EVENTS = ('UserPromptSubmit',)
 EXPECTED_POLICY = {'hooks': {event: [{'hooks': [{'type': 'command',
     'command': '/opt/runtime/node/bin/node /app/apps/server/src/native-moderation-hook.ts',
     'timeout': 10, 'onFailure': 'block'}]}] for event in EVENTS}}
@@ -124,6 +125,51 @@ def metadata(path):
     return stat.S_IMODE(info.st_mode), (info.st_uid, info.st_gid)
 
 
+def cc_hook(hook):
+    command = hook.get('command') if isinstance(hook, dict) else None
+    expected = EXPECTED_POLICY['hooks']['UserPromptSubmit'][0]['hooks'][0]['command']
+    return isinstance(command, str) and (command == expected or command.startswith(expected + ' '))
+
+
+def validate_policy(policy):
+    need(isinstance(policy, dict) and policy.get('disableAllHooks') is not True and
+         isinstance(policy.get('hooks'), dict), 'Required managed policy is invalid')
+    for groups in policy['hooks'].values():
+        need(isinstance(groups, list) and all(isinstance(group, dict) and
+             isinstance(group.get('hooks'), list) for group in groups), 'Invalid managed hook groups')
+    need(EXPECTED_POLICY['hooks']['UserPromptSubmit'][0] in policy['hooks'].get('UserPromptSubmit', []),
+         'Required managed message hook is missing')
+    for event, groups in policy['hooks'].items():
+        if event != 'UserPromptSubmit':
+            need(not any(cc_hook(hook) for group in groups for hook in group['hooks']),
+                 'Legacy CC review hooks must be removed')
+
+
+def message_policy(existing):
+    need(isinstance(existing, dict) and isinstance(existing.get('hooks', {}), dict),
+         'Invalid existing managed policy')
+    need(existing.get('disableAllHooks') is not True,
+         'Existing policy disables all hooks; resolve it before migration')
+    merged = copy.deepcopy(existing)
+    hooks = merged.setdefault('hooks', {})
+    for event, groups in list(hooks.items()):
+        need(isinstance(groups, list), 'Invalid managed hook groups')
+        retained = []
+        for group in groups:
+            need(isinstance(group, dict) and isinstance(group.get('hooks'), list),
+                 'Invalid managed hook group')
+            group['hooks'] = [hook for hook in group['hooks'] if not cc_hook(hook)]
+            if group['hooks']:
+                retained.append(group)
+        if retained:
+            hooks[event] = retained
+        else:
+            del hooks[event]
+    hooks.setdefault('UserPromptSubmit', []).append(copy.deepcopy(EXPECTED_POLICY['hooks']['UserPromptSubmit'][0]))
+    validate_policy(merged)
+    return merged
+
+
 def configure(data, config, source, policy=POLICY):
     # Validate all caller-provided input before writing any credential or live setting.
     credential = node_bytes(source)
@@ -132,10 +178,21 @@ def configure(data, config, source, policy=POLICY):
     private, managed = paths(data, config)
     service = data / 'config/service.env'
     original_service, original_config = service.read_bytes(), config.read_bytes()
+    configured = value(original_config, 'MANAGED_CONFIG_DIR')
+    previous_policy = (Path(configured) if configured else managed) / 'managed-settings.json'
+    need(previous_policy.is_absolute(), 'Use an absolute managed policy directory')
+    if previous_policy.exists():
+        regular(previous_policy)
+        protected(previous_policy)
+        existing_policy = json.loads(previous_policy.read_bytes())
+    else:
+        need(previous_policy == managed / 'managed-settings.json', 'Configured managed policy is missing')
+        existing_policy = {}
+    next_policy = (json.dumps(message_policy(existing_policy), indent=2) + '\n').encode()
     next_service = setting(setting(original_service, 'PROXY_MODERATION_CONFIG', NODE_PATH),
                            'PROXY_NATIVE_TERMINAL_REVIEW', '1')
     next_config = setting(original_config, 'MANAGED_CONFIG_DIR', str(managed))
-    targets = [(managed / 'managed-settings.json', policy.read_bytes(), 0o644, (0, 0)),
+    targets = [(managed / 'managed-settings.json', next_policy, 0o644, (0, 0)),
                (managed / 'moderation-node.json', credential, 0o644, (0, 0)),
                (service, next_service, None, None), (config, next_config, None, None)]
     directory(private, 0o700)
@@ -189,8 +246,7 @@ def check(data, config):
             need(not part.is_symlink(), 'Managed paths must not contain symlinks')
         protected(path)
     regular(managed / 'managed-settings.json')
-    need(json.loads((managed / 'managed-settings.json').read_bytes()) == EXPECTED_POLICY,
-         'Required managed policy is invalid')
+    validate_policy(json.loads((managed / 'managed-settings.json').read_bytes()))
     node_bytes(managed / 'moderation-node.json')
     service = (data / 'config/service.env').read_bytes()
     need(value(service, 'PROXY_MODERATION_CONFIG') == NODE_PATH and
