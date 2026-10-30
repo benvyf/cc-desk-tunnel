@@ -5,7 +5,6 @@ import {
   scrypt,
   timingSafeEqual,
   createCipheriv,
-  createDecipheriv,
 } from 'node:crypto';
 import { readFileSync, writeFileSync, chmodSync } from 'node:fs';
 import { join } from 'node:path';
@@ -17,6 +16,8 @@ const secret = () => randomBytes(32).toString('base64url');
 const ticketLifetime = 120_000;
 const leaseLifetime = 60_000;
 const rememberedLifetime = 30 * 86400_000;
+const onlineLifetime = 90_000;
+const activityWriteInterval = 30_000;
 type Row = Record<string, unknown>;
 function email(value: unknown) {
   if (typeof value !== 'string' || value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value))
@@ -57,10 +58,16 @@ export class DesktopAccess {
       CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY,name TEXT NOT NULL,url TEXT NOT NULL,fingerprint TEXT NOT NULL,credential TEXT NOT NULL DEFAULT '');
       CREATE TABLE IF NOT EXISTS grants(user_id TEXT NOT NULL,node_id TEXT NOT NULL,PRIMARY KEY(user_id,node_id));
       CREATE TABLE IF NOT EXISTS sessions(hash TEXT PRIMARY KEY,user_id TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS session_activity(session_hash TEXT PRIMARY KEY,last_seen INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS session_devices(session_hash TEXT PRIMARY KEY,device_id TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS remembered_sessions(session_hash TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS tickets(hash TEXT PRIMARY KEY,session_hash TEXT NOT NULL,node_id TEXT NOT NULL,expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS server_tickets(hash TEXT PRIMARY KEY,session_hash TEXT NOT NULL,node_id TEXT NOT NULL,expires INTEGER NOT NULL);
     `);
+    // Preserve the old session schema for rollback. Give migrated logins time for their first check.
+    this.db
+      .prepare('INSERT OR IGNORE INTO session_activity SELECT hash,? FROM sessions')
+      .run(Date.now());
   }
   private revoke(id: string) {
     this.db
@@ -70,12 +77,18 @@ export class DesktopAccess {
       .run(id);
     this.db.prepare('DELETE FROM sessions WHERE user_id=?').run(id);
     this.db.exec(
+      'DELETE FROM session_activity WHERE session_hash NOT IN (SELECT hash FROM sessions)',
+    );
+    this.db.exec(
       'DELETE FROM session_devices WHERE session_hash NOT IN (SELECT hash FROM sessions)',
     );
   }
   private clean(now: number) {
     // Tickets remain tied to their parent session for live-connection lease renewal.
     this.db.prepare('DELETE FROM sessions WHERE expires<=?').run(now);
+    this.db.exec(
+      'DELETE FROM session_activity WHERE session_hash NOT IN (SELECT hash FROM sessions)',
+    );
     this.db.exec('DELETE FROM tickets WHERE session_hash NOT IN (SELECT hash FROM sessions)');
     this.db.exec(
       'DELETE FROM remembered_sessions WHERE session_hash NOT IN (SELECT hash FROM sessions)',
@@ -255,8 +268,18 @@ export class DesktopAccess {
       const token = secret(),
         expires = now + (input.remember === true ? rememberedLifetime : 8 * 3600_000);
       // Validate the password first, then replace the other computer atomically.
-      this.db.exec('BEGIN');
+      this.db.exec('BEGIN IMMEDIATE');
       try {
+        const otherComputer = this.db
+          .prepare(
+            `SELECT 1 FROM sessions JOIN session_activity ON session_activity.session_hash=sessions.hash
+            LEFT JOIN session_devices ON session_devices.session_hash=sessions.hash
+            WHERE sessions.user_id=? AND sessions.expires>? AND session_activity.last_seen>=?
+            AND (session_devices.device_id IS NULL OR session_devices.device_id<>?) LIMIT 1`,
+          )
+          .get(String(row.id), now, now - onlineLifetime, deviceId);
+        if (otherComputer && input.confirmSwitch !== true)
+          throw new UpdateError(409, '账号近期在其他电脑登录，请确认切换；旧版客户端请先更新。');
         this.db
           .prepare(
             'DELETE FROM tickets WHERE session_hash IN (SELECT hash FROM sessions WHERE user_id=? AND hash NOT IN (SELECT session_hash FROM session_devices WHERE device_id=?))',
@@ -270,6 +293,7 @@ export class DesktopAccess {
         this.db
           .prepare('INSERT INTO sessions VALUES(?,?,?)')
           .run(hash(token), String(row.id), expires);
+        this.db.prepare('INSERT INTO session_activity VALUES(?,?)').run(hash(token), now);
         if (input.remember === true)
           this.db.prepare('INSERT INTO remembered_sessions VALUES(?)').run(hash(token));
         this.db.prepare('INSERT INTO session_devices VALUES(?,?)').run(hash(token), deviceId);
@@ -296,10 +320,17 @@ export class DesktopAccess {
   private session(token: string, now: number) {
     const row = this.db
       .prepare(
-        'SELECT sessions.*,users.email,EXISTS(SELECT 1 FROM remembered_sessions WHERE session_hash=sessions.hash) AS remembered FROM sessions JOIN users ON users.id=sessions.user_id WHERE sessions.hash=? AND sessions.expires>? AND users.enabled=1',
+        'SELECT sessions.*,COALESCE(session_activity.last_seen,0) AS last_seen,users.email,EXISTS(SELECT 1 FROM remembered_sessions WHERE session_hash=sessions.hash) AS remembered FROM sessions JOIN users ON users.id=sessions.user_id LEFT JOIN session_activity ON session_activity.session_hash=sessions.hash WHERE sessions.hash=? AND sessions.expires>? AND users.enabled=1',
       )
       .get(hash(token), now);
     if (!row) throw new UpdateError(401, '登录已失效，请重新登录。同一账号仅允许一台电脑在线。');
+    // Reuse successful authorization checks, including the desktop's existing 15-second check.
+    if (Number(row.last_seen) <= now - activityWriteInterval)
+      this.db
+        .prepare(
+          'INSERT INTO session_activity VALUES(?,?) ON CONFLICT(session_hash) DO UPDATE SET last_seen=excluded.last_seen',
+        )
+        .run(hash(token), now);
     // Refresh remembered sessions at most once a day; an expired or revoked session never reaches here.
     if (row.remembered === 1 && Number(row.expires) <= now + rememberedLifetime - 86400_000) {
       row.expires = now + rememberedLifetime;
@@ -335,35 +366,44 @@ export class DesktopAccess {
       .run(hash(ticket), hash(token), nodeId, now + ticketLifetime);
     return { ...node, token: ticket, expiresAt: now + ticketLifetime };
   }
-  // Used only by the management server to reach a granted node; never returned by an access API.
+  // A maintenance request uses the existing desktop session and a fresh short-lived ticket.
+  // Do not replace the live WebSocket ticket for the same workspace.
   serverConnection(token: string, nodeId: string, now = Date.now()) {
     const session = this.session(token, now);
     const node = this.db
       .prepare(
-        'SELECT nodes.url,nodes.fingerprint,nodes.credential FROM nodes JOIN grants ON grants.node_id=nodes.id WHERE grants.user_id=? AND nodes.id=?',
+        'SELECT nodes.url,nodes.fingerprint FROM nodes JOIN grants ON grants.node_id=nodes.id WHERE grants.user_id=? AND nodes.id=?',
       )
       .get(String(session.user_id), nodeId);
     if (!node) throw new UpdateError(403, '未分配此工作空间。');
-    if (!node.credential) throw new UpdateError(409, '请先在管理中心配置此工作空间的服务凭据。');
-    const encrypted = Buffer.from(String(node.credential), 'base64');
-    const decipher = createDecipheriv('aes-256-gcm', this.key, encrypted.subarray(0, 12));
-    decipher.setAuthTag(encrypted.subarray(12, 28));
-    const credential = Buffer.concat([
-      decipher.update(encrypted.subarray(28)),
-      decipher.final(),
-    ]).toString('utf8');
-    return { url: String(node.url), fingerprint: String(node.fingerprint), token: credential };
+    this.db
+      .prepare(
+        'DELETE FROM server_tickets WHERE expires<=? OR session_hash NOT IN (SELECT hash FROM sessions)',
+      )
+      .run(now);
+    const ticket = 'ccs_' + secret();
+    this.db
+      .prepare('INSERT INTO server_tickets VALUES(?,?,?,?)')
+      .run(hash(ticket), hash(token), nodeId, now + ticketLifetime);
+    return { url: String(node.url), fingerprint: String(node.fingerprint), token: ticket };
+  }
+  releaseServerConnection(ticket: string) {
+    this.db.prepare('DELETE FROM server_tickets WHERE hash=?').run(hash(ticket));
   }
   validate(ticket: string, nodeId: string, renewal: boolean, now = Date.now()) {
     const row = this.db
       .prepare(
-        `SELECT tickets.expires,sessions.user_id,users.email FROM tickets
+        `SELECT tickets.expires,tickets.maintenance,sessions.user_id,users.email FROM (
+        SELECT hash,session_hash,node_id,expires,0 AS maintenance FROM tickets
+        UNION ALL
+        SELECT hash,session_hash,node_id,expires,1 AS maintenance FROM server_tickets
+      ) tickets
       JOIN sessions ON sessions.hash=tickets.session_hash JOIN users ON users.id=sessions.user_id
       JOIN grants ON grants.user_id=users.id AND grants.node_id=tickets.node_id
       WHERE tickets.hash=? AND tickets.node_id=? AND sessions.expires>? AND users.enabled=1`,
       )
       .get(hash(ticket), nodeId, now);
-    if (!row || (!renewal && Number(row.expires) <= now))
+    if (!row || ((!renewal || row.maintenance === 1) && Number(row.expires) <= now))
       throw new UpdateError(401, '连接授权已失效。');
     return {
       userId: String(row.user_id),
@@ -374,6 +414,7 @@ export class DesktopAccess {
   logout(token: string) {
     this.db.prepare('DELETE FROM tickets WHERE session_hash=?').run(hash(token));
     this.db.prepare('DELETE FROM sessions WHERE hash=?').run(hash(token));
+    this.db.prepare('DELETE FROM session_activity WHERE session_hash=?').run(hash(token));
     this.db.prepare('DELETE FROM session_devices WHERE session_hash=?').run(hash(token));
   }
   close() {
