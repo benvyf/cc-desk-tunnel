@@ -64,7 +64,7 @@ export function setupServerDownload({ request, element, notice }) {
                 ? '请在需要升级的 Ubuntu 控制台执行。'
                 : id === 'server-base-upgrade-command'
                   ? '请在已核对的 ubuntu-cc、02 或 03 控制台执行。'
-                : '请在已审查的第一台 Ubuntu 控制台执行。'),
+                  : '请在已审查的第一台 Ubuntu 控制台执行。'),
           );
         } catch {
           command.focus();
@@ -78,7 +78,9 @@ export function setupServerDownload({ request, element, notice }) {
       appendCommand(
         'server-base-upgrade-command',
         '清理并升级基础镜像（ubuntu-cc / 02 / 03）',
-        `完整命令：识别已核对的 ubuntu-cc、ubuntu-cc-02 或 ubuntu-cc-03 → 清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 确认无运行任务 → 强制断开客户端并阻止重连 → 冷备份 → 升级到 Build ${release.build}。第一台支持已核对的旧 Build 4 基础镜像，02、03 支持已核对的 Build 5 基础镜像；其他设备或镜像不匹配会停止。已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务（包括等待中的任务）；无需手动退出客户端，脚本会断开连接并在升级期间阻止重连。保留账号数据，升级失败会尝试恢复原服务；保持 Ubuntu 终端打开，成功后重新连接，无需再执行普通升级。`,
+        release.build === 9
+          ? '适用于 ubuntu-cc、02、03 已核实的 Build 4/5/8 基础环境。校验签名和原程序完整性、清理未使用的构建缓存、检查空间、构建并离线预检后，确认无任务，自动断开客户端、冷备份，再一起切换 Build 9 镜像与新审核策略。只审核聊天/终端新发送的消息，不再读取历史；账号、原会话、TLS、旧镜像、原策略及离线回滚保留。04、05、06 本轮不升级。请先结束运行或等待中的任务，保持此控制台打开；成功后重新连接，无需执行下方普通升级。已安装相同版本会直接验证并返回。'
+          : `完整命令：识别已核对的 ubuntu-cc、ubuntu-cc-02 或 ubuntu-cc-03 → 清理未使用的 Docker 构建缓存 → 检查空间 → 校验或构建镜像 → 离线预检 → 确认无运行任务 → 强制断开客户端并阻止重连 → 冷备份 → 升级到 Build ${release.build}。第一台支持已核对的旧 Build 4 基础镜像，02、03 支持已核对的 Build 5 基础镜像；其他设备或镜像不匹配会停止。已升级到 Build ${release.build} 无需执行。保留账号数据、容器、正式镜像和回滚备份，不自动删除安装介质。空间不足会停止；失败时按脚本提示回退。执行前结束任务（包括等待中的任务）；无需手动退出客户端，脚本会断开连接并在升级期间阻止重连。保留账号数据，升级失败会尝试恢复原服务；保持 Ubuntu 终端打开，成功后重新连接，无需再执行普通升级。`,
         status.baseUpgradeCommand,
       );
     appendCommand(

@@ -255,11 +255,19 @@ export function bootstrapCommand(release: ServerRelease, installerHash: string) 
   return "sudo python3 -c '" + program.replaceAll("'", "'\"'\"'") + "'";
 }
 
-export function baseUpgradeCommand(release: ServerRelease, script: Buffer, legacy: Buffer) {
-  if (release.build !== 8 || release.protocol !== 22) return undefined;
+export function baseUpgradeCommand(
+  release: ServerRelease,
+  script: Buffer,
+  legacy: Buffer,
+  support?: Buffer,
+) {
+  if (![8, 9].includes(release.build) || release.protocol !== 22) return undefined;
+  if (release.build === 9 && !support) return undefined;
   const files = {
-    'upgrade-terminal-base.py': script.toString('base64'),
+    [release.build === 9 ? 'upgrade-message-review.py' : 'upgrade-terminal-base.py']:
+      script.toString('base64'),
     'install-cc-space-037.py': legacy.toString('base64'),
+    ...(release.build === 9 ? { 'server-bootstrap.py': support!.toString('base64') } : {}),
   };
   const encoded = deflateSync(JSON.stringify(files)).toString('base64');
   const wrapper = `import base64,json,pathlib,subprocess,tempfile,zlib
@@ -267,7 +275,7 @@ files=json.loads(zlib.decompress(base64.b64decode("${encoded}")))
 with tempfile.TemporaryDirectory(prefix='cc-terminal-base-') as directory:
  for name,data in files.items():
   (pathlib.Path(directory)/name).write_bytes(base64.b64decode(data))
- subprocess.run(['python3',str(pathlib.Path(directory)/'upgrade-terminal-base.py'),'--cleanup','--disconnect-clients','--install'],check=True)
+ subprocess.run(['python3',str(pathlib.Path(directory)/'${release.build === 9 ? 'upgrade-message-review.py' : 'upgrade-terminal-base.py'}'),'--cleanup',${release.build === 9 ? `'--sha256','${release.sha256}',` : "'--disconnect-clients',"}'--install'],check=True)
 `;
   return `sudo python3 -c 'import base64;exec(base64.b64decode("${Buffer.from(wrapper).toString('base64')}"))'`;
 }
