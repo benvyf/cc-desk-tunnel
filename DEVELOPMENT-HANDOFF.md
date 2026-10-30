@@ -1,5 +1,15 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-30 Linux Build 9 与三节点基础镜像升级命令已发布
+
+Linux 0.3.7 / Build 9 / protocol 22，源码 `4802d83afb8d0345f156bd8d1c8a2cb1dbd53033`，1659909 字节，SHA256 `e74572f2934f5545140899b621fdbae5b9ab9313cbed750460123a64522c8e3a`。新消息审核修复、对应 Web、单事件策略模板与恢复属主修复均进入签名包。Linux pilot revision 13，发布时有效至 `2026-11-13T14:57:06.294Z`；精确 expectedRelease 登记和强制/systemd 续签通过。Windows Build 24 pilot/stable 索引未变。详见 [发布证据](docs/evidence/linux-build9-production-2026-10-30.json)。
+
+管理中心从真实生产兼容基线制作源码 `0b88c7bfeba19428697a8c0ea75d8158bb941f55`，仅变更 server-distribution.ts、http.ts、server-download.js 并新增 upgrade-message-review.py，保留现有 UI、跨电脑登录及其他线上修复。冷备份 `/var/backups/cc-update-service/linux-build9-center-20261030T145649Z`；旧程序目录 `/opt/cc-update-service.previous-linux-build9`。用户/权限与审核策略一致，公开 Windows/旧 Linux 索引在中心切换时保持，随后只发布 Linux 9。源码 bundle、包、签名与运维证据保存在 VPS `/root/.cc-update-admin/linux-build9/`，发布备份 `/var/backups/cc-update-service/linux-build9-publication-2026-10-30T14-57-05.455Z`。
+
+页面“清理并升级基础镜像（ubuntu-cc / 02 / 03）”提供固定 Build 9/摘要的完整命令，内嵌新升级脚本、原有切换/回滚和固定哈希 helper；公网脚本/完整下载、命令内嵌文件与实际浏览器 63202 字节精确复制通过。脚本校验旧 Build 4/5/8 清单、CLI/SDK/锁文件、容器和挂载，离线预检后检查无运行/等待任务，自动断开空闲客户端、冷备份，再同时切换镜像与独立策略 bind；原策略不修改，回滚仍使用原策略。支持重复执行同版本的验证返回。用户明确本轮不升级 04、05、06，脚本拒绝这些主机。
+
+真实官方 CLI 在 `--network none`、只读、无账号挂载的容器中经 PTY 验证：新消息拒绝先于模拟模型，下一条新消息保持原文；SDK 正常完成且无重复审核，0 真实 provider/JEV 请求。最终归档在实际 Linux 镜像中的 readiness/health/SIGTERM/零 CLI 启动验证通过。新升级 Python 11 项、既有切换 16 项、配置恢复 19 项在 Linux 隔离环境通过；发布/命令/浏览器、类型与仓库检查通过。尚未代用户执行三台 Ubuntu 的生产安装，02 原故障会话仍待用户执行新命令并验收。操作说明见 [Build 9 升级指南](docs/LINUX-BUILD9-MESSAGE-REVIEW-UPGRADE.md)。
+
 ### 2026-10-30 审核最终范围：只限聊天/终端新消息（本地源码，未部署）
 
 用户明确只审核每次聊天或终端中新发送的消息原文，排除历史、附加上下文、问答回复、权限补充、压缩说明和全局说明修改。已按此覆盖此前流式候选：聊天端仅 `message.send` 调用审核；SDK 使用实际 `sdk-ts` 入口，不重复审核 CC 已处理的输入或内部继续文本；交互终端使用实际 `cli` 入口，仅审核 `UserPromptSubmit.prompt`。不再读取 transcript_path，也不需要游标/历史缓存或累计 64 KiB 限制。64 KiB 只限制当前一条消息，拒绝/错误/超时继续阻止这条消息发送。范围外独立事件返回成功，不改变 Claude 原生工具审批。
