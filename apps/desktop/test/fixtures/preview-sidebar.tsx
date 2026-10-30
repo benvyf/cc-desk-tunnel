@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { previewPdf } from '../../test-main/fixtures/preview-pdf.ts';
 import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
@@ -21,6 +22,19 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
     return '';
   },
   preview: {
+    async list({ path }: { path: string }) {
+      return path.endsWith('src')
+        ? [{ name: 'index.ts', path: path + '\\index.ts', kind: 'file' }]
+        : [
+            { name: 'src', path: path + '\\src', kind: 'directory' },
+            { name: '说明.md', path: path + '\\说明.md', kind: 'file' },
+          ];
+    },
+    async watch() {},
+    async unwatch() {},
+    onChanged() {
+      return () => {};
+    },
     async read({ path }: { path: string }): Promise<PreviewFile> {
       if (path.includes('长错误'))
         throw new Error(
@@ -29,6 +43,15 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
       if (path.includes('不存在'))
         throw new Error('找不到这个文件，请确认路径或在系统应用中打开。');
       if (path.includes('读取中')) return new Promise(() => {});
+      if (path.endsWith('alias.txt'))
+        return {
+          path,
+          kind: 'html',
+          text: '<h1>HTML alias</h1>',
+          url: 'http://file.localhost/index.html',
+        };
+      if (path.endsWith('.pdf'))
+        return { path, kind: 'pdf', data: btoa(String.fromCharCode(...previewPdf())) };
       if (path.endsWith('.png')) return { path, kind: 'image', image };
       if (path.endsWith('.md'))
         return {
@@ -47,7 +70,9 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
       };
     },
     async releaseFile() {},
-    async release() {},
+    async release(input: any) {
+      ((window as any).fixtureReleased ??= []).push(input.key);
+    },
     async hide() {},
     async bounds() {},
     async action() {},
@@ -81,12 +106,8 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
 
 function Fixture() {
   const terminal = new URLSearchParams(location.search).has('terminal');
-  const board = usePreviewWorkspace(
-    'fixture',
-    'session',
-    terminal ? 'terminal' : 'main',
-    'session',
-  );
+  const [scope, setScope] = useState('fixture');
+  const board = usePreviewWorkspace(scope, 'session', terminal ? 'terminal' : 'main', 'session');
   const [opened, setOpened] = useState(false);
   const controls = (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 20 }}>
@@ -105,6 +126,7 @@ function Fixture() {
         ['长错误状态', '长错误.txt'],
         ['加载状态', '读取中.md'],
         ['图片状态', '趋势图.png'],
+        ['PDF 状态', '报告.pdf'],
       ].map(([label, name]) => (
         <Button
           key={label}
@@ -132,6 +154,9 @@ function Fixture() {
         }}
       >
         多个标签
+      </Button>
+      <Button onClick={() => setScope(scope === 'fixture' ? 'other' : 'fixture')}>
+        切换预览工作区
       </Button>
       <Button data-size="sm" size="sm" aria-label="对照按钮">
         对照按钮

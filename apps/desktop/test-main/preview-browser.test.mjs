@@ -16,12 +16,22 @@ function fixture() {
   owner.webContents = { getZoomFactor: () => 1 };
   const partition = new EventEmitter();
   partition.setPermissionRequestHandler = partition.setPermissionCheckHandler = () => {};
+  let requestFilter;
+  partition.webRequest = {
+    onBeforeRequest: (_filter, callback) => {
+      requestFilter = callback;
+    },
+  };
   class View {
     constructor() {
       this.visible = true;
       const contents = (this.webContents = new EventEmitter());
+      contents.id = views.length + 1;
       contents.navigationHistory = { canGoBack: () => false, canGoForward: () => false };
       contents.setWindowOpenHandler = () => {};
+      contents.setWebRTCIPHandlingPolicy = (policy) => {
+        this.rtcPolicy = policy;
+      };
       contents.getTitle = () => '';
       contents.isLoading = () => false;
       contents.isDestroyed = () => this.closed;
@@ -77,6 +87,8 @@ function fixture() {
   };
   return {
     browser,
+    request: (url, id = 1) =>
+      new Promise((resolve) => requestFilter({ url, webContentsId: id }, resolve)),
     views,
     messages,
     navigate,
@@ -118,4 +130,72 @@ test('current validated file navigation opens a file with the original restricte
     root: 'C:/project',
     restricted: true,
   });
+});
+
+test('static HTML can load its own assets but cannot proxy requests to localhost, LAN, public hosts or workers', async () => {
+  const f = fixture();
+  assert.equal(f.views[0].rtcPolicy, 'disable_non_proxied_udp');
+  assert.deepEqual(await f.request('http://file.localhost/assets/app.js'), { cancel: false });
+  for (const url of [
+    'http://127.0.0.1:3000/secret',
+    'http://192.168.1.1/',
+    'https://example.com/',
+    'ws://localhost:8000/',
+  ])
+    assert.deepEqual(await f.request(url), { cancel: true });
+  assert.deepEqual(await f.request('http://127.0.0.1:3000/', -1), { cancel: true });
+});
+
+test('two panes keep native views visible and moving a tab preserves its live view', () => {
+  const f = fixture();
+  f.browser.show({
+    key: 'second',
+    pane: 'second-pane',
+    url: 'http://localhost:3000/',
+    bounds: { x: 0, y: 0, width: 300, height: 300 },
+  });
+  assert(f.views[0].visible);
+  assert(f.views[1].visible);
+  f.browser.hide('primary');
+  assert(!f.views[0].visible);
+  assert(f.views[1].visible);
+  f.browser.show({
+    key: 'second',
+    pane: 'primary',
+    url: 'http://localhost:3000/',
+    bounds: { x: 0, y: 0, width: 300, height: 300 },
+  });
+  f.browser.hide('second-pane');
+  assert.equal(f.views.length, 2);
+  assert(f.views[1].visible);
+});
+
+test('explicit address navigation survives hiding and revealing the same website tab', async () => {
+  const f = fixture();
+  const original = 'http://localhost:3000/';
+  f.browser.show({ key: 'site', url: original, bounds: { x: 0, y: 0, width: 300, height: 300 } });
+  f.browser.action({ key: 'site', action: 'go', url: original + 'typed' });
+  f.browser.hide();
+  f.browser.show({ key: 'site', url: original, bounds: { x: 0, y: 0, width: 300, height: 300 } });
+  assert.equal(f.views[1].url, original + 'typed');
+  assert.deepEqual(await f.request(original + 'api', 2), { cancel: false });
+});
+
+test('static file navigation and redirects cannot open another loopback service', () => {
+  const f = fixture();
+  for (const event of ['will-navigate', 'will-redirect']) {
+    let prevented = false;
+    f.views[0].webContents.emit(
+      event,
+      {
+        preventDefault() {
+          prevented = true;
+        },
+      },
+      'http://localhost:3000/private',
+    );
+    assert(prevented);
+  }
+  assert(!f.messages.some((m) => m.open?.kind === 'web'));
+  assert(f.messages.some((m) => m.error.includes('手动打开')));
 });

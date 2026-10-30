@@ -1,49 +1,48 @@
-# 本机文件与网站预览侧栏
+# 本机预览工作区
 
-此功能参考 DeepSeek Harness 的右侧文件／网页标签交互，按 CC SPACE 的现有客户端架构独立实现。源码已实现，尚未生成或发布包含此功能的新安装包；线上 Build 24 不包含侧栏。
+此功能参考 DeepSeek Harness 的右侧 Sidebar 和本地 Office 引擎，在 CC SPACE 原有预览侧栏上实现。此分支为客户端源码交付，尚未生成或发布新的正式安装包；线上 Build 24 不包含这些改动。
 
 ## 使用
 
-- 选择本机项目会话，在标题栏点击“打开预览侧栏”。也可直接点击回复中的本机文件链接或本机网站链接，或使用链接右键菜单中的“在侧栏预览”。目录、无法确定来源和其他设备的路径不会被当成本机同名文件读取；目录请继续使用系统打开功能。
-- 侧栏支持选择本机文件，以及打开已启动的 `http://localhost:端口`、`http://127.0.0.1:端口` 或 `http://[::1]:端口` 网站。不会自动启动开发服务，不提供远端端口转发。
-- HTML 可显示实际页面并切换源码，支持项目内相对路径和 `/assets/...` 等根路径资源；HTML 内跳转到其他本机文件时在对应文件标签打开。Markdown 支持排版／源码，图片支持缩放，代码和其他 UTF-8 文本按文本显示。PDF、Office、二进制及非 UTF-8 文件通过系统应用打开。
-- 标签按连接工作区和会话区分，同一文件重复打开会聚焦已有标签；支持键盘左右方向键、Home／End 切换。标签、当前选择和侧栏宽度在当前窗口中保留，未持久化文件内容或跨重启恢复标签。
-- 提供手动刷新、复制路径／地址、系统应用／浏览器打开、放大和收起。宽窗口可拖动或用键盘调整分隔条，窄窗口采用覆盖面板。原生终端独立窗口也有预览入口，本机文件／网址链接可直接进入其侧栏，原有远端文件弹窗仍保留。
+- 在本机项目会话点击标题栏的预览入口，或点击聊天、原生终端里的本机文件链接。预览头部可打开文件、切换工作区目录、打开用户指定的本机网站、放大和收起。
+- 工作区目录按展开加载，目录优先排序。支持鼠标、上下方向键、Home/End 导航、左右方向键展开/折叠、刷新目录和定位当前文件。文件只读展示，不增加写入或删除能力。隐藏文件、凭据目录、网络共享和越界符号链接不列出；`.local` 生成目录可用。
+- 当前文件及展开目录会自动刷新。监听支持编辑器原子保存、文件删除/重建和目录替换；无关文件的修改不会重读当前文档。切换到未显示的文件时读取最新内容。手动刷新继续保留。
+- 标签、当前选择、目录栏开关、宽度、分栏、浮窗位置及尺寸按连接工作区、会话和主/终端区域分别保存在本机。只保存元数据，不保存正文。恢复的网站、HTML（包括指向 HTML 的其他后缀别名）必须点击“加载此预览”后才加载页面。
+- 每个工作区最多四个窗格、64 个标签。点击“分栏”拆出当前标签；拖动标签可重排或移动到另一窗格，也可用“移动”按钮。点击“浮动”后可以拖动标题、拖动右下角调整大小，再点击“停靠”收回。浮窗保持在所属窗口内；窗口缩小时重新限制位置。浮窗尺寸支持方向键调整。窄窗口上下排列，放大后的宽窗口左右排列。
+- HTML 支持页面/源码，Markdown 支持排版/源码，图片支持缩放，代码与 UTF-8 文本使用现有代码块。PDF 使用内置本机 PDF.js 查看器，提供页码和缩放。Office 使用随客户端打包的本地 LibreOffice Kit 转换后在同一查看器展示，支持 DOC/DOCX、XLS/XLSX、PPT/PPTX 及 ODT/ODS/ODP；不依赖用户安装 Microsoft Office，不调用在线预览服务。缺失字体使用本机替代字体并提示名称。
 
-## 执行与网络边界
+## 客户端与模型的边界
 
-本次仅修改桌面客户端，不修改 Claude Code、服务端、协议或模型网络配置。文件预览和本机开发站点由 Windows 客户端读取／访问；Claude Code 继续在 Ubuntu 上运行，其模型请求仍使用远端服务进程的网络配置。页面及其外部资源请求使用客户端所在电脑的网络，不作为 Claude Code 的代理，也不会把预览内容、网页地址、控制台或浏览记录自动发送给模型。
+目录列举、文件监听、文档读取、Office 转换、PDF 绘制、布局保存及网页访问由客户端完成。没有新增模型工具、服务端协议、模型调用、自动附件、DOM/截图读取接口或预览内容回传。网页没有 preload、Node 集成或 `window.desktop`。新增 IPC 只供应用自己的受信任页面使用。
 
-HTML／网站采用 Electron `WebContentsView`，使用与 CC 登录隔离的内存会话，无 preload、Node 集成或 `window.desktop` 接口。页面权限请求、弹出窗口及下载不开放；工具栏提供明确的系统打开入口。初版仅接受本机 HTTP(S) 顶层网址；外部网站仍沿用系统浏览器。
+HTML 静态资源通过随机本机域名提供，读取限制在选定项目内，解析后再次检查边界。静态预览的跨源请求、其他本机服务、内网/公网地址、Worker、frame、弹出窗口、下载与表单提交均被限制。HTML 不能自动跳转出文件预览来打开本机网站。Markdown 的远程图片保留为用户可点击链接，不自动联网。
 
-本机 HTML 通过按需启动的环回静态服务读取，文件标签使用独立的随机 `.localhost` 域名。资源只限所打开项目目录（文件不在项目内时使用文件所在目录），拒绝隐藏文件、凭据目录、未知可执行资源类型及解析后越界的链接（显式选择的源文件除外），不提供目录列表或文件写入接口。`.local` 等生成目录正常支持。文本上限 4 MiB，图片和单个关联资源上限 20 MiB。
+本机网站仍由用户明确打开，仅接受 localhost、127.0.0.1、[::1] 的 HTTP(S) 地址，不启动开发服务或新增端口转发。网页网络资源限于该标签经用户明确输入的来源；同主机端口的开发 WebSocket 可用。关闭/切换连接会释放旧视图；仅切换标签时保留网站自身导航状态。窗口遮挡及拖动时隐藏相应原生网页层。
 
-没有新增文件扫描、文件监听或刷新轮询；文本按打开／切换／手动刷新读取。已访问网站标签保留自身导航状态，收起或切换时隐藏并启用后台节流，其自身开发服务连接可能继续存在；关闭标签或窗口时释放网页视图。文件标签正文卸载时撤销 HTML 资源地址并释放对应网页视图，避免在资源已撤销后仍保留后台脚本；预览／源码切换时则保留当前 HTML 的交互状态。预览尺寸仅在实际布局或遮挡变化时同步，聊天输出不会导致重复发送相同尺寸。
+Office 引擎使用私有配置，禁用宏、外部链接更新和外部图片读取，设置拒绝所有主机的 allowlist。这是引擎应用策略，不是对现有客户端执行通道的操作系统网络沙箱声明。本次没有修改 Claude Code 或现有执行通道。
 
-Review 修复：HTML 关联文件跳转先解析实际路径，保持原项目的读取范围，不能借助符号链接跳到项目外再扩大权限；资源请求同时检查请求路径与实际路径，防止目录别名绕过私有目录限制。删除会话／终端标签时清理其预览，主界面重载或渲染进程退出时销毁旧网页视图并撤销资源地址，未完成的旧 HTML 读取也会失效。拖动分隔条时暂时隐藏原生网页层，结束或失焦后恢复，避免网页层截获拖动。
+## 限额与生命周期
 
-## 验证
+文本 4 MiB，图片/PDF/Office 输入与转换后 PDF 各 20 MiB；目录最多 2000 条；每个渲染器最多 128 个订阅和原生目录监听。Office 串行转换、最多四个等待/运行请求，每次 60 秒期限。临时副本和输出在转换后清理，重载/退出取消待完成转换。失败显示错误并保留系统打开入口。
 
-核心读取测试与隔离 Electron 联测覆盖本机文件、相对／根路径资源、中文、交互脚本、Markdown、标签去重与会话隔离、源码切换、网站后退、弹窗遮挡、窄窗口、大字号、关闭释放，以及原生终端独立窗口。测试采用临时项目和模拟会话协议，无真实 Claude／JEV 请求；网页内确认没有 `window.desktop` 或 Node `require`。真实本机站点包含 `X-Frame-Options: DENY`，验证独立网页视图不依赖 iframe 嵌入。
+销毁/关闭标签、删除会话、切换工作区、渲染器重载和窗口退出都会清理对应资源。隐藏的网站可以保留自身开发服务连接，但其内容不进入模型协议。恢复布局不会自动恢复页面执行。
 
-本轮 Review 的 5 项资源测试、8 项终端窗口控制器回归、真实 Electron 完整链路测试、类型检查和生产构建通过。新增验证包含凭据目录别名、HTML 符号链接越界、待完成读取撤销、鼠标拖动、删除会话和主界面重载；此前 18 项链接／终端界面回归也已通过。
+## 验证与打包
 
-第二轮 Review 补充：主聊天与内嵌回退终端使用各自的预览控制器，避免在同一个窗口里互相移动或隐藏网页；一个区域放大时，另一块原生网页会随遮挡隐藏，还原后恢复。隐藏／关闭页面的延迟文件导航不再打开标签。网站地址提交后结束编辑，放弃的输入恢复为实际页面地址，复制／外部打开使用实际浏览地址；网页状态在布局阶段订阅，避免重新显示已有标签时漏掉初始状态。新增 3 项异步导航单元测试及真实 Electron 场景覆盖地址导航后切换标签、双区域并行、放大／还原、单独收起和回退终端关闭。文件正文卸载后的 HTML 网页进程回收也已验证；8 项文件／浏览器专项测试、扩展后的完整 Electron 联测、类型与格式检查及生产构建均通过。
-
-## 界面一致性检查
-
-侧栏使用 CC SPACE 已有的 `Button`、`IconButton`、`Modal`、`CopyButton` 和 `CodeBlock`。标签采用与原生终端一致的页签轮廓、细边框与陶土色活动下划线；头部和工具栏统一使用 28px 控件，圆角、字体、焦点、悬停和禁用状态沿用现有变量。Markdown 复用聊天排版，源码复用原有深色代码块和复制反馈；错误使用现有柔和危险色提示，加载与空态保持相同图标、文字层级和留白。
-
-长文件名截断后保留完整路径提示，选中标签自动滚入可见范围，关闭标签后恢复键盘焦点，收起时回到入口。已验证 14/20px 界面字号、24px 源码字号、浅/深色、390px 窄窗口和短窗口；图片缩放边界会禁用对应按钮，文件读取期间保留禁用的预览/源码入口，避免工具栏跳动。独立终端预览头部为 Windows 原生窗口按钮留出标题栏区域，文件选择框归属于对应终端窗口。
-
-8 项预览 UI 布局/交互检查覆盖 28 组状态、主题与尺寸组合，并逐张检查截图；另有原有链接渲染回归和真实 Electron 全链路验证。本轮补充验证长错误提示在短窗口内独立滚动、标签与分隔条不拦截带修饰键的快捷键，以及文件选择和系统打开重试成功后清除旧错误。被预览网页及图片的原有配色保持原样，不随客户端主题强制改色。界面截图位于本机 `.local/screenshots/preview-ui/`。
+测试使用临时项目、专用客户端配置和模拟会话，不调用真实模型。专项覆盖文件树/监听恢复、布局过滤、HTML 别名加载确认、原生多窗格/浮窗、静态网络探针、真实 PDF 和六种 Office 格式、外部图片拒绝以及完整 ASAR 资源加载。UI 截图在本机 `.local/screenshots/preview-workspace/`，浅/深色和窄窗口沿用 CC SPACE 原有控件与样式。
 
 ```powershell
-npm run build
-node --test apps/desktop/test-main/preview-files.test.mjs
+node --test apps/desktop/test-main/preview-workspace.test.mjs apps/desktop/test-main/preview-layout.test.ts apps/desktop/test-main/preview-files.test.mjs apps/desktop/test-main/preview-browser.test.mjs
+$env:CC_OFFICE_INTEGRATION='1'
+node --test apps/desktop/test-main/preview-office.test.mjs apps/desktop/test-main/preview-office-packaged.test.mjs
 $env:CC_PREVIEW_ELECTRON_TEST='1'
 node --test apps/desktop/test-main/preview-electron.test.mjs
-Remove-Item Env:CC_PREVIEW_ELECTRON_TEST
+Remove-Item Env:CC_OFFICE_INTEGRATION, Env:CC_PREVIEW_ELECTRON_TEST
+npm run typecheck
+npm run build
+npx playwright test apps/desktop/test/preview-sidebar.spec.ts apps/desktop/test/preview-workspace.spec.ts
 ```
 
-参考：[DeepSeek Harness 右侧 Sidebar](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/sidebar-right.zh.md)。不引入其插件／停靠框架，也没有增加 npm 依赖。
+运行项目支持的 Node 24。Windows/macOS 打包保留目标平台的 LibreOffice Kit 原生引擎与 Koffi，Linux 使用其 WASM 引擎；整个 Office 运行时、Worker、完整性清单、源码与许可声明均保留在 `app.asar.unpacked/node_modules`。PDF.js 及其 Worker、字体、CMap、WASM 解码资源由 Vite 本地打包，不从 CDN 下载。
+
+参考：[DeepSeek Harness Sidebar](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/sidebar-right.zh.md)、[Office 转 PDF](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/office-to-pdf.zh.md)。未引入 Harness 的插件/停靠运行时。

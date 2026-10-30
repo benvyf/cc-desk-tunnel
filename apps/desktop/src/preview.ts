@@ -1,10 +1,23 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Link } from './links.ts';
-import { pathKey } from './paths.ts';
+import {
+  emptyBoard,
+  openTab,
+  closeTab,
+  moveTab,
+  splitPane,
+  floatTab,
+  dockPane,
+  restoreLayout,
+  previewWebsite,
+} from './previewLayout.ts';
+import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
+export type { PreviewTab, PreviewPane, FloatRect } from './previewLayout.ts';
+export { previewWebsite } from './previewLayout.ts';
 
 export type PreviewSurface = 'main' | 'terminal' | 'inline-terminal';
 export type PreviewBounds = { x: number; y: number; width: number; height: number };
-export type PreviewView = { surface: PreviewSurface; key: string };
+export type PreviewView = { surface: PreviewSurface; key: string; pane?: string };
 export type PreviewBrowserState = PreviewView & {
   url: string;
   title: string;
@@ -16,55 +29,54 @@ export type PreviewBrowserState = PreviewView & {
 };
 export type PreviewFile = {
   path: string;
-  kind: 'text' | 'markdown' | 'image' | 'html';
+  kind: 'text' | 'markdown' | 'image' | 'html' | 'pdf';
+  data?: string;
+  missingFonts?: string[];
   text?: string;
   image?: string;
   url?: string;
   token?: string;
 };
-export type PreviewTab = {
-  id: string;
-  kind: 'file' | 'web';
-  target: string;
-  root?: string;
-  restricted?: boolean;
-};
-type Board = { tabs: PreviewTab[]; active: string; expanded: boolean };
-const empty: Board = { tabs: [], active: '', expanded: false };
-
-export function previewWebsite(value: string) {
-  try {
-    const url = new URL(value);
-    return ['http:', 'https:'].includes(url.protocol) &&
-      !url.username &&
-      !url.password &&
-      ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname)
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
-}
-
-// Keep each session's files separate. Neither this state nor preview contents enter the model protocol.
+// Layout metadata stays in this client's profile, never in the model protocol.
 export function usePreviewWorkspace(
   workspace: string | null,
   session: string | undefined,
   surface: PreviewSurface,
   sessionIds: string,
 ) {
-  const [boards, setBoards] = useState<Record<string, Board>>({});
-  const [width, resize] = useState(440);
-  const boardsRef = useRef(boards);
-  boardsRef.current = boards;
-  const board = session ? (boards[session] ?? empty) : empty;
-  const change = useCallback(
-    (update: (board: Board) => Board) => {
-      if (!session) return;
-      setBoards((current) => ({ ...current, [session]: update(current[session] ?? empty) }));
-    },
-    [session],
+  const storageKey = workspace
+    ? `cc-preview-v1:${window.desktop?.boot?.connection ?? ''}:${surface}:${workspace}`
+    : null;
+  const [state, setState] = useState(() => ({
+    key: storageKey,
+    ...restoreLayout(storageKey ? localStorage.getItem(storageKey) : null),
+  }));
+  const [pending, setPending] = useState<Set<string>>(
+    () =>
+      new Set(
+        Object.values(state.boards)
+          .flatMap((b) => b.tabs)
+          .filter((t) => t.kind === 'web' || /\.html?$/i.test(t.target))
+          .map((t) => t.id),
+      ),
   );
+  const [restoredTabs, setRestoredTabs] = useState<Set<string>>(
+    () =>
+      new Set(
+        Object.values(state.boards)
+          .flatMap((b) => b.tabs)
+          .map((t) => t.id),
+      ),
+  );
+  const boards = state.key === storageKey ? state.boards : {};
+  const scope = useRef({ key: storageKey, boards: state.boards, width: state.width });
+  if (scope.current.key === storageKey) {
+    scope.current.boards = boards;
+    scope.current.width = state.width;
+  }
+  const current = useRef(boards);
+  current.current = boards;
+  const board = session ? (boards[session] ?? emptyBoard()) : emptyBoard();
   const release = useCallback(
     (tab: PreviewTab) => {
       void window.desktop?.preview?.release({ surface, key: tab.id }).catch(() => {});
@@ -72,40 +84,96 @@ export function usePreviewWorkspace(
     [surface],
   );
   useEffect(() => {
-    setBoards({});
-    return () => {
-      for (const board of Object.values(boardsRef.current))
-        for (const tab of board.tabs) release(tab);
-    };
-  }, [workspace, release]);
-  useEffect(() => {
-    const live = new Set(sessionIds.split('\n'));
-    const removed = Object.keys(boardsRef.current).filter((id) => !live.has(id));
-    if (!removed.length) return;
-    for (const id of removed) for (const tab of boardsRef.current[id].tabs) release(tab);
-    setBoards((current) =>
-      Object.fromEntries(Object.entries(current).filter(([id]) => live.has(id))),
+    const restored = restoreLayout(storageKey ? localStorage.getItem(storageKey) : null);
+    const owner = { key: storageKey, boards: restored.boards, width: restored.width };
+    scope.current = owner;
+    setState({ key: storageKey, ...restored });
+    setRestoredTabs(
+      new Set(
+        Object.values(restored.boards)
+          .flatMap((b) => b.tabs)
+          .map((t) => t.id),
+      ),
     );
+    setPending(
+      new Set(
+        Object.values(restored.boards)
+          .flatMap((b) => b.tabs)
+          .filter((t) => t.kind === 'web' || /\.html?$/i.test(t.target))
+          .map((t) => t.id),
+      ),
+    );
+    return () => {
+      if (owner.key)
+        try {
+          localStorage.setItem(
+            owner.key,
+            JSON.stringify({ width: owner.width, boards: owner.boards }),
+          );
+        } catch {}
+      for (const b of Object.values(owner.boards)) for (const t of b.tabs) release(t);
+    };
+  }, [storageKey, release]);
+  useEffect(() => {
+    if (!storageKey || state.key !== storageKey) return;
+    const timer = setTimeout(() => {
+      try {
+        localStorage.setItem(
+          storageKey,
+          JSON.stringify({ width: state.width, boards: state.boards }),
+        );
+      } catch {}
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [state, storageKey]);
+  useEffect(() => {
+    // Session lists are initially empty during reconnect; prune only once hydrated.
+    if (!sessionIds) return;
+    const live = new Set(sessionIds.split('\n'));
+    const removed = Object.keys(current.current).filter((id) => !live.has(id));
+    if (!removed.length) return;
+    for (const id of removed) for (const t of current.current[id].tabs) release(t);
+    setState((s) => ({
+      ...s,
+      boards: Object.fromEntries(Object.entries(s.boards).filter(([id]) => live.has(id))),
+    }));
   }, [sessionIds, release]);
-  function open(kind: PreviewTab['kind'], target: string, root?: string, restricted?: boolean) {
-    change((current) => {
-      const existing = current.tabs.find(
-        (tab) =>
-          tab.kind === kind &&
-          (kind === 'file' ? pathKey(tab.target) === pathKey(target) : tab.target === target),
+  const change = useCallback(
+    (update: (board: PreviewBoard) => PreviewBoard) => {
+      if (!session || !storageKey) return;
+      setState((s) =>
+        s.key === storageKey
+          ? { ...s, boards: { ...s.boards, [session]: update(s.boards[session] ?? emptyBoard()) } }
+          : s,
       );
-      const tab = existing ?? { id: crypto.randomUUID(), kind, target, root, restricted };
-      return {
-        tabs: existing ? current.tabs : [...current.tabs, tab],
-        active: tab.id,
-        expanded: true,
-      };
+    },
+    [session, storageKey],
+  );
+  const activate = (id: string) => {
+    setRestoredTabs((old) => {
+      const next = new Set(old);
+      next.delete(id);
+      return next;
     });
+    setPending((old) => {
+      const next = new Set(old);
+      next.delete(id);
+      return next;
+    });
+  };
+  function open(kind: PreviewTab['kind'], target: string, root?: string, restricted?: boolean) {
+    change((b) => openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted }));
   }
+  const active = board.panes.find((p) => p.id === board.focused)?.active ?? '';
   return {
     ...board,
-    width,
-    resize,
+    active,
+    width: state.width,
+    pending,
+    restoredTabs,
+    activate,
+    resize: (value: number | ((previous: number) => number)) =>
+      setState((s) => ({ ...s, width: typeof value === 'function' ? value(s.width) : value })),
     openFile: (path: string, root?: string, restricted?: boolean) =>
       open('file', path, root, restricted),
     openWebsite: (url: string) => {
@@ -127,20 +195,29 @@ export function usePreviewWorkspace(
       }
       return false;
     },
-    select: (id: string) => change((current) => ({ ...current, active: id })),
-    toggle: () => change((current) => ({ ...current, expanded: !current.expanded })),
-    collapse: () => change((current) => ({ ...current, expanded: false })),
+    focus: (id: string) => change((b) => ({ ...b, focused: id })),
+    select: (id: string) =>
+      change((b) => ({
+        ...b,
+        focused: b.panes.find((p) => p.tabs.includes(id))?.id ?? b.focused,
+        panes: b.panes.map((p) => (p.tabs.includes(id) ? { ...p, active: id } : p)),
+      })),
+    toggle: () => change((b) => ({ ...b, expanded: !b.expanded })),
+    collapse: () => change((b) => ({ ...b, expanded: false })),
+    toggleTree: () => change((b) => ({ ...b, tree: !b.tree })),
+    split: (pane: string, id: string) => change((b) => splitPane(b, pane, id, crypto.randomUUID())),
+    float: (id: string) => change((b) => floatTab(b, id, crypto.randomUUID())),
+    dock: (id: string) => change((b) => dockPane(b, id)),
+    move: (id: string, pane: string, index?: number) => change((b) => moveTab(b, id, pane, index)),
+    rect: (id: string, rect: FloatRect) =>
+      change((b) => ({
+        ...b,
+        panes: b.panes.map((p) => (p.id === id ? { ...p, floating: rect } : p)),
+      })),
     close: (id: string) => {
-      const tab = board.tabs.find((tab) => tab.id === id);
+      const tab = board.tabs.find((t) => t.id === id);
       if (tab) release(tab);
-      change((current) => {
-        const tabs = current.tabs.filter((tab) => tab.id !== id);
-        return {
-          tabs,
-          expanded: current.expanded,
-          active: current.active === id ? (tabs.at(-1)?.id ?? '') : current.active,
-        };
-      });
+      change((b) => closeTab(b, id));
     },
   };
 }

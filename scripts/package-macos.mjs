@@ -30,6 +30,7 @@ const bundle = join(output, architecture === 'arm64' ? 'mac-arm64' : 'mac', 'CC 
 await stageDesktop(root, app, {
   description: 'macOS client for a native remote Claude Code session',
   ...posixService,
+  architecture,
 });
 // The system's icon format wants a source of 512 pixels or more; the artwork is the one of the Windows package.
 const icon = join(app, 'macos-icon.png');
@@ -55,6 +56,7 @@ const results = await electronBuild({
     directories: { app, output },
     npmRebuild: false,
     asar: true,
+    asarUnpack: ['electron/*.ps1', 'node_modules/**'],
     files: ['brand.json', 'package.json', 'electron/**', 'dist/**', 'node_modules/**'],
     mac: {
       category: 'public.app-category.developer-tools',

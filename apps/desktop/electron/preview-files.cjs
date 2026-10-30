@@ -71,6 +71,7 @@ function createPreviewFiles() {
   const mounts = new Map();
   let server, starting;
   let generation = 0;
+  let office;
   async function start() {
     if (starting) return starting;
     starting = (async () => {
@@ -123,6 +124,9 @@ function createPreviewFiles() {
             'cache-control': 'no-store',
             'x-content-type-options': 'nosniff',
             'referrer-policy': 'same-origin',
+            'x-dns-prefetch-control': 'off',
+            'content-security-policy':
+              "default-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self'; worker-src 'none'; frame-src 'none'; object-src 'none'; form-action 'none'; base-uri 'none'",
           });
           response.end(request.method === 'HEAD' ? undefined : data);
         })().catch(() => {
@@ -156,6 +160,22 @@ function createPreviewFiles() {
         throw new Error('文件位于预览工作区的私有目录。');
       const extension = path.extname(file).toLowerCase();
       const mime = types[extension];
+      if (
+        ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp'].includes(
+          extension,
+        )
+      ) {
+        office ??= require('./preview-office.cjs').createPreviewOffice();
+        const result = await office.render(file);
+        if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
+        return { path: file, kind: 'pdf', ...result };
+      }
+      if (extension === '.pdf') {
+        const data = await bytes(file, 20 * 1024 * 1024);
+        if (!data.subarray(0, 5).equals(Buffer.from('%PDF-')))
+          throw new Error('不是有效的 PDF 文件。');
+        return { path: file, kind: 'pdf', data: data.toString('base64') };
+      }
       const data = await bytes(
         file,
         mime?.startsWith('image/') ? 20 * 1024 * 1024 : 4 * 1024 * 1024,
@@ -201,6 +221,7 @@ function createPreviewFiles() {
     },
     reset() {
       generation++;
+      office?.reset();
       mounts.clear();
     },
     owns(url) {
@@ -242,6 +263,7 @@ function createPreviewFiles() {
     },
     async close() {
       generation++;
+      await office?.close();
       mounts.clear();
       if (starting) await starting;
       if (server) {

@@ -51,8 +51,8 @@ const results = await electronBuild({
     directories: { app, output },
     npmRebuild: false,
     asar: true,
-    asarUnpack: ['electron/*.ps1'],
-    files: ['brand.json', 'package.json', 'electron/**', 'dist/**'],
+    asarUnpack: ['electron/*.ps1', 'node_modules/**'],
+    files: ['brand.json', 'package.json', 'electron/**', 'dist/**', 'node_modules/**'],
     extraResources: [
       {
         from: vendor,

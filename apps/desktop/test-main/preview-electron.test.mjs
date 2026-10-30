@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtemp, mkdir, writeFile, rm, symlink } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, symlink, copyFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { createServer } from 'node:http';
@@ -13,7 +13,7 @@ test(
   'the real desktop previews local files and websites without a model connection or privileged webpage bridge',
   {
     skip: process.platform !== 'win32' || process.env.CC_PREVIEW_ELECTRON_TEST !== '1',
-    timeout: 180_000,
+    timeout: 240_000,
   },
   async () => {
     const root = await mkdtemp(join(tmpdir(), 'cc-preview-electron-'));
@@ -41,13 +41,26 @@ test(
     await writeFile(join(project, 'assets/style.css'), 'h1{color:rgb(12, 34, 56)}');
     await writeFile(join(project, 'assets/app.js'), 'document.body.dataset.loaded="yes"');
     await writeFile(markdown, '# 项目说明\n\n本机 Markdown 预览。');
+    let probeRequests = 0;
     const server = createServer((request, response) => {
+      if (request.url?.startsWith('/probe')) probeRequests++;
       response.setHeader('X-Frame-Options', 'DENY');
       response.setHeader('Content-Type', 'text/html; charset=utf-8');
       response.end('<title>本机网站</title><h1>本机网站</h1><a href="/second">第二页</a>');
     });
     await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
     const site = `http://127.0.0.1:${server.address().port}/`;
+    const { previewPdf } = await import('./fixtures/preview-pdf.ts');
+    const pdfPath = join(project, 'report.pdf');
+    await writeFile(pdfPath, previewPdf());
+    await copyFile(
+      resolve('apps/desktop/test-main/fixtures/office/sample.doc'),
+      join(project, 'report.doc'),
+    );
+    await writeFile(
+      join(project, 'assets/app.js'),
+      `document.body.dataset.loaded='yes';fetch('${site}probe').catch(()=>{});const image=new Image();image.src='${site}probe-image';try{new WebSocket('${site.replace('http:', 'ws:')}probe-socket');}catch{}`,
+    );
     const sockets = new WebSocketServer({ server, path: '/ws' });
     const wrapper = join(root, 'entry.cjs');
     await writeFile(
@@ -246,6 +259,23 @@ test(
       await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
       await page.getByRole('button', { name: '打开本机文件', exact: true }).click();
       await expect(page.locator('.preview-document h1')).toHaveText('项目说明');
+      // The tree and watchers use only trusted client IPC, never model requests.
+      await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+      await expect(page.getByRole('treeitem', { name: 'report.pdf', exact: true })).toBeVisible();
+      await writeFile(markdown, '# 项目说明\n\n自动刷新标记');
+      await expect(page.locator('.preview-markdown')).toContainText('自动刷新标记');
+      await page.getByRole('treeitem', { name: 'report.pdf', exact: true }).click();
+      await expect(page.locator('.preview-pdf canvas')).toBeVisible();
+      await expect(page.getByLabel('PDF 页码')).toHaveValue('1');
+      await page.getByRole('button', { name: '关闭预览 report.pdf', exact: true }).click();
+      await page.getByRole('treeitem', { name: 'report.doc', exact: true }).click();
+      await expect(page.locator('.preview-pdf canvas')).toBeVisible({ timeout: 30000 });
+      await expect(page.getByLabel('PDF 页码')).toHaveValue('1');
+      await page.getByRole('button', { name: '关闭预览 report.doc', exact: true }).click();
+
+      await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+      assert.equal(probeRequests, 0, 'static preview must not contact a separate loopback origin');
+
       assert.equal(await page.getByRole('tab', { name: '说明.md', exact: true }).count(), 1);
       await page.getByRole('link', { name: '说明', exact: true }).click();
       assert.equal(await page.getByRole('tab', { name: '说明.md', exact: true }).count(), 1);
@@ -302,6 +332,38 @@ test(
       await page.getByLabel('预览地址').fill(site);
       await page.getByLabel('预览地址').press('Enter');
       await expect(page.getByLabel('预览地址')).toHaveValue(site);
+      await page.getByRole('button', { name: '分栏预览', exact: true }).click();
+      await expect(page.locator('.preview-pane')).toHaveCount(2);
+      await page.getByRole('tab', { name: 'index.html', exact: true }).click();
+      await expect
+        .poll(() =>
+          app.evaluate(
+            ({ BrowserWindow }) =>
+              BrowserWindow.getAllWindows()[0].contentView.children.filter((v) => v.getVisible())
+                .length,
+          ),
+        )
+        .toBe(2);
+      await page
+        .locator('.preview-pane')
+        .filter({ has: page.getByLabel('预览地址') })
+        .getByRole('button', { name: '浮动预览', exact: true })
+        .click();
+      await expect(page.locator('.preview-pane-floating')).toHaveCount(1);
+      await page.getByRole('button', { name: '放大预览', exact: true }).click();
+      await expect
+        .poll(() =>
+          app.evaluate(
+            ({ BrowserWindow }) =>
+              BrowserWindow.getAllWindows()[0].contentView.children.filter((v) => v.getVisible())
+                .length,
+          ),
+        )
+        .toBeGreaterThanOrEqual(1);
+      await page.getByRole('button', { name: '还原预览', exact: true }).click();
+
+      await page.getByRole('button', { name: '停靠预览', exact: true }).click();
+      await expect(page.locator('.preview-pane')).toHaveCount(1);
       await page.getByRole('button', { name: '收起预览', exact: true }).click();
       await expect(page.getByRole('complementary', { name: '文件与网站预览' })).toHaveCount(0);
       await page.getByRole('button', { name: '打开预览侧栏', exact: true }).click();
@@ -533,6 +595,33 @@ test(
           ),
         )
         .toBe(false);
+
+      // Reopen the same profile in a fresh process, then restore the session layout.
+      await app.close();
+      app = await _electron.launch({
+        executablePath: resolve('node_modules/electron/dist/electron.exe'),
+        args: [wrapper, '--smoke-test'],
+        env: Object.fromEntries(
+          Object.entries(process.env).filter(([key]) => key !== 'ELECTRON_RUN_AS_NODE'),
+        ),
+      });
+      const reopened = await app.firstWindow();
+      debugPage = reopened;
+      await reopened.getByLabel('邮箱', { exact: true }).fill('fixture@example.invalid');
+      await reopened.getByLabel('密码', { exact: true }).fill('fixture-password');
+      await reopened.getByRole('button', { name: '登录', exact: true }).click();
+      await reopened.locator('.session-select').filter({ hasText: '另一会话' }).click();
+      await expect(reopened.getByRole('tab', { name: 'index.html', exact: true })).toBeVisible();
+      await expect(reopened.getByRole('button', { name: '加载此预览', exact: true })).toBeVisible();
+      assert.equal(
+        await app.evaluate(({ webContents }) =>
+          webContents.getAllWebContents().some((c) => c.getURL().includes('.localhost:')),
+        ),
+        false,
+      );
+      await reopened.getByRole('button', { name: '加载此预览', exact: true }).click();
+      await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
+      assert(!commands.includes('message.send'));
       assert.deepEqual(errors, []);
     } catch (error) {
       console.log('commands', commands);
