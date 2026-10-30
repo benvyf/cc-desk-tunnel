@@ -213,3 +213,18 @@ test('hiding then revealing a tab cancels its earlier asynchronous file navigati
   await new Promise((resolve) => setImmediate(resolve));
   assert(!f.messages.some((m) => m.open));
 });
+
+test('preview rejects model API destinations instead of using the client network for a model call', async () => {
+  const f = fixture();
+  for (const url of [
+    'https://api.anthropic.com/v1/messages',
+    'https://api.openai.com/v1/responses',
+  ]) {
+    assert.throws(
+      () => f.browser.show({ key: 'model', url, bounds: { x: 0, y: 0, width: 400, height: 300 } }),
+      /本机预览/,
+    );
+    assert.deepEqual(await f.request(url), { cancel: true });
+    assert.throws(() => f.browser.action({ key: 'file', action: 'go', url }), /本机网站/);
+  }
+});

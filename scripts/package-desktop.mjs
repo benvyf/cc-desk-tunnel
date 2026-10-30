@@ -12,6 +12,7 @@ import { dirname, join } from 'node:path';
 import { build as viteBuild } from 'vite';
 import brand from '../apps/desktop/brand.json' with { type: 'json' };
 import { stagePreviewOffice } from './package-preview-office.mjs';
+import { assertDesktopModelBoundary } from './model-boundary.mjs';
 
 // A package the program loads by name while it runs, copied with what it depends on. Compiled add-ons are
 // left out: they are optional speed-ups built for the Node of the machine that installed them, not for the
@@ -66,6 +67,7 @@ export async function stageDesktop(
     architecture = process.arch,
   },
 ) {
+  assertDesktopModelBoundary(root);
   mkdirSync(app, { recursive: true });
   rmSync(join(app, 'node_modules'), { recursive: true, force: true });
   await viteBuild({
