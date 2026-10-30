@@ -40,16 +40,18 @@ export function stagePreviewOffice(
     writeFileSync(join(destination, 'package.json'), JSON.stringify(metadata, null, 2) + '\n');
     return metadata.version;
   }
-  const version = copy('@deepseek-ai/libreoffice-kit');
+  const versions = { '@deepseek-ai/libreoffice-kit': copy('@deepseek-ai/libreoffice-kit') };
   const native = ['win32', 'darwin'].includes(platform);
-  copy(
-    native
-      ? `@deepseek-ai/libreoffice-kit-${platform}-${arch}`
-      : '@deepseek-ai/libreoffice-kit-wasm',
-  );
+  const engine = native
+    ? `@deepseek-ai/libreoffice-kit-${platform}-${arch}`
+    : '@deepseek-ai/libreoffice-kit-wasm';
+  versions[engine] = copy(engine);
   if (native) {
-    copy('koffi');
-    copy(`@koromix/koffi-${platform}-${arch}`);
+    versions.koffi = copy('koffi');
+    const binding = `@koromix/koffi-${platform}-${arch}`;
+    versions[binding] = copy(binding);
   }
-  return { '@deepseek-ai/libreoffice-kit': version };
+  // electron-builder excludes extraneous node_modules even when a files glob names
+  // them. The selected optional engine and binding are required production roots.
+  return versions;
 }

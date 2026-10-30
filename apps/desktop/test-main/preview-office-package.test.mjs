@@ -37,6 +37,9 @@ test('Office staging preserves workers, engine resources, licenses and native mo
   const app = join(root, 'app');
   assert.deepEqual(stagePreviewOffice(root, app, { platform: 'win32', arch: 'x64' }), {
     '@deepseek-ai/libreoffice-kit': '1',
+    '@deepseek-ai/libreoffice-kit-win32-x64': '1',
+    koffi: '1',
+    '@koromix/koffi-win32-x64': '1',
   });
   assert.equal(
     await readFile(

@@ -18,12 +18,17 @@ test(
     t.after(() => rm(root, { recursive: true, force: true }));
     const app = join(root, 'app');
     await mkdir(join(app, 'electron'), { recursive: true });
-    stagePreviewOffice(resolve('.'), app);
+    const dependencies = stagePreviewOffice(resolve('.'), app);
     for (const file of ['preview-office.cjs', 'file-links.cjs'])
       await cp(resolve('apps/desktop/electron', file), join(app, 'electron', file));
     await writeFile(
       join(app, 'package.json'),
-      JSON.stringify({ name: 'cc-office-fixture', version: '1.0.0', main: 'entry.cjs' }),
+      JSON.stringify({
+        name: 'cc-office-fixture',
+        version: '1.0.0',
+        main: 'entry.cjs',
+        dependencies,
+      }),
     );
     await writeFile(
       join(app, 'entry.cjs'),
