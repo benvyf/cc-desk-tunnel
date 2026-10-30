@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Button, IconButton } from './ui.tsx';
 import { ChevronDown, ChevronRight, FileText, FolderOpen, RefreshCw } from './icons.tsx';
 import type { PreviewSurface } from './preview.ts';
+import { pathKey } from './paths.ts';
 type Entry = { name: string; path: string; kind: 'file' | 'directory' };
-const keyOf = (path: string) => path.replaceAll('\\', '/').toLowerCase().replace(/\/$/, '');
+const keyOf = (path: string) => pathKey(path).replaceAll('\\', '/').replace(/\/$/, '');
 
 function Directory({
   root,
@@ -181,6 +182,14 @@ export default function PreviewTree({
 }) {
   const [revision, setRevision] = useState(0),
     [locate, setLocate] = useState(0);
+  const locating = useRef<MutationObserver | null>(null);
+  useEffect(
+    () => () => {
+      locating.current?.disconnect();
+      locating.current = null;
+    },
+    [root, active],
+  );
   return (
     <section className="preview-tree" aria-label="工作区目录">
       <header>
@@ -189,13 +198,23 @@ export default function PreviewTree({
         <IconButton
           title="定位当前文件"
           size="xs"
-          onClick={() => {
+          onClick={(event) => {
+            const tree = event.currentTarget.closest('.preview-tree')!;
+            locating.current?.disconnect();
+            locating.current = null;
             setLocate((n) => n + 1);
-            requestAnimationFrame(() =>
-              document
-                .querySelector<HTMLElement>('.preview-tree [aria-selected="true"]')
-                ?.scrollIntoView({ block: 'nearest' }),
-            );
+            const scroll = () => {
+              const selected = tree.querySelector<HTMLElement>('[aria-selected="true"]');
+              if (!selected) return false;
+              selected.scrollIntoView({ block: 'nearest' });
+              locating.current?.disconnect();
+              locating.current = null;
+              return true;
+            };
+            if (!scroll()) {
+              locating.current = new tree.ownerDocument.defaultView!.MutationObserver(scroll);
+              locating.current.observe(tree, { childList: true, subtree: true });
+            }
           }}
         >
           <FileText />

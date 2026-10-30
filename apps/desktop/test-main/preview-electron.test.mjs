@@ -23,6 +23,9 @@ test(
     const html = join(project, 'index.html'),
       markdown = join(project, '说明.md');
     const picture = join(project, 'pixel.png');
+    const future = join(project, 'future.md'),
+      outsideText = join(root, 'outside.md');
+    await writeFile(outsideText, '# 项目外文档');
     await writeFile(
       picture,
       Buffer.from(
@@ -68,7 +71,14 @@ test(
       `
     const {app,net,ipcMain,dialog}=require('electron');
     app.commandLine.appendSwitch('no-proxy-server');
-    global.fixtureCalls=[];
+    global.fixtureCalls=[];global.fixtureWatches=[];
+    const workspaceModule=require(${JSON.stringify(resolve('apps/desktop/electron/preview-workspace.cjs'))});
+    const createWorkspace=workspaceModule.createPreviewWorkspace;
+    workspaceModule.createPreviewWorkspace=()=>{
+      const controller=createWorkspace(),watch=controller.watch.bind(controller);
+      controller.watch=async(input,callback)=>{await watch(input,callback);global.fixtureWatches.push(input);};
+      return controller;
+    };
     app.setPath('userData',${JSON.stringify(join(root, 'profile'))});
     app.setPath('sessionData',${JSON.stringify(join(root, 'profile'))});
     net.fetch=async(url)=>{
@@ -78,7 +88,7 @@ test(
       if(url.endsWith('/connect'))return Response.json({url:'wss://fixture.invalid/ws',fingerprint:'',token:'ccs_'+'x'.repeat(43)});
       throw Error('External network request forbidden in fixture');
     };
-    dialog.showOpenDialog=async(owner)=>{global.fixturePickerOwner=owner.webContents.getURL();return {canceled:false,filePaths:[${JSON.stringify(markdown)}]};};
+    dialog.showOpenDialog=async(owner)=>{global.fixturePickerOwner=owner.webContents.getURL();return {canceled:false,filePaths:[global.fixturePickedPath||${JSON.stringify(markdown)}]};};
     require(${JSON.stringify(resolve('apps/desktop/electron/main.cjs'))});
     ipcMain.removeHandler('proxy:connect');ipcMain.handle('proxy:connect',()=>{global.fixtureCalls.push('proxy');return {url:${JSON.stringify(site.replace('http:', 'ws:') + 'ws')}};});
   `,
@@ -134,7 +144,7 @@ test(
           payload: {
             type: 'text.delta',
             messageId: randomUUID(),
-            text: `[页面](${html.replaceAll('\\', '/')}) [说明](${markdown.replaceAll('\\', '/')}) [图片](${picture.replaceAll('\\', '/')}) [网站](${site})`,
+            text: `[页面](${html.replaceAll('\\', '/')}) [说明](${markdown.replaceAll('\\', '/')}) [图片](${picture.replaceAll('\\', '/')}) [网站](${site}) [待生成文档](${future.replaceAll('\\', '/')})`,
           },
         },
       ];
@@ -275,6 +285,39 @@ test(
 
       await page.getByRole('button', { name: '工作区目录', exact: true }).click();
       assert.equal(probeRequests, 0, 'static preview must not contact a separate loopback origin');
+      await page.getByRole('link', { name: '待生成文档', exact: true }).click();
+      await expect
+        .poll(() =>
+          app.evaluate(
+            (_, path) => global.fixtureWatches.some((input) => input.path === path),
+            future,
+          ),
+        )
+        .toBe(true);
+      await writeFile(future, '# 自动恢复的文档');
+      await expect(page.locator('.preview-markdown h1')).toHaveText('自动恢复的文档');
+      await writeFile(future, '# 新建后仍会自动刷新');
+      await expect(page.locator('.preview-markdown h1')).toHaveText('新建后仍会自动刷新');
+      await page.getByRole('button', { name: '关闭预览 future.md', exact: true }).click();
+      await app.evaluate((_, path) => {
+        global.fixturePickedPath = path;
+      }, outsideText);
+      await page.getByRole('button', { name: '打开本机文件', exact: true }).click();
+      await expect(page.locator('.preview-markdown h1')).toHaveText('项目外文档');
+      await expect
+        .poll(() =>
+          app.evaluate(
+            (_, path) => global.fixtureWatches.some((input) => input.path === path),
+            outsideText,
+          ),
+        )
+        .toBe(true);
+      await writeFile(outsideText, '# 项目外文件已刷新');
+      await expect(page.locator('.preview-markdown h1')).toHaveText('项目外文件已刷新');
+      await page.getByRole('button', { name: '关闭预览 outside.md', exact: true }).click();
+      await app.evaluate(() => {
+        global.fixturePickedPath = null;
+      });
 
       assert.equal(await page.getByRole('tab', { name: '说明.md', exact: true }).count(), 1);
       await page.getByRole('link', { name: '说明', exact: true }).click();

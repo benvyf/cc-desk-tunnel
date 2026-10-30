@@ -14,12 +14,16 @@ export default function PreviewPaneView({
   surface,
   empty,
   doc,
+  register,
+  focus,
 }: {
   pane: PreviewPane;
   workspace: PreviewWorkspace;
   surface: PreviewSurface;
   empty: ReactNode;
   doc: Document;
+  register: (id: string, element: HTMLElement | null) => void;
+  focus: (id: string) => void;
 }) {
   const viewport = doc.defaultView ?? window;
   const [size, setSize] = useState(() => ({
@@ -50,6 +54,7 @@ export default function PreviewPaneView({
   }, [doc, viewport]);
   const node = (
     <section
+      ref={(element) => register(pane.id, element)}
       data-preview-pane={pane.id}
       className={`preview-pane ${floating ? 'preview-pane-floating' : ''} ${workspace.focused === pane.id ? 'is-focused' : ''}`}
       style={
@@ -174,9 +179,7 @@ export default function PreviewPaneView({
                 e.dataTransfer.effectAllowed = 'move';
               }}
               onDragEnd={() =>
-                document
-                  .querySelectorAll('[data-drop]')
-                  .forEach((el) => el.removeAttribute('data-drop'))
+                doc.querySelectorAll('[data-drop]').forEach((el) => el.removeAttribute('data-drop'))
               }
               onDrop={(e) => {
                 const id = e.dataTransfer.getData(mime);
@@ -224,13 +227,7 @@ export default function PreviewPaneView({
                 size="xs"
                 onClick={() => {
                   workspace.close(tab.id);
-                  requestAnimationFrame(() =>
-                    document
-                      .querySelector<HTMLButtonElement>(
-                        `[data-preview-pane="${pane.id}"] [aria-selected="true"]`,
-                      )
-                      ?.focus(),
-                  );
+                  viewport.requestAnimationFrame(() => focus(pane.id));
                 }}
               >
                 <X />

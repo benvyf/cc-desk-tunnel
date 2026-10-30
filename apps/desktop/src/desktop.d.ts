@@ -21,7 +21,12 @@ declare global {
           root: string;
           path?: string;
         }) => Promise<{ name: string; path: string; kind: 'file' | 'directory' }[]>;
-        watch: (input: { root: string; path: string; key: string }) => Promise<void>;
+        watch: (input: {
+          root: string;
+          path: string;
+          key: string;
+          file?: boolean;
+        }) => Promise<void>;
         unwatch: (key: string) => Promise<void>;
         onChanged: (callback: (value: { key: string; path: string }) => void) => () => void;
         read: (input: {

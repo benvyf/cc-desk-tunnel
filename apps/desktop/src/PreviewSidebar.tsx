@@ -24,6 +24,22 @@ export default function PreviewSidebar({
   const { width, resize: setWidth } = workspace;
   const drag = useRef<{ x: number; width: number } | null>(null);
   const resizeHandle = useRef<HTMLDivElement>(null);
+  const paneElements = useRef(new Map<string, HTMLElement>());
+  const registerPane = (id: string, element: HTMLElement | null) => {
+    if (element) paneElements.current.set(id, element);
+    else paneElements.current.delete(id);
+  };
+  const focusPane = (id: string) => {
+    const panes = paneElements.current;
+    const pane = panes.get(id) ?? panes.get(workspace.focused) ?? panes.values().next().value;
+    const tab = pane?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]');
+    (
+      tab ??
+      resizeHandle.current?.parentElement?.querySelector<HTMLButtonElement>(
+        '.preview-heading button',
+      )
+    )?.focus();
+  };
   const active = workspace.tabs.find((tab) => tab.id === workspace.active);
   const closeWebsite = () => {
     setWebsite(false);
@@ -189,6 +205,8 @@ export default function PreviewSidebar({
               key={pane.id}
               pane={pane}
               doc={ownerDocument}
+              register={registerPane}
+              focus={focusPane}
               workspace={workspace}
               surface={surface}
               empty={

@@ -46,3 +46,5 @@ npx playwright test apps/desktop/test/preview-sidebar.spec.ts apps/desktop/test/
 运行项目支持的 Node 24。Windows/macOS 打包保留目标平台的 LibreOffice Kit 原生引擎与 Koffi，Linux 使用其 WASM 引擎；整个 Office 运行时、Worker、完整性清单、源码与许可声明均保留在 `app.asar.unpacked/node_modules`。PDF.js 及其 Worker、字体、CMap、WASM 解码资源由 Vite 本地打包，不从 CDN 下载。
 
 参考：[DeepSeek Harness Sidebar](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/sidebar-right.zh.md)、[Office 转 PDF](https://github.com/deepseek-ai/deepseek-harness/blob/ce7073d51254c26cd63b22a60835b8f948deb447/docs/subsystems/office-to-pdf.zh.md)。未引入 Harness 的插件/停靠运行时。
+
+详细复核与本轮修正见 [2026-10-31 审查记录](PREVIEW-WORKSPACE-REVIEW-2026-10-31.md)。

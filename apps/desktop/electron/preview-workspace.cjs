@@ -24,22 +24,30 @@ function permitted(root, file) {
   if (parts.some((part) => part.startsWith('.') && part.toLowerCase() !== '.local'))
     throw new Error('不支持预览隐藏文件或目录。');
 }
-async function resolveTarget(input) {
+async function resolveTarget(input, missingFile = false) {
   const writtenRoot = local(input?.root);
   const writtenPath = input?.path === undefined ? writtenRoot : local(input.path);
   permitted(writtenRoot, writtenPath);
   const root = local(await files.realpath(writtenRoot));
   permitted(root, root);
-  const target = local(await files.realpath(writtenPath));
+  const target = local(
+    await files.realpath(writtenPath).catch((error) => {
+      if (!missingFile || error.code !== 'ENOENT') throw error;
+      return path.resolve(root, path.relative(writtenRoot, writtenPath));
+    }),
+  );
   permitted(root, target);
-  const stat = await files.stat(target);
-  if (!stat.isFile() && !stat.isDirectory()) throw new Error('请选择普通文件或目录。');
+  const stat = await files.stat(target).catch((error) => {
+    if (missingFile && error.code === 'ENOENT') return null;
+    throw error;
+  });
+  if (stat && !stat.isFile() && !stat.isDirectory()) throw new Error('请选择普通文件或目录。');
   if (
-    !stat.isDirectory() &&
+    !stat?.isDirectory() &&
     [writtenPath, target].some((file) => path.basename(file).startsWith('.'))
   )
     throw new Error('不支持预览隐藏文件。');
-  return { root, target, directory: stat.isDirectory() };
+  return { root, target, directory: stat?.isDirectory() ?? false };
 }
 
 async function fileVersion(record) {
@@ -282,7 +290,7 @@ function createPreviewWorkspace() {
       // and unwatch/reset can invalidate registrations that have not reached fs.watch yet.
       subscriptions.set(record.key, record);
       try {
-        const { root, target, directory } = await resolveTarget(input);
+        const { root, target, directory } = await resolveTarget(input, input.file === true);
         if (!current(record)) throw new Error('预览来源已失效，请重新打开工作区。');
         Object.assign(record, { root, path: target, directory });
         if (!directory) record.version = await fileVersion(record);

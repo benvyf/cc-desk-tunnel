@@ -5,6 +5,8 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { _electron } from '@playwright/test';
 import { createPackageWithOptions } from '@electron/asar';
+import { TmpDir } from 'builder-util';
+import { NpmNodeModulesCollector } from 'app-builder-lib/out/node-module-collector/npmNodeModulesCollector.js';
 import { stagePreviewOffice } from '../../../scripts/package-preview-office.mjs';
 
 test(
@@ -30,6 +32,24 @@ test(
         dependencies,
       }),
     );
+    const temp = new TmpDir();
+    try {
+      const collected = await new NpmNodeModulesCollector(app, temp).getNodeModules({
+        packageName: 'cc-office-fixture',
+      });
+      const included = new Set();
+      const visit = (modules) => {
+        for (const module of modules) {
+          included.add(module.name);
+          visit(module.dependencies ?? []);
+        }
+      };
+      visit(collected.nodeModules);
+      for (const name of Object.keys(dependencies))
+        assert(included.has(name), `Installer omitted ${name}`);
+    } finally {
+      await temp.cleanup();
+    }
     await writeFile(
       join(app, 'entry.cjs'),
       `const {app,BrowserWindow}=require('electron');global.fixtureOffice=require('./electron/preview-office.cjs').createPreviewOffice;app.setPath('userData',${JSON.stringify(join(root, 'profile'))});app.whenReady().then(()=>{const window=new BrowserWindow({show:false});window.loadURL('data:text/html,<h1>Office fixture</h1>');});`,

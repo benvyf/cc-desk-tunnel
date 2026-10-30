@@ -152,14 +152,15 @@ test('restored HTML behind a text alias still needs explicit activation', async 
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.getByRole('button', { name: '打开文档', exact: true }).click();
   await page.waitForTimeout(200);
-  await page.evaluate(() => {
+  const storedAlias = await page.evaluate(() => {
     const [key, value] = Object.entries(localStorage).find(([k]) =>
       k.startsWith('cc-preview-v1:'),
     )!;
     const layout = JSON.parse(value);
     layout.boards.session.tabs[0].target = 'C:\\work\\alias.txt';
-    localStorage.setItem(key, JSON.stringify(layout));
+    return { key, value: JSON.stringify(layout) };
   });
+  await page.addInitScript(({ key, value }) => localStorage.setItem(key, value), storedAlias);
   await page.reload();
   await page.getByRole('button', { name: '展开空栏', exact: true }).click();
   await expect(page.getByRole('button', { name: '加载此预览', exact: true })).toBeVisible();

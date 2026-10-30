@@ -166,7 +166,13 @@ function createPreviewFiles() {
         )
       ) {
         office ??= require('./preview-office.cjs').createPreviewOffice();
-        const result = await office.render(file);
+        const result = await office.render(file, (candidate) => {
+          if (
+            !inside(root, candidate) ||
+            (input.restricted && privateResource(path.relative(root, candidate).split(path.sep)))
+          )
+            throw new Error('文件不在原预览工作区内或位于私有目录。');
+        });
         if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
         return { path: file, kind: 'pdf', ...result };
       }

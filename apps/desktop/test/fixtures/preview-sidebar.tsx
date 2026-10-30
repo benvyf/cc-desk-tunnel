@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { previewPdf } from '../../test-main/fixtures/preview-pdf.ts';
 import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
 import { usePreviewWorkspace } from '../../src/preview.ts';
 import type { PreviewBrowserState, PreviewFile } from '../../src/preview.ts';
@@ -9,7 +10,8 @@ import { Button } from '../../src/ui.tsx';
 import '../../src/style.css';
 
 const listeners = new Set<(state: PreviewBrowserState) => void>();
-const folder = 'C:\\工作\\网站预览';
+const caseSensitive = new URLSearchParams(location.search).has('case-sensitive');
+const folder = caseSensitive ? '/work/preview' : 'C:\\工作\\网站预览';
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><rect width="360" height="200" fill="#f5f5f3"/><path d="M32 160 100 110 168 130 240 60 320 40" fill="none" stroke="#d97757" stroke-width="8"/></svg>')}`;
 (window as any).desktop = {
   copyText: async () => {},
@@ -23,6 +25,12 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
   },
   preview: {
     async list({ path }: { path: string }) {
+      if (caseSensitive)
+        return ['Case.md', 'case.md'].map((name) => ({
+          name,
+          path: folder + '/' + name,
+          kind: 'file',
+        }));
       return path.endsWith('src')
         ? [{ name: 'index.ts', path: path + '\\index.ts', kind: 'file' }]
         : [
@@ -192,4 +200,26 @@ function Fixture() {
     </div>
   );
 }
-createRoot(document.getElementById('root')!).render(<Fixture />);
+function PopupFixture() {
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <Button
+        onClick={() => {
+          const popup = window.open('', '', 'width=1280,height=900')!;
+          for (const style of document.querySelectorAll('style, link[rel="stylesheet"]'))
+            popup.document.head.append(style.cloneNode(true));
+          const target = popup.document.createElement('div');
+          popup.document.body.append(target);
+          setContainer(target);
+        }}
+      >
+        打开弹出预览
+      </Button>
+      {container && createPortal(<Fixture />, container)}
+    </>
+  );
+}
+createRoot(document.getElementById('root')!).render(
+  new URLSearchParams(location.search).has('popup') ? <PopupFixture /> : <Fixture />,
+);

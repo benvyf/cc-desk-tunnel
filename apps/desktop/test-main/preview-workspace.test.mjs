@@ -579,3 +579,26 @@ test('a file alias cannot expose a hidden .local file', async (t) => {
     /隐藏/,
   );
 });
+
+test('restored missing files can be watched before their first creation', async (t) => {
+  const { project, workspace } = await fixture(t);
+  const target = join(project, 'future', 'restored.md');
+  const events = [];
+  await workspace.watch({ root: project, path: target, key: 'restored', file: true }, (event) =>
+    events.push(event),
+  );
+  await mkdir(join(project, 'future'));
+  await writeFile(target, 'created');
+  await changed(events);
+  const before = events.length;
+  await writeFile(target, 'changed again');
+  await changed(events, before);
+  assert.equal(events.at(-1).path, target);
+  await assert.rejects(
+    workspace.watch(
+      { root: project, path: join(project, '.env'), key: 'hidden', file: true },
+      () => {},
+    ),
+    /隐藏/,
+  );
+});

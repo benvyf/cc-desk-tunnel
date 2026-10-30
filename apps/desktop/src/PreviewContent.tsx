@@ -13,6 +13,7 @@ import { CopyButton } from './copy.tsx';
 import { LinkPlace, linkTarget } from './links.ts';
 import { followLink } from './linkActions.ts';
 import { previewWebsite } from './preview.ts';
+import { isInside } from './paths.ts';
 import type {
   PreviewBrowserState,
   PreviewFile,
@@ -136,6 +137,7 @@ export default function PreviewContent({
 }) {
   const [file, setFile] = useState<PreviewFile | null>(null);
   const [error, setError] = useState('');
+  const [watchError, setWatchError] = useState('');
   const [revision, setRevision] = useState(0);
   const [source, setSource] = useState(false);
   const [zoom, setZoom] = useState(1);
@@ -193,20 +195,30 @@ export default function PreviewContent({
       void window.desktop!.preview.release({ surface, key: tab.id }).catch(() => {});
     };
   }, [tab.id, tab.kind, tab.target, tab.root, tab.restricted, revision, surface]);
+  const watchPath = file?.path ?? tab.target;
+  const watchRoot =
+    tab.restricted || (tab.root && isInside(watchPath, [tab.root]))
+      ? (tab.root ?? parentOf(watchPath))
+      : parentOf(watchPath);
   useEffect(() => {
     if (tab.kind !== 'file' || !window.desktop?.preview.watch) return;
+    let disposed = false;
+    setWatchError('');
     const key = `${surface}:file:${tab.id}`;
     const stop = window.desktop.preview.onChanged((event) => {
       if (event.key === key) setRevision((value) => value + 1);
     });
     void window.desktop.preview
-      .watch({ key, path: tab.target, root: tab.root ?? parentOf(tab.target) })
-      .catch(() => {});
+      .watch({ key, path: watchPath, root: watchRoot, file: true })
+      .catch((e) => {
+        if (!disposed) setWatchError(`自动刷新不可用：${e.message}`);
+      });
     return () => {
+      disposed = true;
       stop();
       void window.desktop?.preview.unwatch(key);
     };
-  }, [tab.id, tab.kind, tab.target, tab.root, surface]);
+  }, [tab.id, tab.kind, watchPath, watchRoot, surface]);
   const native = tab.kind === 'web' || (file?.kind === 'html' && !source);
   const switchable =
     tab.kind === 'file' &&
@@ -322,9 +334,9 @@ export default function PreviewContent({
           <ExternalLink />
         </IconButton>
       </div>
-      {(error || browser?.error) && (
+      {(error || browser?.error || watchError) && (
         <p className="preview-error" role="alert">
-          {error || browser?.error}
+          {error || browser?.error || watchError}
         </p>
       )}
       {file?.kind === 'html' && workspace.restoredTabs.has(tab.id) ? (

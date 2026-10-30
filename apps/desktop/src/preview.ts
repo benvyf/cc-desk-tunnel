@@ -103,7 +103,7 @@ export function usePreviewWorkspace(
           .map((t) => t.id),
       ),
     );
-    return () => {
+    const persist = () => {
       if (owner.key)
         try {
           localStorage.setItem(
@@ -111,6 +111,13 @@ export function usePreviewWorkspace(
             JSON.stringify({ width: owner.width, boards: owner.boards }),
           );
         } catch {}
+    };
+    window.addEventListener('beforeunload', persist);
+    window.addEventListener('pagehide', persist);
+    return () => {
+      window.removeEventListener('beforeunload', persist);
+      window.removeEventListener('pagehide', persist);
+      persist();
       for (const b of Object.values(owner.boards)) for (const t of b.tabs) release(t);
     };
   }, [storageKey, release]);

@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createRequire } from 'node:module';
-import { access, mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, mkdir, readFile, rm, writeFile, rename, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
@@ -308,3 +308,37 @@ test(
     assert.equal(requests, 0, 'converting linked OOXML image must not contact its host');
   },
 );
+
+test('a queued Office read revalidates its selected folder before reading a snapshot', async (t) => {
+  let release, entered;
+  const started = new Promise((resolve) => (entered = resolve));
+  const gate = new Promise((resolve) => (release = resolve));
+  let calls = 0;
+  const { root, input, office } = await fixture(t, async (request) => {
+    if (++calls === 1) {
+      entered();
+      await gate;
+    }
+    await writeFile(request.outputPath, pdf);
+    return { missingFonts: [] };
+  });
+  const project = join(root, 'selected'),
+    other = join(root, 'other');
+  await mkdir(project);
+  await mkdir(other);
+  const queued = join(project, 'report.docx');
+  await writeFile(queued, 'selected fixture');
+  await writeFile(join(other, 'report.docx'), 'other fixture');
+  const first = office.render(input);
+  await started;
+  const second = office.render(queued, (candidate) => {
+    if (relative(project, candidate).startsWith('..')) throw new Error('源文件已离开所选目录');
+  });
+  const rejected = assert.rejects(second, /所选目录/);
+  await rename(project, join(root, 'previous'));
+  await symlink(other, project, 'junction');
+  release();
+  await first;
+  await rejected;
+  assert.equal(calls, 1);
+});

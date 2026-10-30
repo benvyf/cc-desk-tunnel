@@ -56,7 +56,7 @@ function createPreviewOffice({ createConverter = loadConverter, timeoutMs = 60_0
   let converter;
   let closed = false;
   let closing;
-  async function convert(inputPath, controller) {
+  async function convert(inputPath, controller, authorize) {
     const { signal } = controller;
     signal.throwIfAborted();
     const timer = setTimeout(
@@ -69,9 +69,13 @@ function createPreviewOffice({ createConverter = loadConverter, timeoutMs = 60_0
         throw new Error('请选择本机绝对路径，不支持网络共享文件。');
       const file = await realpath(inputPath);
       if (!localPath(file, path.isAbsolute)) throw new Error('不支持网络共享文件。');
+      authorize?.(file);
       const extension = path.extname(file).toLowerCase();
       if (!formats.has(extension)) throw new Error('此 Office 文件格式暂不支持预览。');
       const bytes = await boundedBytes(file);
+      const confirmed = await realpath(file);
+      if (confirmed !== file) throw new Error('预览来源已改变，请重新打开文件。');
+      authorize?.(confirmed);
       signal.throwIfAborted();
       scratch = await mkdtemp(path.join(tmpdir(), 'cc-office-preview-'));
       const source = path.join(scratch, `source${extension}`);
@@ -96,12 +100,12 @@ function createPreviewOffice({ createConverter = loadConverter, timeoutMs = 60_0
     }
   }
   return {
-    render(inputPath) {
+    render(inputPath, authorize) {
       if (closed) return Promise.reject(new Error('Office 预览已关闭。'));
       if (pending.size >= 4)
         return Promise.reject(new Error('等待预览的 Office 文件过多，请稍后再试。'));
       const controller = new AbortController();
-      const job = tail.then(() => convert(inputPath, controller));
+      const job = tail.then(() => convert(inputPath, controller, authorize));
       pending.set(controller, job);
       tail = job.then(
         () => {},
