@@ -471,11 +471,17 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
                   baseUpgradeCommand: baseUpgradeCommand(
                     status.payload.release,
                     await readFile(
-                      new URL('../../../scripts/upgrade-terminal-base.py', import.meta.url),
+                      new URL(
+                        status.payload.release.build === 9
+                          ? '../../../scripts/upgrade-message-review.py'
+                          : '../../../scripts/upgrade-terminal-base.py',
+                        import.meta.url,
+                      ),
                     ),
                     await readFile(
                       new URL('../../../scripts/install-cc-space-037.py', import.meta.url),
                     ),
+                    assets.get(base + '/server-bootstrap.py')!.bytes,
                   ),
                 }
               : {}),

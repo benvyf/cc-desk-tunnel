@@ -201,6 +201,25 @@ test('base upgrade command embeds both scripts without executing migration', (t)
   );
 });
 
+test('Build 9 image command pins the target and embeds offline rollback support', (t) => {
+  const f = fixture(t);
+  const script = readFileSync('scripts/upgrade-message-review.py');
+  const legacy = readFileSync('scripts/install-cc-space-037.py');
+  const support = readFileSync('apps/update-service/web/server-bootstrap.py');
+  const release = { ...f.release, build: 9, protocol: 22 };
+  assert.equal(baseUpgradeCommand(release, script, legacy), undefined);
+  const command = baseUpgradeCommand(release, script, legacy, support)!;
+  execFileSync(
+    process.platform === 'win32' ? 'python' : 'python3',
+    [
+      '-c',
+      "import shlex,sys,ast,base64,zlib,json; a=shlex.split(sys.stdin.read()); outer=ast.parse(a[3]); wrapper=base64.b64decode(outer.body[1].value.args[0].args[0].value); compile(wrapper,'<wrapper>','exec'); tree=ast.parse(wrapper); files=json.loads(zlib.decompress(base64.b64decode(tree.body[1].value.args[0].args[0].args[0].value))); assert set(files)=={'upgrade-message-review.py','install-cc-space-037.py','server-bootstrap.py'}; [compile(base64.b64decode(data),name,'exec') for name,data in files.items()]; assert b'--sha256' in wrapper and b'--install' in wrapper and b'--cleanup' in wrapper",
+    ],
+    { input: command, windowsHide: true },
+  );
+  assert.ok(command.length < 131072);
+});
+
 test('publication derives exact descriptor and compatibility from a complete validated archive', (t) => {
   const f = fixture(t);
   assert.deepEqual(releaseFromArchive(f.archive), f.release);
