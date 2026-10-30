@@ -573,6 +573,19 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   write: (desktopAccess) => writeSettings({ desktopAccess }),
   storage: safeStorage,
   deviceId: () => readComputer().deviceId ?? writeComputer({ deviceId: randomUUID() }).deviceId,
+  confirmSwitch: async () => {
+    const { response } = await dialog.showMessageBox(primaryWindow, {
+      type: 'question',
+      title: '切换登录电脑',
+      message: '账号近期在其他电脑登录',
+      detail: '是否切换到当前电脑？切换后，原电脑将退出登录。',
+      buttons: ['取消', '切换到本机'],
+      defaultId: 0,
+      cancelId: 0,
+      noLink: true,
+    });
+    return response === 1;
+  },
   onExpired: (message) => {
     serverClient?.cancel();
     void disconnectProxy().catch((error) =>

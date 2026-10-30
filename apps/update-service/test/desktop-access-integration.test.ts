@@ -52,7 +52,7 @@ test('trusted proxy addresses isolate IP throttling while account throttling is 
 });
 
 test(
-  'a new computer login revokes the old live socket without any Claude request',
+  'a new computer preserves the old socket until switching is confirmed, without any Claude request',
   { timeout: 45_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'cc-access-integration-'));
@@ -185,10 +185,19 @@ test(
     );
     assert.equal((await fetch(proxyUrl + '/')).status, 403, 'legacy web entry disabled');
     const closed = once(socket, 'close');
-    const secondLoginResponse = await request('/cc-access/v1/login', '', {
+    const nextCredentials = {
       email: userInput.email,
       password: userInput.password,
       deviceId: '22222222-2222-4222-8222-222222222222',
+    };
+    const conflict = await request('/cc-access/v1/login', '', nextCredentials);
+    assert.equal(conflict.status, 409);
+    await conflict.text();
+    assert.equal((await request('/cc-access/v1/workspaces', login.token)).status, 200);
+    assert.equal(socket.readyState, WebSocket.OPEN);
+    const secondLoginResponse = await request('/cc-access/v1/login', '', {
+      ...nextCredentials,
+      confirmSwitch: true,
     });
     assert.equal(secondLoginResponse.status, 200);
     const secondLogin = await secondLoginResponse.json();

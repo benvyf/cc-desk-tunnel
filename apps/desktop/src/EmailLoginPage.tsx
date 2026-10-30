@@ -172,7 +172,7 @@ export default function EmailLoginPage({
           )}
           <div className="email-login-policy">
             <ShieldCheck />
-            <p>同一账号仅限一台电脑在线，新电脑登录后，旧电脑会自动退出。</p>
+            <p>同一账号仅限一台电脑在线，确认切换到新电脑后，旧电脑会自动退出。</p>
           </div>
         </section>
         <p className="email-login-footer">账号与工作空间由 CC 管理中心统一管理</p>

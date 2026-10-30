@@ -3,6 +3,84 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const { createDesktopAccess } = createRequire(import.meta.url)('../electron/desktop-access.cjs');
 
+test('computer switching waits for confirmation, preserves the current session on cancel and retries only on consent', async () => {
+  let conflict = false;
+  let consent = false;
+  let dialogs = 0;
+  let saved = null;
+  const calls = [];
+  const access = createDesktopAccess({
+    read: () => saved,
+    write: (value) => {
+      saved = value;
+    },
+    storage: {
+      isEncryptionAvailable: () => true,
+      encryptString: (text) => Buffer.from(text),
+    },
+    deviceId: () => '22222222-2222-4222-8222-222222222222',
+    confirmSwitch: async () => {
+      dialogs++;
+      return consent;
+    },
+    request: async (url, options) => {
+      const input = JSON.parse(options.body);
+      calls.push(input);
+      if (input.password === 'wrong-password')
+        return Response.json({ error: '邮箱或密码不正确' }, { status: 401 });
+      if (conflict && !input.confirmSwitch)
+        return Response.json({ error: '账号近期在其他电脑登录' }, { status: 409 });
+      return Response.json({ email: input.email, token: 'session', workspaces: [] });
+    },
+  });
+  const input = { email: 'me@example.com', password: 'test-password', remember: true };
+  await access.login(input);
+  const previous = saved;
+  conflict = true;
+  await assert.rejects(access.login(input), /已取消切换/);
+  assert.equal(calls.length, 2, 'cancelling sends no replacement request');
+  assert.equal(saved, previous);
+  assert.equal(dialogs, 1);
+  await assert.rejects(access.login({ ...input, password: 'wrong-password' }), /邮箱或密码/);
+  assert.equal(dialogs, 1, 'incorrect passwords never open the switch dialog');
+  consent = true;
+  await access.login(input);
+  assert.equal(dialogs, 2);
+  assert.equal(calls.at(-2).confirmSwitch, undefined);
+  assert.deepEqual(calls.at(-1), { ...calls.at(-2), confirmSwitch: true });
+  assert.equal(calls.at(-1).deviceId, '22222222-2222-4222-8222-222222222222');
+});
+
+test('logout while the switch dialog is open prevents a late confirmation from replacing another computer', async () => {
+  let finish;
+  let shown;
+  const opened = new Promise((resolve) => {
+    shown = resolve;
+  });
+  let requests = 0;
+  const access = createDesktopAccess({
+    read: () => null,
+    write() {},
+    storage: { isEncryptionAvailable: () => false },
+    confirmSwitch: () =>
+      new Promise((resolve) => {
+        finish = resolve;
+        shown();
+      }),
+    request: async () => {
+      requests++;
+      return Response.json({ error: '需要确认切换' }, { status: 409 });
+    },
+  });
+  const pending = access.login({ email: 'me@example.com', password: 'test-password' });
+  const cancelled = assert.rejects(pending, /登录已取消/);
+  await opened;
+  await access.logout();
+  finish(true);
+  await cancelled;
+  assert.equal(requests, 1);
+});
+
 test('an unreadable upgrade response remains uncertain, while missing routes and expired sessions are actionable', async () => {
   let response;
   let expired = 0;

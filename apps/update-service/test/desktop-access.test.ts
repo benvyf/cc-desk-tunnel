@@ -146,7 +146,7 @@ test('reconnecting cannot revoke an in-flight maintenance ticket and maintenance
   assert.throws(() => store.validate(pending.token, 'ubuntu-cc', false, now + 4), /失效/);
 });
 
-test('only the latest computer remains authorized; same-computer windows coexist and bad passwords cannot evict', async (t) => {
+test('switching computers requires confirmation; same-computer windows coexist and bad passwords cannot evict', async (t) => {
   const { root, store, input } = await fixture(t);
   const deviceA = '11111111-1111-4111-8111-111111111111';
   const deviceB = '22222222-2222-4222-8222-222222222222';
@@ -161,7 +161,20 @@ test('only the latest computer remains authorized; same-computer windows coexist
     /邮箱或密码/,
   );
   assert.equal(store.workspaces(first.token).length, 1);
-  const latest = await store.login({ ...input, deviceId: deviceB }, 'same-nat');
+  await assert.rejects(store.login({ ...input, deviceId: deviceB }, 'same-nat'), { status: 409 });
+  assert.equal(store.workspaces(first.token).length, 1);
+  assert.ok(store.validate(otherTicket.token, 'ubuntu-cc', true));
+  await assert.rejects(
+    store.login(
+      { ...input, password: 'wrong-password', deviceId: deviceB, confirmSwitch: true },
+      'same-nat',
+    ),
+    { status: 401 },
+  );
+  const latest = await store.login(
+    { ...input, deviceId: deviceB, confirmSwitch: true },
+    'same-nat',
+  );
   for (const old of [first, anotherWindow]) {
     assert.throws(() => store.workspaces(old.token), /失效/);
     assert.throws(() => store.connect(old.token, 'ubuntu-cc'), /失效/);
@@ -178,10 +191,11 @@ test('only the latest computer remains authorized; same-computer windows coexist
   } finally {
     reopened.close();
   }
-  const legacy = await store.login(input, 'legacy-client');
+  await assert.rejects(store.login(input, 'legacy-client'), { status: 409 });
+  const legacy = await store.login({ ...input, confirmSwitch: true }, 'legacy-client');
   assert.throws(() => store.workspaces(latest.token), /失效/);
   assert.equal(store.workspaces(legacy.token).length, 1);
-  await store.login({ ...input, deviceId: deviceA }, 'same-nat');
+  await store.login({ ...input, deviceId: deviceA, confirmSwitch: true }, 'same-nat');
   assert.throws(() => store.workspaces(legacy.token), /失效/);
 });
 
@@ -193,22 +207,79 @@ test('existing session databases migrate without invalidating login until the ne
   db.exec('DROP TABLE session_devices');
   db.exec('DROP TABLE server_tickets');
   db.exec('DROP TABLE remembered_sessions');
+  db.exec('DROP TABLE session_activity');
   db.close();
   const migrated = new DesktopAccess(root);
   try {
+    await assert.rejects(
+      migrated.login({ ...input, deviceId: '33333333-3333-4333-8333-333333333333' }, 'new-client'),
+      { status: 409 },
+      'migration must protect an existing login before its first heartbeat',
+    );
     assert.equal(migrated.workspaces(before.token).length, 1);
     assert.ok(migrated.validate(connection.token, 'ubuntu-cc', false));
     const management = migrated.serverConnection(before.token, 'ubuntu-cc');
     assert.ok(migrated.validate(management.token, 'ubuntu-cc', false));
     migrated.releaseServerConnection(management.token);
     const after = await migrated.login(
-      { ...input, deviceId: '33333333-3333-4333-8333-333333333333' },
+      { ...input, deviceId: '33333333-3333-4333-8333-333333333333', confirmSwitch: true },
       'new-client',
     );
     assert.throws(() => migrated.workspaces(before.token), /失效/);
     assert.equal(migrated.workspaces(after.token).length, 1);
   } finally {
     migrated.close();
+  }
+});
+
+test('activity tracking leaves the session schema compatible with the previous management service', async (t) => {
+  const { root, store, input, id } = await fixture(t);
+  await store.login(input, 'current-client');
+  const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
+  try {
+    db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(
+      'previous-service-session',
+      id,
+      Date.now() + 3600_000,
+    );
+    assert.equal(db.prepare('SELECT count(*) AS n FROM sessions').get()!.n, 2);
+  } finally {
+    db.close();
+  }
+});
+
+test('idle desktops stay online through existing checks with writes throttled to 30 seconds; stale desktops need no confirmation', async (t) => {
+  const { root, store, input } = await fixture(t);
+  const now = Date.now();
+  const first = await store.login(
+    { ...input, deviceId: '11111111-1111-4111-8111-111111111111', remember: true },
+    'a',
+    now,
+  );
+  const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
+  try {
+    const lastSeen = () =>
+      Number(db.prepare('SELECT last_seen FROM session_activity').get()!.last_seen);
+    store.workspaces(first.token, now + 15_000);
+    assert.equal(lastSeen(), now);
+    store.workspaces(first.token, now + 30_000);
+    assert.equal(lastSeen(), now + 30_000);
+    for (const offset of [45_000, 60_000, 75_000, 90_000, 105_000])
+      store.workspaces(first.token, now + offset);
+    assert.equal(lastSeen(), now + 90_000);
+    const nextInput = { ...input, deviceId: '22222222-2222-4222-8222-222222222222' };
+    await assert.rejects(store.login(nextInput, 'b', now + 180_000), { status: 409 });
+    assert.equal(lastSeen(), now + 90_000, 'declining a switch does not refresh the old computer');
+    const restarted = new DesktopAccess(root);
+    try {
+      const next = await restarted.login(nextInput, 'b', now + 180_001);
+      assert.throws(() => store.workspaces(first.token, now + 180_001), /失效/);
+      assert.equal(store.workspaces(next.token, now + 180_001).length, 1);
+    } finally {
+      restarted.close();
+    }
+  } finally {
+    db.close();
   }
 });
 
@@ -236,7 +307,10 @@ test('a failed computer replacement rolls back old sessions, tickets and device 
       "CREATE TRIGGER fail_device_insert BEFORE INSERT ON session_devices BEGIN SELECT RAISE(ABORT, 'simulated write failure'); END",
     );
     await assert.rejects(
-      store.login({ ...input, deviceId: '22222222-2222-4222-8222-222222222222' }, 'b'),
+      store.login(
+        { ...input, deviceId: '22222222-2222-4222-8222-222222222222', confirmSwitch: true },
+        'b',
+      ),
       /simulated write failure/,
     );
     assert.equal(store.workspaces(first.token).length, 1);
@@ -244,7 +318,7 @@ test('a failed computer replacement rolls back old sessions, tickets and device 
     assert.equal(db.prepare('SELECT count(*) AS n FROM session_devices').get()!.n, 1);
     db.exec('DROP TRIGGER fail_device_insert');
     const next = await store.login(
-      { ...input, deviceId: '22222222-2222-4222-8222-222222222222' },
+      { ...input, deviceId: '22222222-2222-4222-8222-222222222222', confirmSwitch: true },
       'b',
     );
     assert.throws(() => store.workspaces(first.token), /失效/);

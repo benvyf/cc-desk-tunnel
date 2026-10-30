@@ -8,6 +8,7 @@ function createDesktopAccess({
   storage,
   deviceId,
   onExpired,
+  confirmSwitch,
   origin = ORIGIN,
 }) {
   let session = null;
@@ -128,12 +129,22 @@ function createDesktopAccess({
           });
           next = { ...current, workspaces: value.workspaces };
         } else {
-          next = await api('login', {
+          const credentials = {
             email,
             password: input.password,
             remember,
             ...(deviceId ? { deviceId: deviceId() } : {}),
-          });
+          };
+          try {
+            next = await api('login', credentials);
+          } catch (error) {
+            if (error.status !== 409 || !confirmSwitch) throw error;
+            if (turn !== generation) throw new Error('登录已取消。');
+            const confirmed = await confirmSwitch();
+            if (turn !== generation) throw new Error('登录已取消。');
+            if (!confirmed) throw new Error('已取消切换，原电脑保持登录。');
+            next = await api('login', { ...credentials, confirmSwitch: true });
+          }
         }
         if (turn !== generation) throw new Error('登录已取消。');
         if (!next || typeof next.token !== 'string' || !Array.isArray(next.workspaces))
