@@ -1,12 +1,14 @@
 """Message-only image upgrade checks; no Docker or model requests."""
 import copy
 import hashlib
+import io
 import importlib.util
 import json
 import os
 import shutil
 from pathlib import Path
 import tempfile
+import tarfile
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
@@ -85,7 +87,17 @@ class UpgradeTests(unittest.TestCase):
             root=Path(directory);data=root/'data';data.mkdir();policy=root/'old-policy';policy.mkdir()
             (policy/'managed-settings.json').write_text('{"hooks":{}}')
             (policy/'moderation-node.json').write_text('{"token":"fixture"}')
-            release={'build':9,'protocol':22,'sha256':'a'*64,'descriptorSha256':'b'*64}
+            content=(ROOT/'deploy/configure-moderation.py').read_bytes()
+            inventory={'deploy/configure-moderation.py':{'size':len(content),'sha256':hashlib.sha256(content).hexdigest()}}
+            descriptor=json.dumps({'schema':1,'product':'cc-desk-tunnel-managed-server','build':9,
+                'appVersion':'0.3.7','protocol':22,'sourceCommit':'f'*40,'files':inventory}).encode()
+            buffer=io.BytesIO()
+            with tarfile.open(fileobj=buffer,mode='w:gz',format=tarfile.USTAR_FORMAT) as archive:
+                for name,body in [('deploy/configure-moderation.py',content),('SERVER-RELEASE.json',descriptor)]:
+                    entry=tarfile.TarInfo(name);entry.size=len(body);archive.addfile(entry,io.BytesIO(body))
+            bundle=buffer.getvalue()
+            release={'build':9,'protocol':22,'appVersion':'0.3.7','sourceCommit':'f'*40,'size':len(bundle),
+                'sha256':hashlib.sha256(bundle).hexdigest(),'descriptorSha256':hashlib.sha256(descriptor).hexdigest()}
             source={'Id':'original','Image':'sha256:'+'c'*64,'Config':{},'HostConfig':{
                 'Binds':[str(policy)+':/etc/claude-code:ro']},'Mounts':[],'State':{'Running':True}}
             calls=[]
@@ -93,11 +105,13 @@ class UpgradeTests(unittest.TestCase):
                 calls.append('signature')
                 if bad_signature:raise RuntimeError('bad signature')
                 return {'release':release}
-            def unpack(archive,program,target):
-                (program/'deploy').mkdir();shutil.copyfile(ROOT/'deploy/configure-moderation.py',program/'deploy/configure-moderation.py')
+            # Exercise the real helper contract, including its requirement that
+            # the destination must not already exist. Docker remains simulated.
+            real_helper=m.load('real_unpack_helper',ROOT/'apps/update-service/web/server-bootstrap.py')
             def engine(*args):return copy.deepcopy(source)
             helper=SimpleNamespace(CONTAINER='',PROFILE={'files':{}},DATA=data,Engine=lambda:SimpleNamespace(request=engine),
-                validate_runtime=lambda _:None,download=lambda *args:b'fixture',verify_index=verify,unpack=unpack,
+                validate_runtime=lambda _:None,download=lambda path,*args:b'fixture' if path.endswith('.json') else bundle,
+                verify_index=verify,unpack=real_helper.unpack,
                 runtime_and_policy=lambda _:calls.append('runtime-policy'),command=lambda *args:calls.append('build'),
                 offline_preflight=lambda *args:calls.append('offline'),clone_config=lambda original,image:{'HostConfig':original['HostConfig']},
                 live_status=lambda *args,**kwargs:calls.append('already-status'))

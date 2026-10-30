@@ -200,7 +200,7 @@ def main():
         # The old helper's four-event policy validation is for the old baseline only.
         b.runtime_and_policy(b.CONTAINER)
         work = Path(tempfile.mkdtemp(prefix='build9-', dir=ROOT)); work.chmod(0o755)
-        program = work / 'program'; program.mkdir(mode=0o755)
+        program = work / 'program'
         print('1/4 Verifying signed Build 9 and existing runtime; old service remains running.', flush=True)
         archive = b.download('/cc-updates/server/v1/artifacts/9/linux-x64/cc-desk-tunnel-server-0.3.7-build9.tar.gz', 64 * 1024 * 1024)
         b.unpack(archive, program, release)
@@ -254,7 +254,10 @@ if __name__ == '__main__':
     try:
         main()
     except Exception as error:
-        print('Upgrade stopped: ' + type(error).__name__ + '. Keep the backup directory and inspect the local log.', file=sys.stderr)
+        # These exception messages are fixed installer diagnostics; JSON/parser
+        # and subprocess exceptions may contain private data and stay masked.
+        reason = str(error) if isinstance(error, RuntimeError) or type(error).__name__ == 'InstallError' else type(error).__name__
+        print('Upgrade stopped: ' + reason + '. Keep the backup directory and inspect the local log.', file=sys.stderr)
         for frame in traceback.extract_tb(error.__traceback__):
             print('  ' + Path(frame.filename).name + ':' + str(frame.lineno) + ' in ' + frame.name, file=sys.stderr)
         raise SystemExit(1)
