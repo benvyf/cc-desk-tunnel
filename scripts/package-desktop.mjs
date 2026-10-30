@@ -11,6 +11,8 @@ import {
 import { dirname, join } from 'node:path';
 import { build as viteBuild } from 'vite';
 import brand from '../apps/desktop/brand.json' with { type: 'json' };
+import { stagePreviewOffice } from './package-preview-office.mjs';
+import { assertDesktopModelBoundary } from './model-boundary.mjs';
 
 // A package the program loads by name while it runs, copied with what it depends on. Compiled add-ons are
 // left out: they are optional speed-ups built for the Node of the machine that installed them, not for the
@@ -57,8 +59,15 @@ export const posixService = {
 export async function stageDesktop(
   root,
   app,
-  { description, files = [], dependencies = [], managedIdentity = null },
+  {
+    description,
+    files = [],
+    dependencies = [],
+    managedIdentity = null,
+    architecture = process.arch,
+  },
 ) {
+  assertDesktopModelBoundary(root);
   mkdirSync(app, { recursive: true });
   rmSync(join(app, 'node_modules'), { recursive: true, force: true });
   await viteBuild({
@@ -137,6 +146,7 @@ export async function stageDesktop(
     ))
       if (!name.startsWith('../vendor') && !existsSync(join(app, 'electron', name)))
         throw new Error(`${file} loads ${name}, which is not in the package.`);
+  const officeVersions = stagePreviewOffice(root, app, { arch: architecture });
   const versions = Object.fromEntries(
     dependencies.map((name) => [name, copyDependency(root, app, name)]),
   );
@@ -155,7 +165,7 @@ export async function stageDesktop(
         private: true,
         main: 'electron/main.cjs',
         type: 'module',
-        ...(dependencies.length ? { dependencies: versions } : {}),
+        dependencies: { ...versions, ...officeVersions },
       },
       null,
       2,

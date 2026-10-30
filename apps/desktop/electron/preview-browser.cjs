@@ -8,7 +8,36 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
   partition.on('will-download', (event) => event.preventDefault());
   const views = new Map();
   const urls = new Map();
-  let current;
+  const origins = new Map();
+  const current = new Map();
+  const panes = new Map();
+  const revisions = new Map();
+  const invalidate = (key) => {
+    const revision = (revisions.get(key) ?? 0) + 1;
+    revisions.set(key, revision);
+    return revision;
+  };
+  // Static files cannot act as a network proxy. Unknown worker requests have no
+  // associated trusted view and are denied as well. Preview sessions are isolated from sign-in.
+  partition.webRequest.onBeforeRequest({ urls: ['<all_urls>'] }, (details, callback) => {
+    const entry = [...views].find(([, view]) => view.webContents.id === details.webContentsId);
+    const initial = entry && urls.get(entry[0]);
+    let allowed = false;
+    try {
+      if (initial) {
+        const requested = new URL(details.url),
+          origin = new URL(initial);
+        allowed = files.owns(initial)
+          ? requested.origin === origin.origin
+          : (origins.get(entry[0])?.has(requested.origin) ?? false);
+        if (!files.owns(initial) && ['ws:', 'wss:'].includes(requested.protocol))
+          allowed = [...(origins.get(entry[0]) ?? [])].some(
+            (value) => new URL(value).host === requested.host,
+          );
+      }
+    } catch {}
+    callback({ cancel: !allowed });
+  });
   function state(key, view, error = '', open) {
     const contents = view.webContents;
     if (recipient.isDestroyed() || contents.isDestroyed()) return;
@@ -34,11 +63,17 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
     }
   };
   const controller = {
-    show({ key, url, bounds }) {
+    show({ key, url, bounds, pane = 'primary' }) {
       if (typeof key !== 'string' || key.length > 200 || !allowed(url))
         throw new Error('无效的本机预览地址。');
+      invalidate(key);
       let view = views.get(key);
-      for (const [id, other] of views) other.setVisible(id === key);
+      for (const [id, other] of views)
+        if (panes.get(id) === pane) {
+          other.setVisible(id === key);
+          if (id !== key) invalidate(id);
+        }
+      panes.set(key, pane);
       if (!view) {
         view = new WebContentsView({
           webPreferences: {
@@ -50,10 +85,12 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
             backgroundThrottling: true,
           },
         });
+        view.webContents.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
         views.set(key, view);
         owner.contentView.addChildView(view);
         view.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
         const prevent = (event, target) => {
+          const revision = invalidate(key);
           const initial = urls.get(key);
           if (files.owns(initial)) {
             if (!view.getVisible()) {
@@ -65,6 +102,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
               void Promise.all([files.target(initial), files.target(target)]).then(
                 ([original, next]) => {
                   if (
+                    revisions.get(key) !== revision ||
                     views.get(key) !== view ||
                     urls.get(key) !== initial ||
                     !files.owns(initial) ||
@@ -87,7 +125,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
             }
             if (allowed(target)) {
               event.preventDefault();
-              state(key, view, '', { kind: 'web', target });
+              state(key, view, '请使用工具栏手动打开本机网站。');
               return;
             }
           }
@@ -113,16 +151,20 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
       }
       if (urls.get(key) !== url) {
         urls.set(key, url);
+        origins.set(key, new Set([new URL(url).origin]));
         void view.webContents.loadURL(url).catch(() => {});
       }
-      current = key;
-      controller.bounds(bounds);
+      current.set(pane, key);
+      controller.bounds(bounds, pane);
       state(key, view);
     },
-    bounds(bounds) {
-      const view = views.get(current);
+    bounds(bounds, pane = 'primary') {
+      const key = current.get(pane);
+      if (panes.get(key) !== pane) return;
+      const view = views.get(key);
       if (!view) return;
       if (!bounds) {
+        invalidate(key);
         view.setVisible(false);
         return;
       }
@@ -138,8 +180,12 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
       view.setBounds({ x, y, width, height });
       view.setVisible(width > 0 && height > 0);
     },
-    hide() {
-      for (const view of views.values()) view.setVisible(false);
+    hide(pane) {
+      for (const [key, view] of views)
+        if (!pane || panes.get(key) === pane) {
+          invalidate(key);
+          view.setVisible(false);
+        }
     },
     action({ key, action, url }) {
       const view = views.get(key);
@@ -147,6 +193,7 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
       const contents = view.webContents;
       if (action === 'go') {
         const target = localWebsite(url);
+        origins.get(key)?.add(new URL(target).origin);
         void contents.loadURL(target).catch(() => {});
       } else if (action === 'reload') contents.reload();
       else if (action === 'back' && contents.navigationHistory.canGoBack())
@@ -158,8 +205,11 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
     release(key) {
       const view = views.get(key);
       if (!view) return;
+      revisions.delete(key);
       views.delete(key);
       urls.delete(key);
+      origins.delete(key);
+      panes.delete(key);
       owner.contentView.removeChildView(view);
       view.webContents.close();
     },
@@ -179,6 +229,10 @@ function createPreviewBrowser({ owner, recipient, surface, WebContentsView, sess
       if (!view.webContents.isDestroyed()) view.webContents.close();
     views.clear();
     urls.clear();
+    origins.clear();
+    panes.clear();
+    current.clear();
+    revisions.clear();
   });
   return controller;
 }

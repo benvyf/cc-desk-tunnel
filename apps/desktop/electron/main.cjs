@@ -21,6 +21,7 @@ const {
   protocol,
 } = require('electron');
 const path = require('node:path');
+const { isTrustedRenderer } = require('./renderer-origin.cjs');
 const { name: productName, appId, legacyProfileName, configureBrand } = require('./branding.cjs');
 const {
   closeSync,
@@ -124,17 +125,24 @@ function keepAwake(on) {
   }
 }
 
-// These channels answer only the application's own page.
+// These channels answer only the primary application entry frame.
+function appRenderer(event) {
+  return isTrustedRenderer(
+    event,
+    primaryWindow?.webContents,
+    path.join(__dirname, '../dist/index.html'),
+  );
+}
 function handle(channel, listener) {
   ipcMain.handle(channel, (event, ...args) => {
-    if (!event.senderFrame.url.startsWith('file://')) throw new Error('Untrusted renderer');
+    if (!appRenderer(event)) throw new Error('Untrusted renderer');
     return listener(event, ...args);
   });
 }
 
 const previewFiles = require('./preview-files.cjs').createPreviewFiles();
 const previewBrowsers = new WeakMap();
-function previewBrowser(event, surface = 'main', create = true) {
+function previewBrowser(event, surface = 'main', create = true, pane = 'primary') {
   if (!['main', 'terminal', 'inline-terminal'].includes(surface))
     throw new Error('无效的预览区域。');
   const parent = BrowserWindow.fromWebContents(event.sender);
@@ -148,7 +156,9 @@ function previewBrowser(event, surface = 'main', create = true) {
     surfaces = new Map();
     previewBrowsers.set(owner, surfaces);
   }
-  let browser = surfaces?.get(surface);
+  if (typeof pane !== 'string' || pane.length > 200) throw new Error('无效的窗格。');
+  const slot = surface;
+  let browser = surfaces?.get(slot);
   if (!browser && create) {
     browser = require('./preview-browser.cjs').createPreviewBrowser({
       owner,
@@ -158,10 +168,36 @@ function previewBrowser(event, surface = 'main', create = true) {
       session,
       files: previewFiles,
     });
-    surfaces.set(surface, browser);
+    surfaces.set(slot, browser);
   }
   return browser;
 }
+const workspaceFiles = new WeakMap();
+const allWorkspaceFiles = new Set();
+function previewWorkspace(event) {
+  let controller = workspaceFiles.get(event.sender);
+  if (!controller) {
+    controller = require('./preview-workspace.cjs').createPreviewWorkspace();
+    workspaceFiles.set(event.sender, controller);
+    allWorkspaceFiles.add(controller);
+    event.sender.on('did-start-navigation', (_event, _url, inPlace, mainFrame) => {
+      if (mainFrame && !inPlace) controller.reset();
+    });
+    event.sender.on('render-process-gone', () => controller.reset());
+    event.sender.once('destroyed', () => {
+      controller.close();
+      allWorkspaceFiles.delete(controller);
+    });
+  }
+  return controller;
+}
+handle('preview:list', (event, input) => previewWorkspace(event).list(input));
+handle('preview:watch', (event, input) =>
+  previewWorkspace(event).watch(input, (value) => {
+    if (!event.sender.isDestroyed()) event.sender.send('preview:changed', value);
+  }),
+);
+handle('preview:unwatch', (event, key) => previewWorkspace(event).unwatch(key));
 handle('preview:file', (_event, input) => previewFiles.read(input));
 handle('preview:file-release', (_event, token) => previewFiles.release(token));
 handle('preview:pick', async (event, surface = 'main') => {
@@ -176,21 +212,31 @@ handle('preview:pick', async (event, surface = 'main') => {
   });
   return result.canceled ? null : result.filePaths[0];
 });
-handle('preview:show', (event, input) => previewBrowser(event, input.surface).show(input));
-handle('preview:bounds', (event, input) =>
-  previewBrowser(event, input.surface, false)?.bounds(input.bounds),
+handle('preview:show', (event, input) =>
+  previewBrowser(event, input.surface, true, input.pane).show(input),
 );
-handle('preview:hide', (event, surface) => previewBrowser(event, surface, false)?.hide());
+handle('preview:bounds', (event, input) =>
+  previewBrowser(event, input.surface, false, input.pane)?.bounds(input.bounds, input.pane),
+);
+function eachPreviewBrowser(event, surface, callback) {
+  const owner =
+    surface === 'terminal'
+      ? terminalControllers.get(event.sender)?.window()
+      : BrowserWindow.fromWebContents(event.sender);
+  for (const [slot, browser] of previewBrowsers.get(owner) ?? [])
+    if (slot === surface) callback(browser);
+}
+handle('preview:hide', (event, surface, pane) =>
+  pane
+    ? previewBrowser(event, surface, false, pane)?.hide(pane)
+    : eachPreviewBrowser(event, surface, (b) => b.hide()),
+);
 handle('preview:action', (event, input) =>
-  previewBrowser(event, input.surface, false)?.action(input),
+  eachPreviewBrowser(event, input.surface, (b) => b.action(input)),
 );
 handle('preview:release', (event, input) =>
-  previewBrowser(event, input.surface, false)?.release(input.key),
+  eachPreviewBrowser(event, input.surface, (b) => b.release(input.key)),
 );
-app.on('will-quit', () => {
-  void previewFiles.close();
-});
-
 handle('terminal-window:focus', (event) => terminalControllers.get(event.sender)?.focus() ?? false);
 handle(
   'terminal-window:appearance',
@@ -832,7 +878,7 @@ function takeShared() {
 }
 // What the page needs before it draws anything.
 ipcMain.on('boot', (event) => {
-  event.returnValue = event.senderFrame.url.startsWith('file://')
+  event.returnValue = appRenderer(event)
     ? {
         connection: connectionId,
         shared: Object.fromEntries(Object.keys(seen).map((key) => [key, snapshot(key)])),
@@ -949,7 +995,7 @@ async function disconnectProxy() {
   bridge = null;
   await previous?.close();
 }
-ipcMain.handle('proxy:disconnect', disconnectProxy);
+handle('proxy:disconnect', disconnectProxy);
 
 // Windows files notifications under this identity; the installer gives the shortcut the same one.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? appId : process.execPath);
@@ -1155,10 +1201,12 @@ app.on('before-quit', (event) => {
   // Dispose portal windows while their owning renderer is still alive.
   for (const window of BrowserWindow.getAllWindows())
     if (isTerminalWindow(window)) window.destroy();
-  if (exiting || !bridge) return;
+  if (exiting) return;
   event.preventDefault();
   exiting = true;
-  bridge.close().finally(() => app.quit());
+  for (const controller of allWorkspaceFiles) controller.close();
+  // Join canceled preview helpers before window destruction and will-quit.
+  void Promise.allSettled([previewFiles.close(), bridge?.close()]).finally(() => app.quit());
 });
 app.on('window-all-closed', () => app.quit());
 app.on('quit', () => {

@@ -25,12 +25,20 @@ contextBridge.exposeInMainWorld('desktop', {
   dev: process.argv.includes('--cc-desk-tunnel-dev'),
   platform: process.platform,
   preview: {
+    list: (input) => ipcRenderer.invoke('preview:list', input),
+    watch: (input) => ipcRenderer.invoke('preview:watch', input),
+    unwatch: (key) => ipcRenderer.invoke('preview:unwatch', key),
+    onChanged: (callback) => {
+      const listener = (_event, value) => callback(value);
+      ipcRenderer.on('preview:changed', listener);
+      return () => ipcRenderer.removeListener('preview:changed', listener);
+    },
     read: (input) => ipcRenderer.invoke('preview:file', input),
     releaseFile: (token) => ipcRenderer.invoke('preview:file-release', token),
     pick: (surface) => ipcRenderer.invoke('preview:pick', surface),
     show: (input) => ipcRenderer.invoke('preview:show', input),
     bounds: (input) => ipcRenderer.invoke('preview:bounds', input),
-    hide: (surface) => ipcRenderer.invoke('preview:hide', surface),
+    hide: (surface, pane) => ipcRenderer.invoke('preview:hide', surface, pane),
     action: (input) => ipcRenderer.invoke('preview:action', input),
     release: (input) => ipcRenderer.invoke('preview:release', input),
     onState: (callback) => {

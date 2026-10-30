@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { modelBoundaryIssues } from './model-boundary.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const errors = [];
@@ -32,8 +33,9 @@ for (const file of files) {
   if (privatePath.test(file) && !file.endsWith('.env.example')) {
     errors.push('禁止跟踪的文件路径：' + file);
   }
-  if (!/\.(?:md|mjs|cjs|ts|tsx|html|css|json|txt|sh|ps1|py)$/.test(file)) continue;
+  if (!/\.(?:md|[cm]?[jt]sx?|html|css|json|txt|sh|ps1|py)$/.test(file)) continue;
   const content = git('show', ':' + file);
+  errors.push(...modelBoundaryIssues(file, content.toString('utf8')));
   const reviewedKeys =
     publicTestKeys.get(file) === createHash('sha256').update(content).digest('hex');
   if (secretToken.test(content) || (privateKey.test(content) && !reviewedKeys)) {

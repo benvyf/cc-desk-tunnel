@@ -1,6 +1,8 @@
 import { useState } from 'react';
+import { previewPdf } from '../../test-main/fixtures/preview-pdf.ts';
 import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
+import { createPortal } from 'react-dom';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
 import { usePreviewWorkspace } from '../../src/preview.ts';
 import type { PreviewBrowserState, PreviewFile } from '../../src/preview.ts';
@@ -8,7 +10,8 @@ import { Button } from '../../src/ui.tsx';
 import '../../src/style.css';
 
 const listeners = new Set<(state: PreviewBrowserState) => void>();
-const folder = 'C:\\工作\\网站预览';
+const caseSensitive = new URLSearchParams(location.search).has('case-sensitive');
+const folder = caseSensitive ? '/work/preview' : 'C:\\工作\\网站预览';
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><rect width="360" height="200" fill="#f5f5f3"/><path d="M32 160 100 110 168 130 240 60 320 40" fill="none" stroke="#d97757" stroke-width="8"/></svg>')}`;
 (window as any).desktop = {
   copyText: async () => {},
@@ -21,6 +24,25 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
     return '';
   },
   preview: {
+    async list({ path }: { path: string }) {
+      if (caseSensitive)
+        return ['Case.md', 'case.md'].map((name) => ({
+          name,
+          path: folder + '/' + name,
+          kind: 'file',
+        }));
+      return path.endsWith('src')
+        ? [{ name: 'index.ts', path: path + '\\index.ts', kind: 'file' }]
+        : [
+            { name: 'src', path: path + '\\src', kind: 'directory' },
+            { name: '说明.md', path: path + '\\说明.md', kind: 'file' },
+          ];
+    },
+    async watch() {},
+    async unwatch() {},
+    onChanged() {
+      return () => {};
+    },
     async read({ path }: { path: string }): Promise<PreviewFile> {
       if (path.includes('长错误'))
         throw new Error(
@@ -29,12 +51,21 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
       if (path.includes('不存在'))
         throw new Error('找不到这个文件，请确认路径或在系统应用中打开。');
       if (path.includes('读取中')) return new Promise(() => {});
+      if (path.endsWith('alias.txt'))
+        return {
+          path,
+          kind: 'html',
+          text: '<h1>HTML alias</h1>',
+          url: 'http://file.localhost/index.html',
+        };
+      if (path.endsWith('.pdf'))
+        return { path, kind: 'pdf', data: btoa(String.fromCharCode(...previewPdf())) };
       if (path.endsWith('.png')) return { path, kind: 'image', image };
       if (path.endsWith('.md'))
         return {
           path,
           kind: 'markdown',
-          text: '# 项目说明\n\n在这里查看生成的文件，继续在左侧讨论。\n\n## 使用方式\n\n- 支持中文与长文件名\n- 选择 `localhost` 本机地址\n\n```js\nconst preview = "CC SPACE";\n```',
+          text: '# 项目说明\n\n在这里查看生成的文件，继续在左侧讨论。\n\n## 使用方式\n\n- 支持中文与长文件名\n- 选择 `localhost` 本机地址\n\n```js\nconst preview = "CC SPACE";\n```\n\n[项目外文档](../outside.md)',
         };
       return {
         path,
@@ -47,7 +78,9 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
       };
     },
     async releaseFile() {},
-    async release() {},
+    async release(input: any) {
+      ((window as any).fixtureReleased ??= []).push(input.key);
+    },
     async hide() {},
     async bounds() {},
     async action() {},
@@ -81,12 +114,8 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
 
 function Fixture() {
   const terminal = new URLSearchParams(location.search).has('terminal');
-  const board = usePreviewWorkspace(
-    'fixture',
-    'session',
-    terminal ? 'terminal' : 'main',
-    'session',
-  );
+  const [scope, setScope] = useState('fixture');
+  const board = usePreviewWorkspace(scope, 'session', terminal ? 'terminal' : 'main', 'session');
   const [opened, setOpened] = useState(false);
   const controls = (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 20 }}>
@@ -105,6 +134,7 @@ function Fixture() {
         ['长错误状态', '长错误.txt'],
         ['加载状态', '读取中.md'],
         ['图片状态', '趋势图.png'],
+        ['PDF 状态', '报告.pdf'],
       ].map(([label, name]) => (
         <Button
           key={label}
@@ -132,6 +162,9 @@ function Fixture() {
         }}
       >
         多个标签
+      </Button>
+      <Button onClick={() => setScope(scope === 'fixture' ? 'other' : 'fixture')}>
+        切换预览工作区
       </Button>
       <Button data-size="sm" size="sm" aria-label="对照按钮">
         对照按钮
@@ -167,4 +200,26 @@ function Fixture() {
     </div>
   );
 }
-createRoot(document.getElementById('root')!).render(<Fixture />);
+function PopupFixture() {
+  const [container, setContainer] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <Button
+        onClick={() => {
+          const popup = window.open('', '', 'width=1280,height=900')!;
+          for (const style of document.querySelectorAll('style, link[rel="stylesheet"]'))
+            popup.document.head.append(style.cloneNode(true));
+          const target = popup.document.createElement('div');
+          popup.document.body.append(target);
+          setContainer(target);
+        }}
+      >
+        打开弹出预览
+      </Button>
+      {container && createPortal(<Fixture />, container)}
+    </>
+  );
+}
+createRoot(document.getElementById('root')!).render(
+  new URLSearchParams(location.search).has('popup') ? <PopupFixture /> : <Fixture />,
+);

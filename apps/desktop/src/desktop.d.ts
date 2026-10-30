@@ -17,6 +17,18 @@ declare global {
       dev: boolean;
       platform: 'win32' | 'darwin' | 'linux';
       preview: {
+        list: (input: {
+          root: string;
+          path?: string;
+        }) => Promise<{ name: string; path: string; kind: 'file' | 'directory' }[]>;
+        watch: (input: {
+          root: string;
+          path: string;
+          key: string;
+          file?: boolean;
+        }) => Promise<void>;
+        unwatch: (key: string) => Promise<void>;
+        onChanged: (callback: (value: { key: string; path: string }) => void) => () => void;
         read: (input: {
           path: string;
           root?: string;
@@ -32,9 +44,10 @@ declare global {
         ) => Promise<void>;
         bounds: (input: {
           surface: import('./preview.ts').PreviewSurface;
+          pane?: string;
           bounds: import('./preview.ts').PreviewBounds | null;
         }) => Promise<void>;
-        hide: (surface: import('./preview.ts').PreviewSurface) => Promise<void>;
+        hide: (surface: import('./preview.ts').PreviewSurface, pane?: string) => Promise<void>;
         action: (
           input: import('./preview.ts').PreviewView & {
             action: 'go' | 'back' | 'forward' | 'reload';

@@ -151,3 +151,16 @@ test('resetting the renderer revokes an HTML read still in flight', async (t) =>
   const reopened = await files.read({ path: join(project, 'index.html'), root: project });
   assert.equal((await resource(reopened.url)).status, 200);
 });
+
+test('PDF bytes stay local and are bounded, with malformed PDFs rejected', async (t) => {
+  const { previewPdf } = await import('./fixtures/preview-pdf.ts');
+  const f = await fixture(t);
+  const pdf = join(f.project, 'report.pdf');
+  await writeFile(pdf, previewPdf());
+  const value = await f.files.read({ path: pdf, root: f.project });
+  assert.equal(value.kind, 'pdf');
+  assert.equal(Buffer.from(value.data, 'base64').subarray(0, 8).toString(), '%PDF-1.4');
+  assert.equal(value.url, undefined);
+  await writeFile(pdf, 'not a PDF');
+  await assert.rejects(f.files.read({ path: pdf }), /PDF/);
+});
