@@ -1,0 +1,15 @@
+{
+  "centerSourceCommit": "4d49965cf50b8d479cf7ebeb36b53acf814e5e1c",
+  "backup": "/var/backups/cc-update-service/linux-build9-center-20261030T150801Z",
+  "scriptSha256": "8a92c77ce8d319c2501d902181207717e9ee1b91642ecf2761444006c486ab1b",
+  "commandBytes": 63298,
+  "publishedCommandExtractsActualArchive": true,
+  "linuxReleaseUnchanged": true,
+  "accountAndPolicyPreserved": true,
+  "ubuntuCcHealth": {
+    "status": "ok",
+    "protocolVersion": 22,
+    "adapter": "claude-code"
+  },
+  "nodeInstallationPerformed": false
+}

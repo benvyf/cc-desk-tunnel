@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-10-30 Build 9 升级解包目录冲突已修复并更新线上命令
+
+用户在 ubuntu-cc 执行时报 helper.py:307，根因为升级脚本先创建 program 目录，而固定校验解包 helper 要求目标不存在。发生在清理/切换前。已移除提前 mkdir，测试改用真实 helper.unpack：在 Linux 重现旧脚本的 `Stage already exists`，确认新脚本及实际签名 Build 9 包解包通过，11 项升级回归通过。异常输出保留受控安装器诊断，JSON/子进程等异常内容继续脱敏。
+
+管理中心兼容源码 `4d49965cf50b8d479cf7ebeb36b53acf814e5e1c` 已上线，仅运行文件 scripts/upgrade-message-review.py 改变；备份 `/var/backups/cc-update-service/linux-build9-center-20261030T150801Z`，旧运行目录 `/opt/cc-update-service.previous-linux-build9-unpack-fix`。账号、权限、审核策略和三份发布索引保持；Linux 仍为原 Build 9/原摘要，不覆盖发布包。线上完整命令解码验证通过，内嵌 helper 实际解包同一包通过，第一台 health 正常。用户须刷新管理中心重新复制基础镜像升级命令，旧复制内容不会自动更新。见 [修复证据](docs/evidence/linux-build9-unpack-fix-2026-10-30.json)。
+
 ### 2026-10-30 Linux Build 9 与三节点基础镜像升级命令已发布
 
 Linux 0.3.7 / Build 9 / protocol 22，源码 `4802d83afb8d0345f156bd8d1c8a2cb1dbd53033`，1659909 字节，SHA256 `e74572f2934f5545140899b621fdbae5b9ab9313cbed750460123a64522c8e3a`。新消息审核修复、对应 Web、单事件策略模板与恢复属主修复均进入签名包。Linux pilot revision 13，发布时有效至 `2026-11-13T14:57:06.294Z`；精确 expectedRelease 登记和强制/systemd 续签通过。Windows Build 24 pilot/stable 索引未变。详见 [发布证据](docs/evidence/linux-build9-production-2026-10-30.json)。
