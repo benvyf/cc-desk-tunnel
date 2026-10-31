@@ -56,6 +56,48 @@ async function cloneTabToOtherSession(page: Page) {
   await restart(page);
 }
 
+test('blocked local storage access keeps preview reading usable in memory', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.addInitScript(() =>
+    Object.defineProperty(window, 'localStorage', {
+      configurable: true,
+      get() {
+        throw new DOMException('Storage access blocked', 'SecurityError');
+      },
+    }),
+  );
+  await page.goto(fixture);
+  await button(page, '长文本').click();
+  await textReady(page);
+  await scroll(doc(page), 700);
+  await button(page, '图片状态').click();
+  await page.getByRole('tab', { name: '长阅读.txt', exact: true }).click();
+  await textReady(page);
+  await at(doc(page), 700);
+  expect(errors).toEqual([]);
+});
+
+test('PDF page input normalizes fractional values before rendering and saving', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await button(page, '多页 PDF').click();
+  const pages = page.locator('.preview-pdf-pages');
+  await expect(pages).toHaveAttribute('aria-busy', 'false');
+  await page.getByLabel('PDF 页码').fill('2.75');
+  await expect(page.getByLabel('PDF 页码')).toHaveValue('2');
+  await expect(pages).toHaveAttribute('aria-busy', 'false');
+  await expect(page.locator('.preview-pdf canvas')).toBeVisible();
+  await expect(page.locator('.preview-pdf canvas')).toHaveAttribute('aria-label', 'PDF 第 2 页');
+  await expect(page.locator('.preview-pdf [role="alert"]')).toHaveCount(0);
+  await button(page, '下一页').click();
+  await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
+  await restart(page);
+  await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
+  await expect(pages).toHaveAttribute('aria-busy', 'false');
+});
+
 test('text reading position survives switching tabs, float/dock and normal reload', async ({
   page,
 }) => {

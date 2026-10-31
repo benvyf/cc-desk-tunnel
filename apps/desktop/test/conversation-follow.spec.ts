@@ -24,7 +24,11 @@ function reply(n: number) {
 }
 
 // Opens the session; what is returned starts a reply streaming into it, fast, and stops it when called.
-async function open(page: Page, folding = false, scenario?: 'history' | 'layout') {
+async function open(
+  page: Page,
+  folding = false,
+  scenario?: 'history' | 'short-history' | 'layout',
+) {
   const now = new Date().toISOString();
   const connectionId = randomUUID();
   let stream = () => ({ stop: () => {}, complete: () => {}, steer: () => {} });
@@ -83,7 +87,7 @@ async function open(page: Page, folding = false, scenario?: 'history' | 'layout'
           type: 'text.delta',
           messageId: randomUUID(),
           text:
-            reply(n) +
+            (scenario === 'short-history' && n === turns - 1 ? '较短的已加载回答' : reply(n)) +
             (scenario === 'layout' && n === turns - 1
               ? '\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg" width="320" height="24"><rect width="320" height="24" fill="green"/></svg>\n```'
               : ''),
@@ -190,10 +194,15 @@ async function open(page: Page, folding = false, scenario?: 'history' | 'layout'
           requestId: message.requestId,
           session,
           mode: 'replace',
-          firstSequence: scenario === 'history' ? 51 : 1,
+          firstSequence: scenario === 'history' ? 51 : scenario === 'short-history' ? 296 : 1,
           lastSequence: sequence,
-          hasEarlier: scenario === 'history',
-          events: scenario === 'history' ? events.slice(50) : events,
+          hasEarlier: scenario === 'history' || scenario === 'short-history',
+          events:
+            scenario === 'history'
+              ? events.slice(50)
+              : scenario === 'short-history'
+                ? events.slice(-5)
+                : events,
         });
       if (message.type === 'session.history') {
         earlierRequests++;
@@ -204,9 +213,9 @@ async function open(page: Page, folding = false, scenario?: 'history' | 'layout'
             session,
             mode: 'prepend',
             firstSequence: 1,
-            lastSequence: 50,
+            lastSequence: scenario === 'short-history' ? 295 : 50,
             hasEarlier: false,
-            events: events.slice(0, 50),
+            events: scenario === 'short-history' ? events.slice(0, -5) : events.slice(0, 50),
           });
           send({ type: 'response', requestId: message.requestId, ok: true });
         };
@@ -228,7 +237,9 @@ async function open(page: Page, folding = false, scenario?: 'history' | 'layout'
     .filter({ hasText: session.title })
     .locator('.session-select')
     .click();
-  await expect(page.getByText(`第${turns - 1}轮的回答。`)).toBeVisible();
+  await expect(
+    page.getByText(scenario === 'short-history' ? '较短的已加载回答' : `第${turns - 1}轮的回答。`),
+  ).toBeVisible();
   return Object.assign(() => stream(), {
     earlierRequests: () => earlierRequests,
     prepend: () => releaseEarlier(),
@@ -558,4 +569,113 @@ test('prepending earlier history preserves the first loaded question in every fr
   expectStableAnchor(await stopFrames(page, testInfo));
   await expect(anchor).toBeInViewport();
   await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+});
+
+test('scrolling while earlier history is pending keeps the newly chosen reading position', async ({
+  page,
+}, testInfo) => {
+  const fixture = await open(page, false, 'history');
+  const conversation = page.locator('.conversation');
+  await conversation.hover();
+  await page.mouse.wheel(0, -100_000);
+  await expect.poll(fixture.earlierRequests).toBe(1);
+  await expect(page.getByRole('button', { name: '加载中', exact: true })).toBeDisabled();
+  await page.mouse.wheel(0, 500);
+  await expect.poll(() => conversation.evaluate((node) => node.scrollTop)).toBeGreaterThan(400);
+  await fromEnd(page);
+  const anchor = page.locator('.conversation .message.user').filter({ hasText: '第10问' });
+  await anchor.evaluate((node) => node.setAttribute('data-follow-anchor', 'true'));
+  await startFrames(page, true);
+  fixture.prepend();
+  await expect(page.getByRole('button', { name: '加载中', exact: true })).toHaveCount(0);
+  expectStableAnchor(await stopFrames(page, testInfo));
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+});
+
+test('returning to the bottom while earlier history is pending preserves following', async ({
+  page,
+}, testInfo) => {
+  const fixture = await open(page, false, 'history');
+  await page.locator('.conversation').hover();
+  await page.mouse.wheel(0, -100_000);
+  await expect.poll(fixture.earlierRequests).toBe(1);
+  const back = page.getByRole('button', { name: '回到底部', exact: true });
+  await back.click();
+  expect(await fromEnd(page)).toBeLessThan(2);
+  const stream = fixture();
+  try {
+    await page.waitForTimeout(300);
+    stream.stop();
+    // Settle the final streamed layout before frame-sampling the history insertion.
+    // The pending request must not freeze tail following during the preceding output.
+    expect(await fromEnd(page)).toBeLessThan(2);
+    await expect(back).toHaveCount(0);
+    await startFrames(page, false);
+    fixture.prepend();
+    await expect(page.getByRole('button', { name: '加载中', exact: true })).toHaveCount(0);
+    const frames = await stopFrames(page, testInfo);
+    expect(Math.max(...frames.map((frame) => frame.gap))).toBeLessThan(2);
+    await expect(back).toHaveCount(0);
+  } finally {
+    stream.stop();
+  }
+});
+
+test('loading earlier history from a short page preserves reading instead of following its end', async ({
+  page,
+}, testInfo) => {
+  const fixture = await open(page, false, 'short-history');
+  const box = page.locator('.conversation');
+  expect(await box.evaluate((node) => node.scrollHeight - node.clientHeight)).toBe(0);
+  const anchor = box.locator('.message.user').filter({ hasText: '第59问' });
+  await anchor.evaluate((node) => node.setAttribute('data-follow-anchor', 'true'));
+  await box.hover();
+  await page.mouse.wheel(0, -200);
+  await expect.poll(fixture.earlierRequests).toBe(1);
+  await startFrames(page, true);
+  fixture.prepend();
+  await expect(page.getByRole('button', { name: '加载中', exact: true })).toHaveCount(0);
+  await stopFrames(page, testInfo);
+  // The old page had spare space below its messages. Once older records fill that space,
+  // its previous pixel offset can be unreachable; keep reading history instead of tail-following.
+  expect(await fromEnd(page)).toBeGreaterThan(40);
+  expect(await box.locator('.message.user').count()).toBe(turns);
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+});
+
+test('reading history again after returning to live output preserves the latest position while loading', async ({
+  page,
+}, testInfo) => {
+  const fixture = await open(page, false, 'history');
+  const box = page.locator('.conversation');
+  await box.hover();
+  await page.mouse.wheel(0, -100_000);
+  await expect.poll(fixture.earlierRequests).toBe(1);
+  await page.getByRole('button', { name: '回到底部', exact: true }).click();
+  expect(await fromEnd(page)).toBeLessThan(2);
+  await box.hover();
+  await page.mouse.wheel(0, -1500);
+  expect(await fromEnd(page)).toBeGreaterThan(500);
+  await page.evaluate(() => {
+    const root = document.querySelector<HTMLElement>('.conversation')!;
+    const area = root.getBoundingClientRect();
+    const underPointer = document.elementFromPoint(
+      area.left + area.width / 2,
+      area.top + area.height / 2,
+    );
+    const anchor =
+      underPointer?.closest<HTMLElement>('[data-message-id]') ??
+      [...root.querySelectorAll<HTMLElement>('[data-message-id]')].find((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.top >= area.top && rect.bottom <= area.bottom;
+      });
+    if (!anchor || !root.contains(anchor)) throw new Error('No visible reading message');
+    anchor.dataset.followAnchor = 'true';
+  });
+  await startFrames(page, true);
+  fixture.prepend();
+  await expect(page.getByRole('button', { name: '加载中', exact: true })).toHaveCount(0);
+  expectStableAnchor(await stopFrames(page, testInfo));
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+  expect(fixture.earlierRequests()).toBe(1);
 });

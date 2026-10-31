@@ -922,12 +922,15 @@ export default function Conversation({
     setAway(true);
   };
   const rejoin = () => {
+    // Returning to live output supersedes a pending history reading position.
+    prependAnchor.current = null;
     follow.current = true;
     setAway(false);
   };
   const loadMore = () => {
     if (!session || !connected || !history?.hasEarlier || history.loadingEarlier || history.loading)
       return;
+    leave();
     setLoadError('');
     if (scroll.current) {
       const box = scroll.current;
@@ -967,9 +970,9 @@ export default function Conversation({
             box.getBoundingClientRect().top -
             anchor.message.offset
           : anchor.top + box.scrollHeight - anchor.height;
-      lastTop.current = scroll.current.scrollTop;
-      prependAnchor.current = null;
+      lastTop.current = box.scrollTop;
       leave();
+      prependAnchor.current = null;
       return;
     }
     if (anchor) return;
@@ -1156,6 +1159,11 @@ export default function Conversation({
               if (linkCard) setLinkCard(null);
               if (!scroll.current) return;
               const top = scroll.current.scrollTop;
+              const anchor = prependAnchor.current;
+              if (anchor && anchor.sessionId === session?.id) {
+                if (anchor.message) anchor.message.offset -= top - anchor.top;
+                anchor.top = top;
+              }
               const end = fromEnd(scroll.current) < 40;
               // Coming down to the end follows again; only moving down does, so a slow wheel or a flick upwards is not
               // pulled back while output comes in fast. Moving up away from it leaves, by touch as well: heights that

@@ -48,7 +48,9 @@ function restoreWorkspace(key: string | null) {
   return {
     key,
     ...layout,
-    persistence: createPreviewPersistence(key, layout, serialized, localStorage),
+    persistence: createPreviewPersistence(key, layout, serialized, {
+      setItem: (name, value) => localStorage.setItem(name, value),
+    }),
   };
 }
 // Layout metadata stays in this client's profile, never in the model protocol.

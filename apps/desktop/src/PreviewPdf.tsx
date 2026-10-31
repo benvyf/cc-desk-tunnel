@@ -91,7 +91,8 @@ export default function PreviewPdf({
   );
   const changePage = (next: number) => {
     captureReading();
-    const value = Math.max(1, Math.min(document?.numPages ?? 1, next));
+    const integer = Number.isFinite(next) ? Math.trunc(next) : 1;
+    const value = Math.max(1, Math.min(document?.numPages ?? 1, integer));
     reading.set(tabId, { kind: 'pdf', page: value, zoom, top: 0, left: 0 });
     setPage(value);
   };
