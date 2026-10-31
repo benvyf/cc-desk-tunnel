@@ -27,3 +27,10 @@ The client build applies a version-checked linear text resolver patch to
 micromark 4.0.3 (MIT). Provenance and source hashes are in
 patches/micromark-4.0.3.md; the distributed notice is in
 dist/third-party/micromark.txt.
+
+The client PDF text-layer styles are adapted from PDF.js 5.4.624,
+Copyright 2014 Mozilla Foundation, under the Apache License, Version 2.0
+(see LICENSE). The existing PDF.js runtime provides text extraction,
+layout and Unicode normalization; no separate PDF viewer runtime is added.
+The complete license and attribution are distributed in
+dist/third-party/pdfjs-text-layer.txt.

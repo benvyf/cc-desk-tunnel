@@ -3,6 +3,19 @@ import { test } from 'node:test';
 import { emptyBoard, openTab, restoreLayout } from '../src/previewLayout.ts';
 import * as state from '../src/previewViewState.ts';
 
+test('explicit file navigation is transient while wrap remains layout metadata', () => {
+  const board = openTab(emptyBoard(), {
+    id: 'file',
+    kind: 'file',
+    target: 'C:/a.ts',
+    wrap: true,
+    navigation: { id: 'do-not-replay', line: 12 },
+  });
+  const saved = state.serializePreviewState({ width: 440, boards: { session: board } }, {});
+  assert.equal(saved.includes('do-not-replay'), false);
+  assert.equal(JSON.parse(saved).boards.session.tabs[0].wrap, true);
+});
+
 test('cleans only supported reading metadata and preserves independent Markdown positions', () => {
   assert.deepEqual(
     state.cleanReading({ kind: 'text', top: 120.5, left: 16, text: 'PRIVATE BODY' }),

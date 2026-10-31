@@ -1,0 +1,98 @@
+.preview-code-header {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.preview-code-actions,
+.preview-code-jump {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.preview-code-actions {
+  margin-left: auto;
+}
+.preview-code .preview-code-actions .button {
+  color: var(--code-muted);
+}
+.preview-code .preview-code-actions .button:hover:not(:disabled),
+.preview-code .preview-code-actions .button[aria-pressed='true'] {
+  color: var(--code-text);
+  background: var(--code-hover);
+}
+.preview-code .preview-code-jump input {
+  width: 64px;
+  height: var(--control-sm);
+  font: inherit;
+  padding: 2px 6px;
+  color: var(--code-text);
+  background: var(--code-bg);
+  border-color: var(--code-line);
+}
+.preview-code-error {
+  margin: 4px 8px;
+  color: var(--code-error);
+  font-size: 12px;
+}
+.preview-code-body {
+  position: relative;
+  min-width: 0;
+  font-family: Consolas, 'Cascadia Code', monospace;
+  font-size: var(--code-font-size, 13px);
+  line-height: 1.6;
+}
+.preview-code .preview-code-lines {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 12px 12px 12px calc((var(--preview-line-digits) + 2) * 1ch + 12px);
+  white-space: pre;
+  overflow-x: auto;
+  font-variant-ligatures: none;
+  tab-size: 2;
+  background: var(--code-bg);
+  color: var(--code-text);
+}
+.preview-code .preview-code-lines.wraps {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.preview-code .preview-code-lines:not(.wraps) {
+  min-height: calc(var(--preview-code-line-count) * 1.6em + 24px);
+}
+.preview-code .terminal-line code::after {
+  content: '\200b';
+}
+.preview-code .preview-code-lines code {
+  font: inherit;
+  white-space: inherit;
+}
+.preview-code-gutter {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: calc((var(--preview-line-digits) + 2) * 1ch + 4px);
+  font-family: Consolas, 'Cascadia Code', monospace;
+  font-size: inherit;
+  color: var(--faint);
+  user-select: none;
+  pointer-events: none;
+  z-index: 2;
+}
+.preview-line-number {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: right;
+  padding-right: 4px;
+  background: var(--code-bg);
+}
+.preview-code-highlight {
+  position: absolute;
+  left: 0;
+  right: 0;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-left: 2px solid var(--accent);
+  pointer-events: none;
+}

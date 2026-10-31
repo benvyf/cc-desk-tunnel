@@ -1,0 +1,76 @@
+/* Text-layer rules adapted from PDF.js 5.4.624 (Mozilla Foundation).
+ * Copyright 2014 Mozilla Foundation. Licensed under the Apache License, Version 2.0.
+ * https://www.apache.org/licenses/LICENSE-2.0
+ * Only text layout and selection rules are included; no viewer UI styles.
+ */
+.preview-pdf-page {
+  position: relative;
+  margin: auto;
+}
+.preview-pdf-page[hidden] {
+  display: none;
+}
+.preview-pdf-text-host {
+  position: absolute;
+  inset: 0;
+}
+.preview-pdf-page .textLayer {
+  position: absolute;
+  inset: 0;
+  text-align: initial;
+  overflow: clip;
+  line-height: 1;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  user-select: text;
+  --scale-round-x: 0.0001px;
+  --scale-round-y: 0.0001px;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.preview-pdf-page .textLayer :is(span, br) {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+}
+.preview-pdf-page .textLayer > :not(.markedContent),
+.preview-pdf-page .textLayer .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.preview-pdf-page .textLayer .markedContent {
+  display: contents;
+}
+.preview-pdf-page .textLayer span[role='img'] {
+  user-select: none;
+  cursor: default;
+}
+.preview-pdf-page .textLayer ::selection {
+  background: rgb(0 0 255 / 25%);
+  color: transparent;
+}
+.preview-pdf-page .textLayer br::selection {
+  background: transparent;
+}
+.preview-pdf-page .textLayer[data-main-rotation='90'] {
+  transform: rotate(90deg) translateY(-100%);
+}
+.preview-pdf-page .textLayer[data-main-rotation='180'] {
+  transform: rotate(180deg) translate(-100%, -100%);
+}
+.preview-pdf-page .textLayer[data-main-rotation='270'] {
+  transform: rotate(270deg) translateX(-100%);
+}
+/* PDF.js creates these shared measurement canvases outside the page container. */
+body > canvas.hiddenCanvasElement {
+  display: none;
+}

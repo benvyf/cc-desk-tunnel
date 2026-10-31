@@ -342,13 +342,35 @@ test(
 
       await writeFile(markdown, '# 项目说明\n\n自动刷新标记');
       await expect(page.locator('.preview-markdown')).toContainText('自动刷新标记');
+      const copyPdfText = async (targetPage) => {
+        const span = targetPage
+          .locator('.preview-pdf-page .textLayer span')
+          .filter({ hasText: /\S/ })
+          .first();
+        await expect(span).toBeVisible({ timeout: 30000 });
+        const expected = await span.textContent();
+        await span.evaluate((element) => {
+          const range = element.ownerDocument.createRange();
+          range.selectNodeContents(element);
+          const selection = element.ownerDocument.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        });
+        await app.evaluate(({ clipboard }) => clipboard.clear());
+        await targetPage.keyboard.press('Control+c');
+        await expect
+          .poll(() => app.evaluate(({ clipboard }) => clipboard.readText()))
+          .toBe(expected);
+      };
       await page.getByRole('treeitem', { name: 'report.pdf', exact: true }).click();
       await expect(page.locator('.preview-pdf canvas')).toBeVisible();
       await expect(page.getByLabel('PDF 页码')).toHaveValue('1');
+      await copyPdfText(page);
       await page.getByRole('button', { name: '关闭预览 report.pdf', exact: true }).click();
       await page.getByRole('treeitem', { name: 'report.doc', exact: true }).click();
       await expect(page.locator('.preview-pdf canvas')).toBeVisible({ timeout: 30000 });
       await expect(page.getByLabel('PDF 页码')).toHaveValue('1');
+      await copyPdfText(page);
       assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 1);
       await page.getByRole('button', { name: '关闭预览 report.doc', exact: true }).click();
 

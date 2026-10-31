@@ -5,6 +5,7 @@ import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
 import { usePreviewWorkspace } from '../../src/preview.ts';
+import { linkTarget } from '../../src/links.ts';
 import type { PreviewBrowserState, PreviewFile } from '../../src/preview.ts';
 import { Button } from '../../src/ui.tsx';
 import '../../src/style.css';
@@ -17,11 +18,18 @@ type ReadOptions = {
   fail?: boolean;
   pages?: number;
   badPage?: number;
+  pdfText?: string;
+  pdfUserUnit?: number;
+  rotation?: number;
+  noText?: boolean;
+  codeText?: string;
+  codeLines?: number;
 };
 type Watch = { key: string; path: string; file?: boolean };
 const changed = new Set<(event: { key: string; path: string }) => void>();
 const watches = new Map<string, Watch>();
 const readOptions = new Map<string, ReadOptions>();
+const sourceTexts = new Map<string, string>();
 const activeTokens = new Map<string, string>();
 const issuedTokens: { token: string; path: string }[] = [];
 const releasedTokens = new Map<string, number>();
@@ -48,6 +56,9 @@ const metrics = {
   configure(suffix: string, options: ReadOptions) {
     readOptions.set(suffix, options);
   },
+  source(suffix: string) {
+    return [...sourceTexts].find(([path]) => path.endsWith(suffix))?.[1];
+  },
   emit(suffix: string) {
     for (const watch of watches.values())
       if (watch.path.endsWith(suffix))
@@ -69,7 +80,9 @@ const folder = caseSensitive ? '/work/preview' : 'C:\\工作\\网站预览';
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><rect width="360" height="200" fill="#f5f5f3"/><path d="M32 160 100 110 168 130 240 60 320 40" fill="none" stroke="#d97757" stroke-width="8"/></svg>')}`;
 (window as any).desktop = {
   boot: { connection: new URLSearchParams(location.search).get('connection') ?? '' },
-  copyText: async () => {},
+  copyText: async (text: string) => {
+    ((window as any).fixtureCopied ??= []).push(text);
+  },
   openLink: async () => {},
   actOnPath: async () => {
     if ((window as any).fixtureFailOpen) {
@@ -128,16 +141,21 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
               `Reading paragraph ${i + 1}: CC SPACE preserves the current document position.`,
           ).join('\n'),
         };
-      if (path.endsWith('长代码.ts'))
+      if (path.endsWith('长代码.ts')) {
+        const text =
+          options.codeText ??
+          Array.from(
+            { length: options.codeLines ?? (options.short ? 35 : 360) },
+            (_, i) =>
+              `export const readingRow${i + 1} = { label: "${'wide code column '.repeat(24)}", enabled: true };`,
+          ).join('\n');
+        sourceTexts.set(path, text);
         return {
           path,
           kind: 'text',
-          text: Array.from(
-            { length: options.short ? 35 : 360 },
-            (_, i) =>
-              `export const readingRow${i + 1} = { label: "${'wide code column '.repeat(24)}", enabled: true };`,
-          ).join('\n'),
+          text,
         };
+      }
       if (path.endsWith('长说明.md'))
         return {
           path,
@@ -157,11 +175,14 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
           token: issueToken(path),
           data: btoa(
             String.fromCharCode(
-              ...previewPdf('Reading report', {
+              ...previewPdf(options.pdfText ?? 'Reading report', {
                 pages: options.pages ?? 4,
                 badPage: options.badPage,
                 width: 600,
                 height: 1200,
+                rotation: options.rotation,
+                userUnit: options.pdfUserUnit,
+                noText: options.noText,
               }),
             ),
           ),
@@ -250,6 +271,7 @@ function Fixture() {
   const terminal = new URLSearchParams(location.search).has('terminal');
   const [scope, setScope] = useState('fixture');
   const [session, setSession] = useState('session');
+  const [draft, setDraft] = useState('');
   const board = usePreviewWorkspace(
     scope,
     session,
@@ -290,6 +312,44 @@ function Fixture() {
           {label}
         </Button>
       ))}
+      {[
+        ['定位代码第12行', '长代码.ts', 12],
+        ['定位代码第20行', '长代码.ts', 20],
+        ['定位 Markdown 第12行', '长说明.md', 12],
+        ['定位 Markdown 第300行', '长说明.md', 300],
+        ['定位 HTML 源码', 'alias.txt', 1],
+      ].map(([label, name, line]) => (
+        <Button
+          key={label}
+          onClick={() => {
+            setOpened(true);
+            board.follow({ kind: 'path', path: folder + '\\' + name, line: Number(line) }, folder);
+          }}
+        >
+          {label}
+        </Button>
+      ))}
+      {['长代码.ts:12', '长代码.ts#L20', '长代码.ts:360:10'].map((href) => (
+        <a
+          key={href}
+          href={href}
+          onClick={(event) => {
+            event.preventDefault();
+            const target = linkTarget(href, { projectPath: folder, here: true, browser: false });
+            if (target) {
+              setOpened(true);
+              board.follow(target, folder);
+            }
+          }}
+        >
+          {href}
+        </a>
+      ))}
+      <input
+        aria-label="测试输入"
+        value={draft}
+        onChange={(event) => setDraft(event.target.value)}
+      />
       <Button
         onClick={() => {
           setOpened(true);

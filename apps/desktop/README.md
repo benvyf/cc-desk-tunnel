@@ -64,6 +64,9 @@ Electron 选择“远程代理”，输入可信 WSS 地址、代理 token；自
 | `src/client.ts` | 唯一的 WebSocket 连接与状态仓库：会话目录、事件缓存、历史分页、请求 / 响应配对。组件经 `useSyncExternalStore` 读取 |
 | `src/transcript.ts` | 把会话事件流折叠成界面条目（消息、推理、工具、提示） |
 | `src/RunNotice.tsx` | 普通会话提示按三行预览、按需展开；搜索时展示全文，错误始终完整显示 |
+| `src/PreviewCode.tsx`、`PreviewCode.css`、`previewCode.ts` | 只读源码、可见行号、换行和一次性行列导航；正文与复制保留原文，长文件不为每行建立节点 |
+| `src/PreviewPdf.tsx`、`PreviewPdfText.css` | 当前页本机 PDF 画布与文字层、选区复制和取消；Office 复用已转换 PDF，不增加模型或文件访问接口 |
+| `src/preview.ts`、`previewLayout.ts`、`previewViewState.ts`、`previewPersistence.ts` | 本机预览布局、受限阅读元数据及合并存储；显式导航仅在内存保留，不在重启后重放 |
 | `src/ConversationFind.tsx`、`conversationSearch.ts`、`messageTime.ts`、`copy.tsx` | 对话内查找、消息日期与复制 |
 | `src/App.tsx` | 编排：连接与登录、当前会话、所有请求和禁用条件；不含具体界面 |
 | `src/LoginPage.tsx`、`TitleBar.tsx`、`Rail.tsx`、`Sidebar.tsx`、`Conversation.tsx`、`Composer.tsx`、`SessionDialogs.tsx` | 各界面区域，只渲染并上报用户意图：标题栏、图标栏、会话侧栏、会话区、输入区、对话框 |

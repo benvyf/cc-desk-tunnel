@@ -10,7 +10,9 @@ import {
   dockPane,
   restoreLayout,
   previewWebsite,
+  navigateFile,
 } from './previewLayout.ts';
+import { requestedLine } from './previewCode.ts';
 import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
 import { createPreviewPersistence } from './previewPersistence.ts';
 import type { PreviewReading } from './previewViewState.ts';
@@ -81,6 +83,7 @@ export function usePreviewWorkspace(
           .map((t) => t.id),
       ),
   );
+  const navigated = useRef(new Map<string, string>());
   const boards = state.key === storageKey ? state.boards : {};
   useLayoutEffect(() => {
     state.persistence.updateLayout({ boards: state.boards, width: state.width });
@@ -100,6 +103,7 @@ export function usePreviewWorkspace(
     const restored =
       state.key === storageKey && !state.persistence.closed ? state : restoreWorkspace(storageKey);
     const owner = restored.persistence;
+    navigated.current.clear();
     if (restored !== state) setState(restored);
     setRestoredTabs(
       new Set(
@@ -132,7 +136,11 @@ export function usePreviewWorkspace(
     const live = new Set(sessionIds.split('\n'));
     const removed = Object.keys(current.current).filter((id) => !live.has(id));
     if (!removed.length) return;
-    for (const id of removed) for (const t of current.current[id].tabs) release(t);
+    for (const id of removed)
+      for (const t of current.current[id].tabs) {
+        navigated.current.delete(JSON.stringify([id, t.id]));
+        release(t);
+      }
     setState((s) => ({
       ...s,
       boards: Object.fromEntries(Object.entries(s.boards).filter(([id]) => live.has(id))),
@@ -167,8 +175,16 @@ export function usePreviewWorkspace(
     root?: string,
     restricted?: boolean,
     title?: string,
+    position?: { line?: number; column?: number },
   ) {
-    change((b) => openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted, title }));
+    const line = requestedLine(position?.line);
+    const navigation = line
+      ? { id: crypto.randomUUID(), line, column: requestedLine(position?.column) }
+      : undefined;
+    change((b) => {
+      const next = openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted, title });
+      return navigation ? navigateFile(next, target, navigation) : next;
+    });
   }
   const active = board.panes.find((p) => p.id === board.focused)?.active ?? '';
   const reading = useMemo(
@@ -189,11 +205,27 @@ export function usePreviewWorkspace(
     pending,
     restoredTabs,
     reading,
+    navigated: {
+      has: (id: string, request: string) =>
+        navigated.current.get(JSON.stringify([session, id])) === request,
+      mark: (id: string, request: string) => {
+        navigated.current.set(JSON.stringify([session, id]), request);
+      },
+    },
+    wrap: (id: string, value: boolean) =>
+      change((b) => ({
+        ...b,
+        tabs: b.tabs.map((tab) => (tab.id === id ? { ...tab, wrap: value } : tab)),
+      })),
     activate,
     resize: (value: number | ((previous: number) => number)) =>
       setState((s) => ({ ...s, width: typeof value === 'function' ? value(s.width) : value })),
-    openFile: (path: string, root?: string, restricted?: boolean) =>
-      open('file', path, root, restricted),
+    openFile: (
+      path: string,
+      root?: string,
+      restricted?: boolean,
+      position?: { line?: number; column?: number },
+    ) => open('file', path, root, restricted, undefined, position),
     openChat: (id: string, title = '侧边对话') => open('chat', id, undefined, undefined, title),
     openWebsite: (url: string) => {
       const target = previewWebsite(url);
@@ -202,7 +234,7 @@ export function usePreviewWorkspace(
     follow(link: Link, root?: string, restricted?: boolean) {
       if (!window.desktop?.preview || !session || !workspace) return false;
       if (link.kind === 'path') {
-        open('file', link.path, root, restricted);
+        open('file', link.path, root, restricted, undefined, link);
         return true;
       }
       if (link.kind === 'web') {
@@ -234,6 +266,7 @@ export function usePreviewWorkspace(
         panes: b.panes.map((p) => (p.id === id ? { ...p, floating: rect } : p)),
       })),
     close: (id: string) => {
+      navigated.current.delete(JSON.stringify([session, id]));
       const tab = board.tabs.find((t) => t.id === id);
       if (tab) release(tab);
       change((b) => closeTab(b, id));

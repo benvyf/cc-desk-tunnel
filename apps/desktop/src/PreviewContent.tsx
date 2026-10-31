@@ -8,7 +8,8 @@ import {
   RefreshCw,
 } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
-import RichText, { CodeBlock } from './RichText.tsx';
+import RichText from './RichText.tsx';
+import PreviewCode from './PreviewCode.tsx';
 import { CopyButton } from './copy.tsx';
 import { LinkPlace, linkTarget } from './links.ts';
 import { followLink } from './linkActions.ts';
@@ -171,7 +172,10 @@ export default function PreviewContent({
   const reading = workspace.reading;
   const [source, setSource] = useState(() => {
     const saved = reading.get(tab.id);
-    return saved?.kind === 'markdown' && saved.source;
+    return (
+      (!!tab.navigation && !workspace.navigated.has(tab.id, tab.navigation.id)) ||
+      (saved?.kind === 'markdown' && saved.source)
+    );
   });
   const [zoom, setZoom] = useState(1);
   const [browser, setBrowser] = useState<PreviewBrowserState | null>(null);
@@ -182,6 +186,16 @@ export default function PreviewContent({
   const documentRoot = useRef<HTMLDivElement>(null);
   // A PDF replaces the file-loading placeholder; reader intent must survive that handoff.
   const readingInterrupted = useRef(false);
+  const navigation =
+    tab.navigation && !workspace.navigated.has(tab.id, tab.navigation.id)
+      ? tab.navigation
+      : undefined;
+  useLayoutEffect(() => {
+    if (navigation && file && (file.kind === 'markdown' || file.kind === 'html')) setSource(true);
+    // Unsupported types acknowledge navigation without performing a document operation.
+    if (navigation && file && !['text', 'markdown', 'html'].includes(file.kind))
+      workspace.navigated.mark(tab.id, navigation.id);
+  }, [navigation?.id, file]);
   const captureReading = usePreviewReading(
     documentRoot,
     file?.kind === 'text' || file?.kind === 'markdown' ? file : null,
@@ -434,7 +448,7 @@ export default function PreviewContent({
           {error || browser?.error || watchError}
         </p>
       )}
-      {file?.kind === 'html' && workspace.restoredTabs.has(tab.id) ? (
+      {file?.kind === 'html' && !source && workspace.restoredTabs.has(tab.id) ? (
         <div className="preview-empty">
           <FileText />
           <p>已恢复 HTML 标签。点击后加载页面。</p>
@@ -527,9 +541,20 @@ export default function PreviewContent({
           ) : (
             file && (
               <div className="message-content preview-code">
-                <CodeBlock>
-                  <code className={`language-${languageOf(file.path)}`}>{file.text}</code>
-                </CodeBlock>
+                <PreviewCode
+                  text={file.text ?? ''}
+                  language={languageOf(file.path)}
+                  wrap={tab.wrap === true}
+                  setWrap={(value) => workspace.wrap(tab.id, value)}
+                  navigation={navigation}
+                  onNavigated={(request) => workspace.navigated.mark(tab.id, request)}
+                  root={documentRoot}
+                  captureReading={captureReading}
+                  beforeNavigate={() => {
+                    captureReading();
+                    readingInterrupted.current = true;
+                  }}
+                />
               </div>
             )
           )}
