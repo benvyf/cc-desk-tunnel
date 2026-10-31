@@ -561,12 +561,15 @@ export class ProxyClient {
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
         this.observers.delete(message.sessionId);
+        this.activity.delete(message.sessionId);
         const events = { ...this.state.events };
         const live = { ...this.state.live };
         const history = { ...this.state.history };
+        const progress = { ...this.state.progress };
         delete events[message.sessionId];
         delete live[message.sessionId];
         delete history[message.sessionId];
+        delete progress[message.sessionId];
         this.streamEvents = this.streamEvents.filter(
           (event) => event.sessionId !== message.sessionId,
         );
@@ -574,7 +577,7 @@ export class ProxyClient {
         const sessions = this.state.sessions.filter((session) => session.id !== message.sessionId);
         const selectedId =
           this.state.selectedId === message.sessionId ? null : this.state.selectedId;
-        this.update({ sessions, events, live, history, selectedId });
+        this.update({ sessions, events, live, history, progress, selectedId });
       } else if (message.type === 'session.snapshot') {
         this.flushStream();
         if (
@@ -874,6 +877,8 @@ export class ProxyClient {
       if (this.observers.get(sessionId) !== observer) return;
       if (--observer.count > 0) return;
       this.observers.delete(sessionId);
+      const evicted = this.trimCache();
+      if (evicted) this.update(evicted);
       if (
         sessionId !== this.state.selectedId &&
         this.state.sideConversations &&
@@ -881,6 +886,28 @@ export class ProxyClient {
       )
         void this.request({ type: 'session.unsubscribe', sessionId }).catch(() => {});
     };
+  }
+  private trimCache(selectedId = this.state.selectedId) {
+    const removed = new Set<string>();
+    while (this.cacheOrder.length > 4) {
+      const index = this.cacheOrder.findIndex((id) => id !== selectedId && !this.observers.has(id));
+      if (index === -1) break;
+      removed.add(this.cacheOrder.splice(index, 1)[0]);
+    }
+    if (!removed.size) return undefined;
+    const events = { ...this.state.events };
+    const live = { ...this.state.live };
+    const history = { ...this.state.history };
+    const progress = { ...this.state.progress };
+    for (const id of removed) {
+      delete events[id];
+      delete live[id];
+      delete history[id];
+      delete progress[id];
+    }
+    // Frames received just before a pane closed must not recreate its evicted cache on flush.
+    this.streamEvents = this.streamEvents.filter((event) => !removed.has(event.sessionId));
+    return { events, live, history, progress };
   }
   async loadEarlier(sessionId: string) {
     const history = this.state.history[sessionId];
@@ -907,18 +934,7 @@ export class ProxyClient {
   select(sessionId: string) {
     this.flushStream();
     this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
-    const events = { ...this.state.events };
-    const live = { ...this.state.live };
-    const history = { ...this.state.history };
-    while (this.cacheOrder.length > 4) {
-      const index = this.cacheOrder.findIndex((id) => id !== sessionId && !this.observers.has(id));
-      if (index === -1) break;
-      const [evicted] = this.cacheOrder.splice(index, 1);
-      delete events[evicted];
-      delete live[evicted];
-      delete history[evicted];
-    }
-    this.update({ selectedId: sessionId, events, live, history });
+    this.update({ selectedId: sessionId, ...this.trimCache(sessionId) });
     if (this.state.status === 'connected') this.load(sessionId);
   }
   // Terminal output bypasses the state store; xterm consumes it directly.

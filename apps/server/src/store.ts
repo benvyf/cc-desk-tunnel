@@ -74,6 +74,16 @@ is not in it. Once all is well this directory can be deleted.
 
 // Reading a session's native state when it is opened is not use of it: these do not move it up the list.
 const stateReadings = new Set<EventPayload['type']>(['native.capabilities', 'native.metrics']);
+const sideContextTypes = [
+  'message.user',
+  'text.delta',
+  'thinking.delta',
+  'tool.requested',
+  'tool.input',
+  'tool.input.delta',
+  'tool.output',
+  'tool.result',
+];
 
 export class SessionStore {
   directory: string;
@@ -599,19 +609,7 @@ export class SessionStore {
     const records: { sequence?: number; payload: EventPayload }[] = [];
     let characters = this.sideContext(parentSessionId).length;
     const add = (payload: EventPayload, sequence?: number) => {
-      if (
-        ![
-          'message.user',
-          'text.delta',
-          'thinking.delta',
-          'tool.requested',
-          'tool.input',
-          'tool.input.delta',
-          'tool.output',
-          'tool.result',
-        ].includes(payload.type)
-      )
-        return;
+      if (!sideContextTypes.includes(payload.type)) return;
       const record = { ...(sequence === undefined ? {} : { sequence }), payload };
       characters += JSON.stringify(record).length + 1;
       if (characters > 256_000)
@@ -621,10 +619,12 @@ export class SessionStore {
         );
       records.push(record);
     };
-    // Iterate from SQLite so an oversized history need not be loaded in its entirety.
+    // Filter state readings in SQLite before decoding rows in JavaScript, and stop at the snapshot budget.
     for (const row of this.database
-      .prepare('SELECT data FROM events WHERE session_id = ? ORDER BY sequence')
-      .iterate(parentSessionId)) {
+      .prepare(
+        `SELECT data FROM events WHERE session_id = ? AND json_extract(data, '$.payload.type') IN (${sideContextTypes.map(() => '?').join(', ')}) ORDER BY sequence`,
+      )
+      .iterate(parentSessionId, ...sideContextTypes)) {
       const event = JSON.parse(String(row.data)) as SessionEvent;
       add(event.payload, event.sequence);
     }

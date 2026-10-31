@@ -11,3 +11,5 @@
 主会话引用兼容已有节点。侧会话需要同时更新客户端和服务端；旧节点的侧栏入口禁用并提示更新，不会转为本机模型请求。未发送草稿和引用按会话保存；侧栏标签布局属于当前客户端，切换会话、重连和重启后可恢复。
 
 功能参考 [dsh-harness-chat-control](https://github.com/1985899182/dsh-harness-chat-control)，沿用 CC SPACE 自有界面和远端会话实现，不依赖其 DSH 或 Better Sidebar 运行时。
+
+性能检查、优化测量和资源开销说明见[引用与侧栏性能检查](QUOTED-CONVERSATIONS-PERFORMANCE.md)。

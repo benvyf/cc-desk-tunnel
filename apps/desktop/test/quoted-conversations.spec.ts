@@ -247,6 +247,61 @@ async function selectAnswer(page: Page, text: string) {
   await expect(page.getByRole('toolbar', { name: '引用选中文字' })).toBeVisible();
 }
 
+test('mouse drag selection offers both quote destinations and preserves exactly the selected text', async ({
+  page,
+}) => {
+  const f = await fixture(page),
+    main = page.locator('.workspace');
+  for (const destination of ['main', 'side']) {
+    const paragraph = main.locator('.message.assistant [data-copy-text] p').first();
+    await paragraph.scrollIntoViewIfNeeded();
+    const points = await paragraph.evaluate((el) => {
+      const node = el.firstChild!,
+        text = node.textContent!,
+        end = text.indexOf('。');
+      const first = el.ownerDocument.createRange(),
+        last = el.ownerDocument.createRange();
+      first.setStart(node, 0);
+      first.setEnd(node, 1);
+      last.setStart(node, end - 1);
+      last.setEnd(node, end);
+      const a = first.getBoundingClientRect(),
+        b = last.getBoundingClientRect();
+      return {
+        from: { x: a.left + 1, y: a.top + a.height / 2 },
+        to: { x: b.right - 1, y: b.top + b.height / 2 },
+      };
+    });
+    await page.mouse.move(points.from.x, points.from.y);
+    await page.mouse.down();
+    await page.mouse.move(points.to.x, points.to.y, { steps: 12 });
+    await page.mouse.up();
+    const toolbar = page.getByRole('toolbar', { name: '引用选中文字', exact: true });
+    await expect(toolbar).toBeVisible();
+    const selected = await page.evaluate(() => getSelection()?.toString() ?? '');
+    expect(selected).toContain('自动刷新');
+    await expect(toolbar.getByRole('button', { name: '添加到对话', exact: true })).toBeVisible();
+    await expect(
+      toolbar.getByRole('button', { name: '在侧边聊天中提问', exact: true }),
+    ).toBeEnabled();
+    await toolbar
+      .getByRole('button', {
+        name: destination === 'main' ? '添加到对话' : '在侧边聊天中提问',
+        exact: true,
+      })
+      .click();
+    const target =
+      destination === 'main' ? main : page.getByRole('region', { name: '侧边会话', exact: true });
+    await target.getByRole('button', { name: '查看引用内容', exact: true }).click();
+    await expect(target.locator('.composer-input .quote-reference-item blockquote')).toHaveText(
+      selected,
+    );
+    await expect(target.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+    await expect(target.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
+    expect(f.messages()).toHaveLength(0);
+  }
+});
+
 test('main quote is an atomic editable reference and sends only the explicit question in the original session', async ({
   page,
 }) => {
@@ -776,4 +831,55 @@ test('a delayed main send preserves newer edits made after returning to its side
   await expect(main.getByRole('textbox', { name: '消息', exact: true })).toBeEnabled();
   await expect(box).toHaveValue('等待期间在侧栏写的新草稿');
   expect(f.messages()).toHaveLength(2);
+});
+
+test('typing with quote controls does not reinstall document selection listeners', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const probe = { added: 0, removed: 0 };
+    (window as any).selectionListenerProbe = probe;
+    const add = EventTarget.prototype.addEventListener,
+      remove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function (type, ...args) {
+      if (this === document && type === 'selectionchange') probe.added++;
+      return add.call(this, type, ...args);
+    };
+    EventTarget.prototype.removeEventListener = function (type, ...args) {
+      if (this === document && type === 'selectionchange') probe.removed++;
+      return remove.call(this, type, ...args);
+    };
+  });
+  await fixture(page);
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  await expect(page.getByRole('region', { name: '侧边会话', exact: true })).toBeVisible();
+  const before = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  await page
+    .locator('.workspace')
+    .getByRole('textbox', { name: '消息', exact: true })
+    .pressSequentially('typing should keep listeners stable');
+  const after = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  console.log(
+    'selection listener installs during typing',
+    after.added - before.added,
+    'removals',
+    after.removed - before.removed,
+  );
+  expect(after.added - before.added).toBeLessThanOrEqual(2);
+  expect(after.removed - before.removed).toBeLessThanOrEqual(2);
+  await page.getByRole('button', { name: '收起预览', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).selectionListenerProbe.removed))
+    .toBe(after.removed + 1);
+  const collapsed = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  await page
+    .locator('.workspace')
+    .getByRole('textbox', { name: '消息', exact: true })
+    .pressSequentially('after collapse');
+  const final = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  expect(final).toEqual(collapsed);
 });

@@ -64,11 +64,12 @@ export function assistantSelection(root: HTMLElement) {
 }
 export function QuoteSelection({ root }: { root: RefObject<HTMLDivElement | null> }) {
   const actions = useContext(QuoteActionsContext);
+  const enabled = !!actions;
   const [selected, setSelected] = useState<ReturnType<typeof assistantSelection>>(null);
   const toolbar = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const element = root.current;
-    if (!actions || !element) return;
+    if (!enabled || !element) return;
     const doc = element.ownerDocument,
       win = doc.defaultView!;
     let frame = 0;
@@ -105,7 +106,7 @@ export function QuoteSelection({ root }: { root: RefObject<HTMLDivElement | null
       doc.removeEventListener('keydown', escape);
       win.removeEventListener('resize', clear);
     };
-  }, [actions, root]);
+  }, [enabled, root]);
   useLayoutEffect(() => {
     const element = toolbar.current;
     if (!element || !selected) return;

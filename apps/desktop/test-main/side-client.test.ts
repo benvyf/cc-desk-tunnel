@@ -297,3 +297,116 @@ test('reconnect without a main selection restores only existing observers and ke
   );
   cleanup.slice(1).forEach((close) => close());
 });
+
+test('closing many side histories bounds the cache without changing main or active observers', async (t) => {
+  const { client, socket, sessions, ready, snapshot } = fixture(t);
+  const many = Array.from({ length: 40 }, (_, index) => ({
+    ...sessions[0],
+    id: randomUUID(),
+    title: `closed-${index}`,
+  }));
+  ready(socket, true, [...sessions, ...many]);
+  client.select(sessions[0].id);
+  snapshot(socket, sessions[0]);
+  const active = client.observeSession(sessions[1].id);
+  snapshot(socket, sessions[1]);
+  for (const session of many) {
+    const close = client.observeSession(session.id);
+    snapshot(socket, session);
+    socket.message({
+      type: 'session.fragment',
+      sessionId: session.id,
+      runId: randomUUID(),
+      payload: { type: 'text.delta', messageId: randomUUID(), text: 'buffered before close' },
+    });
+    socket.message({
+      type: 'session.fragment',
+      sessionId: session.id,
+      runId: randomUUID(),
+      payload: { type: 'native.progress', taskId: 'task', summary: 'closed chat task progress' },
+    });
+    close();
+  }
+  await settle();
+  assert.equal(client.state.selectedId, sessions[0].id);
+  assert.equal(client.cacheOrder.length, 4);
+  assert.equal(Object.keys(client.state.events).length, 4);
+  assert.ok(client.state.events[sessions[0].id]);
+  assert.ok(client.state.events[sessions[1].id]);
+  assert.equal(
+    Object.keys(client.state.live).some((id) => !client.cacheOrder.includes(id)),
+    false,
+    'buffered fragments cannot restore evicted histories',
+  );
+  assert.equal(
+    Object.keys(client.state.progress).some((id) => !client.cacheOrder.includes(id)),
+    false,
+    'eviction also releases transient task progress',
+  );
+  active();
+});
+
+test('late side history replies cannot restore an evicted cache', (t) => {
+  const { client, socket, sessions, snapshot } = fixture(t);
+  client.select(sessions[0].id);
+  snapshot(socket, sessions[0]);
+  for (const session of sessions.slice(1)) client.observeSession(session.id)();
+  const discarded = sessions[1];
+  assert.equal(client.cacheOrder.includes(discarded.id), false);
+  snapshot(socket, discarded);
+  assert.equal(client.state.events[discarded.id], undefined);
+  assert.equal(client.state.history[discarded.id], undefined);
+});
+
+test('deleting a side conversation releases its task progress and buffered updates', async (t) => {
+  const { client, socket, sessions, snapshot } = fixture(t);
+  client.select(sessions[0].id);
+  snapshot(socket, sessions[0]);
+  const close = client.observeSession(sessions[1].id);
+  snapshot(socket, sessions[1]);
+  const progress = {
+    type: 'session.fragment',
+    sessionId: sessions[1].id,
+    runId: randomUUID(),
+    payload: { type: 'native.progress', taskId: 'task', summary: 'deleted chat progress' },
+  };
+  socket.message(progress);
+  await settle();
+  assert.ok(client.state.progress[sessions[1].id]);
+  socket.message({
+    ...progress,
+    payload: { ...progress.payload, summary: 'pending just before delete' },
+  });
+  socket.message({ type: 'session.deleted', sessionId: sessions[1].id });
+  close();
+  await settle();
+  assert.equal(client.state.progress[sessions[1].id], undefined);
+  assert.equal(client.state.events[sessions[1].id], undefined);
+  assert.equal(client.state.history[sessions[1].id], undefined);
+  assert.equal(client.state.selectedId, sessions[0].id);
+});
+
+test('reopening an evicted side chat loads a complete fresh history and preserves other observers', (t) => {
+  const { client, socket, sessions, snapshot } = fixture(t);
+  client.select(sessions[0].id);
+  snapshot(socket, sessions[0]);
+  const active = client.observeSession(sessions[1].id);
+  snapshot(socket, sessions[1]);
+  for (const session of sessions.slice(2)) {
+    const close = client.observeSession(session.id);
+    snapshot(socket, session);
+    close();
+  }
+  const evicted = sessions[2];
+  assert.equal(client.state.history[evicted.id], undefined);
+  const close = client.observeSession(evicted.id),
+    request = socket.sent.at(-1)!;
+  assert.equal((request as any).afterSequence, 0);
+  snapshot(socket, evicted);
+  assert.equal(client.state.history[evicted.id].loaded, true);
+  assert.ok(client.state.events[evicted.id]);
+  assert.ok(client.state.events[sessions[1].id]);
+  assert.ok(client.state.events[sessions[0].id]);
+  close();
+  active();
+});

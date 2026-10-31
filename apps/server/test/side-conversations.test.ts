@@ -123,6 +123,59 @@ test('oversize snapshots reject atomically instead of truncating', (t) => {
   assert.equal(f.store.created(requestId), undefined);
 });
 
+test('side snapshots preserve dialogue while skipping large state rows before JavaScript decoding', (t) => {
+  const { f, parent } = fixture(t);
+  const runId = randomUUID(),
+    stateMarker = 'SIDE_SNAPSHOT_IGNORED_STATE';
+  const dialogue: EventPayload[] = [
+    { type: 'message.user', messageId: randomUUID(), text: 'Question', scenario: 'chat' },
+    { type: 'text.delta', messageId: randomUUID(), text: 'Answer' },
+    { type: 'thinking.delta', messageId: randomUUID(), text: 'Summary' },
+    { type: 'tool.requested', toolId: 'tool', name: 'Bash', input: 'input', target: 'Windows' },
+    { type: 'tool.input', toolId: 'tool', input: 'complete input' },
+    { type: 'tool.input.delta', toolId: 'tool', text: 'partial input' },
+    { type: 'tool.output', toolId: 'tool', stream: 'stdout', text: 'output' },
+    { type: 'tool.result', toolId: 'tool', status: 'completed', output: 'done', exitCode: 0 },
+  ];
+  for (let index = 0; index < 500; index++)
+    f.store.append(parent.id, runId, {
+      type: 'native.metrics',
+      context: null,
+      usage: null,
+      rateLimits: null,
+      errors: { usage: stateMarker + 'x'.repeat(3000) },
+    });
+  const saved = dialogue.map((payload) => f.store.append(parent.id, runId, payload));
+  const open = { type: 'text.delta' as const, messageId: randomUUID(), text: 'Frozen live answer' };
+  const parse = JSON.parse;
+  let decodedStateRows = 0;
+  const decoder = t.mock.method(
+    JSON,
+    'parse',
+    (text: string, reviver?: Parameters<typeof JSON.parse>[1]) => {
+      if (text.includes(stateMarker)) decodedStateRows++;
+      return parse(text, reviver);
+    },
+  );
+  let child;
+  try {
+    child = f.store.createSide(randomUUID(), parent.id, 'Side', open);
+  } finally {
+    decoder.mock.restore();
+  }
+  assert.equal(
+    decodedStateRows,
+    0,
+    'irrelevant state payloads never cross into the JavaScript snapshot loop',
+  );
+  assert.equal(child.sideConversation?.throughSequence, saved.at(-1)!.sequence);
+  assert.deepEqual(JSON.parse(f.store.sideContext(child.id)).records, [
+    ...saved.map(({ sequence, payload }) => ({ sequence, payload })),
+    { payload: open },
+  ]);
+  assert.ok(f.store.sideContext(child.id).length < 256_000);
+});
+
 test('unused side forks retain their frozen background across restart', (t) => {
   const { f, parent } = fixture(t);
   f.store.append(parent.id, randomUUID(), {
