@@ -90,3 +90,18 @@ test('floating rectangles fit their actual owner viewport after dragging or rest
     height: 464,
   });
 });
+
+test('chat tabs restore as metadata without file access or website navigation', () => {
+  const id = '8c6f7703-9633-4fbe-a68f-4d5e2ba7fbd0';
+  const board = openTab(emptyBoard(), { id: 'tab', kind: 'chat', target: id, title: '引用追问' });
+  const restored = restoreLayout(JSON.stringify({ width: 600, boards: { main: board } }));
+  assert.equal(restored.boards.main.tabs[0].kind, 'chat');
+  assert.equal(restored.boards.main.tabs[0].target, id);
+  assert.equal(restored.boards.main.tabs[0].title, '引用追问');
+  const invalid = restoreLayout(
+    JSON.stringify({
+      boards: { main: { ...board, tabs: [{ id: 'x', kind: 'chat', target: 'file:///secret' }] } },
+    }),
+  );
+  assert.equal(invalid.boards.main.tabs.length, 0);
+});

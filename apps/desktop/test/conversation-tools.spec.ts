@@ -189,7 +189,7 @@ test('Electron copies text and supplies the native editing context menu', async 
     expect(await application.evaluate(({ clipboard }) => clipboard.readText())).toBe(
       '复制粘贴测试',
     );
-    const input = page.getByLabel('服务地址', { exact: true });
+    const input = page.getByLabel('邮箱', { exact: true });
     await input.fill('');
     await input.focus();
     await application.evaluate(({ BrowserWindow }) =>

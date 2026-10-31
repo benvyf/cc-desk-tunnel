@@ -14,25 +14,37 @@ export function usePopupBounds(
     if (!popup) return;
     const composer = popup.closest('.composer');
     const workspace = popup.closest('.workspace');
+    const side = popup.closest('.side-conversation');
+    const doc = popup.ownerDocument,
+      viewport = doc.defaultView!;
     const fit = () => {
-      const edge = Math.max(8, (workspace?.getBoundingClientRect().top ?? 0) + 8);
-      const width = document.documentElement.clientWidth;
-      const height = document.documentElement.clientHeight;
-      popup.style.maxHeight = `${Math.max(0, height - edge - 8)}px`;
+      const bounds = side?.getBoundingClientRect();
+      const edge = Math.max(8, (bounds?.top ?? workspace?.getBoundingClientRect().top ?? 0) + 8);
+      const left = Math.max(8, (bounds?.left ?? 0) + 8);
+      const right = Math.min(doc.documentElement.clientWidth - 8, (bounds?.right ?? Infinity) - 8);
+      const bottom = Math.min(
+        doc.documentElement.clientHeight - 8,
+        (bounds?.bottom ?? Infinity) - 8,
+      );
+      popup.style.maxHeight = `${Math.max(0, bottom - edge)}px`;
+      if (bounds) popup.style.maxWidth = `${Math.max(0, right - left)}px`;
       popup.style.transform = '';
       const box = popup.getBoundingClientRect();
-      const x = Math.max(8 - box.left, Math.min(0, width - 8 - box.right));
-      const y = Math.max(edge - box.top, Math.min(0, height - 8 - box.bottom));
+      const x = Math.max(left - box.left, Math.min(0, right - box.right));
+      const y = Math.max(edge - box.top, Math.min(0, bottom - box.bottom));
       if (x || y) popup.style.transform = `translate(${x}px, ${y}px)`;
     };
     fit();
     const observer = new ResizeObserver(fit);
     observer.observe(popup);
     if (composer) observer.observe(composer);
-    window.addEventListener('resize', fit);
+    if (side) observer.observe(side);
+    side?.addEventListener('scroll', fit, { passive: true });
+    viewport.addEventListener('resize', fit);
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', fit);
+      side?.removeEventListener('scroll', fit);
+      viewport.removeEventListener('resize', fit);
     };
   }, [container, selector, open, contentKey]);
 }

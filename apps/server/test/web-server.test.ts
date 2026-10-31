@@ -178,6 +178,102 @@ test('wrong browser sign-ins never lock out a desktop at the same address', asyn
   await f.desktop();
 });
 
+test('browser side capability permits independent chat and retained subscriptions without desktop access', async (t) => {
+  const f = await fixture(t);
+  const desktop = await f.desktop();
+  await desktop.request({ type: 'web.settings.update', values: { enabled: true } });
+  const signed = await f.login();
+  const { client, ready } = await f.browser(signed.cookie);
+  assert.ok(ready.type === 'ready' && ready.sideConversations === true);
+  assert.ok(browserCommands.has('session.side.create'));
+  assert.ok(browserCommands.has('session.unsubscribe'));
+  const main = await client.request({ type: 'server.session.create', title: 'Browser main' });
+  assert.ok(main.ok && main.sessionId);
+  const side = await client.request({
+    type: 'session.side.create',
+    sessionId: main.sessionId,
+    title: 'Browser side',
+  });
+  assert.ok(side.ok && side.sessionId);
+  assert.equal(f.server.store.snapshot(side.sessionId).events.length, 0);
+  assert.equal(
+    f.server.store.get(side.sessionId).session.device?.id,
+    ready.browser?.serverDeviceId,
+  );
+  assert.ok(
+    (await client.request({ type: 'session.subscribe', sessionId: side.sessionId, retain: true }))
+      .ok,
+  );
+  for (const sessionId of [main.sessionId, side.sessionId]) {
+    assert.ok(
+      (await desktop.request({ type: 'message.send', sessionId, text: 'Independent browser chat' }))
+        .ok,
+    );
+    await client.wait(
+      (message) =>
+        message.type === 'session.event' &&
+        message.event.sessionId === sessionId &&
+        message.event.payload.type === 'run.status' &&
+        message.event.payload.status === 'completed',
+    );
+  }
+  assert.ok((await client.request({ type: 'session.unsubscribe', sessionId: main.sessionId })).ok);
+  client.messages = [];
+  await desktop.request({
+    type: 'message.send',
+    sessionId: main.sessionId,
+    text: 'Unsubscribed browser main',
+  });
+  await desktop.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.sessionId === main.sessionId &&
+      message.event.payload.type === 'run.status' &&
+      message.event.payload.status === 'completed',
+  );
+  assert.ok(
+    !client.messages.some(
+      (message) => message.type === 'session.event' && message.event.sessionId === main.sessionId,
+    ),
+  );
+  assert.ok(
+    (
+      await client.request({
+        type: 'message.send',
+        sessionId: side.sessionId,
+        text: 'Explicit browser side question',
+      })
+    ).ok,
+  );
+  await client.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.sessionId === side.sessionId &&
+      message.event.payload.type === 'run.status' &&
+      message.event.payload.status === 'completed',
+  );
+  assert.equal(
+    (
+      await client.request({
+        type: 'session.create',
+        title: 'Local project',
+        projectPath: 'C:\\private',
+      })
+    ).code,
+    'web_forbidden',
+  );
+  assert.equal(
+    (
+      await client.request({
+        type: 'session.move',
+        sessionId: side.sessionId,
+        projectPath: 'C:\\private',
+      })
+    ).code,
+    'web_forbidden',
+  );
+});
+
 test('browser sessions belong to the stable server device, survive restart, and remain operable from desktop', async (t) => {
   const f = await fixture(t);
   let desktop = await f.desktop();

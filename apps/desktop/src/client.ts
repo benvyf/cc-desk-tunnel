@@ -124,6 +124,7 @@ export type ClientState = {
   terminalWorkspace?: { version: 1; minRows?: 1 };
   terminalFiles?: { version: 1 };
   terminalHistory?: { version: 1 };
+  sideConversations: boolean;
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
   browser: Extract<ServerMessage, { type: 'ready' }>['browser'] | null;
@@ -168,6 +169,7 @@ export class ProxyClient {
   state: ClientState = {
     status: 'disconnected',
     connectionId: null,
+    sideConversations: false,
     device: null,
     browser: null,
     devices: [],
@@ -217,6 +219,7 @@ export class ProxyClient {
   streamEvents: (SessionEvent | Extract<ServerMessage, { type: 'session.fragment' }>)[] = [];
   // Event history is kept for the most recently viewed sessions only.
   cacheOrder: string[] = [];
+  private observers = new Map<string, { count: number }>();
   // When something last came from each session's run, by the service's clock, for telling a run that goes on
   // from one that has been quiet for long. Readings of the context and the quota repeat through a long turn
   // and say nothing of it.
@@ -447,12 +450,15 @@ export class ProxyClient {
         const selectedId = message.sessions.some((session) => session.id === this.state.selectedId)
           ? this.state.selectedId
           : null;
+        for (const id of this.observers.keys())
+          if (!message.sessions.some((session) => session.id === id)) this.observers.delete(id);
         this.update({
           status: 'connected',
           connectionId: message.connectionId,
           terminalWorkspace: message.terminalWorkspace,
           terminalFiles: message.terminalFiles,
           terminalHistory: message.terminalHistory,
+          sideConversations: message.sideConversations === true,
           browser: message.browser ?? null,
           sessions: message.sessions,
           selectedId,
@@ -464,6 +470,7 @@ export class ProxyClient {
           model: message.model ?? null,
         });
         if (selectedId) this.load(selectedId);
+        else this.restoreObserved();
       } else if (message.type === 'response') {
         const request = this.pending.get(message.requestId);
         if (!request) return;
@@ -553,6 +560,7 @@ export class ProxyClient {
         }
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
+        this.observers.delete(message.sessionId);
         const events = { ...this.state.events };
         const live = { ...this.state.live };
         const history = { ...this.state.history };
@@ -627,6 +635,7 @@ export class ProxyClient {
       }
       this.flushStream();
       this.rejectPending();
+      this.update({ sideConversations: false });
       if (
         !this.credentials ||
         !this.credentials.reconnect ||
@@ -634,6 +643,7 @@ export class ProxyClient {
       ) {
         const nativeClosed = !!this.credentials;
         this.credentials = null;
+        this.observers.clear();
         this.update({
           status: 'disconnected',
           connectionId: null,
@@ -665,6 +675,7 @@ export class ProxyClient {
     this.flushStream();
     const browser = this.credentials?.browser;
     this.credentials = null;
+    this.observers.clear();
     this.turn++;
     clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
@@ -676,7 +687,12 @@ export class ProxyClient {
     socket?.close();
     this.rejectPending();
     this.retryAttempt = 0;
-    this.update({ status: 'disconnected', connectionId: null, error: null });
+    this.update({
+      status: 'disconnected',
+      connectionId: null,
+      sideConversations: false,
+      error: null,
+    });
   }
   private rejectPending() {
     this.terminals.clear();
@@ -787,7 +803,9 @@ export class ProxyClient {
       ? [...recorded, { ...unfinished, sequence: (recorded.at(-1)?.sequence ?? 0) + 1 }]
       : recorded;
   }
-  private load(sessionId: string) {
+  private load(sessionId: string, retain = false) {
+    const socket = this.socket;
+    const observer = this.observers.get(sessionId);
     const previous = this.state.history[sessionId];
     const afterSequence = previous?.lastSequence ?? 0;
     this.update({
@@ -805,20 +823,69 @@ export class ProxyClient {
         },
       },
     });
-    void this.request({ type: 'session.subscribe', sessionId, afterSequence }).catch(
-      (error: Error) => {
-        const history = this.state.history[sessionId];
-        if (history)
-          this.update({
-            error: error.message,
-            history: { ...this.state.history, [sessionId]: { ...history, loading: false } },
-          });
-      },
-    );
+    void this.request({
+      type: 'session.subscribe',
+      sessionId,
+      afterSequence,
+      ...(retain ? { retain: true } : {}),
+    }).catch((error: Error) => {
+      if (
+        this.socket !== socket ||
+        this.state.status !== 'connected' ||
+        (retain && this.observers.get(sessionId) !== observer)
+      )
+        return;
+      const history = this.state.history[sessionId];
+      if (history)
+        this.update({
+          error: error.message,
+          history: { ...this.state.history, [sessionId]: { ...history, loading: false } },
+        });
+    });
+    // A main subscription replaces the server's set. Restore the visible side sessions after it.
+    if (!retain) this.restoreObserved();
+  }
+  private restoreObserved() {
+    if (!this.state.sideConversations || this.state.status !== 'connected') return;
+    for (const id of this.observers.keys()) if (id !== this.state.selectedId) this.load(id, true);
+  }
+  // A pane observes history and live output without changing the main conversation.
+  observeSession(sessionId: string): () => void {
+    if (
+      !this.state.sideConversations ||
+      !this.state.sessions.some((session) => session.id === sessionId)
+    )
+      return () => {};
+    let observer = this.observers.get(sessionId);
+    if (!observer) {
+      // The server admits 32 subscriptions; leave room for the main conversation.
+      if (this.observers.size >= 31) return () => {};
+      observer = { count: 0 };
+      this.observers.set(sessionId, observer);
+      this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
+      if (sessionId !== this.state.selectedId && this.state.status === 'connected')
+        this.load(sessionId, true);
+    }
+    observer.count++;
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (this.observers.get(sessionId) !== observer) return;
+      if (--observer.count > 0) return;
+      this.observers.delete(sessionId);
+      if (
+        sessionId !== this.state.selectedId &&
+        this.state.sideConversations &&
+        this.state.status === 'connected'
+      )
+        void this.request({ type: 'session.unsubscribe', sessionId }).catch(() => {});
+    };
   }
   async loadEarlier(sessionId: string) {
     const history = this.state.history[sessionId];
     if (!history?.hasEarlier || history.loadingEarlier || history.loading) return;
+    const socket = this.socket;
     this.update({
       history: { ...this.state.history, [sessionId]: { ...history, loadingEarlier: true } },
     });
@@ -830,7 +897,7 @@ export class ProxyClient {
       });
     } catch (error) {
       const current = this.state.history[sessionId];
-      if (current)
+      if (current && this.socket === socket)
         this.update({
           history: { ...this.state.history, [sessionId]: { ...current, loadingEarlier: false } },
         });
@@ -844,7 +911,9 @@ export class ProxyClient {
     const live = { ...this.state.live };
     const history = { ...this.state.history };
     while (this.cacheOrder.length > 4) {
-      const evicted = this.cacheOrder.shift()!;
+      const index = this.cacheOrder.findIndex((id) => id !== sessionId && !this.observers.has(id));
+      if (index === -1) break;
+      const [evicted] = this.cacheOrder.splice(index, 1);
       delete events[evicted];
       delete live[evicted];
       delete history[evicted];

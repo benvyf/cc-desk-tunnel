@@ -61,7 +61,7 @@ function NativePreview({
         !!doc.querySelector('[data-preview-resizing], [data-sidebar-resizing]') ||
         [
           ...doc.querySelectorAll(
-            'dialog[open], .menu, .terminal-list, .sidebar-shade, .preview-full, .preview-pane-floating',
+            'dialog[open], .menu, .terminal-list, .sidebar-shade, .preview-full, .preview-pane-floating, .quote-selection-toolbar, [role="dialog"], [role="alertdialog"], [role="menu"]',
           ),
         ].some((overlay) => {
           if (overlay.contains(element)) return false;

@@ -35,13 +35,7 @@ import {
   X,
 } from './icons.tsx';
 import { GithubMark, openProject, project } from './project.tsx';
-import type {
-  Effort,
-  EventPayload,
-  PermissionMode,
-  Session,
-  SessionEvent,
-} from '@cc-desk-tunnel/protocol';
+import type { Effort, PermissionMode, Session } from '@cc-desk-tunnel/protocol';
 import type { NativeCapabilities } from '../../../packages/protocol/src/account-display.ts';
 import { browserSession, browserSocket, watchActivity } from './browser-api.ts';
 import { CertificateWarning } from './WebGate.tsx';
@@ -49,6 +43,10 @@ import { hostCapabilities } from './host-capabilities.ts';
 import AccountPanel from './AccountPanel.tsx';
 import { ProxyClient, RequestInterruptedError } from './client.ts';
 import Composer from './Composer.tsx';
+import SideConversation from './SideConversation.tsx';
+import { latest } from './nativeState.ts';
+import { appendQuote, makeQuote, quoteMessage, splitQuoteMessage, quoteLimit } from './quotes.ts';
+import type { QuoteDestination } from './QuoteActions.tsx';
 import SessionBar from './SessionBar.tsx';
 import { isHere, thisDevice } from './device.ts';
 import { isMac, selfUpdating } from './platform.ts';
@@ -100,13 +98,6 @@ const NativeTerminal = lazy(() => import('./TerminalWindow.tsx'));
 // The notes of every version so far are read only when asked for, and stay out of what the window starts with.
 const ReleaseNotes = lazy(() => import('./ReleaseNotes.tsx'));
 
-// The newest event of a kind is the session's current native state.
-function latest<T extends EventPayload['type']>(events: SessionEvent[], type: T) {
-  return (events.findLast((event) => event.payload.type === type)?.payload ?? null) as Extract<
-    EventPayload,
-    { type: T }
-  > | null;
-}
 // Where the window is: a page, the settings section when that page is open, and the session being read.
 type Place = { page: Page; section: Section; sessionId: string | null };
 // Which menu is open. Its items are built while rendering, so they follow the state as it changes.
@@ -216,7 +207,7 @@ export function App({
   const [projects, setProjects] = useState(savedProjects);
   // The folders that hold sessions without a project; new ones are made in the first.
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [drafts, setDraft, attachmentDrafts, setAttachments] = useDrafts();
+  const [drafts, setDraft, attachmentDrafts, setAttachments, quoteDrafts, setQuotes] = useDrafts();
   const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
@@ -317,7 +308,9 @@ export function App({
       .join('\n'),
   );
   const previewAvailable = !!window.desktop?.preview && !!selected && onThis(selected);
-  const previewShown = previewAvailable && preview.expanded && place.page === 'chat';
+  const sidebarAvailable =
+    previewAvailable || (!!selected && preview.tabs.some((tab) => tab.kind === 'chat'));
+  const previewShown = sidebarAvailable && preview.expanded && place.page === 'chat';
   // Another computer's session is worked on from here while that computer is connected and its commands
   // reach it: what is sent here runs there, as if sent there.
   const reachable = (session: Session) =>
@@ -1102,7 +1095,9 @@ export function App({
       if (!response.sessionId) return;
       if (before) {
         const attached = splitAttachmentMessage(before.text);
-        setDraft(response.sessionId, attached.text);
+        const referenced = splitQuoteMessage(attached.text);
+        setDraft(response.sessionId, referenced.text);
+        setQuotes(response.sessionId, () => referenced.quotes);
         setAttachments(response.sessionId, () => attached.files);
       }
       // A slow fork must not take the reader away from a page they have since chosen.
@@ -1112,10 +1107,53 @@ export function App({
       }
     });
   }
+  async function referenceAnswer(
+    source: Session,
+    messageId: string,
+    text: string,
+    destination: QuoteDestination,
+  ) {
+    try {
+      const reference = makeQuote(source.id, messageId, text);
+      if (destination === 'main') {
+        const existing = quoteDrafts[source.id] ?? [];
+        if (
+          existing.length >= quoteLimit &&
+          !existing.some((q) => q.messageId === messageId && q.text === text)
+        )
+          throw new Error('最多同时引用 8 条内容，请先移除部分引用。');
+        setQuotes(source.id, (current) => appendQuote(current, reference));
+        setFocusDraftSession(source.id);
+        return;
+      }
+      if (client.state.status !== 'connected' || !client.state.sideConversations)
+        throw new Error('当前节点需要更新以支持侧边会话。');
+      const connection = client.state.connectionId;
+      const title = `追问 · ${text.replace(/\s+/g, ' ').slice(0, 28)}`;
+      const response = await client.request({
+        type: 'session.side.create',
+        sessionId: source.id,
+        title,
+      });
+      if (
+        !response.sessionId ||
+        client.state.connectionId !== connection ||
+        client.state.status !== 'connected'
+      )
+        return;
+      setQuotes(response.sessionId, (current) => appendQuote(current, reference));
+      preview.openChat(response.sessionId, title);
+      setFocusDraftSession(response.sessionId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '无法添加引用。');
+    }
+  }
   async function send(override?: string, mode = prefs.busyEnter) {
     const attached = selected ? (attachmentDrafts[selected.id] ?? []) : [];
     if (override === undefined && attached.some((item) => item.status !== 'ready')) return;
-    const text = override ?? attachmentMessage(draft, attached);
+    const refs = selected ? (quoteDrafts[selected.id] ?? []) : [];
+    if (override === undefined && refs.length && !draft.trim()) return;
+    const text = override ?? attachmentMessage(quoteMessage(draft, refs), attached);
     if (!selected || !text.trim() || inputDisabled) return;
     if (text.trim().length > messageLimit) {
       setError(`消息过长（含附件），请缩短正文或移除部分附件（最多 ${messageLimit} 字符）。`);
@@ -1126,8 +1164,10 @@ export function App({
     await act(async () => {
       if (selected.activeRun && mode === 'queue') followUps.enqueue(sessionId, text, scenario);
       else await client.request({ type: 'message.send', sessionId, text, scenario });
-      setDraft(sessionId, '');
+      setDraft(sessionId, '', draft);
       if (override === undefined) {
+        const sentReferences = new Set(refs.map((quote) => quote.id));
+        setQuotes(sessionId, (current) => current.filter((quote) => !sentReferences.has(quote.id)));
         const sent = new Set(attached.map((item) => item.id));
         const sentPaths = new Set(attached.map((item) => item.path));
         setAttachments(sessionId, (current) =>
@@ -1864,7 +1904,7 @@ export function App({
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
         connected={connected}
         adapterName={adapterName}
-        togglePreview={previewAvailable && place.page === 'chat' ? preview.toggle : undefined}
+        togglePreview={sidebarAvailable && place.page === 'chat' ? preview.toggle : undefined}
         previewOpen={previewShown}
       />
       {terminalSessionId && (
@@ -2043,6 +2083,14 @@ export function App({
               preview={
                 previewAvailable ? (link) => preview.follow(link, selected?.projectPath) : undefined
               }
+              onQuote={
+                selected
+                  ? (id, text, destination) => {
+                      void referenceAnswer(selected, id, text, destination);
+                    }
+                  : undefined
+              }
+              sideQuoteAvailable={connected && state.sideConversations}
               events={events}
               history={history}
               connected={connected}
@@ -2209,6 +2257,8 @@ export function App({
                 focusDraft={focusDraftSession === selected.id}
                 onDraftFocusHandled={() => setFocusDraftSession(null)}
                 setDraft={(text) => setDraft(selected.id, text)}
+                quotes={quoteDrafts[selected.id] ?? []}
+                setQuotes={setQuotes}
                 attachments={attachmentDrafts[selected.id] ?? []}
                 setAttachments={setAttachments}
                 native={nativeMode}
@@ -2268,7 +2318,37 @@ export function App({
           />
         )}
       </Presence>
-      {previewShown && <PreviewSidebar workspace={preview} root={selected?.projectPath} />}
+      {previewShown && (
+        <PreviewSidebar
+          workspace={preview}
+          filesAvailable={previewAvailable}
+          root={previewAvailable ? selected?.projectPath : undefined}
+          renderChat={(tab) => {
+            const side = state.sessions.find((session) => session.id === tab.target);
+            return (
+              <SideConversation
+                key={tab.target}
+                client={client}
+                capabilities={capabilities}
+                sessionId={tab.target}
+                draft={drafts[tab.target] ?? ''}
+                setDraft={(text, expectedText) => setDraft(tab.target, text, expectedText)}
+                quotes={quoteDrafts[tab.target] ?? []}
+                setQuotes={setQuotes}
+                attachments={attachmentDrafts[tab.target] ?? []}
+                setAttachments={setAttachments}
+                followUps={followUps}
+                focusDraft={focusDraftSession === tab.target}
+                onDraftFocusHandled={() => setFocusDraftSession(null)}
+                openAccount={() => open('settings', 'account')}
+                onQuote={(id, text, destination) => {
+                  if (side) void referenceAnswer(side, id, text, destination);
+                }}
+              />
+            );
+          }}
+        />
+      )}
       <Presence kind="dialog">
         {repointProject && (
           <AddProjectDialog

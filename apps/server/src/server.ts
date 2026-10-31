@@ -441,6 +441,14 @@ export function createProxyServer(options: ServerOptions) {
     if (!peer.device) throw new DomainError('device_unknown', '客户端没有报告设备标识。');
     return peer.device;
   }
+  function subscribe(peer: Peer, sessionId: string) {
+    if (!peer.subscriptions.has(sessionId) && peer.subscriptions.size >= 32)
+      throw new DomainError(
+        'subscription_limit',
+        '同一连接最多同时订阅 32 个会话，请先关闭其他侧边会话。',
+      );
+    peer.subscriptions.add(sessionId);
+  }
   // A session's commands run on the computer its project directory is on, whichever of the user's computers
   // asks; that computer has to be connected and its execution channel ready. One from before computers were
   // told apart becomes that of the first to use it. Gives the computer's ID.
@@ -657,6 +665,7 @@ export function createProxyServer(options: ServerOptions) {
         turnEnded: (turn) => track(run.stats(() => turnStats(run, turn))),
         dataDir: store.directory,
         resume: store.hasNativeContext(run.sessionId),
+        sideContext: store.sidePrompt(run.sessionId),
         signal: run.controller.signal,
         ssh: ssh ? sessionSsh(store.directory, run.sessionId, ssh) : undefined,
         emit: (event) => emit(run, event),
@@ -1006,6 +1015,8 @@ export function createProxyServer(options: ServerOptions) {
     if (command.type === 'session.compact' && !store.hasNativeContext(command.sessionId))
       throw new DomainError('native_context_missing', '先建立原生会话再压缩上下文。');
     const continued = command.type === 'run.continue';
+    if (command.type !== 'message.send' && store.sidePrompt(command.sessionId))
+      throw new DomainError('side_question_required', '侧边会话需要先明确输入问题并发送。');
     if (continued && session.activeRun) throw new DomainError('run_active', '当前会话正在运行。');
     const text =
       command.type === 'session.compact' ? '/compact' : continued ? CONTINUE : command.text;
@@ -1030,7 +1041,7 @@ export function createProxyServer(options: ServerOptions) {
       if (active.controller.signal.aborted)
         throw new DomainError('run_finishing', '原生运行正在停止，请稍后发送。');
       active.input.assertWritable();
-      peer.subscriptions.add(command.sessionId);
+      subscribe(peer, command.sessionId);
       emit(active, { type: 'message.user', messageId: command.requestId, text, scenario });
       active.input.submit(command.requestId, store.notice(command.sessionId) + text);
       return;
@@ -1039,7 +1050,7 @@ export function createProxyServer(options: ServerOptions) {
       throw new DomainError('native_busy', '原生状态正在读取，请稍后发送。');
     const device = target(peer, session);
     room();
-    peer.subscriptions.add(command.sessionId);
+    subscribe(peer, command.sessionId);
     const run: Run = {
       id: randomUUID(),
       sessionId: command.sessionId,
@@ -1445,6 +1456,19 @@ export function createProxyServer(options: ServerOptions) {
           broadcast({ type: 'session.updated', session });
         return undefined;
       }
+      case 'session.side.create': {
+        const session = store.createSide(
+          command.requestId,
+          command.sessionId,
+          command.title,
+          runs.get(command.sessionId)?.open,
+        );
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
+      case 'session.unsubscribe':
+        peer.subscriptions.delete(command.sessionId);
+        return command.sessionId;
       case 'session.create': {
         const session = store.create(
           command.requestId,
@@ -1483,8 +1507,8 @@ export function createProxyServer(options: ServerOptions) {
         await openTerminal(peer, command, session);
         return command.sessionId;
       case 'session.subscribe':
-        peer.subscriptions.clear();
-        peer.subscriptions.add(command.sessionId);
+        if (!command.retain) peer.subscriptions.clear();
+        subscribe(peer, command.sessionId);
         send(peer, {
           type: 'session.snapshot',
           ...store.history(command.sessionId, command.requestId, command.afterSequence),
@@ -1570,6 +1594,7 @@ export function createProxyServer(options: ServerOptions) {
         terminalWorkspace: { version: 1, minRows: 1 },
         terminalFiles: { version: 1 },
         terminalHistory: { version: 1 },
+        sideConversations: true,
         model: options.claude?.model,
         version,
         sessions: store.list(),
@@ -1642,6 +1667,7 @@ export function createProxyServer(options: ServerOptions) {
       terminalWorkspace: { version: 1, minRows: 1 },
       terminalFiles: { version: 1 },
       terminalHistory: { version: 1 },
+      sideConversations: true,
       model: options.claude?.model,
       version,
       sessions: store.list(),

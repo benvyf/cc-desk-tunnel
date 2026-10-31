@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { FileText, FolderOpen, Globe, Plus, X } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { previewWebsite } from './preview.ts';
@@ -11,10 +11,14 @@ export default function PreviewSidebar({
   workspace,
   surface = 'main',
   root,
+  filesAvailable = true,
+  renderChat,
 }: {
   workspace: PreviewWorkspace;
   surface?: PreviewSurface;
   root?: string;
+  filesAvailable?: boolean;
+  renderChat?: (tab: import('./preview.ts').PreviewTab) => ReactNode;
 }) {
   const [website, setWebsite] = useState(false);
   const [url, setUrl] = useState('http://localhost:5173');
@@ -40,6 +44,12 @@ export default function PreviewSidebar({
       )
     )?.focus();
   };
+  useEffect(() => {
+    if (!filesAvailable) {
+      setWebsite(false);
+      setError('');
+    }
+  }, [filesAvailable]);
   const active = workspace.tabs.find((tab) => tab.id === workspace.active);
   const closeWebsite = () => {
     setWebsite(false);
@@ -159,11 +169,17 @@ export default function PreviewSidebar({
               <FileText />
             </IconButton>
           )}
-          <IconButton title="打开本机文件" size="sm" onClick={() => void pick()}>
+          <IconButton
+            title="打开本机文件"
+            size="sm"
+            disabled={!filesAvailable}
+            onClick={() => void pick()}
+          >
             <FolderOpen />
           </IconButton>
           <IconButton
             title="打开本机网站"
+            disabled={!filesAvailable}
             size="sm"
             onClick={() => {
               setError('');
@@ -205,6 +221,8 @@ export default function PreviewSidebar({
               key={pane.id}
               pane={pane}
               doc={ownerDocument}
+              renderChat={renderChat}
+              filesAvailable={filesAvailable}
               register={registerPane}
               focus={focusPane}
               workspace={workspace}

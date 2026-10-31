@@ -1,4 +1,7 @@
 import Presence from './Presence.tsx';
+import QuoteChips from './QuoteChips.tsx';
+import { quoteMessage } from './quotes.ts';
+import type { QuoteReference, SetQuotes } from './quotes.ts';
 import AttachmentTiles from './AttachmentTiles.tsx';
 import { attachmentMessage, fileName, messageLimit } from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
@@ -70,6 +73,8 @@ export default function Composer({
   setDraft,
   attachments = [],
   setAttachments,
+  quotes = [],
+  setQuotes,
   native,
   connected,
   busy,
@@ -100,6 +105,8 @@ export default function Composer({
   focusDraft?: boolean;
   onDraftFocusHandled?: () => void;
   setDraft: (text: string) => void;
+  quotes?: QuoteReference[];
+  setQuotes?: SetQuotes;
   attachments?: Attachment[];
   setAttachments?: SetAttachments;
   native: boolean;
@@ -143,12 +150,14 @@ export default function Composer({
   const [dropping, setDropping] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const attachmentBlocked = attachments.some((item) => item.status !== 'ready');
-  const messageTooLong = attachmentMessage(draft, attachments).trim().length > messageLimit;
+  const messageTooLong =
+    attachmentMessage(quoteMessage(draft, quotes), attachments).trim().length > messageLimit;
   function submit(alternate = false) {
     if (
       !inputDisabled &&
       !attachmentBlocked &&
       !messageTooLong &&
+      (!quotes.length || !!draft.trim()) &&
       (draft.trim() || attachments.length)
     )
       send(
@@ -244,7 +253,7 @@ export default function Composer({
     if (!focusDraft || inputDisabled || !box) return;
     // Loading may take long enough for the reader to start searching or use another control.
     const focused = document.activeElement;
-    if (!focused || focused === document.body || focused === box) {
+    if (quotes.length || !focused || focused === document.body || focused === box) {
       box.focus();
       box.setSelectionRange(box.value.length, box.value.length);
     }
@@ -413,6 +422,17 @@ export default function Composer({
         }}
       >
         <div className="composer-input">
+          <QuoteChips
+            quotes={quotes}
+            remove={
+              setQuotes
+                ? (id) => {
+                    setQuotes(session.id, (current) => current.filter((quote) => quote.id !== id));
+                    input.current?.focus();
+                  }
+                : undefined
+            }
+          />
           <AttachmentTiles
             items={attachments}
             disabled={inputDisabled}
@@ -437,7 +457,7 @@ export default function Composer({
           <textarea
             ref={input}
             aria-label="消息"
-            placeholder="随心输入…"
+            placeholder={quotes.length ? '输入关于引用内容的问题…' : '随心输入…'}
             value={draft}
             disabled={inputDisabled}
             maxLength={messageLimit}
@@ -552,7 +572,7 @@ export default function Composer({
               <Square />
             </IconButton>
           )}
-          {resume && !draft.trim() && !attachments.length ? (
+          {resume && !draft.trim() && !attachments.length && !quotes.length ? (
             <IconButton title="接着上一轮继续" className="send-button" onClick={resume}>
               <Play />
             </IconButton>
@@ -586,6 +606,7 @@ export default function Composer({
                   }
                   disabled={
                     (!draft.trim() && !attachments.length) ||
+                    (!!quotes.length && !draft.trim()) ||
                     inputDisabled ||
                     attachmentBlocked ||
                     messageTooLong

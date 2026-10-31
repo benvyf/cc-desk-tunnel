@@ -29,7 +29,7 @@ export class NativeInput {
     this.emit({ type: 'message.delivery', messageId: id, status: 'submitted' });
     this.wake?.();
   }
-  async *stream(): AsyncGenerator<SDKUserMessage> {
+  async *stream(initialPrefix = ''): AsyncGenerator<SDKUserMessage> {
     while (!this.ended) {
       const message = this.messages.shift();
       if (!message) {
@@ -40,10 +40,12 @@ export class NativeInput {
       }
       this.outstanding.get(message.id)!.delivered = true;
       this.emit({ type: 'message.delivery', messageId: message.id, status: 'queued' });
+      const text = initialPrefix + message.text;
+      initialPrefix = '';
       yield {
         type: 'user',
         uuid: message.id as SDKUserMessage['uuid'],
-        message: { role: 'user', content: message.text },
+        message: { role: 'user', content: text },
         parent_tool_use_id: null,
         session_id: this.sessionId,
         origin: { kind: 'human' },

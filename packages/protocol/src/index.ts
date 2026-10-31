@@ -418,6 +418,13 @@ export const platformOf = (device?: { platform?: DevicePlatform } | null): Devic
 export type Device = z.infer<typeof deviceSchema>;
 export const sessionSchema = z.object({
   id,
+  sideConversation: z
+    .object({
+      parentSessionId: id,
+      throughSequence: z.number().int().nonnegative(),
+      createdAt: timestamp,
+    })
+    .optional(),
   title: z.string().min(1).max(120),
   autoTitle: z.boolean().default(false),
   projectPath: z.string().min(1).max(2048),
@@ -650,6 +657,15 @@ export const commandSchema = z.discriminatedUnion('type', [
       projectPath: z.string().trim().min(1).max(2048).optional(),
     })
     .strict(),
+  z
+    .object({
+      type: z.literal('session.side.create'),
+      ...request,
+      sessionId: id,
+      title: z.string().trim().min(1).max(120),
+    })
+    .strict(),
+  z.object({ type: z.literal('session.unsubscribe'), ...request, sessionId: id }).strict(),
   z.object({ type: z.literal('session.status'), ...request, sessionId: id }).strict(),
   z
     .object({
@@ -668,6 +684,7 @@ export const commandSchema = z.discriminatedUnion('type', [
       type: z.literal('session.subscribe'),
       ...request,
       sessionId: id,
+      retain: z.boolean().optional(),
       afterSequence: z.number().int().nonnegative().default(0),
     })
     .strict(),
@@ -786,6 +803,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('ready'),
+    sideConversations: z.literal(true).optional(),
     protocolVersion: z.literal(PROTOCOL_VERSION),
     connectionId: id,
     adapter: z.enum(['simulation', 'claude-code']),
