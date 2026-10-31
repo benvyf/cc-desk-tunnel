@@ -2037,7 +2037,7 @@ export function App({
             }
             projectMenu={(path, position) => setMenu({ kind: 'project', path, ...position })}
           />
-          <main className="workspace" ref={stopScope}>
+          <main className="workspace chat-workspace" ref={stopScope}>
             {currentError && (
               <div className="error-banner" role="alert">
                 <span>{currentError}</span>
@@ -2061,6 +2061,7 @@ export function App({
               </div>
             )}
             <Conversation
+              adjustableWidth={!terminalsActive}
               projectControl={
                 selected && (
                   <button
