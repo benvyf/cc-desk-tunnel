@@ -1,8 +1,9 @@
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
-import type { Session } from '@cc-desk-tunnel/protocol';
+import type { EventPayload, Session } from '@cc-desk-tunnel/protocol';
 
 // A long session whose replies differ in height: lists, code and tables, so that what the page guesses for a
 // reply not yet drawn is off, and the view must keep to its end while the real heights come in.
@@ -23,10 +24,14 @@ function reply(n: number) {
 }
 
 // Opens the session; what is returned starts a reply streaming into it, fast, and stops it when called.
-async function open(page: Page) {
+async function open(page: Page, folding = false, scenario?: 'history' | 'layout') {
   const now = new Date().toISOString();
   const connectionId = randomUUID();
-  let stream = (): (() => void) => () => {};
+  let stream = () => ({ stop: () => {}, complete: () => {}, steer: () => {} });
+  let earlierRequests = 0;
+  let releaseEarlier: () => void = () => {
+    throw new Error('Earlier history has not been requested');
+  };
   const session: Session = {
     id: randomUUID(),
     title: '长对话',
@@ -74,19 +79,67 @@ async function open(page: Page) {
           output: 'a',
           exitCode: 0,
         }),
-        event({ type: 'text.delta', messageId: randomUUID(), text: reply(n) }),
+        event({
+          type: 'text.delta',
+          messageId: randomUUID(),
+          text:
+            reply(n) +
+            (scenario === 'layout' && n === turns - 1
+              ? '\n\n```svg\n<svg xmlns="http://www.w3.org/2000/svg" width="320" height="24"><rect width="320" height="24" fill="green"/></svg>\n```'
+              : ''),
+        }),
         event({ type: 'run.status', status: 'completed', connectionId }),
       );
     }
     stream = () => {
-      const messageId = randomUUID();
+      const runId = randomUUID();
+      let messageId = randomUUID();
+      const emit = (payload: EventPayload) =>
+        send({
+          type: 'session.event',
+          event: {
+            sessionId: session.id,
+            runId,
+            sequence: ++sequence,
+            createdAt: new Date().toISOString(),
+            payload,
+          },
+        });
+      session.activeRun = { id: runId, status: 'running', connectionId };
+      send({ type: 'session.updated', session });
+      emit({
+        type: 'message.user',
+        messageId: randomUUID(),
+        text: '开始新的流式回答',
+        scenario: 'chat',
+      });
+      emit({ type: 'run.status', status: 'running', connectionId });
+      if (folding)
+        for (let i = 0; i < 8; i++) {
+          const toolId = randomUUID();
+          emit({
+            type: 'tool.requested',
+            toolId,
+            name: 'Bash',
+            input: JSON.stringify({ command: 'ls', description: `折叠步骤${i}` }),
+            target: 'Windows',
+          });
+          emit({ type: 'tool.result', toolId, status: 'completed', output: 'a', exitCode: 0 });
+          emit({
+            type: 'text.delta',
+            messageId: randomUUID(),
+            text:
+              `折叠前的过程说明${i}。\n\n` +
+              '保持过程文本足够高以覆盖折叠时的实际布局变化。'.repeat(8),
+          });
+        }
       let n = 0;
       const timer = setInterval(() => {
         send({
           type: 'session.event',
           event: {
             sessionId: session.id,
-            runId: randomUUID(),
+            runId,
             sequence: ++sequence,
             createdAt: new Date().toISOString(),
             payload: {
@@ -97,7 +150,25 @@ async function open(page: Page) {
           },
         });
       }, 20);
-      return () => clearInterval(timer);
+      const stop = () => clearInterval(timer);
+      return {
+        stop,
+        complete: () => {
+          stop();
+          emit({ type: 'run.status', status: 'completed', connectionId });
+          session.activeRun = null;
+          send({ type: 'session.updated', session });
+        },
+        steer: () => {
+          emit({
+            type: 'message.user',
+            messageId: randomUUID(),
+            text: '补充问题保持同一个运行标识',
+            scenario: 'chat',
+          });
+          messageId = randomUUID();
+        },
+      };
     };
     route.onMessage((raw) => {
       const message = JSON.parse(String(raw));
@@ -119,11 +190,28 @@ async function open(page: Page) {
           requestId: message.requestId,
           session,
           mode: 'replace',
-          firstSequence: 1,
+          firstSequence: scenario === 'history' ? 51 : 1,
           lastSequence: sequence,
-          hasEarlier: false,
-          events,
+          hasEarlier: scenario === 'history',
+          events: scenario === 'history' ? events.slice(50) : events,
         });
+      if (message.type === 'session.history') {
+        earlierRequests++;
+        releaseEarlier = () => {
+          send({
+            type: 'session.snapshot',
+            requestId: message.requestId,
+            session,
+            mode: 'prepend',
+            firstSequence: 1,
+            lastSequence: 50,
+            hasEarlier: false,
+            events: events.slice(0, 50),
+          });
+          send({ type: 'response', requestId: message.requestId, ok: true });
+        };
+        return;
+      }
       send({ type: 'response', requestId: message.requestId, ok: true });
     });
   });
@@ -141,7 +229,10 @@ async function open(page: Page) {
     .locator('.session-select')
     .click();
   await expect(page.getByText(`第${turns - 1}轮的回答。`)).toBeVisible();
-  return () => stream();
+  return Object.assign(() => stream(), {
+    earlierRequests: () => earlierRequests,
+    prepend: () => releaseEarlier(),
+  });
 }
 
 // How far the view is from the end of the conversation, once it has stopped moving.
@@ -155,6 +246,54 @@ async function fromEnd(page: Page) {
     last = now;
   }
   return conversation.evaluate((box) => box.scrollHeight - box.scrollTop - box.clientHeight);
+}
+
+type FollowFrame = {
+  gap: number;
+  anchorTop: number | null;
+  scrollTop: number;
+  answerTop: number | null;
+};
+async function startFrames(page: Page, readingUp: boolean) {
+  await page.evaluate((readingUp) => {
+    const box = document.querySelector<HTMLElement>('.conversation')!;
+    const anchor = readingUp ? box.querySelector<HTMLElement>('[data-follow-anchor]') : undefined;
+    const answer = box.querySelector<HTMLElement>('[data-collapse-answer]');
+    if (readingUp && !anchor) throw new Error('The selected historical message is missing');
+    const state = ((window as any).followFrames = { running: true, frames: [] as FollowFrame[] });
+    const sample = () => {
+      if (!state.running) return;
+      state.frames.push({
+        gap: box.scrollHeight - box.scrollTop - box.clientHeight,
+        anchorTop: anchor?.isConnected ? anchor.getBoundingClientRect().top : null,
+        scrollTop: box.scrollTop,
+        answerTop: answer?.isConnected ? answer.getBoundingClientRect().top : null,
+      });
+      requestAnimationFrame(sample);
+    };
+    sample();
+  }, readingUp);
+}
+
+async function stopFrames(page: Page, testInfo: TestInfo) {
+  await page.waitForTimeout(500);
+  const frames = await page.evaluate(() => {
+    (window as any).followFrames.running = false;
+    return (window as any).followFrames.frames as FollowFrame[];
+  });
+  const path = testInfo.outputPath('scroll-frames.json');
+  await writeFile(path, JSON.stringify(frames, null, 2));
+  await testInfo.attach('scroll-frames.json', { path, contentType: 'application/json' });
+  expect(frames.length).toBeGreaterThan(5);
+  return frames;
+}
+
+function expectStableAnchor(frames: FollowFrame[]) {
+  expect(frames.every((frame) => frame.anchorTop !== null)).toBe(true);
+  const top = frames[0].anchorTop!;
+  expect(Math.max(...frames.map((frame) => Math.abs(frame.anchorTop! - top)))).toBeLessThanOrEqual(
+    2,
+  );
 }
 
 test('a long conversation opens at its end', async ({ page }) => {
@@ -203,7 +342,7 @@ test('while output streams in fast, a reader scrolling up a little is not pulled
   const back = page.getByRole('button', { name: '回到底部', exact: true });
   expect(await fromEnd(page)).toBeLessThan(2);
   await expect(back).toHaveCount(0);
-  const stop = stream();
+  const { stop } = stream();
   await page.waitForTimeout(300);
   // One notch at a time, slower than the output comes in.
   await conversation.hover();
@@ -224,7 +363,7 @@ test('while output streams in fast, a reader scrolling up a little is not pulled
   expect(await fromEnd(page)).toBeLessThan(2);
   // Scrolling all the way down by hand follows again as well. Each turn of the wheel goes past where the end is as
   // it is taken: a fixed step would never get there on a machine slow enough that the page grows faster than it.
-  const again = stream();
+  const { stop: again } = stream();
   await page.mouse.wheel(0, -400);
   await expect(back).toBeVisible();
   for (let i = 0; i < 20 && (await back.count()); i++) {
@@ -238,4 +377,185 @@ test('while output streams in fast, a reader scrolling up a little is not pulled
   await page.waitForTimeout(500);
   again();
   expect(await fromEnd(page)).toBeLessThan(2);
+});
+
+for (const action of ['complete', 'steer'] as const) {
+  for (const readingUp of [false, true]) {
+    test(`${action} preserves frame position · ${readingUp ? 'reading history' : 'following'}`, async ({
+      page,
+    }, testInfo) => {
+      const start = await open(page, true);
+      const controls = start();
+      try {
+        await page.waitForTimeout(500);
+        expect(await fromEnd(page)).toBeLessThan(2);
+        if (readingUp) {
+          const anchor = page
+            .locator('.conversation .message.user')
+            .filter({ hasText: `第${turns - 2}问` });
+          await anchor.scrollIntoViewIfNeeded();
+          await anchor.evaluate((node) => {
+            node.setAttribute('data-follow-anchor', 'true');
+          });
+          await anchor.hover();
+          await page.mouse.wheel(0, -80);
+          expect(await fromEnd(page)).toBeGreaterThan(500);
+          await expect(anchor).toBeInViewport();
+        }
+        const foldedBefore = await page.locator('.turn-process').count();
+        await startFrames(page, readingUp);
+        controls[action]();
+        // Completed work folds. A question added to the same run keeps its preceding process held
+        // open until the run ends; steering must preserve that existing behavior.
+        await expect(page.locator('.turn-process')).toHaveCount(
+          foldedBefore + (action === 'complete' ? 1 : 0),
+        );
+        if (action === 'steer')
+          await expect(
+            page.locator('.message.user.joined').filter({ hasText: '补充问题保持同一个运行标识' }),
+          ).toHaveCount(1);
+        const frames = await stopFrames(page, testInfo);
+        if (readingUp) {
+          expectStableAnchor(frames);
+          await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+        } else {
+          expect(Math.max(...frames.map((frame) => frame.gap))).toBeLessThan(2);
+          await expect(page.getByRole('button', { name: '回到底部', exact: true })).toHaveCount(0);
+        }
+      } finally {
+        controls.stop();
+      }
+    });
+  }
+}
+
+test('collapsing tool output keeps its disclosure fixed without pulling the reader to the bottom', async ({
+  page,
+}, testInfo) => {
+  await open(page);
+  const process = page.locator('.turn-process').last();
+  await process.locator(':scope > summary').click();
+  const work = process.locator('.work');
+  await work.locator(':scope > summary').click();
+  const tool = work.locator('.tool');
+  const summary = tool.locator(':scope > summary');
+  await summary.click();
+  await expect(tool).toHaveAttribute('open', '');
+  // The disclosure and the answer below it both fit. Removing the output intentionally raises the
+  // answer; the clicked disclosure should stay put, with no bottom-follow or oscillation.
+  await summary.evaluate((node) => node.scrollIntoView({ block: 'start' }));
+  await page.locator('.conversation').hover();
+  await page.mouse.wheel(0, -80);
+  await fromEnd(page);
+  const anchor = page.locator('.conversation .message.assistant').last();
+  await expect(summary).toBeInViewport();
+  await expect(anchor).toBeInViewport();
+  await summary.evaluate((node) => node.setAttribute('data-follow-anchor', 'true'));
+  await anchor.evaluate((node) => node.setAttribute('data-collapse-answer', 'true'));
+  const snapshot = () =>
+    page.evaluate(() => {
+      const box = document.querySelector<HTMLElement>('.conversation')!;
+      const bounds = box.getBoundingClientRect();
+      const first = [...box.querySelectorAll<HTMLElement>('.message')].find((node) => {
+        const rect = node.getBoundingClientRect();
+        return rect.bottom > bounds.top && rect.top < bounds.bottom;
+      });
+      return {
+        viewport: { top: bounds.top, bottom: bounds.bottom },
+        scrollTop: box.scrollTop,
+        summaryTop: box.querySelector('[data-follow-anchor]')!.getBoundingClientRect().top,
+        answerTop: box.querySelector('[data-collapse-answer]')!.getBoundingClientRect().top,
+        firstVisibleMessage: first
+          ? { text: first.textContent?.slice(0, 60), top: first.getBoundingClientRect().top }
+          : null,
+      };
+    });
+  const before = await snapshot();
+  const expandedHeight = await tool.evaluate((node) => node.getBoundingClientRect().height);
+  await startFrames(page, true);
+  await summary.click();
+  await expect(tool).not.toHaveAttribute('open', '');
+  const collapsedHeight = await tool.evaluate((node) => node.getBoundingClientRect().height);
+  expect(expandedHeight - collapsedHeight).toBeGreaterThan(50);
+  const frames = await stopFrames(page, testInfo);
+  const after = await snapshot();
+  const path = testInfo.outputPath('tool-collapse-layout.json');
+  await writeFile(
+    path,
+    JSON.stringify({ before, after, removedHeight: expandedHeight - collapsedHeight }, null, 2),
+  );
+  await testInfo.attach('tool-collapse-layout.json', { path, contentType: 'application/json' });
+  expectStableAnchor(frames);
+  expect(Math.abs(after.scrollTop - before.scrollTop)).toBeLessThanOrEqual(2);
+  expect(
+    Math.abs(before.answerTop - after.answerTop - (expandedHeight - collapsedHeight)),
+  ).toBeLessThanOrEqual(2);
+  for (let index = 1; index < frames.length; index++)
+    expect(frames[index].answerTop! - frames[index - 1].answerTop!).toBeLessThanOrEqual(2);
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+});
+
+test('delayed Markdown image layout below a reader preserves their anchor in every frame', async ({
+  page,
+}, testInfo) => {
+  await open(page, false, 'layout');
+  const image = page.locator('.conversation img.code-picture');
+  await expect(image).toHaveCount(1);
+  await image.evaluate(async (node: HTMLImageElement) => {
+    await node.decode();
+  });
+  const anchor = page
+    .locator('.conversation .message.user')
+    .filter({ hasText: `第${turns - 1}问` });
+  await anchor.scrollIntoViewIfNeeded();
+  await anchor.hover();
+  await page.mouse.wheel(0, -80);
+  await fromEnd(page);
+  await expect(anchor).toBeInViewport();
+  await anchor.evaluate((node) => node.setAttribute('data-follow-anchor', 'true'));
+  const before = await image.evaluate((node) => node.getBoundingClientRect().height);
+  expect(await image.evaluate((node) => node.getBoundingClientRect().top)).toBeGreaterThan(
+    await anchor.evaluate((node) => node.getBoundingClientRect().bottom),
+  );
+  await startFrames(page, true);
+  // An already-rendered Markdown drawing acquires a taller intrinsic size later, without a new
+  // session event or focus change. This isolates the ResizeObserver/content-layout path.
+  await image.evaluate(async (node: HTMLImageElement) => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    node.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="320" height="480"><rect width="320" height="480" fill="green"/></svg>')}`;
+    await node.decode();
+  });
+  await expect
+    .poll(
+      async () => (await image.evaluate((node) => node.getBoundingClientRect().height)) - before,
+    )
+    .toBeGreaterThan(300);
+  expectStableAnchor(await stopFrames(page, testInfo));
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
+});
+
+test('prepending earlier history preserves the first loaded question in every frame', async ({
+  page,
+}, testInfo) => {
+  const fixture = await open(page, false, 'history');
+  const anchor = page.locator('.conversation .message.user').filter({ hasText: '第10问' });
+  const conversation = page.locator('.conversation');
+  await conversation.hover();
+  await page.mouse.wheel(0, -100_000);
+  await expect.poll(fixture.earlierRequests).toBe(1);
+  await expect(page.getByRole('button', { name: '加载中', exact: true })).toBeDisabled();
+  await fromEnd(page);
+  await expect(anchor).toBeInViewport();
+  await anchor.evaluate((node) => node.setAttribute('data-follow-anchor', 'true'));
+  const heightBefore = await conversation.evaluate((node) => node.scrollHeight);
+  await startFrames(page, true);
+  fixture.prepend();
+  await expect(page.locator('.message.user').filter({ hasText: '第0问' })).toHaveCount(1);
+  await expect(page.getByRole('button', { name: '加载中', exact: true })).toHaveCount(0);
+  expect(await conversation.evaluate((node) => node.scrollHeight)).toBeGreaterThan(
+    heightBefore + 1000,
+  );
+  expectStableAnchor(await stopFrames(page, testInfo));
+  await expect(anchor).toBeInViewport();
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toBeVisible();
 });
