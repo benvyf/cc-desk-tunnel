@@ -33,6 +33,7 @@ export default function PreviewCode({
   const pre = useRef<HTMLPreElement>(null);
   const source = useRef<HTMLElement>(null);
   const starts = useMemo(() => codeLineStarts(text), [text]);
+  const endsInLineBreak = /[\r\n]$/.test(text);
   const [marks, setMarks] = useState<Mark[]>([]);
   const [line, setLine] = useState('');
   const [error, setError] = useState('');
@@ -60,7 +61,7 @@ export default function PreviewCode({
         };
       }
       const range = element.ownerDocument.createRange();
-      if (value.start === text.length && text.endsWith('\n')) {
+      if (value.start === text.length && endsInLineBreak) {
         range.setStart(node, text.length - 1);
         range.setEnd(node, text.length);
         const last = range.getBoundingClientRect();
@@ -213,7 +214,7 @@ export default function PreviewCode({
     range.setStart(node, first.start);
     range.setEnd(node, first.end);
     let whole = range.getBoundingClientRect();
-    const terminal = value.start === text.length && text.endsWith('\n');
+    const terminal = value.start === text.length && endsInLineBreak;
     if (terminal) {
       range.setStart(node, text.length - 1);
       range.setEnd(node, text.length);
@@ -308,7 +309,7 @@ export default function PreviewCode({
       >
         <pre
           ref={pre}
-          className={`preview-code-lines${wrap ? ' wraps' : ''}${text.endsWith('\n') || !text ? ' terminal-line' : ''}`}
+          className={`preview-code-lines${wrap ? ' wraps' : ''}${endsInLineBreak || !text ? ' terminal-line' : ''}`}
           tabIndex={0}
           aria-label="代码预览"
         >

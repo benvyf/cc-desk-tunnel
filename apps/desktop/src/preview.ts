@@ -13,6 +13,7 @@ import {
   navigateFile,
 } from './previewLayout.ts';
 import { requestedLine } from './previewCode.ts';
+import { pathKey } from './paths.ts';
 import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
 import { createPreviewPersistence } from './previewPersistence.ts';
 import type { PreviewReading } from './previewViewState.ts';
@@ -83,7 +84,8 @@ export function usePreviewWorkspace(
           .map((t) => t.id),
       ),
   );
-  const navigated = useRef(new Map<string, string>());
+  // Transient tab choices share the navigation owner/lifecycle, never the model or saved layout.
+  const tabViews = useRef(new Map<string, { navigation?: string; source?: boolean }>());
   const boards = state.key === storageKey ? state.boards : {};
   useLayoutEffect(() => {
     state.persistence.updateLayout({ boards: state.boards, width: state.width });
@@ -103,7 +105,7 @@ export function usePreviewWorkspace(
     const restored =
       state.key === storageKey && !state.persistence.closed ? state : restoreWorkspace(storageKey);
     const owner = restored.persistence;
-    navigated.current.clear();
+    tabViews.current.clear();
     if (restored !== state) setState(restored);
     setRestoredTabs(
       new Set(
@@ -138,7 +140,7 @@ export function usePreviewWorkspace(
     if (!removed.length) return;
     for (const id of removed)
       for (const t of current.current[id].tabs) {
-        navigated.current.delete(JSON.stringify([id, t.id]));
+        tabViews.current.delete(JSON.stringify([id, t.id]));
         release(t);
       }
     setState((s) => ({
@@ -181,6 +183,19 @@ export function usePreviewWorkspace(
     const navigation = line
       ? { id: crypto.randomUUID(), line, column: requestedLine(position?.column) }
       : undefined;
+    if (navigation && session) {
+      const existing = current.current[session]?.tabs.find(
+        (tab) => tab.kind === 'file' && pathKey(tab.target) === pathKey(target),
+      );
+      if (existing)
+        setPending((old) => {
+          if (!old.has(existing.id)) return old;
+          const next = new Set(old);
+          next.delete(existing.id);
+          return next;
+        });
+      // Keep restoredTabs: switching from source to an executable page still needs confirmation.
+    }
     change((b) => {
       const next = openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted, title });
       return navigation ? navigateFile(next, target, navigation) : next;
@@ -207,9 +222,17 @@ export function usePreviewWorkspace(
     reading,
     navigated: {
       has: (id: string, request: string) =>
-        navigated.current.get(JSON.stringify([session, id])) === request,
+        tabViews.current.get(JSON.stringify([session, id]))?.navigation === request,
       mark: (id: string, request: string) => {
-        navigated.current.set(JSON.stringify([session, id]), request);
+        const key = JSON.stringify([session, id]);
+        tabViews.current.set(key, { ...tabViews.current.get(key), navigation: request });
+      },
+    },
+    sourceMode: {
+      get: (id: string) => tabViews.current.get(JSON.stringify([session, id]))?.source,
+      set: (id: string, source: boolean) => {
+        const key = JSON.stringify([session, id]);
+        tabViews.current.set(key, { ...tabViews.current.get(key), source });
       },
     },
     wrap: (id: string, value: boolean) =>
@@ -266,7 +289,7 @@ export function usePreviewWorkspace(
         panes: b.panes.map((p) => (p.id === id ? { ...p, floating: rect } : p)),
       })),
     close: (id: string) => {
-      navigated.current.delete(JSON.stringify([session, id]));
+      tabViews.current.delete(JSON.stringify([session, id]));
       const tab = board.tabs.find((t) => t.id === id);
       if (tab) release(tab);
       change((b) => closeTab(b, id));

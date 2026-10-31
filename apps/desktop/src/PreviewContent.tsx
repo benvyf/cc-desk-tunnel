@@ -170,11 +170,11 @@ export default function PreviewContent({
   const [watchError, setWatchError] = useState('');
   const [revision, setRevision] = useState(0);
   const reading = workspace.reading;
-  const [source, setSource] = useState(() => {
+  const [chosenSource, setSource] = useState(() => {
     const saved = reading.get(tab.id);
     return (
       (!!tab.navigation && !workspace.navigated.has(tab.id, tab.navigation.id)) ||
-      (saved?.kind === 'markdown' && saved.source)
+      (workspace.sourceMode.get(tab.id) ?? (saved?.kind === 'markdown' && saved.source))
     );
   });
   const [zoom, setZoom] = useState(1);
@@ -190,8 +190,19 @@ export default function PreviewContent({
     tab.navigation && !workspace.navigated.has(tab.id, tab.navigation.id)
       ? tab.navigation
       : undefined;
+  // Choose the safe branch during render: a child native-view layout effect runs
+  // before this component can commit a source choice in its own layout effect.
+  const source =
+    chosenSource || (!!navigation && (file?.kind === 'markdown' || file?.kind === 'html'));
   useLayoutEffect(() => {
-    if (navigation && file && (file.kind === 'markdown' || file.kind === 'html')) setSource(true);
+    if (file && (file.kind === 'markdown' || file.kind === 'html')) {
+      if (navigation) {
+        setSource(true);
+        workspace.sourceMode.set(tab.id, true);
+      } else if (workspace.sourceMode.get(tab.id) === undefined) {
+        workspace.sourceMode.set(tab.id, source);
+      }
+    }
     // Unsupported types acknowledge navigation without performing a document operation.
     if (navigation && file && !['text', 'markdown', 'html'].includes(file.kind))
       workspace.navigated.mark(tab.id, navigation.id);
@@ -234,7 +245,8 @@ export default function PreviewContent({
     const saved = reading.get(tab.id);
     if (file && saved && saved.kind !== file.kind) {
       reading.set(tab.id, undefined);
-      if (saved.kind === 'markdown') setSource(false);
+      if (saved.kind === 'markdown' && !navigation)
+        setSource(workspace.sourceMode.get(tab.id) ?? false);
     }
   }, [file, reading, tab.id]);
   useLayoutEffect(
@@ -403,6 +415,8 @@ export default function PreviewContent({
             disabled={!file}
             onClick={() => {
               captureReading();
+              if (navigation) workspace.navigated.mark(tab.id, navigation.id);
+              workspace.sourceMode.set(tab.id, !source);
               if (file?.kind === 'markdown') {
                 const saved = reading.get(tab.id);
                 reading.set(tab.id, {
@@ -416,7 +430,7 @@ export default function PreviewContent({
                   source: !source,
                 });
               }
-              setSource((value) => !value);
+              setSource(!source);
             }}
           >
             {source ? '预览' : '源码'}

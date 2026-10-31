@@ -295,6 +295,161 @@ test('two panes keep independent wrap controls and source selection', async ({ p
   );
 });
 
+test('source navigation arriving during a normal HTML read never starts its native page', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await page.evaluate(() =>
+    (window as any).fixturePreview.configure('alias.txt', { delayMs: 800 }),
+  );
+  await button(page, '普通 HTML 别名').click();
+  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  await button(page, '定位 HTML 源码').click();
+  await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
+  await targetVisible(page, 1);
+  expect((await counts(page)).nativeShows).toBe(0);
+  expect((await counts(page)).reads).toBe(1);
+});
+
+test('a restored HTML extension opens source on a line request and still confirms page execution', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await button(page, '定位 HTML 文件源码').click();
+  await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
+  await page.reload();
+  await button(page, '展开空栏').click();
+  await expect(button(page, '加载此预览')).toBeVisible();
+  expect((await counts(page)).nativeShows).toBe(0);
+  await button(page, '定位 HTML 文件源码').click();
+  await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
+  await targetVisible(page, 1);
+  // An unrelated application render must not put the still read-only source behind the gate again.
+  await page.getByLabel('测试输入', { exact: true }).fill('keep source visible');
+  await expect(code(page)).toBeVisible();
+  expect((await counts(page)).nativeShows).toBe(0);
+  await button(page, '预览').click();
+  await expect(button(page, '加载此预览')).toBeVisible();
+  expect((await counts(page)).nativeShows).toBe(0);
+  await button(page, '加载此预览').click();
+  await expect.poll(async () => (await counts(page)).nativeShows).toBe(1);
+});
+
+test('source intent survives a watched alias changing from Markdown to HTML', async ({ page }) => {
+  await page.goto(fixture);
+  await page.evaluate(() =>
+    (window as any).fixturePreview.configure('alias.txt', { aliasMarkdown: true }),
+  );
+  await button(page, '普通 HTML 别名').click();
+  await expect(page.locator('.preview-markdown')).toContainText('Former Markdown alias');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const raw = Object.entries(localStorage).find(([key]) =>
+          key.startsWith('cc-preview-v1:'),
+        )?.[1];
+        return (
+          raw &&
+          Object.values(JSON.parse(raw).reading?.sessions?.session ?? {}).some(
+            (value: any) => value.kind === 'markdown',
+          )
+        );
+      }),
+    )
+    .toBe(true);
+  await page.evaluate(() => {
+    (window as any).fixturePreview.configure('alias.txt', { delayMs: 800 });
+    (window as any).fixturePreview.emit('alias.txt');
+  });
+  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  await button(page, '定位 HTML 源码').click();
+  await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
+  await targetVisible(page, 1);
+  await page
+    .getByLabel('测试输入', { exact: true })
+    .fill('keep explicit source after the resolved kind changes');
+  await expect(code(page)).toBeVisible();
+  expect((await counts(page)).nativeShows).toBe(0);
+});
+
+test('HTML source remains read-only across tab switches and float remounts until preview is chosen', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await button(page, '定位 HTML 源码').click();
+  await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
+  await targetVisible(page, 1);
+  await button(page, '长文本').click();
+  await page.getByRole('tab', { name: 'alias.txt', exact: true }).click();
+  const alias = page
+    .locator('.preview-pane')
+    .filter({ has: page.getByRole('tab', { name: 'alias.txt', exact: true }) });
+  await expect(alias.locator('.preview-code pre code')).toHaveText('<h1>HTML alias</h1>');
+  expect((await counts(page)).nativeShows).toBe(0);
+  await alias.getByRole('button', { name: '浮动预览', exact: true }).click();
+  await expect(page.locator('.preview-pane-floating .preview-code pre code')).toHaveText(
+    '<h1>HTML alias</h1>',
+  );
+  expect((await counts(page)).nativeShows).toBe(0);
+  await button(page, '停靠预览').click();
+  await expect(alias.locator('.preview-code pre code')).toHaveText('<h1>HTML alias</h1>');
+  await alias.getByRole('button', { name: '预览', exact: true }).click();
+  await expect.poll(async () => (await counts(page)).nativeShows).toBeGreaterThan(0);
+  await alias.getByRole('button', { name: '源码', exact: true }).click();
+  await button(page, '长文本').click();
+  await page.getByRole('tab', { name: 'alias.txt', exact: true }).click();
+  await expect(alias.locator('.preview-code pre code')).toBeVisible();
+  await button(page, '关闭预览 alias.txt').click();
+  await button(page, '普通 HTML 别名').click();
+  await expect(alias.locator('.preview-native')).toBeVisible();
+});
+
+for (const htmlSource of [false, true]) {
+  test(`Markdown mode stays independent from a former HTML ${htmlSource ? 'source' : 'page'} choice`, async ({
+    page,
+  }) => {
+    await page.goto(fixture);
+    await button(page, '定位 HTML 源码').click();
+    await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
+    await targetVisible(page, 1);
+    if (!htmlSource) {
+      await button(page, '预览').click();
+      await expect(page.locator('.preview-native')).toBeVisible();
+    }
+    await page.evaluate(() => {
+      (window as any).fixturePreview.configure('alias.txt', { aliasMarkdown: true });
+      (window as any).fixturePreview.emit('alias.txt');
+    });
+    if (htmlSource) {
+      await expect(code(page)).toHaveText('# Former Markdown alias');
+      await button(page, '预览').click();
+    } else {
+      await expect(page.locator('.preview-markdown')).toContainText('Former Markdown alias');
+      await button(page, '源码').click();
+    }
+    await expect
+      .poll(() =>
+        page.evaluate((source) => {
+          const raw = Object.entries(localStorage).find(([key]) =>
+            key.startsWith('cc-preview-v1:'),
+          )?.[1];
+          return (
+            raw &&
+            Object.values(JSON.parse(raw).reading?.sessions?.session ?? {}).some(
+              (value: any) => value.kind === 'markdown' && value.source === source,
+            )
+          );
+        }, !htmlSource),
+      )
+      .toBe(true);
+    await button(page, '长文本').click();
+    await page.getByRole('tab', { name: 'alias.txt', exact: true }).click();
+    if (htmlSource)
+      await expect(page.locator('.preview-markdown')).toContainText('Former Markdown alias');
+    else await expect(code(page)).toHaveText('# Former Markdown alias');
+  });
+}
+
 test('large code keeps DOM and unrelated typing work bounded', async ({ page }) => {
   test.setTimeout(60_000);
   await page.goto(fixture);
@@ -469,6 +624,35 @@ test('empty and trailing blank source lines retain valid gutter and jump geometr
   }
 });
 
+test('wrapped CR-only text keeps its terminal source line below the previous line', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  const text = 'first\rsecond\r';
+  await page.evaluate(
+    (codeText) => (window as any).fixturePreview.configure('长代码.ts', { codeText }),
+    text,
+  );
+  await button(page, '长代码').click();
+  await expect.poll(() => code(page).textContent()).toBe(text);
+  await button(page, '自动换行').click();
+  await page.getByLabel('跳转到行', { exact: true }).fill('3');
+  await button(page, '跳转').click();
+  await targetVisible(page, 3);
+  const previous = page.locator('.preview-line-number[data-line="2"]');
+  const terminal = page.locator('.preview-line-number[data-line="3"]');
+  await expect(terminal).toBeVisible();
+  const [before, after, mark] = await Promise.all([
+    previous.boundingBox(),
+    terminal.boundingBox(),
+    highlight(page, 3).boundingBox(),
+  ]);
+  expect(after!.y - before!.y).toBeGreaterThan(15);
+  expect(Math.abs(mark!.y - after!.y)).toBeLessThanOrEqual(1);
+  await button(page, '复制代码').click();
+  expect(await page.evaluate(() => (window as any).fixtureCopied.at(-1))).toBe(text);
+});
+
 test('near 4 MiB source retains fidelity and bounded navigation in both wrap modes', async ({
   page,
 }) => {
@@ -619,6 +803,30 @@ test('wrapped line gutters align across themes, narrow widths and text sizes', a
       }
     }
   }
+});
+
+test('an explicit preview-mode choice supersedes a pending source-line navigation', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await button(page, '长 Markdown').click();
+  await expect(page.locator('.preview-markdown')).toContainText('Section 100');
+  const committed = await page.evaluate(async () => {
+    const find = (name: string) =>
+      [...document.querySelectorAll<HTMLButtonElement>('button')].find(
+        (node) => node.textContent?.trim() === name,
+      )!;
+    find('定位 Markdown 第300行').click();
+    await Promise.resolve();
+    const sourceMounted = !!document.querySelector('.preview-code pre');
+    find('预览').click();
+    return sourceMounted;
+  });
+  expect(committed).toBe(true);
+  await expect(page.locator('.preview-markdown')).toContainText('Section 100');
+  await expect(page.locator('.preview-code')).toHaveCount(0);
+  await page.getByLabel('测试输入', { exact: true }).fill('retain the latest view choice');
+  await expect(page.locator('.preview-markdown')).toBeVisible();
 });
 
 test('same-frame line navigation uses the latest wrap geometry only once', async ({ page }) => {

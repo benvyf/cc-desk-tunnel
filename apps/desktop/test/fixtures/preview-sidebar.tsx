@@ -24,6 +24,7 @@ type ReadOptions = {
   noText?: boolean;
   codeText?: string;
   codeLines?: number;
+  aliasMarkdown?: boolean;
 };
 type Watch = { key: string; path: string; file?: boolean };
 const changed = new Set<(event: { key: string; path: string }) => void>();
@@ -194,7 +195,9 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
       if (path.includes('不存在'))
         throw new Error('找不到这个文件，请确认路径或在系统应用中打开。');
       if (path.includes('读取中')) return new Promise(() => {});
-      if (path.endsWith('alias.txt'))
+      if (path.endsWith('alias.txt') && options.aliasMarkdown)
+        return { path, kind: 'markdown', text: '# Former Markdown alias' };
+      if (path.endsWith('alias.txt') || path.endsWith('index.html'))
         return {
           path,
           kind: 'html',
@@ -301,6 +304,8 @@ function Fixture() {
         ['长代码', '长代码.ts'],
         ['长 Markdown', '长说明.md'],
         ['多页 PDF', '多页报告.pdf'],
+        ['普通 HTML 别名', 'alias.txt'],
+        ['普通 HTML 文件', 'index.html'],
       ].map(([label, name]) => (
         <Button
           key={label}
@@ -318,6 +323,7 @@ function Fixture() {
         ['定位 Markdown 第12行', '长说明.md', 12],
         ['定位 Markdown 第300行', '长说明.md', 300],
         ['定位 HTML 源码', 'alias.txt', 1],
+        ['定位 HTML 文件源码', 'index.html', 1],
       ].map(([label, name, line]) => (
         <Button
           key={label}
