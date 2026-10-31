@@ -10,7 +10,31 @@ import {
   closeTab,
   restoreLayout,
   fitFloat,
+  navigateFile,
 } from '../src/previewLayout.ts';
+
+test('file navigation keeps the tab, repeats explicit requests, and never replays after restore', () => {
+  let board = openTab(emptyBoard(), {
+    id: 'a',
+    kind: 'file',
+    target: 'C:\\work\\a.ts',
+    wrap: true,
+  });
+  board = navigateFile(board, 'C:\\work\\a.ts', { line: 12, column: 3, id: 'first' });
+  assert.equal(board.tabs[0].navigation?.line, 12);
+  board = navigateFile(board, 'C:\\work\\a.ts', { line: 12, id: 'second' });
+  assert.equal(board.tabs[0].id, 'a');
+  assert.equal(board.tabs[0].navigation?.id, 'second');
+  const restored = restoreLayout(JSON.stringify({ boards: { s: board } }));
+  assert.equal(restored.boards.s.tabs[0].wrap, true);
+  assert.equal(restored.boards.s.tabs[0].navigation, undefined);
+  assert.equal(
+    restoreLayout(
+      JSON.stringify({ boards: { s: { ...board, tabs: [{ ...board.tabs[0], wrap: 'true' }] } } }),
+    ).boards.s.tabs[0].wrap,
+    false,
+  );
+});
 
 test('deduplicates files, moves/reorders tabs and removes empty panes', () => {
   let board = openTab(emptyBoard(), { id: 'a', kind: 'file', target: 'C:\\work\\a.txt' });

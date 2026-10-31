@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
+import { getDocument, GlobalWorkerOptions, normalizeUnicode, TextLayer } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Button } from './ui.tsx';
 import { usePreviewReading } from './usePreviewReading.ts';
 import { clampPdfReading } from './previewViewState.ts';
 import type { PreviewWorkspace } from './preview.ts';
+import './PreviewPdfText.css';
+import textStyles from './PreviewPdfText.css?inline';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 // Vite packages these assets with the application. No CDN or document URL is used.
@@ -50,13 +52,16 @@ export default function PreviewPdf({
   interruption: RefObject<boolean>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
-    container = useRef<HTMLDivElement>(null);
+    container = useRef<HTMLDivElement>(null),
+    pageElement = useRef<HTMLDivElement>(null),
+    textHost = useRef<HTMLDivElement>(null);
   const saved = reading.get(tabId);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null),
     [page, setPage] = useState(saved?.kind === 'pdf' ? saved.page : 1),
     [zoom, setZoom] = useState(saved?.kind === 'pdf' ? saved.zoom : 1),
     [error, setError] = useState(''),
     [rendering, setRendering] = useState(true),
+    [textStatus, setTextStatus] = useState(''),
     [width, setWidth] = useState(500);
   const [rendered, setRendered] = useState<{
     document: PDFDocumentProxy;
@@ -148,9 +153,30 @@ export default function PreviewPdf({
   useEffect(() => {
     if (!document) return;
     let disposed = false,
-      render: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | undefined;
+      render: ReturnType<Awaited<ReturnType<PDFDocumentProxy['getPage']>>['render']> | undefined,
+      textLayer: TextLayer | undefined,
+      textDiv: HTMLDivElement | undefined;
+    const host = textHost.current!;
+    const copy = (event: ClipboardEvent) => {
+      const selection = host.ownerDocument.getSelection();
+      if (
+        !selection ||
+        selection.isCollapsed ||
+        !textDiv?.contains(selection.anchorNode) ||
+        !textDiv.contains(selection.focusNode) ||
+        !event.clipboardData
+      )
+        return;
+      event.clipboardData.setData(
+        'text/plain',
+        normalizeUnicode(selection.toString()).replaceAll('\0', ''),
+      );
+      event.preventDefault();
+      event.stopPropagation();
+    };
     setRendering(true);
     setError('');
+    setTextStatus('');
     void document
       .getPage(page)
       .then((value) => {
@@ -160,13 +186,57 @@ export default function PreviewPdf({
         const viewport = value.getViewport({ scale });
         const target = canvas.current!,
           context = target.getContext('2d')!;
-        const ratio = Math.min(devicePixelRatio || 1, 2);
+        const ratio = Math.min(target.ownerDocument.defaultView?.devicePixelRatio || 1, 2);
         // Limit canvas allocation even for maliciously large page dimensions.
         const fit = Math.min(1, 4096 / Math.max(viewport.width * ratio, viewport.height * ratio));
         target.width = Math.ceil(viewport.width * ratio * fit);
         target.height = Math.ceil(viewport.height * ratio * fit);
         target.style.width = `${viewport.width * fit}px`;
         target.style.height = `${viewport.height * fit}px`;
+        pageElement.current!.style.width = target.style.width;
+        pageElement.current!.style.height = target.style.height;
+        // Core TextLayer uses the same layout engine as TextLayerBuilder. Its local
+        // copy listener uses ownerDocument so portal windows never read another selection.
+        textDiv = host.ownerDocument.createElement('div');
+        textDiv.className = 'textLayer';
+        textDiv.style.setProperty('--total-scale-factor', String(scale * fit * value.userUnit));
+        host.append(textDiv);
+        textDiv.addEventListener('copy', copy);
+        try {
+          textLayer = new TextLayer({
+            textContentSource: value
+              .streamTextContent({ includeMarkedContent: true, disableNormalization: true })
+              .pipeThrough(
+                new TransformStream({
+                  transform(chunk, controller) {
+                    // Match PDF.js's measurement language, rather than inheriting the
+                    // app locale (which can select a different generic font on Windows).
+                    textDiv!.lang = chunk.lang || 'en';
+                    controller.enqueue(chunk);
+                  },
+                }),
+              ),
+            container: textDiv,
+            viewport: value.getViewport({ scale: scale * fit }),
+          });
+          void textLayer
+            .render()
+            .then(() => {
+              if (!disposed && !textLayer!.textContentItemsStr.some((item) => item.trim()))
+                setTextStatus('此页没有可选文字，可能是扫描件。');
+            })
+            .catch(() => {
+              if (!disposed) {
+                textDiv?.remove();
+                setTextStatus('此页文字暂时无法选择，可继续查看页面。');
+              }
+            })
+            .finally(() => TextLayer.cleanup());
+        } catch {
+          textDiv.remove();
+          setTextStatus('此页文字暂时无法选择，可继续查看页面。');
+          TextLayer.cleanup();
+        }
         render = value.render({
           canvasContext: context,
           canvas: target,
@@ -187,10 +257,22 @@ export default function PreviewPdf({
     return () => {
       disposed = true;
       render?.cancel();
+      textLayer?.cancel();
+      const selection = host.ownerDocument.getSelection();
+      if (
+        textDiv?.contains(selection?.anchorNode ?? null) &&
+        textDiv.contains(selection?.focusNode ?? null)
+      )
+        selection?.removeAllRanges();
+      textDiv?.removeEventListener('copy', copy);
+      textDiv?.remove();
+      TextLayer.cleanup();
     };
   }, [document, page, zoom, width]);
   return (
     <div className="preview-pdf">
+      {/* Lazy CSS loaded in the opener must also follow a portal into its owner window. */}
+      <style>{textStyles}</style>
       <div className="preview-pdf-toolbar">
         <Button size="sm" disabled={!document || page <= 1} onClick={() => changePage(page - 1)}>
           上一页
@@ -241,6 +323,7 @@ export default function PreviewPdf({
           {error}
         </p>
       )}
+      {textStatus && <p className="preview-tree-notice preview-pdf-text-status">{textStatus}</p>}
       <div
         className="preview-pdf-pages"
         ref={container}
@@ -251,7 +334,10 @@ export default function PreviewPdf({
             正在显示 PDF…
           </p>
         )}
-        <canvas ref={canvas} aria-label={`PDF 第 ${page} 页`} hidden={!document || !!error} />
+        <div className="preview-pdf-page" ref={pageElement} hidden={!document || !!error}>
+          <canvas ref={canvas} aria-label={`PDF 第 ${page} 页`} />
+          <div className="preview-pdf-text-host" ref={textHost} />
+        </div>
       </div>
     </div>
   );

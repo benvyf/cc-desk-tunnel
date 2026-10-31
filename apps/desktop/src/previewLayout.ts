@@ -7,6 +7,9 @@ export type PreviewTab = {
   target: string;
   root?: string;
   restricted?: boolean;
+  wrap?: boolean;
+  // One explicit user navigation; filtered out when a layout is restored.
+  navigation?: { id: string; line: number; column?: number };
 };
 export type FloatRect = { x: number; y: number; width: number; height: number };
 export type PreviewPane = { id: string; tabs: string[]; active: string; floating?: FloatRect };
@@ -69,6 +72,18 @@ export function openTab(board: PreviewBoard, tab: PreviewTab): PreviewBoard {
     expanded: true,
     panes: board.panes.map((p) =>
       p === target ? { ...p, tabs: [...p.tabs, tab.id], active: tab.id } : p,
+    ),
+  };
+}
+export function navigateFile(
+  board: PreviewBoard,
+  target: string,
+  navigation: NonNullable<PreviewTab['navigation']>,
+): PreviewBoard {
+  return {
+    ...board,
+    tabs: board.tabs.map((tab) =>
+      tab.kind === 'file' && pathKey(tab.target) === pathKey(target) ? { ...tab, navigation } : tab,
     ),
   };
 }
@@ -190,6 +205,7 @@ export function restoreLayout(serialized: string | null): {
             target: t.target,
             ...(local(t.root) ? { root: t.root } : {}),
             restricted: t.restricted === true,
+            wrap: t.wrap === true,
           });
         if (t.kind === 'web' && text(t.target) && previewWebsite(t.target))
           tabs.push({ id: t.id, kind: 'web', target: previewWebsite(t.target)! });
