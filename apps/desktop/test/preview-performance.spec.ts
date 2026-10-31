@@ -120,3 +120,62 @@ test('native previews ignore unrelated transcript mutations but still hide under
   expect(result.classRestored).toBe(true);
   expect(result.streamReads).toBe(0);
 });
+
+test('ten seconds of reading scroll keeps the workspace still and bounds local writes', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem;
+    (window as any).readingWrites = 0;
+    Storage.prototype.setItem = function (key, value) {
+      if (key.startsWith('cc-preview-v1:')) (window as any).readingWrites++;
+      return original.call(this, key, value);
+    };
+  });
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '长文本', exact: true }).click();
+  await expect(page.locator('.preview-document')).toContainText('Reading paragraph 360');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.entries(localStorage).some(
+          ([key, value]) => key.startsWith('cc-preview-v1:') && JSON.parse(value).reading,
+        ),
+      ),
+    )
+    .toBe(true);
+  const before = await page.evaluate(() => ({
+    ...(window as any).fixturePreview.counts(),
+    writes: (window as any).readingWrites,
+  }));
+  await page.locator('.preview-document').evaluate(async (element) => {
+    element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 1 }));
+    for (let step = 1; step <= 100; step++) {
+      element.scrollTop = step * 10;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const [, raw] = Object.entries(localStorage).find(([key]) =>
+          key.startsWith('cc-preview-v1:'),
+        )!;
+        const layout = JSON.parse(raw);
+        return Object.values(layout.reading.sessions.session)[0] as { top: number };
+      }),
+    )
+    .toMatchObject({ top: 1000 });
+  const after = await page.evaluate(() => ({
+    ...(window as any).fixturePreview.counts(),
+    writes: (window as any).readingWrites,
+  }));
+  expect(after.renders).toBe(before.renders);
+  expect(after.reads).toBe(before.reads);
+  expect(after.watchCalls).toBe(before.watchCalls);
+  expect(after.listenerAdds).toBe(before.listenerAdds);
+  expect(after.nativeShows).toBe(before.nativeShows);
+  expect(after.writes - before.writes).toBeGreaterThan(0);
+  expect(after.writes - before.writes).toBeLessThanOrEqual(7);
+  console.log('reading-scroll', JSON.stringify({ before, after }));
+});

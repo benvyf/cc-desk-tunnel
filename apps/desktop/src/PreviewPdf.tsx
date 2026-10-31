@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import type { RefObject } from 'react';
 import { getDocument, GlobalWorkerOptions } from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist';
 import workerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import { Button } from './ui.tsx';
+import { usePreviewReading } from './usePreviewReading.ts';
+import { clampPdfReading } from './previewViewState.ts';
+import type { PreviewWorkspace } from './preview.ts';
 
 GlobalWorkerOptions.workerSrc = workerUrl;
 // Vite packages these assets with the application. No CDN or document URL is used.
@@ -35,21 +39,72 @@ class LocalWasm {
 export default function PreviewPdf({
   data,
   missingFonts = [],
+  reading,
+  tabId,
+  interruption,
 }: {
   data: string;
   missingFonts?: string[];
+  reading: PreviewWorkspace['reading'];
+  tabId: string;
+  interruption: RefObject<boolean>;
 }) {
   const canvas = useRef<HTMLCanvasElement>(null),
     container = useRef<HTMLDivElement>(null);
+  const saved = reading.get(tabId);
   const [document, setDocument] = useState<PDFDocumentProxy | null>(null),
-    [page, setPage] = useState(1),
-    [zoom, setZoom] = useState(1),
+    [page, setPage] = useState(saved?.kind === 'pdf' ? saved.page : 1),
+    [zoom, setZoom] = useState(saved?.kind === 'pdf' ? saved.zoom : 1),
     [error, setError] = useState(''),
     [rendering, setRendering] = useState(true),
     [width, setWidth] = useState(500);
+  const [rendered, setRendered] = useState<{
+    document: PDFDocumentProxy;
+    page: number;
+    zoom: number;
+    width: number;
+  } | null>(null);
+  const ready =
+    document &&
+    !rendering &&
+    !error &&
+    rendered?.document === document &&
+    rendered.page === page &&
+    rendered.zoom === zoom &&
+    rendered.width === width
+      ? rendered
+      : null;
+  const captureReading = usePreviewReading(
+    container,
+    ready,
+    'pdf',
+    () => {
+      const current = reading.get(tabId);
+      return current?.kind === 'pdf' && current.page === page && current.zoom === zoom
+        ? current
+        : { top: 0, left: 0 };
+    },
+    (position) => reading.set(tabId, { kind: 'pdf', page, zoom, ...position }),
+    undefined,
+    reading,
+    interruption,
+  );
+  const changePage = (next: number) => {
+    captureReading();
+    const value = Math.max(1, Math.min(document?.numPages ?? 1, next));
+    reading.set(tabId, { kind: 'pdf', page: value, zoom, top: 0, left: 0 });
+    setPage(value);
+  };
+  const changeZoom = (next: number) => {
+    captureReading();
+    const current = reading.get(tabId);
+    const position = current?.kind === 'pdf' ? current : { top: 0, left: 0 };
+    reading.set(tabId, { kind: 'pdf', page, zoom: next, top: position.top, left: position.left });
+    setZoom(next);
+  };
   useEffect(() => {
     setDocument(null);
-    setPage(1);
+    setRendered(null);
     setError('');
     setRendering(true);
     const task = getDocument({
@@ -64,7 +119,15 @@ export default function PreviewPdf({
     let disposed = false;
     void task.promise.then(
       (value) => {
-        if (!disposed) setDocument(value);
+        if (!disposed) {
+          const current = reading.get(tabId);
+          if (current?.kind === 'pdf') {
+            const restored = clampPdfReading(current, value.numPages);
+            reading.set(tabId, restored);
+            setPage(restored.page);
+          } else setPage((previous) => Math.min(previous, value.numPages));
+          setDocument(value);
+        }
       },
       () => {
         if (!disposed) setError('PDF 无法读取，可能已损坏或需要密码。');
@@ -74,7 +137,7 @@ export default function PreviewPdf({
       disposed = true;
       void task.destroy();
     };
-  }, [data]);
+  }, [data, reading, tabId]);
   useEffect(() => {
     const element = container.current!;
     const observer = new ResizeObserver(() => setWidth(Math.max(100, element.clientWidth - 32)));
@@ -111,6 +174,9 @@ export default function PreviewPdf({
         });
         return render.promise;
       })
+      .then(() => {
+        if (!disposed) setRendered({ document, page, zoom, width });
+      })
       .catch((e) => {
         if (!disposed && e?.name !== 'RenderingCancelledException') setError('PDF 页面无法显示。');
       })
@@ -125,7 +191,7 @@ export default function PreviewPdf({
   return (
     <div className="preview-pdf">
       <div className="preview-pdf-toolbar">
-        <Button size="sm" disabled={!document || page <= 1} onClick={() => setPage((n) => n - 1)}>
+        <Button size="sm" disabled={!document || page <= 1} onClick={() => changePage(page - 1)}>
           上一页
         </Button>
         <input
@@ -134,15 +200,13 @@ export default function PreviewPdf({
           min={1}
           max={document?.numPages ?? 1}
           value={page}
-          onChange={(e) =>
-            setPage(Math.max(1, Math.min(document?.numPages ?? 1, Number(e.target.value) || 1)))
-          }
+          onChange={(e) => changePage(Number(e.target.value) || 1)}
         />
         <span>/ {document?.numPages ?? '…'}</span>
         <Button
           size="sm"
           disabled={!document || page >= document.numPages}
-          onClick={() => setPage((n) => n + 1)}
+          onClick={() => changePage(page + 1)}
         >
           下一页
         </Button>
@@ -150,18 +214,18 @@ export default function PreviewPdf({
           size="sm"
           aria-label="缩小 PDF"
           disabled={zoom <= 0.5}
-          onClick={() => setZoom((n) => Math.max(0.5, n - 0.25))}
+          onClick={() => changeZoom(Math.max(0.5, zoom - 0.25))}
         >
           −
         </Button>
-        <Button size="sm" title="恢复 PDF 比例" onClick={() => setZoom(1)}>
+        <Button size="sm" title="恢复 PDF 比例" onClick={() => changeZoom(1)}>
           {Math.round(zoom * 100)}%
         </Button>
         <Button
           size="sm"
           aria-label="放大 PDF"
           disabled={zoom >= 3}
-          onClick={() => setZoom((n) => Math.min(3, n + 0.25))}
+          onClick={() => changeZoom(Math.min(3, zoom + 0.25))}
         >
           +
         </Button>

@@ -10,10 +10,65 @@ import { Button } from '../../src/ui.tsx';
 import '../../src/style.css';
 
 const listeners = new Set<(state: PreviewBrowserState) => void>();
+type ReadOptions = {
+  delayMs?: number;
+  short?: boolean;
+  missing?: boolean;
+  fail?: boolean;
+  pages?: number;
+  badPage?: number;
+};
+type Watch = { key: string; path: string; file?: boolean };
+const changed = new Set<(event: { key: string; path: string }) => void>();
+const watches = new Map<string, Watch>();
+const readOptions = new Map<string, ReadOptions>();
+const activeTokens = new Map<string, string>();
+const issuedTokens: { token: string; path: string }[] = [];
+const releasedTokens = new Map<string, number>();
+const issueToken = (path: string) => {
+  const token = `fixture-file-${issuedTokens.length + 1}`;
+  activeTokens.set(token, path);
+  issuedTokens.push({ token, path });
+  return token;
+};
+const metrics = {
+  renders: 0,
+  reads: 0,
+  completedReads: 0,
+  lists: 0,
+  watchCalls: 0,
+  unwatchCalls: 0,
+  listenerAdds: 0,
+  listenerRemoves: 0,
+  releaseFiles: 0,
+  nativeShows: 0,
+  readsByPath: {} as Record<string, number>,
+};
+(window as any).fixturePreview = {
+  configure(suffix: string, options: ReadOptions) {
+    readOptions.set(suffix, options);
+  },
+  emit(suffix: string) {
+    for (const watch of watches.values())
+      if (watch.path.endsWith(suffix))
+        for (const callback of changed) callback({ key: watch.key, path: watch.path });
+  },
+  counts: () => ({
+    ...metrics,
+    readsByPath: { ...metrics.readsByPath },
+    activeWatches: watches.size,
+    activeChangedListeners: changed.size,
+    activeStateListeners: listeners.size,
+    activeTokens: [...activeTokens.keys()],
+    issuedTokens: issuedTokens.map((entry) => ({ ...entry })),
+    releasedTokens: Object.fromEntries(releasedTokens),
+  }),
+};
 const caseSensitive = new URLSearchParams(location.search).has('case-sensitive');
 const folder = caseSensitive ? '/work/preview' : 'C:\\工作\\网站预览';
 const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="360" height="200"><rect width="360" height="200" fill="#f5f5f3"/><path d="M32 160 100 110 168 130 240 60 320 40" fill="none" stroke="#d97757" stroke-width="8"/></svg>')}`;
 (window as any).desktop = {
+  boot: { connection: new URLSearchParams(location.search).get('connection') ?? '' },
   copyText: async () => {},
   openLink: async () => {},
   actOnPath: async () => {
@@ -25,6 +80,7 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
   },
   preview: {
     async list({ path }: { path: string }) {
+      metrics.lists++;
       if (caseSensitive)
         return ['Case.md', 'case.md'].map((name) => ({
           name,
@@ -38,12 +94,78 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
             { name: '说明.md', path: path + '\\说明.md', kind: 'file' },
           ];
     },
-    async watch() {},
-    async unwatch() {},
-    onChanged() {
-      return () => {};
+    async watch(input: Watch) {
+      metrics.watchCalls++;
+      watches.set(input.key, input);
+    },
+    async unwatch(key: string) {
+      metrics.unwatchCalls++;
+      watches.delete(key);
+    },
+    onChanged(callback: (event: { key: string; path: string }) => void) {
+      metrics.listenerAdds++;
+      changed.add(callback);
+      return () => {
+        metrics.listenerRemoves++;
+        changed.delete(callback);
+      };
     },
     async read({ path }: { path: string }): Promise<PreviewFile> {
+      metrics.reads++;
+      metrics.readsByPath[path] = (metrics.readsByPath[path] ?? 0) + 1;
+      const options = { ...[...readOptions].find(([suffix]) => path.endsWith(suffix))?.[1] };
+      if (options.delayMs) await new Promise((resolve) => setTimeout(resolve, options.delayMs));
+      metrics.completedReads++;
+      if (options.missing) throw new Error('文件已删除，等待重建。');
+      if (options.fail) throw new Error('模拟读取失败，请刷新重试。');
+      if (path.endsWith('长阅读.txt'))
+        return {
+          path,
+          kind: 'text',
+          text: Array.from(
+            { length: options.short ? 35 : 360 },
+            (_, i) =>
+              `Reading paragraph ${i + 1}: CC SPACE preserves the current document position.`,
+          ).join('\n'),
+        };
+      if (path.endsWith('长代码.ts'))
+        return {
+          path,
+          kind: 'text',
+          text: Array.from(
+            { length: options.short ? 35 : 360 },
+            (_, i) =>
+              `export const readingRow${i + 1} = { label: "${'wide code column '.repeat(24)}", enabled: true };`,
+          ).join('\n'),
+        };
+      if (path.endsWith('长说明.md'))
+        return {
+          path,
+          kind: 'markdown',
+          text:
+            '# Reading handbook\n\n' +
+            Array.from(
+              { length: options.short ? 3 : 100 },
+              (_, i) =>
+                `## Section ${i + 1}\n\nRead the generated report while continuing the discussion. This section includes enough detail to keep a stable reading position.\n\n- Check the local result\n- Review the next change\n\n\`\`\`ts\nconst section${i + 1} = "${'wide source column '.repeat(12)}";\n\`\`\`\n`,
+            ).join('\n'),
+        };
+      if (path.endsWith('多页报告.pdf'))
+        return {
+          path,
+          kind: 'pdf',
+          token: issueToken(path),
+          data: btoa(
+            String.fromCharCode(
+              ...previewPdf('Reading report', {
+                pages: options.pages ?? 4,
+                badPage: options.badPage,
+                width: 600,
+                height: 1200,
+              }),
+            ),
+          ),
+        };
       if (path.includes('长错误'))
         throw new Error(
           '找不到文件：C:\\' + '很长的项目目录\\'.repeat(60) + '报告.txt。请确认路径。',
@@ -55,11 +177,17 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
         return {
           path,
           kind: 'html',
+          token: issueToken(path),
           text: '<h1>HTML alias</h1>',
           url: 'http://file.localhost/index.html',
         };
       if (path.endsWith('.pdf'))
-        return { path, kind: 'pdf', data: btoa(String.fromCharCode(...previewPdf())) };
+        return {
+          path,
+          kind: 'pdf',
+          token: issueToken(path),
+          data: btoa(String.fromCharCode(...previewPdf())),
+        };
       if (path.endsWith('.png')) return { path, kind: 'image', image };
       if (path.endsWith('.md'))
         return {
@@ -77,7 +205,11 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
         ),
       };
     },
-    async releaseFile() {},
+    async releaseFile(token: string) {
+      metrics.releaseFiles++;
+      activeTokens.delete(token);
+      releasedTokens.set(token, (releasedTokens.get(token) ?? 0) + 1);
+    },
     async release(input: any) {
       ((window as any).fixtureReleased ??= []).push(input.key);
     },
@@ -92,6 +224,7 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
       return folder + '\\说明.md';
     },
     async show(input: { surface: 'main'; key: string; url: string }) {
+      metrics.nativeShows++;
       queueMicrotask(() =>
         listeners.forEach((callback) =>
           callback({
@@ -113,9 +246,16 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
 };
 
 function Fixture() {
+  metrics.renders++;
   const terminal = new URLSearchParams(location.search).has('terminal');
   const [scope, setScope] = useState('fixture');
-  const board = usePreviewWorkspace(scope, 'session', terminal ? 'terminal' : 'main', 'session');
+  const [session, setSession] = useState('session');
+  const board = usePreviewWorkspace(
+    scope,
+    session,
+    terminal ? 'terminal' : 'main',
+    'session\nother-session',
+  );
   const [opened, setOpened] = useState(false);
   const controls = (
     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, padding: 20 }}>
@@ -135,6 +275,10 @@ function Fixture() {
         ['加载状态', '读取中.md'],
         ['图片状态', '趋势图.png'],
         ['PDF 状态', '报告.pdf'],
+        ['长文本', '长阅读.txt'],
+        ['长代码', '长代码.ts'],
+        ['长 Markdown', '长说明.md'],
+        ['多页 PDF', '多页报告.pdf'],
       ].map(([label, name]) => (
         <Button
           key={label}
@@ -165,6 +309,9 @@ function Fixture() {
       </Button>
       <Button onClick={() => setScope(scope === 'fixture' ? 'other' : 'fixture')}>
         切换预览工作区
+      </Button>
+      <Button onClick={() => setSession(session === 'session' ? 'other-session' : 'session')}>
+        切换预览会话
       </Button>
       <Button data-size="sm" size="sm" aria-label="对照按钮">
         对照按钮

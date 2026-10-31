@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Link } from './links.ts';
 import {
   emptyBoard,
@@ -12,6 +12,8 @@ import {
   previewWebsite,
 } from './previewLayout.ts';
 import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
+import { createPreviewPersistence } from './previewPersistence.ts';
+import type { PreviewReading } from './previewViewState.ts';
 export type { PreviewTab, PreviewPane, FloatRect } from './previewLayout.ts';
 export { previewWebsite } from './previewLayout.ts';
 
@@ -37,6 +39,18 @@ export type PreviewFile = {
   url?: string;
   token?: string;
 };
+function restoreWorkspace(key: string | null) {
+  let serialized: string | null = null;
+  try {
+    if (key) serialized = localStorage.getItem(key);
+  } catch {}
+  const layout = restoreLayout(serialized);
+  return {
+    key,
+    ...layout,
+    persistence: createPreviewPersistence(key, layout, serialized, localStorage),
+  };
+}
 // Layout metadata stays in this client's profile, never in the model protocol.
 export function usePreviewWorkspace(
   workspace: string | null,
@@ -47,10 +61,7 @@ export function usePreviewWorkspace(
   const storageKey = workspace
     ? `cc-preview-v1:${window.desktop?.boot?.connection ?? ''}:${surface}:${workspace}`
     : null;
-  const [state, setState] = useState(() => ({
-    key: storageKey,
-    ...restoreLayout(storageKey ? localStorage.getItem(storageKey) : null),
-  }));
+  const [state, setState] = useState(() => restoreWorkspace(storageKey));
   const [pending, setPending] = useState<Set<string>>(
     () =>
       new Set(
@@ -69,11 +80,9 @@ export function usePreviewWorkspace(
       ),
   );
   const boards = state.key === storageKey ? state.boards : {};
-  const scope = useRef({ key: storageKey, boards: state.boards, width: state.width });
-  if (scope.current.key === storageKey) {
-    scope.current.boards = boards;
-    scope.current.width = state.width;
-  }
+  useLayoutEffect(() => {
+    state.persistence.updateLayout({ boards: state.boards, width: state.width });
+  }, [state]);
   const current = useRef(boards);
   current.current = boards;
   const board = session ? (boards[session] ?? emptyBoard()) : emptyBoard();
@@ -85,10 +94,11 @@ export function usePreviewWorkspace(
     [surface],
   );
   useEffect(() => {
-    const restored = restoreLayout(storageKey ? localStorage.getItem(storageKey) : null);
-    const owner = { key: storageKey, boards: restored.boards, width: restored.width };
-    scope.current = owner;
-    setState({ key: storageKey, ...restored });
+    // StrictMode replays setup after cleanup; a closed owner must never be reused.
+    const restored =
+      state.key === storageKey && !state.persistence.closed ? state : restoreWorkspace(storageKey);
+    const owner = restored.persistence;
+    if (restored !== state) setState(restored);
     setRestoredTabs(
       new Set(
         Object.values(restored.boards)
@@ -104,36 +114,16 @@ export function usePreviewWorkspace(
           .map((t) => t.id),
       ),
     );
-    const persist = () => {
-      if (owner.key)
-        try {
-          localStorage.setItem(
-            owner.key,
-            JSON.stringify({ width: owner.width, boards: owner.boards }),
-          );
-        } catch {}
-    };
+    const persist = owner.flush;
     window.addEventListener('beforeunload', persist);
     window.addEventListener('pagehide', persist);
     return () => {
       window.removeEventListener('beforeunload', persist);
       window.removeEventListener('pagehide', persist);
-      persist();
-      for (const b of Object.values(owner.boards)) for (const t of b.tabs) release(t);
+      owner.close();
+      for (const b of Object.values(owner.layout.boards)) for (const t of b.tabs) release(t);
     };
   }, [storageKey, release]);
-  useEffect(() => {
-    if (!storageKey || state.key !== storageKey) return;
-    const timer = setTimeout(() => {
-      try {
-        localStorage.setItem(
-          storageKey,
-          JSON.stringify({ width: state.width, boards: state.boards }),
-        );
-      } catch {}
-    }, 150);
-    return () => clearTimeout(timer);
-  }, [state, storageKey]);
   useEffect(() => {
     // Session lists are initially empty during reconnect; prune only once hydrated.
     if (!sessionIds) return;
@@ -179,12 +169,24 @@ export function usePreviewWorkspace(
     change((b) => openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted, title }));
   }
   const active = board.panes.find((p) => p.id === board.focused)?.active ?? '';
+  const reading = useMemo(
+    () => ({
+      beforeFlush: state.persistence.beforeFlush,
+      get: (id: string) => (session ? state.persistence.get(session, id) : undefined),
+      set: (id: string, value: PreviewReading | undefined) => {
+        if (session) state.persistence.set(session, id, value);
+      },
+    }),
+    [state.persistence, session],
+  );
   return {
     ...board,
+    scope: JSON.stringify([storageKey, session]),
     active,
     width: state.width,
     pending,
     restoredTabs,
+    reading,
     activate,
     resize: (value: number | ((previous: number) => number)) =>
       setState((s) => ({ ...s, width: typeof value === 'function' ? value(s.width) : value })),

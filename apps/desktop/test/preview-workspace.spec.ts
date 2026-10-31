@@ -2,6 +2,20 @@ import { test, expect } from '@playwright/test';
 import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
+async function waitForStoredLayout(page: import('@playwright/test').Page) {
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.entries(localStorage).some(
+          ([key, value]) =>
+            key.startsWith('cc-preview-v1:') &&
+            Object.values(JSON.parse(value).boards).some((board: any) => board.tabs.length > 0),
+        ),
+      ),
+    )
+    .toBe(true);
+}
+
 test('lazy tree opens a local file, refreshes and reports missing directories', async ({
   page,
 }) => {
@@ -55,7 +69,7 @@ test('split, drag between panes, float/dock and restore persist only metadata', 
 
   await page.getByRole('button', { name: '停靠预览', exact: true }).click();
   await expect(page.locator('.preview-pane-floating')).toHaveCount(0);
-  await page.waitForTimeout(200);
+  await waitForStoredLayout(page);
   const saved = await page.evaluate(
     () => Object.entries(localStorage).find(([key]) => key.startsWith('cc-preview-v1:'))?.[1] ?? '',
   );
@@ -69,7 +83,7 @@ test('split, drag between panes, float/dock and restore persist only metadata', 
 test('restored websites require a user click before any native request', async ({ page }) => {
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.getByRole('button', { name: '网站错误', exact: true }).click();
-  await page.waitForTimeout(200);
+  await waitForStoredLayout(page);
   await page.reload();
   await page.getByRole('button', { name: '展开空栏', exact: true }).click();
   await expect(page.getByRole('button', { name: '加载此预览', exact: true })).toBeVisible();
@@ -100,12 +114,11 @@ test('PDF renders locally with page and zoom controls', async ({ page }) => {
   await expect(page.locator('.preview-pdf')).toContainText('125%');
 });
 
-for (const [theme, width, font] of [
-  ['light', 1440, 14],
-  ['dark', 1440, 14],
-  ['dark', 390, 20],
-] as const) {
-  test(`workspace geometry and shared style ${theme} ${width}`, async ({ page }) => {
+const geometryCases = (['light', 'dark'] as const).flatMap((theme) =>
+  [1440, 1024, 390].flatMap((width) => [14, 20].map((font) => ({ theme, width, font }))),
+);
+for (const { theme, width, font } of geometryCases) {
+  test(`workspace geometry and shared style ${theme} ${width} ${font}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 });
     await page.goto('/test/fixtures/preview-sidebar.html');
     await page.evaluate(
@@ -116,7 +129,7 @@ for (const [theme, width, font] of [
       { theme, font },
     );
     await page.getByRole('button', { name: '打开文档', exact: true }).click();
-    if (width < 700) await page.getByRole('button', { name: '收起预览', exact: true }).click();
+    if (width <= 1050) await page.getByRole('button', { name: '收起预览', exact: true }).click();
     await page.getByRole('button', { name: '图片状态', exact: true }).click();
     await page.getByRole('button', { name: '分栏预览', exact: true }).click();
     await page.getByRole('button', { name: '工作区目录', exact: true }).click();
@@ -129,7 +142,7 @@ for (const [theme, width, font] of [
     }
     const output = resolve('.local/screenshots/preview-workspace');
     await mkdir(output, { recursive: true });
-    await page.screenshot({ path: resolve(output, `${theme}-${width}.png`) });
+    await page.screenshot({ path: resolve(output, `${theme}-${width}-${font}px.png`) });
   });
 }
 
@@ -138,7 +151,7 @@ test('workspace change releases every cached view including inactive websites', 
 }) => {
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.getByRole('button', { name: '网站错误', exact: true }).click();
-  await page.waitForTimeout(200);
+  await waitForStoredLayout(page);
   const webId = await page.evaluate(() => {
     const value = Object.entries(localStorage).find(([k]) => k.startsWith('cc-preview-v1:'))![1];
     return JSON.parse(value).boards.session.tabs.find((t: any) => t.kind === 'web').id;
@@ -151,7 +164,7 @@ test('workspace change releases every cached view including inactive websites', 
 test('restored HTML behind a text alias still needs explicit activation', async ({ page }) => {
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.getByRole('button', { name: '打开文档', exact: true }).click();
-  await page.waitForTimeout(200);
+  await waitForStoredLayout(page);
   const storedAlias = await page.evaluate(() => {
     const [key, value] = Object.entries(localStorage).find(([k]) =>
       k.startsWith('cc-preview-v1:'),

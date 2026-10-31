@@ -58,7 +58,14 @@ test(
     const site = `http://127.0.0.1:${server.address().port}/`;
     const { previewPdf } = await import('./fixtures/preview-pdf.ts');
     const pdfPath = join(project, 'report.pdf');
-    await writeFile(pdfPath, previewPdf());
+    await writeFile(
+      pdfPath,
+      previewPdf('Local reading PDF', { pages: 4, width: 800, height: 1600 }),
+    );
+    await writeFile(
+      join(project, 'reading.txt'),
+      Array.from({ length: 400 }, (_, i) => `Local reading line ${i}`).join('\n'),
+    );
     await copyFile(
       resolve('apps/desktop/test-main/fixtures/office/sample.doc'),
       join(project, 'report.doc'),
@@ -74,7 +81,14 @@ test(
       `
     const {app,net,ipcMain,dialog}=require('electron');
     app.commandLine.appendSwitch('no-proxy-server');
-    global.fixtureCalls=[];global.fixtureWatches=[];
+    global.fixtureCalls=[];global.fixtureWatches=[];global.fixtureOfficeRequests=0;
+    const officeModule=require(${JSON.stringify(resolve('apps/desktop/electron/preview-office.cjs'))});
+    const createOffice=officeModule.createPreviewOffice;
+    officeModule.createPreviewOffice=(...options)=>{
+      const controller=createOffice(...options),render=controller.render.bind(controller);
+      controller.render=(...args)=>{global.fixtureOfficeRequests++;return render(...args);};
+      return controller;
+    };
     const workspaceModule=require(${JSON.stringify(resolve('apps/desktop/electron/preview-workspace.cjs'))});
     const createWorkspace=workspaceModule.createPreviewWorkspace;
     workspaceModule.createPreviewWorkspace=()=>{
@@ -335,6 +349,7 @@ test(
       await page.getByRole('treeitem', { name: 'report.doc', exact: true }).click();
       await expect(page.locator('.preview-pdf canvas')).toBeVisible({ timeout: 30000 });
       await expect(page.getByLabel('PDF 页码')).toHaveValue('1');
+      assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 1);
       await page.getByRole('button', { name: '关闭预览 report.doc', exact: true }).click();
 
       await page.getByRole('button', { name: '工作区目录', exact: true }).click();
@@ -683,6 +698,30 @@ test(
       await page.locator('.session-select').filter({ hasText: '另一会话' }).click();
       await page.getByRole('link', { name: '页面', exact: true }).click();
       await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
+      await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+      await page.getByRole('treeitem', { name: 'reading.txt', exact: true }).click();
+      await expect(page.locator('.preview-document')).toContainText('Local reading line 399');
+      await page.locator('.preview-document').evaluate((element) => {
+        element.dispatchEvent(new WheelEvent('wheel', { bubbles: true, deltaY: 700 }));
+        element.scrollTop = 700;
+      });
+      await expect
+        .poll(() => page.locator('.preview-document').evaluate((el) => el.scrollTop))
+        .toBe(700);
+      await page.getByRole('treeitem', { name: 'report.pdf', exact: true }).click();
+      await expect(page.locator('.preview-pdf-pages')).toHaveAttribute('aria-busy', 'false');
+      await page.getByLabel('PDF 页码').fill('3');
+      await page.getByRole('button', { name: '放大 PDF', exact: true }).click();
+      await expect(page.locator('.preview-pdf-pages')).toHaveAttribute('aria-busy', 'false');
+      await page.getByRole('treeitem', { name: 'report.doc', exact: true }).click();
+      await expect(page.locator('.preview-pdf-pages')).toHaveAttribute('aria-busy', 'false', {
+        timeout: 30000,
+      });
+      await page.getByRole('button', { name: '放大 PDF', exact: true }).click();
+      await expect(page.locator('.preview-pdf')).toContainText('125%');
+      assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 2);
+      await page.getByRole('tab', { name: 'index.html', exact: true }).click();
+      await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
       await page.reload();
       await expect(page.getByRole('heading', { name: '登录 CC SPACE', exact: true })).toBeVisible();
       await expect
@@ -718,6 +757,23 @@ test(
       );
       await reopened.getByRole('button', { name: '加载此预览', exact: true }).click();
       await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
+      await reopened.getByRole('tab', { name: 'reading.txt', exact: true }).click();
+      await expect(reopened.locator('.preview-document')).toContainText('Local reading line 399');
+      await expect
+        .poll(() => reopened.locator('.preview-document').evaluate((el) => el.scrollTop))
+        .toBe(700);
+      await reopened.getByRole('tab', { name: 'report.pdf', exact: true }).click();
+      await expect(reopened.locator('.preview-pdf-pages')).toHaveAttribute('aria-busy', 'false');
+      await expect(reopened.getByLabel('PDF 页码')).toHaveValue('3');
+      await expect(reopened.locator('.preview-pdf')).toContainText('125%');
+      assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 0);
+      await reopened.getByRole('tab', { name: 'report.doc', exact: true }).click();
+      await expect(reopened.locator('.preview-pdf-pages')).toHaveAttribute('aria-busy', 'false', {
+        timeout: 30000,
+      });
+      await expect(reopened.getByLabel('PDF 页码')).toHaveValue('1');
+      await expect(reopened.locator('.preview-pdf')).toContainText('125%');
+      assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 1);
       assert(!commands.includes('message.send'));
       assert.deepEqual(errors, []);
     } catch (error) {
