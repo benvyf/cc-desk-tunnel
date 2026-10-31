@@ -64,6 +64,7 @@ import {
   assistantSelection,
 } from './QuoteActions.tsx';
 import type { QuoteDestination } from './QuoteActions.tsx';
+import ConversationWidthControls from './ConversationWidthControls.tsx';
 import { pictureUrl, toolPictures } from './pictures.ts';
 import { Picture } from './Picture.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
@@ -683,6 +684,7 @@ export default function Conversation({
   preview,
   onQuote,
   sideQuoteAvailable = false,
+  adjustableWidth = false,
 }: {
   projectControl?: ReactNode;
   session: Session | undefined;
@@ -691,6 +693,7 @@ export default function Conversation({
   preview?: (link: Link) => boolean;
   onQuote?: (messageId: string, text: string, destination: QuoteDestination) => void;
   sideQuoteAvailable?: boolean;
+  adjustableWidth?: boolean;
   events: SessionEvent[];
   history: HistoryState | undefined;
   connected: boolean;
@@ -1351,6 +1354,13 @@ export default function Conversation({
               </div>
             )}
           </div>
+          {session && adjustableWidth && (
+            <ConversationWidthControls
+              key={`width:${session.id}`}
+              scroll={scroll}
+              active={!showGreeting && !history?.loading}
+            />
+          )}
           {session && (
             <TurnNavigator
               key={session.id}

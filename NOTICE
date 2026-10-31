@@ -34,3 +34,8 @@ Copyright 2014 Mozilla Foundation, under the Apache License, Version 2.0
 layout and Unicode normalization; no separate PDF viewer runtime is added.
 The complete license and attribution are distributed in
 dist/third-party/pdfjs-text-layer.txt.
+
+The chat content-width controls and faded handle styles are adapted from
+DeepSeek Harness, Copyright (c) 2026 DeepSeek, under the MIT License.
+Source revision and the complete license are distributed in
+dist/third-party/deepseek-chat-width.txt.

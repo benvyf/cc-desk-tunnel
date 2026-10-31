@@ -1,0 +1,66 @@
+/* Main-chat handles live outside the scrollport, below the tools and above the footer. */
+.chat-workspace .conversation {
+  padding-inline: 28px;
+  scrollbar-gutter: stable both-edges;
+}
+.chat-width-controls {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  display: none;
+}
+.chat-width-controls[data-available] {
+  display: block;
+}
+.chat-width-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 10px;
+  pointer-events: auto;
+  cursor: col-resize;
+  touch-action: none;
+  outline: none;
+}
+.chat-width-handle[data-chat-width-handle='left'] {
+  right: calc(50% + var(--chat-content-width, 820px) / 2 + 12px);
+}
+.chat-width-handle[data-chat-width-handle='right'] {
+  left: calc(50% + var(--chat-content-width, 820px) / 2 + 12px);
+}
+.chat-width-handle::after {
+  content: '';
+  position: absolute;
+  left: 4px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent calc(var(--chat-width-pointer-y, 50%) - 36px),
+    var(--line-strong) calc(var(--chat-width-pointer-y, 50%) - 8px),
+    var(--line-strong) calc(var(--chat-width-pointer-y, 50%) + 8px),
+    transparent calc(var(--chat-width-pointer-y, 50%) + 36px)
+  );
+  opacity: 0;
+}
+@media (hover: hover) {
+  .chat-width-handle:hover::after {
+    opacity: 1;
+  }
+}
+.chat-width-handle:focus-visible::after,
+.chat-width-handle[data-dragging]::after {
+  opacity: 1;
+}
+.chat-workspace[data-chat-width-dragging],
+.chat-workspace[data-chat-width-dragging] * {
+  cursor: col-resize !important;
+  user-select: none;
+}
+@media (max-width: 700px) {
+  .chat-workspace .conversation {
+    padding-inline: 16px;
+  }
+}
