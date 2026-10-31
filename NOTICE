@@ -23,3 +23,7 @@ third-party components, each under its own license:
   dependencies under their respective licenses.
 
 npm dependencies are listed in package-lock.json and keep their own licenses.
+The client build applies a version-checked linear text resolver patch to
+micromark 4.0.3 (MIT). Provenance and source hashes are in
+patches/micromark-4.0.3.md; the distributed notice is in
+dist/third-party/micromark.txt.
