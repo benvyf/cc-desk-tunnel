@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import type { Effort, PermissionMode, NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import Composer from './Composer.tsx';
@@ -12,6 +12,7 @@ import { quoteMessage } from './quotes.ts';
 import type { QuoteReference, SetQuotes } from './quotes.ts';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import { latest } from './nativeState.ts';
+import { useStopShortcut } from './useStopShortcut.ts';
 
 export default function SideConversation({
   client,
@@ -116,6 +117,22 @@ export default function SideConversation({
     }
   }
   const run = session?.activeRun;
+  const stopScope = useRef<HTMLElement>(null);
+  const stop = () => {
+    followUps.pause(sessionId);
+    control('run.cancel');
+  };
+  useStopShortcut(
+    stopScope,
+    `${state.connectionId}:${sessionId}:${run?.id}`,
+    connected &&
+      !busy &&
+      ownsRun &&
+      !!run &&
+      run.status !== 'awaiting_approval' &&
+      run.surface !== 'terminal',
+    stop,
+  );
   const control = (type: 'run.cancel' | 'run.task.stop' | 'run.task.background', id?: string) => {
     if (!run) return;
     void act(() =>
@@ -157,7 +174,12 @@ export default function SideConversation({
     (item) => item.id === session.sideConversation?.parentSessionId,
   );
   return (
-    <section className="side-conversation" aria-label="侧边会话" data-side-session={sessionId}>
+    <section
+      className="side-conversation"
+      aria-label="侧边会话"
+      data-side-session={sessionId}
+      ref={stopScope}
+    >
       <header className="side-conversation-source">
         <strong>{session.title}</strong>
         <span title={parent?.title}>
@@ -192,10 +214,7 @@ export default function SideConversation({
         sideQuoteAvailable={connected && state.sideConversations}
         stopTask={(id) => control('run.task.stop', id)}
         backgroundTask={(id) => control('run.task.background', id)}
-        stop={() => {
-          followUps.pause(sessionId);
-          control('run.cancel');
-        }}
+        stop={stop}
         replyApproval={(runId, approvalId, allowed, answers) =>
           act(() =>
             client.request({
@@ -262,10 +281,7 @@ export default function SideConversation({
         refresh={() => {
           void act(() => client.request({ type: 'session.status', sessionId }));
         }}
-        stop={() => {
-          followUps.pause(sessionId);
-          control('run.cancel');
-        }}
+        stop={stop}
       />
     </section>
   );
