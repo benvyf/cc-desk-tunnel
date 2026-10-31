@@ -2,6 +2,10 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vite';
 import react, { reactCompilerPreset } from '@vitejs/plugin-react';
 import babel from '@rolldown/plugin-babel';
+import { applyMicromarkPatch } from '../../scripts/patch-micromark.mjs';
+
+// Every dev/build entry loads this config, including package staging's direct viteBuild().
+applyMicromarkPatch(fileURLToPath(new URL('../../node_modules/micromark/', import.meta.url)));
 
 export default defineConfig({
   root: fileURLToPath(new URL('.', import.meta.url)),

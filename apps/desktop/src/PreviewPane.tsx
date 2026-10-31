@@ -284,7 +284,7 @@ export default function PreviewPaneView({
             </div>
           ) : (
             <PreviewContent
-              key={active.id}
+              key={JSON.stringify([workspace.scope, active.id])}
               tab={active}
               pane={pane.id}
               surface={surface}

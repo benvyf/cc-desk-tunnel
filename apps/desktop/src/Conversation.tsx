@@ -903,7 +903,12 @@ export default function Conversation({
   // Shown while not following, as the way back to the end.
   const [away, setAway] = useState(false);
   // Earlier history is inserted above; the anchor keeps the lines being read where they were.
-  const prependAnchor = useRef<{ sessionId: string; height: number; top: number } | null>(null);
+  const prependAnchor = useRef<{
+    sessionId: string;
+    height: number;
+    top: number;
+    message?: { id: string; offset: number };
+  } | null>(null);
   const lastTop = useRef(0);
   // What the view moved by itself is not the reader's: the next scroll event compares with where it was put.
   const toEnd = () => {
@@ -917,19 +922,31 @@ export default function Conversation({
     setAway(true);
   };
   const rejoin = () => {
+    // Returning to live output supersedes a pending history reading position.
+    prependAnchor.current = null;
     follow.current = true;
     setAway(false);
   };
   const loadMore = () => {
     if (!session || !connected || !history?.hasEarlier || history.loadingEarlier || history.loading)
       return;
+    leave();
     setLoadError('');
-    if (scroll.current)
+    if (scroll.current) {
+      const box = scroll.current;
+      const message = box.querySelector<HTMLElement>('[data-message-id]');
       prependAnchor.current = {
         sessionId: session.id,
-        height: scroll.current.scrollHeight,
-        top: scroll.current.scrollTop,
+        height: box.scrollHeight,
+        top: box.scrollTop,
+        message: message?.dataset.messageId
+          ? {
+              id: message.dataset.messageId,
+              offset: message.getBoundingClientRect().top - box.getBoundingClientRect().top,
+            }
+          : undefined,
       };
+    }
     void loadEarlier().catch(() => setLoadError('更早记录加载失败，请重试'));
   };
   useLayoutEffect(() => {
@@ -940,10 +957,22 @@ export default function Conversation({
   useLayoutEffect(() => {
     const anchor = prependAnchor.current;
     if (anchor && anchor.sessionId === session?.id && !history?.loadingEarlier && scroll.current) {
-      scroll.current.scrollTop = anchor.top + scroll.current.scrollHeight - anchor.height;
-      lastTop.current = scroll.current.scrollTop;
-      prependAnchor.current = null;
+      const box = scroll.current;
+      const message = anchor.message
+        ? box.querySelector<HTMLElement>(`[data-message-id="${CSS.escape(anchor.message.id)}"]`)
+        : null;
+      // content-visibility can revise heights while the request is in flight. Keep the
+      // existing message in place rather than compensating using the whole transcript's estimate.
+      box.scrollTop =
+        message && anchor.message
+          ? box.scrollTop +
+            message.getBoundingClientRect().top -
+            box.getBoundingClientRect().top -
+            anchor.message.offset
+          : anchor.top + box.scrollHeight - anchor.height;
+      lastTop.current = box.scrollTop;
       leave();
+      prependAnchor.current = null;
       return;
     }
     if (anchor) return;
@@ -1130,6 +1159,11 @@ export default function Conversation({
               if (linkCard) setLinkCard(null);
               if (!scroll.current) return;
               const top = scroll.current.scrollTop;
+              const anchor = prependAnchor.current;
+              if (anchor && anchor.sessionId === session?.id) {
+                if (anchor.message) anchor.message.offset -= top - anchor.top;
+                anchor.top = top;
+              }
               const end = fromEnd(scroll.current) < 40;
               // Coming down to the end follows again; only moving down does, so a slow wheel or a flick upwards is not
               // pulled back while output comes in fast. Moving up away from it leaves, by touch as well: heights that

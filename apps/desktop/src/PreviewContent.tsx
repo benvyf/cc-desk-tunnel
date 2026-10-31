@@ -14,6 +14,8 @@ import { LinkPlace, linkTarget } from './links.ts';
 import { followLink } from './linkActions.ts';
 import { previewWebsite } from './preview.ts';
 import { isInside } from './paths.ts';
+import { usePreviewReading } from './usePreviewReading.ts';
+import type { ReadingPosition } from './previewViewState.ts';
 import type {
   PreviewBrowserState,
   PreviewFile,
@@ -166,13 +168,61 @@ export default function PreviewContent({
   const [error, setError] = useState('');
   const [watchError, setWatchError] = useState('');
   const [revision, setRevision] = useState(0);
-  const [source, setSource] = useState(false);
+  const reading = workspace.reading;
+  const [source, setSource] = useState(() => {
+    const saved = reading.get(tab.id);
+    return saved?.kind === 'markdown' && saved.source;
+  });
   const [zoom, setZoom] = useState(1);
   const [browser, setBrowser] = useState<PreviewBrowserState | null>(null);
   const [address, setAddress] = useState(tab.target);
   const editingAddress = useRef(false);
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
+  const documentRoot = useRef<HTMLDivElement>(null);
+  // A PDF replaces the file-loading placeholder; reader intent must survive that handoff.
+  const readingInterrupted = useRef(false);
+  const captureReading = usePreviewReading(
+    documentRoot,
+    file?.kind === 'text' || file?.kind === 'markdown' ? file : null,
+    `${file?.kind ?? 'loading'}:${source ? 'source' : 'preview'}`,
+    () => {
+      const saved = reading.get(tab.id);
+      return file?.kind === 'text' && saved?.kind === 'text'
+        ? saved
+        : file?.kind === 'markdown' && saved?.kind === 'markdown'
+          ? source
+            ? saved.code
+            : saved.preview
+          : { top: 0, left: 0 };
+    },
+    (position: ReadingPosition) => {
+      if (file?.kind === 'text') reading.set(tab.id, { kind: 'text', ...position });
+      if (file?.kind === 'markdown') {
+        const saved = reading.get(tab.id);
+        const current =
+          saved?.kind === 'markdown'
+            ? saved
+            : {
+                kind: 'markdown' as const,
+                source,
+                preview: { top: 0, left: 0 },
+                code: { top: 0, left: 0 },
+              };
+        reading.set(tab.id, { ...current, source, [source ? 'code' : 'preview']: position });
+      }
+    },
+    '.preview-code pre',
+    reading,
+    readingInterrupted,
+  );
+  useLayoutEffect(() => {
+    const saved = reading.get(tab.id);
+    if (file && saved && saved.kind !== file.kind) {
+      reading.set(tab.id, undefined);
+      if (saved.kind === 'markdown') setSource(false);
+    }
+  }, [file, reading, tab.id]);
   useLayoutEffect(
     () =>
       window.desktop!.preview.onState((state) => {
@@ -199,6 +249,8 @@ export default function PreviewContent({
     if (tab.kind !== 'file') return;
     let disposed = false,
       token: string | undefined;
+    captureReading();
+    readingInterrupted.current = false;
     setFile(null);
     setError('');
     void window
@@ -335,7 +387,23 @@ export default function PreviewContent({
             variant="ghost"
             title={source ? '切换到预览' : '查看源码'}
             disabled={!file}
-            onClick={() => setSource((value) => !value)}
+            onClick={() => {
+              captureReading();
+              if (file?.kind === 'markdown') {
+                const saved = reading.get(tab.id);
+                reading.set(tab.id, {
+                  ...(saved?.kind === 'markdown'
+                    ? saved
+                    : {
+                        kind: 'markdown' as const,
+                        preview: { top: 0, left: 0 },
+                        code: { top: 0, left: 0 },
+                      }),
+                  source: !source,
+                });
+              }
+              setSource((value) => !value);
+            }}
           >
             {source ? '预览' : '源码'}
           </Button>
@@ -380,7 +448,13 @@ export default function PreviewContent({
             </p>
           }
         >
-          <PreviewPdf data={file.data!} missingFonts={file.missingFonts} />
+          <PreviewPdf
+            data={file.data!}
+            missingFonts={file.missingFonts}
+            reading={reading}
+            tabId={tab.id}
+            interruption={readingInterrupted}
+          />
         </Suspense>
       ) : native && (tab.kind === 'web' || file?.url) ? (
         <NativePreview
@@ -393,6 +467,7 @@ export default function PreviewContent({
       ) : (
         <div
           className="preview-document"
+          ref={documentRoot}
           onClick={(event) => {
             const anchor = (event.target as HTMLElement).closest('a[data-link]');
             if (!anchor) return;

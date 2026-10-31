@@ -2,6 +2,12 @@ import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
 import type { Session } from '@cc-desk-tunnel/protocol';
+import {
+  installPerformanceProbe,
+  percentile,
+  readPerformanceProbe,
+  resetPerformanceProbe,
+} from './fixtures/conversation-performance.ts';
 
 // One turn of hundreds of steps, as a long agent run leaves behind: opening it must stay quick in both views, and
 // typing in the message box must not wait on the steps.
@@ -10,7 +16,9 @@ const steps = 400;
 for (const mode of ['standard', 'expanded']) {
   test(`a turn of ${steps} steps opens quickly and typing stays quick · ${mode}`, async ({
     page,
-  }) => {
+    browser,
+  }, testInfo) => {
+    await installPerformanceProbe(page);
     await page.addInitScript(
       (saved) => localStorage.setItem('proxy-prefs', JSON.stringify(saved)),
       { view: { mode } },
@@ -108,6 +116,7 @@ for (const mode of ['standard', 'expanded']) {
     await page.getByRole('button', { name: '连接', exact: true }).click();
     const expand = page.getByRole('button', { name: '展开会话列表', exact: true });
     if (await expand.isVisible()) await expand.click();
+    await resetPerformanceProbe(page);
     const opened = Date.now();
     await page
       .locator('.session-row')
@@ -121,10 +130,34 @@ for (const mode of ['standard', 'expanded']) {
       mode === 'expanded' ? steps : 0,
     );
     const box = page.getByRole('textbox').last();
+    await box.evaluate((element) => {
+      (element as HTMLElement).dataset.performanceInput = 'main';
+    });
     const typed = Date.now();
     await box.pressSequentially('abcdefghijklmnopqrstuvwxyz0123456789');
     const perKey = (Date.now() - typed) / 36;
-    console.log(`${mode}: opened in ${openMs} ms, ${perKey.toFixed(1)} ms per key`);
+    const metrics = await readPerformanceProbe(page);
+    const samples = metrics.inputFrameMs.main ?? [];
+    const measurement = {
+      workload: '400-steps',
+      mode,
+      openMs,
+      playwrightMsPerKey: perKey,
+      inputFrameP50Ms: percentile(samples, 0.5),
+      inputFrameP95Ms: percentile(samples, 0.95),
+      ...metrics,
+      browser: browser.version(),
+      node: process.version,
+      viewport: page.viewportSize(),
+      repeat: testInfo.repeatEachIndex,
+    };
+    console.log(JSON.stringify(measurement));
+    await testInfo.attach('performance.json', {
+      body: JSON.stringify(measurement, null, 2),
+      contentType: 'application/json',
+    });
+    expect(samples).toHaveLength(36);
+    expect(percentile(samples, 0.95)).toBeLessThanOrEqual(100);
     expect(openMs).toBeLessThan(5000);
     expect(perKey).toBeLessThan(150);
   });
