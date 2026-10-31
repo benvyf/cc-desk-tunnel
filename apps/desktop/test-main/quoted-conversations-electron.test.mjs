@@ -234,7 +234,11 @@ test(
       await expect(side).toContainText('侧流继续标记');
       await expect(main).not.toContainText('侧流继续标记');
       await expect(side).not.toContainText('主流继续标记');
-      await side.getByRole('button', { name: '停止运行', exact: true }).click();
+      const sideInput = side.getByRole('textbox', { name: '消息', exact: true });
+      await sideInput.focus();
+      await sideInput.press('Escape');
+      assert.notEqual(child.activeRun, null, 'one Escape never cancels the answer');
+      await sideInput.press('Escape');
       await expect.poll(() => child.activeRun).toBe(null);
       assert.equal(parent.activeRun.id, mainRun);
       assert.deepEqual(

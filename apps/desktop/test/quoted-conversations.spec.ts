@@ -15,6 +15,7 @@ async function fixture(
     delaySideCreation = false,
     longAnswer = false,
     delaySendAck = false,
+    failCancelOnce = false,
   } = {},
 ) {
   const now = new Date().toISOString(),
@@ -39,6 +40,7 @@ async function fixture(
   let send = (value: unknown) => {};
   let finishSide = () => {};
   let finishSend = () => {};
+  let cancelAttempts = 0;
   function add(sessionId: string, payload: EventPayload, runId: string = parentRun) {
     const list = events.get(sessionId) ?? [];
     const event = { sessionId, runId, sequence: list.length + 1, createdAt: now, payload };
@@ -186,6 +188,16 @@ async function fixture(
         return;
       }
       if (message.type === 'run.cancel') {
+        if (failCancelOnce && cancelAttempts++ === 0) {
+          send({
+            type: 'response',
+            requestId: message.requestId,
+            ok: false,
+            code: 'cancel_failed',
+            message: '模拟停止失败，请重试',
+          });
+          return;
+        }
         const session = sessions.find((s) => s.id === message.sessionId)!;
         const runId = session.activeRun!.id;
         session.activeRun = null;
@@ -221,6 +233,11 @@ async function fixture(
     answer,
     finishSide: () => finishSide(),
     finishSend: () => finishSend(),
+    updateRun: (sessionId: string, run: Session['activeRun']) => {
+      const session = sessions.find((item) => item.id === sessionId)!;
+      session.activeRun = run;
+      send({ type: 'session.updated', session });
+    },
     messages: () => calls.filter((c) => c.type === 'message.send'),
   };
 }
@@ -882,4 +899,373 @@ test('typing with quote controls does not reinstall document selection listeners
     .pressSequentially('after collapse');
   const final = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
   expect(final).toEqual(collapsed);
+});
+
+test('double Escape stops the main answer only after the second press', async ({ page }) => {
+  const f = await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('停止时保留的草稿');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(f.parent.id);
+  await expect(box).toHaveValue('停止时保留的草稿');
+});
+
+test('double Escape in the side composer cancels only the side run', async ({ page }) => {
+  const f = await fixture(page, { busy: true, holdSide: true });
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true }),
+    box = side.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('侧边问题');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(side.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+  const mainBox = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await mainBox.focus();
+  await mainBox.press('Escape');
+  await box.focus();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(f.created[0]);
+  expect(f.parent.activeRun).not.toBeNull();
+});
+
+test('Escape consumed by slash or quote tools never arms a stop', async ({ page }) => {
+  const f = await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('/');
+  await expect(page.getByRole('listbox', { name: '会话命令' })).toBeVisible();
+  await box.press('Escape');
+  await expect(page.getByRole('listbox', { name: '会话命令' })).toHaveCount(0);
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.click();
+  await selectAnswer(page, '自动刷新');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('toolbar', { name: '引用选中文字' })).toHaveCount(0);
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('modified repeated composing locally consumed and unrelated keys reset Escape pairs', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  for (const interaction of [
+    'modified',
+    'repeat',
+    'composition',
+    'prevented',
+    'stopped',
+    'other',
+    'pointer',
+    'blur',
+  ]) {
+    const run = {
+      id: randomUUID(),
+      status: 'running' as const,
+      connectionId: f.parent.activeRun?.connectionId ?? randomUUID(),
+    };
+    f.updateRun(f.parent.id, run);
+    await expect(box).toBeEnabled();
+    await box.click();
+    if (interaction !== 'repeat') await box.press('Escape');
+    if (interaction === 'modified') await box.press('Shift+Escape');
+    if (interaction === 'repeat') {
+      await page.keyboard.down('Escape');
+      await page.keyboard.down('Escape');
+      await page.keyboard.up('Escape');
+    }
+    if (interaction === 'composition')
+      await box.evaluate((el) => {
+        el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+        el.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Escape',
+            code: 'Escape',
+            bubbles: true,
+            isComposing: true,
+          }),
+        );
+        el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+      });
+    if (interaction === 'prevented' || interaction === 'stopped') {
+      await box.evaluate(
+        (el, method) =>
+          el.addEventListener(
+            'keydown',
+            (event) => {
+              if (method === 'prevented') event.preventDefault();
+              else event.stopPropagation();
+            },
+            { once: true },
+          ),
+        interaction,
+      );
+      await box.press('Escape');
+    }
+    if (interaction === 'other') await box.press('ArrowLeft');
+    if (interaction === 'pointer') await box.click();
+    if (interaction === 'blur') await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    const previous = f.calls.filter((c) => c.type === 'run.cancel').length;
+    await box.press('Escape');
+    expect(f.calls.filter((c) => c.type === 'run.cancel').length, interaction).toBe(previous);
+    await box.press('Escape');
+    await expect
+      .poll(() => f.calls.filter((c) => c.type === 'run.cancel').length, interaction)
+      .toBe(previous + 1);
+  }
+});
+
+test('Escape pairs expire and never cross runs approval state terminal state or focus regions', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await page.clock.install();
+  await box.focus();
+  await box.press('Escape');
+  await page.clock.runFor(501);
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, id: randomUUID() });
+  await expect(main.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, status: 'awaiting_approval' });
+  await expect(main).toContainText('等待');
+  expect(
+    await main
+      .getByRole('button', { name: '停止运行', exact: true })
+      .getAttribute('aria-description'),
+  ).toBeNull();
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, status: 'running', surface: 'terminal' });
+  await page.clock.runFor(1);
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, surface: undefined });
+  await page.clock.runFor(1);
+  await box.focus();
+  await box.press('Escape');
+  await main.locator('.conversation').focus();
+  await page.keyboard.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('shortcut toggle disables double Escape while the stop button keeps working', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'proxy-prefs',
+      JSON.stringify({ shortcuts: { enabled: false, keys: {} } }),
+    ),
+  );
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  expect(
+    await main
+      .getByRole('button', { name: '停止运行', exact: true })
+      .getAttribute('aria-description'),
+  ).toBeNull();
+  await main.getByRole('button', { name: '停止运行', exact: true }).click();
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('double Escape pauses queued follow-ups and does not send them after cancellation', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('停止后不要自动发送');
+  await main.getByRole('button', { name: '排队发送', exact: true }).click();
+  const queue = main.getByRole('region', { name: '待发送消息', exact: true });
+  await expect(queue).toContainText('停止后不要自动发送');
+  await box.focus();
+  await box.press('Escape');
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  await expect(queue).toContainText('排队已暂停');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('double Escape fixed shortcut is explained with the existing settings controls', async ({
+  page,
+}, info) => {
+  await fixture(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '快捷键', exact: true }).click();
+  const settings = page.getByRole('region', { name: '快捷键', exact: true });
+  await expect(settings).toContainText('停止当前回答');
+  await expect(settings.locator('kbd')).toHaveText('Esc · Esc');
+  await page.screenshot({
+    path: info.outputPath('double-escape-shortcut-settings.png'),
+    animations: 'disabled',
+  });
+});
+
+test('terminal approval and queue editor targets keep their own Escape handling', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  for (const owner of ['native-terminal', 'xterm', 'approval-actions', 'queued-editor']) {
+    await box.focus();
+    await box.press('Escape');
+    await main.evaluate((root, owner) => {
+      const node = root.ownerDocument.createElement('div');
+      node.className = owner;
+      node.dataset.fixtureStopOwner = '';
+      const input = root.ownerDocument.createElement('input');
+      input.setAttribute('aria-label', '局部输入');
+      node.append(input);
+      root.append(node);
+    }, owner);
+    const local = page.getByRole('textbox', { name: '局部输入', exact: true });
+    await local.focus();
+    await local.press('Escape');
+    await local.press('Escape');
+    expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+    await main.locator('[data-fixture-stop-owner]').evaluate((el) => el.remove());
+  }
+  await box.focus();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('active stop keyboard handlers remain stable while typing a follow-up', async ({ page }) => {
+  await page.addInitScript(() => {
+    const probe = { add: 0, remove: 0 };
+    (window as any).stopKeyProbe = probe;
+    const add = EventTarget.prototype.addEventListener,
+      remove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function (type, ...args) {
+      if (type === 'keydown' && (this === document || this === window)) probe.add++;
+      return add.call(this, type, ...args);
+    };
+    EventTarget.prototype.removeEventListener = function (type, ...args) {
+      if (type === 'keydown' && (this === document || this === window)) probe.remove++;
+      return remove.call(this, type, ...args);
+    };
+  });
+  await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  const before = await page.evaluate(() => ({ ...(window as any).stopKeyProbe }));
+  await box.pressSequentially('keyboard subscriptions remain stable');
+  const after = await page.evaluate(() => ({ ...(window as any).stopKeyProbe }));
+  expect(after).toEqual(before);
+});
+
+test('IME composition owns Escape even when an event omits its composing flag', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  await box.dispatchEvent('compositionstart');
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.dispatchEvent('compositionend');
+  await box.evaluate((el) => {
+    el.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 229, bubbles: true }),
+    );
+  });
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+for (const ownerPane of ['main', 'side'])
+  for (const tool of ['find', 'slash', 'context'])
+    test(`an unrelated ${ownerPane} ${tool} panel does not block the other conversation Escape`, async ({
+      page,
+    }) => {
+      const f = await fixture(page, { busy: true, holdSide: true }),
+        main = page.locator('.workspace');
+      await selectAnswer(page, '自动刷新');
+      await page
+        .getByRole('toolbar', { name: '引用选中文字' })
+        .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+        .click();
+      const side = page.getByRole('region', { name: '侧边会话', exact: true }),
+        box = side.getByRole('textbox', { name: '消息', exact: true });
+      await box.fill('侧边追问');
+      await side.getByRole('button', { name: '发送消息', exact: true }).click();
+      await expect(side.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+      const owner = ownerPane === 'main' ? main : side;
+      const target = ownerPane === 'main' ? side : main;
+      const targetBox = target.getByRole('textbox', { name: '消息', exact: true });
+      if (tool === 'find')
+        await owner.getByRole('button', { name: '打开对话查找', exact: true }).click();
+      else if (tool === 'context')
+        await owner.locator('.message.assistant').last().click({ button: 'right' });
+      else await owner.getByRole('textbox', { name: '消息', exact: true }).fill('/');
+      const local =
+        tool === 'find'
+          ? owner.getByRole('search', { name: '对话内查找', exact: true })
+          : tool === 'context'
+            ? owner.getByRole('menu', { name: '对话文字操作', exact: true })
+            : owner.getByRole('listbox', { name: '会话命令', exact: true });
+      await expect(local).toBeVisible();
+      await targetBox.focus();
+      await targetBox.press('Escape');
+      expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+      await targetBox.press('Escape');
+      await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+      expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(
+        ownerPane === 'main' ? f.created[0] : f.parent.id,
+      );
+      expect(ownerPane === 'main' ? f.parent.activeRun : f.sessions[1].activeRun).not.toBeNull();
+      await expect(local).toBeVisible();
+    });
+
+test('a failed Escape cancellation shows the existing error and requires a fresh pair to retry', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true, failCancelOnce: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('失败后保留草稿');
+  await box.press('Escape');
+  await box.press('Escape');
+  await expect(main.getByRole('alert')).toContainText('模拟停止失败');
+  expect(f.parent.activeRun).not.toBeNull();
+  await expect(box).toBeEnabled();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(1);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(2);
+  await expect(box).toHaveValue('失败后保留草稿');
+  expect(f.parent.activeRun).toBeNull();
 });

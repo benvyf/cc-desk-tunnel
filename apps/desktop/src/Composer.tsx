@@ -143,6 +143,7 @@ export default function Composer({
   const {
     fontSizes: { interface: interfaceFontSize },
     busyEnter,
+    shortcuts: { enabled: shortcutsEnabled },
   } = usePrefs();
   const following = !!session.activeRun && native;
   const sendLabel = following ? (busyEnter === 'queue' ? '排队发送' : '插话发送') : '发送消息';
@@ -565,6 +566,13 @@ export default function Composer({
           {session.activeRun && session.activeRun.waiting !== 'background' && (
             <IconButton
               title="停止运行"
+              aria-description={
+                shortcutsEnabled &&
+                session.activeRun.status !== 'awaiting_approval' &&
+                session.activeRun.surface !== 'terminal'
+                  ? '在当前会话内，500 毫秒内连续按两次 Esc 可停止当前回答。'
+                  : undefined
+              }
               className="stop-button"
               disabled={!connected || !ownsRun || busy}
               onClick={stop}

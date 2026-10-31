@@ -43,6 +43,7 @@ import { hostCapabilities } from './host-capabilities.ts';
 import AccountPanel from './AccountPanel.tsx';
 import { ProxyClient, RequestInterruptedError } from './client.ts';
 import Composer from './Composer.tsx';
+import { useStopShortcut } from './useStopShortcut.ts';
 import SideConversation from './SideConversation.tsx';
 import { latest } from './nativeState.ts';
 import { appendQuote, makeQuote, quoteMessage, splitQuoteMessage, quoteLimit } from './quotes.ts';
@@ -816,6 +817,20 @@ export function App({
       setProxyConnecting(false);
     }
   }
+  const stopScope = useRef<HTMLElement>(null);
+  useStopShortcut(
+    stopScope,
+    `${state.connectionId}:${selected?.id}:${selected?.activeRun?.id}`,
+    place.page === 'chat' &&
+      connected &&
+      !busy &&
+      ownsRun &&
+      !!selected?.activeRun &&
+      selected.activeRun.status !== 'awaiting_approval' &&
+      selected.activeRun.surface !== 'terminal' &&
+      !terminalsActive,
+    stopRun,
+  );
   function stopRun() {
     if (!selected?.activeRun) return;
     const { id: sessionId, activeRun } = selected;
@@ -2022,7 +2037,7 @@ export function App({
             }
             projectMenu={(path, position) => setMenu({ kind: 'project', path, ...position })}
           />
-          <main className="workspace">
+          <main className="workspace" ref={stopScope}>
             {currentError && (
               <div className="error-banner" role="alert">
                 <span>{currentError}</span>

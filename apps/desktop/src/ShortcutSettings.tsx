@@ -31,7 +31,7 @@ export default function ShortcutSettings() {
           <div className="setting-row">
             <span>
               <strong>启用快捷键</strong>
-              <small>关闭后下面的组合键全部不再响应，菜单里的功能照常可用</small>
+              <small>关闭后本页快捷键全部不再响应，菜单里的功能照常可用</small>
             </span>
             <Switch
               label="启用快捷键"
@@ -44,6 +44,18 @@ export default function ShortcutSettings() {
                 }));
               }}
             />
+          </div>
+        </div>
+        <h2 className="page-heading">固定操作</h2>
+        <div className="card">
+          <div className="setting-row">
+            <span>
+              <strong>停止当前回答</strong>
+              <small>
+                500 毫秒内连按两次，仅停止焦点所在会话；菜单、输入法和终端中的 Esc 保持原用途。
+              </small>
+            </span>
+            <kbd>Esc · Esc</kbd>
           </div>
         </div>
         <h2 className="page-heading">组合键</h2>
