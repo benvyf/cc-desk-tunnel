@@ -2,7 +2,8 @@ import { pathKey } from './paths.ts';
 
 export type PreviewTab = {
   id: string;
-  kind: 'file' | 'web';
+  kind: 'file' | 'web' | 'chat';
+  title?: string;
   target: string;
   root?: string;
   restricted?: boolean;
@@ -192,6 +193,17 @@ export function restoreLayout(serialized: string | null): {
           });
         if (t.kind === 'web' && text(t.target) && previewWebsite(t.target))
           tabs.push({ id: t.id, kind: 'web', target: previewWebsite(t.target)! });
+        if (
+          t.kind === 'chat' &&
+          text(t.target) &&
+          /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(t.target)
+        )
+          tabs.push({
+            id: t.id,
+            kind: 'chat',
+            target: t.target,
+            title: text(t.title) ? t.title.slice(0, 120) : '侧边对话',
+          });
       }
       const assigned = new Set<string>(),
         panes: PreviewPane[] = [];

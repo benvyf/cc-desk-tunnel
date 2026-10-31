@@ -4,6 +4,8 @@ import type { Command } from '@cc-desk-tunnel/protocol';
 export const browserCommands = new Set<Command['type']>([
   'server.session.create',
   'session.subscribe',
+  'session.unsubscribe',
+  'session.side.create',
   'session.history',
   'session.status',
   'session.stats',
@@ -37,6 +39,7 @@ export const browserCommands = new Set<Command['type']>([
 
 // What a browser changes is its user's doing; reading is told apart by the page with \web.activity\.
 export const browserActivity = new Set<Command['type']>([
+  'session.side.create',
   'terminal.history.continue',
   'terminal.session.create',
   'server.session.create',

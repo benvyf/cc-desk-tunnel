@@ -79,6 +79,7 @@ export function usePreviewWorkspace(
   const board = session ? (boards[session] ?? emptyBoard()) : emptyBoard();
   const release = useCallback(
     (tab: PreviewTab) => {
+      if (tab.kind === 'chat') return;
       void window.desktop?.preview?.release({ surface, key: tab.id }).catch(() => {});
     },
     [surface],
@@ -168,8 +169,14 @@ export function usePreviewWorkspace(
       return next;
     });
   };
-  function open(kind: PreviewTab['kind'], target: string, root?: string, restricted?: boolean) {
-    change((b) => openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted }));
+  function open(
+    kind: PreviewTab['kind'],
+    target: string,
+    root?: string,
+    restricted?: boolean,
+    title?: string,
+  ) {
+    change((b) => openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted, title }));
   }
   const active = board.panes.find((p) => p.id === board.focused)?.active ?? '';
   return {
@@ -183,6 +190,7 @@ export function usePreviewWorkspace(
       setState((s) => ({ ...s, width: typeof value === 'function' ? value(s.width) : value })),
     openFile: (path: string, root?: string, restricted?: boolean) =>
       open('file', path, root, restricted),
+    openChat: (id: string, title = '侧边对话') => open('chat', id, undefined, undefined, title),
     openWebsite: (url: string) => {
       const target = previewWebsite(url);
       if (target) open('web', target);

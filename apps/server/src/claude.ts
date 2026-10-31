@@ -1,6 +1,6 @@
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { query, getSessionInfo } from '@anthropic-ai/claude-agent-sdk';
+import { query, getSessionInfo, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
   DevicePlatform,
@@ -54,6 +54,8 @@ export type ClaudeRun = {
   input: NativeInput;
   dataDir: string;
   resume: boolean;
+  // A side conversation whose first input has not been received can retry an initialization that left no history.
+  sideContext?: string;
   signal: AbortSignal;
   emit: (event: EventPayload) => void;
   // Asks the user about a tool call. A question Claude asks comes back with the answers chosen.
@@ -137,14 +139,41 @@ export async function runClaude(
   if (process.platform === 'win32') throw new Error('Native adapter must run on Linux.');
   const mapper = new ClaudeStream(run.emit, run.permissionMode, run.effort);
   const cwd = prepareNativeDirectory(options, run.dataDir, run.nativeRoot);
-  if (run.resume && !(await getSessionInfo(run.sessionId, { dir: cwd }))) {
-    run.emit({
-      type: 'run.error',
-      code: 'native_context_missing',
-      message:
-        'Claude Code 原生上下文不存在；不会用界面记录伪造恢复或另开会话。请检查原生存储与备份。',
-    });
-    return 'failed';
+  let resume = run.resume;
+  if (resume && !(await getSessionInfo(run.sessionId, { dir: cwd }))) {
+    if (run.sideContext) resume = false;
+    else {
+      run.emit({
+        type: 'run.error',
+        code: 'native_context_missing',
+        message:
+          'Claude Code 原生上下文不存在；不会用界面记录伪造恢复或另开会话。请检查原生存储与备份。',
+      });
+      return 'failed';
+    }
+  }
+  let initialPrefix = run.sideContext ?? '';
+  if (resume && initialPrefix) {
+    // An input can be persisted before its receipt/output reaches us. Read the native transcript before
+    // retrying so its frozen background is neither duplicated nor omitted after initialization alone.
+    const history = await getSessionMessages(run.sessionId, { dir: cwd });
+    if (
+      history.some(({ type, message }) => {
+        if (type !== 'user' || !message || typeof message !== 'object') return false;
+        const content = (message as { content?: unknown }).content;
+        const text =
+          typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content
+                  .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+                  .map((block) => block.text)
+                  .join('')
+              : '';
+        return text.includes(initialPrefix);
+      })
+    )
+      initialPrefix = '';
   }
   const abortController = new AbortController();
   const stop = () => abortController.abort();
@@ -158,12 +187,12 @@ export async function runClaude(
   const tally = questionTally();
   // Output tokens of every model call so far, subagents included, as the CLI's running total counts them; a turn's
   // share is the step from one result to the next. A resumed session's total already holds earlier runs.
-  let outputSoFar: number | undefined = run.resume ? undefined : 0;
+  let outputSoFar: number | undefined = resume ? undefined : 0;
   let settle: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
   try {
     session = query({
-      prompt: run.input.stream(),
+      prompt: run.input.stream(initialPrefix),
       options: {
         cwd,
         pathToClaudeCodeExecutable: options.executable,
@@ -181,7 +210,7 @@ export async function runClaude(
             : {}),
           snapshot: false,
         },
-        ...(run.resume ? { resume: run.sessionId } : { sessionId: run.sessionId }),
+        ...(resume ? { resume: run.sessionId } : { sessionId: run.sessionId }),
         model: run.model ?? options.model,
         effort: run.effort ?? undefined,
         // Newer models return no reasoning text unless a summary is asked for; headless runs ignore the

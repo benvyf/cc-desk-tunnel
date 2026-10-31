@@ -2,8 +2,9 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, IconButton } from './ui.tsx';
-import { FileText, Globe, X } from './icons.tsx';
+import { FileText, Globe, MessageSquare, X } from './icons.tsx';
 import PreviewContent from './PreviewContent.tsx';
+import { usePrefs } from './prefs.ts';
 import { fitFloat } from './previewLayout.ts';
 import type { PreviewPane, PreviewSurface, PreviewWorkspace, FloatRect } from './preview.ts';
 const name = (target: string) => target.split(/[\\/]/).pop() || target;
@@ -14,6 +15,8 @@ export default function PreviewPaneView({
   surface,
   empty,
   doc,
+  renderChat,
+  filesAvailable = true,
   register,
   focus,
 }: {
@@ -22,10 +25,13 @@ export default function PreviewPaneView({
   surface: PreviewSurface;
   empty: ReactNode;
   doc: Document;
+  renderChat?: (tab: import('./preview.ts').PreviewTab) => ReactNode;
+  filesAvailable?: boolean;
   register: (id: string, element: HTMLElement | null) => void;
   focus: (id: string) => void;
 }) {
   const viewport = doc.defaultView ?? window;
+  const { fontSizes } = usePrefs();
   const [size, setSize] = useState(() => ({
     width: viewport.innerWidth,
     height: viewport.innerHeight,
@@ -40,7 +46,14 @@ export default function PreviewPaneView({
     handle = useRef<{ x: number; y: number; rect: FloatRect; resize: boolean } | null>(null);
   const active = workspace.tabs.find((t) => t.id === pane.active);
   const tabs = pane.tabs.map((id) => workspace.tabs.find((t) => t.id === id)!).filter(Boolean);
-  const floating = pane.floating ? fitFloat(pane.floating, size.width, size.height) : undefined;
+  const minHeight = active?.kind === 'chat' ? 30 * fontSizes.interface : 180;
+  const floating = pane.floating
+    ? fitFloat(
+        { ...pane.floating, height: Math.max(minHeight, pane.floating.height) },
+        size.width,
+        size.height,
+      )
+    : undefined;
   useEffect(() => {
     const finish = () => {
       handle.current = null;
@@ -197,7 +210,7 @@ export default function PreviewPaneView({
                 aria-selected={tab.id === active?.id}
                 aria-controls={content}
                 tabIndex={tab.id === active?.id ? 0 : -1}
-                title={tab.target}
+                title={tab.kind === 'chat' ? (tab.title ?? '侧边会话') : tab.target}
                 onClick={() => workspace.select(tab.id)}
                 onKeyDown={(event) => {
                   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
@@ -217,13 +230,23 @@ export default function PreviewPaneView({
                     [next]?.focus();
                 }}
               >
-                {tab.kind === 'web' ? <Globe scale="xs" /> : <FileText scale="xs" />}
+                {tab.kind === 'web' ? (
+                  <Globe scale="xs" />
+                ) : tab.kind === 'chat' ? (
+                  <MessageSquare scale="xs" />
+                ) : (
+                  <FileText scale="xs" />
+                )}
                 <span>
-                  {tab.kind === 'web' ? tab.target.replace(/^https?:\/\//, '') : name(tab.target)}
+                  {tab.kind === 'web'
+                    ? tab.target.replace(/^https?:\/\//, '')
+                    : tab.kind === 'chat'
+                      ? (tab.title ?? '侧边对话')
+                      : name(tab.target)}
                 </span>
               </button>
               <IconButton
-                title={`关闭预览 ${tab.kind === 'web' ? tab.target.replace(/^https?:\/\//, '') : name(tab.target)}`}
+                title={`关闭预览 ${tab.kind === 'web' ? tab.target.replace(/^https?:\/\//, '') : tab.kind === 'chat' ? (tab.title ?? '侧边对话') : name(tab.target)}`}
                 size="xs"
                 onClick={() => {
                   workspace.close(tab.id);
@@ -240,10 +263,20 @@ export default function PreviewPaneView({
         className="preview-content"
         id={content}
         role="tabpanel"
-        aria-label={active ? name(active.target) : '预览内容'}
+        aria-label={
+          active
+            ? active.kind === 'chat'
+              ? (active.title ?? '侧边对话')
+              : name(active.target)
+            : '预览内容'
+        }
       >
         {active ? (
-          workspace.pending.has(active.id) ? (
+          active.kind === 'chat' ? (
+            (renderChat?.(active) ?? <p className="preview-empty">此窗口暂不支持侧边会话。</p>)
+          ) : !filesAvailable ? (
+            <p className="preview-empty">此文件预览需要项目所在设备。</p>
+          ) : workspace.pending.has(active.id) ? (
             <div className="preview-empty">
               <FileText />
               <p>已恢复标签。点击后加载此预览。</p>
@@ -284,7 +317,7 @@ export default function PreviewPaneView({
                   Math.min(size.width - drag.rect.x, drag.rect.width + e.clientX - drag.x),
                 ),
                 height: Math.max(
-                  180,
+                  minHeight,
                   Math.min(size.height - drag.rect.y, drag.rect.height + e.clientY - drag.y),
                 ),
               });
@@ -311,7 +344,7 @@ export default function PreviewPaneView({
                   ),
                 ),
                 height: Math.max(
-                  180,
+                  minHeight,
                   Math.min(
                     size.height - floating.y,
                     floating.height + (e.key === 'ArrowDown' ? 20 : e.key === 'ArrowUp' ? -20 : 0),

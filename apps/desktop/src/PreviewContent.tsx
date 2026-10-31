@@ -28,6 +28,8 @@ const parentOf = (path: string) =>
   path.slice(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')) + 1);
 const languageOf = (path: string) => /\.([a-z0-9]+)$/i.exec(path)?.[1].toLowerCase() ?? 'text';
 const PreviewPdf = lazy(() => import('./PreviewPdf.tsx'));
+const previewOverlays =
+  'dialog[open], .menu, .terminal-list, .sidebar-shade, .preview-full, .preview-pane-floating, .quote-selection-toolbar, [role="dialog"], [role="alertdialog"], [role="menu"]';
 
 function NativePreview({
   tab,
@@ -53,17 +55,17 @@ function NativePreview({
       frame = 0,
       disposed = false,
       previous = '';
+    let knownOverlays = new WeakSet<Element>();
     const update = () => {
       frame = 0;
       if (disposed) return;
       const rect = element.getBoundingClientRect();
+      const overlays = [...doc.querySelectorAll(previewOverlays)];
+      // Remember prior matches so removing an overlay's class in place also restores the view.
+      knownOverlays = new WeakSet(overlays);
       const covered =
         !!doc.querySelector('[data-preview-resizing], [data-sidebar-resizing]') ||
-        [
-          ...doc.querySelectorAll(
-            'dialog[open], .menu, .terminal-list, .sidebar-shade, .preview-full, .preview-pane-floating',
-          ),
-        ].some((overlay) => {
+        overlays.some((overlay) => {
           if (overlay.contains(element)) return false;
           const ownFloat = element.closest('.preview-pane-floating');
           if (ownFloat && overlay.matches('.preview-full')) return false;
@@ -106,7 +108,32 @@ function NativePreview({
     };
     const resize = new ResizeObserver(schedule);
     resize.observe(element);
-    const changes = new MutationObserver(schedule);
+    const changes = new MutationObserver((records) => {
+      // Streaming text and draft edits do not move this separate viewport. Its ResizeObserver and
+      // scroll listener cover geometry changes; keep inspecting actual overlays, including removals.
+      const changed = records.some((record) => {
+        const target =
+          record.target.nodeType === 1 ? (record.target as Element) : record.target.parentElement;
+        if (
+          !target?.closest('.conversation, .composer-input') ||
+          target.closest(previewOverlays) ||
+          knownOverlays.has(target)
+        )
+          return true;
+        if (
+          record.type === 'attributes' &&
+          (record.attributeName === 'role' || record.attributeName === 'open')
+        )
+          return true;
+        return [...record.addedNodes, ...record.removedNodes].some(
+          (node) =>
+            node.nodeType === 1 &&
+            ((node as Element).matches(previewOverlays) ||
+              !!(node as Element).querySelector(previewOverlays)),
+        );
+      });
+      if (changed) schedule();
+    });
     changes.observe(doc.body, { subtree: true, attributes: true, childList: true });
     win.addEventListener('resize', schedule);
     doc.addEventListener('scroll', schedule, true);

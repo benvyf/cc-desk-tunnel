@@ -6824,3 +6824,149 @@ dialog:has(.web-settings-form) {
 .preview-pdf-pages canvas[hidden] {
   display: none;
 }
+
+/* Explicit conversation references share the existing compact control tiers. */
+.answer-quote-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+.message-footer:has(.answer-quote-actions) {
+  flex-wrap: wrap;
+}
+.quote-references {
+  min-width: 0;
+  margin: 4px 0 8px;
+}
+.composer-input > .quote-references {
+  margin: 10px 16px 0;
+  flex-shrink: 0;
+}
+.quote-reference-header {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.quote-reference-chip {
+  gap: 6px;
+  border-color: var(--line-soft);
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.quote-reference-chip:hover {
+  color: var(--text);
+}
+.quote-reference-list {
+  max-height: 200px;
+  overflow: auto;
+  margin-top: 6px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  padding: 6px 10px;
+}
+.quote-reference-item + .quote-reference-item {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.quote-reference-item > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.quote-reference-item blockquote {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 4px 0;
+  border-left: 2px solid var(--clay);
+  padding: 0 10px;
+  color: var(--muted);
+  font-size: var(--font-caption);
+}
+.quote-selection-toolbar {
+  position: fixed;
+  z-index: 45;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: max-content;
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--raised);
+  box-shadow: var(--shadow-popover);
+}
+.quote-selection-toolbar .button {
+  white-space: normal;
+}
+.side-conversation {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: var(--surface);
+}
+.side-conversation-source {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  flex: none;
+}
+.side-conversation-source strong {
+  font-size: var(--font-caption);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.side-conversation-source span {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: var(--font-caption-small);
+  line-height: 1.5;
+}
+.side-conversation .conversation-tools {
+  padding: 4px 8px;
+  flex: none;
+}
+.side-conversation .conversation {
+  padding: 12px;
+}
+.side-conversation .conversation-frame {
+  min-height: 80px;
+}
+.side-conversation .empty-greeting {
+  padding-bottom: 0;
+  font-size: min(calc(28rem / 14), 10cqi);
+}
+.side-conversation .composer-area {
+  flex: none;
+  min-width: 0;
+  padding: 8px;
+}
+.side-conversation .composer {
+  width: 100%;
+  max-width: none;
+}
+.side-conversation .quote-reference-list {
+  max-height: 140px;
+}
+.follow-up-queue .quote-references {
+  flex: none;
+}
