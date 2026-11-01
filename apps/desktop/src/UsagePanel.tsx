@@ -159,6 +159,7 @@ export default function UsagePanel({
         ? { month: 'numeric', day: 'numeric' }
         : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' },
     );
+  const quotaWindows = summary?.windows.filter((window) => quotaName(window.name)) ?? [];
   const totals = page?.totals;
   const pages = Math.max(Math.ceil((totals?.requests ?? 0) / pageSize), 1);
   return (
@@ -173,21 +174,38 @@ export default function UsagePanel({
         </IconButton>
       </header>
       <div className="account-body usage-body">
+        {/* The time range in five steps, and the quota's current periods apart in a list (spec §5.3: a segmented
+            control holds at most five choices). Choosing in one leaves the other unset. */}
         <div className="usage-filters">
           <SegmentedControl
             label="时间范围"
             value={preset}
-            options={[
-              ...(summary?.windows
-                .filter((window) => quotaName(window.name))
-                .map((window) => [window.name, `本期${quotaName(window.name)}`] as const) ?? []),
-              ...presets,
-            ].map(([value, label]) => ({ value, label }))}
+            options={presets.map(([value, label]) => ({ value, label }))}
             onChange={(value) => {
               setPreset(value);
               setLoadedAt(Date.now());
             }}
           />
+          {quotaWindows.length > 0 && (
+            <select
+              aria-label="额度周期"
+              className={quotaWindows.some((window) => window.name === preset) ? 'chosen' : ''}
+              value={quotaWindows.some((window) => window.name === preset) ? preset : ''}
+              onChange={(event) => {
+                setPreset(event.target.value);
+                setLoadedAt(Date.now());
+              }}
+            >
+              <option value="" disabled>
+                额度周期
+              </option>
+              {quotaWindows.map((window) => (
+                <option key={window.name} value={window.name}>
+                  本期{quotaName(window.name)}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             aria-label="模型"
             value={model}

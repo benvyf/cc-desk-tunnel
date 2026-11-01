@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import type { ReactNode } from 'react';
-import { CalendarClock, Pencil, Play, Plus, Trash2 } from './icons.tsx';
+import { Pencil, Play, Plus, Trash2 } from './icons.tsx';
 import type { Effort, NativeCapabilities, Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { describeSchedule, parseTasks, stamp } from './schedules.ts';
@@ -83,6 +83,7 @@ function Editor({
   capabilities,
   save,
   cancel,
+  notes,
 }: {
   task: Task | null;
   sessions: Session[];
@@ -90,6 +91,8 @@ function Editor({
   capabilities: NativeCapabilities | null;
   save: (task: Task) => Promise<void>;
   cancel: () => void;
+  // What holds for every task, said once at the foot of the form.
+  notes: ReactNode;
 }) {
   const [form, setForm] = useState(() => formOf(task, sessions, projects));
   const [failure, setFailure] = useState<string | null>(null);
@@ -147,25 +150,29 @@ function Editor({
         </label>
         {form.kind === 'once' && (
           <label>
-            时间
+            日期
             <input
-              aria-label="运行时间"
-              type="datetime-local"
-              value={form.at}
-              onChange={(event) => change({ at: event.target.value })}
+              aria-label="运行日期"
+              type="date"
+              value={form.at.slice(0, 10)}
+              onChange={(event) =>
+                event.target.value &&
+                change({ at: `${event.target.value}T${form.at.slice(11, 16)}` })
+              }
             />
           </label>
         )}
-        {(form.kind === 'daily' || form.kind === 'weekly') && (
-          <label>
-            时间
-            <input
-              aria-label="运行时间"
-              type="time"
-              value={form.time}
-              onChange={(event) => change({ time: event.target.value })}
+        {form.kind !== 'interval' && (
+          <div className="schedule-time">
+            <span>时间</span>
+            <TimeField
+              label="运行时间"
+              value={form.kind === 'once' ? form.at.slice(11, 16) : form.time}
+              onChange={(time) =>
+                change(form.kind === 'once' ? { at: `${form.at.slice(0, 10)}T${time}` } : { time })
+              }
             />
-          </label>
+          </div>
         )}
         {form.kind === 'interval' && (
           <label>
@@ -181,23 +188,28 @@ function Editor({
         )}
       </div>
       {form.kind === 'weekly' && (
+        // The days as pills that are on or off, the chosen ones in ink (spec §5.3).
         <div className="schedule-days" role="group" aria-label="星期">
-          {weekdays.map((name, index) => (
-            <label key={name}>
-              <input
-                type="checkbox"
-                checked={form.days.includes(index + 1)}
-                onChange={(event) =>
+          {weekdays.map((name, index) => {
+            const on = form.days.includes(index + 1);
+            return (
+              <button
+                type="button"
+                key={name}
+                className="day-pill"
+                aria-pressed={on}
+                onClick={() =>
                   change({
-                    days: event.target.checked
-                      ? [...form.days, index + 1]
-                      : form.days.filter((day) => day !== index + 1),
+                    days: on
+                      ? form.days.filter((day) => day !== index + 1)
+                      : [...form.days, index + 1].sort((a, b) => a - b),
                   })
                 }
-              />
-              周{name}
-            </label>
-          ))}
+              >
+                周{name}
+              </button>
+            );
+          })}
         </div>
       )}
       <div className="schedule-fields">
@@ -305,7 +317,53 @@ function Editor({
           保存任务
         </button>
       </div>
+      {notes}
     </form>
+  );
+}
+
+// Hours and minutes, always as 24-hour HH:mm (spec §5.3): two short lists rather than the system's time field,
+// which writes "上午 / 下午" or AM / PM by the computer's settings. Minutes go by five; a time saved with another
+// minute keeps it in the list.
+const hours = Array.from({ length: 24 }, (_, hour) => String(hour).padStart(2, '0'));
+const fives = Array.from({ length: 12 }, (_, step) => String(step * 5).padStart(2, '0'));
+function TimeField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (time: string) => void;
+}) {
+  const [hour, minute] = /^\d{2}:\d{2}$/.test(value) ? value.split(':') : ['09', '00'];
+  const minutes = fives.includes(minute) ? fives : [...fives, minute].sort();
+  return (
+    <span className="time-field" role="group" aria-label={label}>
+      <select
+        aria-label="时"
+        value={hour}
+        onChange={(event) => onChange(`${event.target.value}:${minute}`)}
+      >
+        {hours.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+      <span aria-hidden="true">:</span>
+      <select
+        aria-label="分"
+        value={minute}
+        onChange={(event) => onChange(`${hour}:${event.target.value}`)}
+      >
+        {minutes.map((item) => (
+          <option key={item} value={item}>
+            {item}
+          </option>
+        ))}
+      </select>
+    </span>
   );
 }
 
@@ -335,6 +393,33 @@ export default function SchedulePanel({
   const { tasks } = schedules;
   const store = (next: Task[]) =>
     schedules.save(next).catch((error: Error) => setFailure(error.message));
+  const notes = (
+    <div className="schedule-notes">
+      <p>只在客户端运行并已连接时触发；晚于计划 10 分钟仍发不出的那一次会跳过。</p>
+      <p>无人值守时请让目标会话使用自动审批，否则会停在审批处。</p>
+      <p>
+        任务由程序自动发送。用订阅账号登录时，官方的额度按普通的个人使用设定，自动发送是否合适请对照
+        <button
+          type="button"
+          className="text-link"
+          onClick={() =>
+            window.desktop
+              ? void window.desktop.openExternal(usagePolicy)
+              : void window.open(usagePolicy)
+          }
+        >
+          官方的使用说明
+        </button>
+        自行判断。
+      </p>
+      {schedules.path && (
+        <p>
+          配置文件 <code>{schedules.path}</code>
+          ：可以直接编辑，也可以让 Claude 代为设置，几秒内生效。
+        </p>
+      )}
+    </div>
+  );
   const where = (task: Task) => {
     if (task.target.type === 'new') return `新会话 · ${folderName(task.target.projectPath)}`;
     const { sessionId } = task.target;
@@ -431,6 +516,7 @@ export default function SchedulePanel({
                   projects={projects}
                   capabilities={capabilities}
                   cancel={() => setEditing(undefined)}
+                  notes={notes}
                   save={async (task) => {
                     await schedules.save(
                       tasks.some((item) => item.id === task.id)
@@ -443,9 +529,10 @@ export default function SchedulePanel({
               </div>
             </div>
           ) : (
+            // With no task open: what the page is for, in one sentence, and the way to make one (spec §5.11, audit
+            // E5). What holds for every task is said under the form.
             <div className="page-body page-center">
               <div className="empty-state">
-                <CalendarClock />
                 <h2>安排任务</h2>
                 <p className="muted">
                   到点时由这台电脑上的客户端向会话发送一条带“定时任务”标签的消息，让 Claude Code
@@ -455,31 +542,6 @@ export default function SchedulePanel({
                   新建任务
                 </button>
               </div>
-              <ul className="page-notes muted">
-                <li>只在客户端运行并已连接时触发；晚于计划 10 分钟仍发不出的那一次会跳过。</li>
-                <li>无人值守时请让目标会话使用自动审批，否则会停在审批处。</li>
-                <li>
-                  任务由程序自动发送。用订阅账号登录时，官方的额度按普通的个人使用设定，自动发送是否合适请对照
-                  <button
-                    type="button"
-                    className="text-link"
-                    onClick={() =>
-                      window.desktop
-                        ? void window.desktop.openExternal(usagePolicy)
-                        : void window.open(usagePolicy)
-                    }
-                  >
-                    官方的使用说明
-                  </button>
-                  自行判断。
-                </li>
-                {schedules.path && (
-                  <li>
-                    配置文件 <code>{schedules.path}</code>
-                    ：可以直接编辑，也可以让 Claude 代为设置，几秒内生效。
-                  </li>
-                )}
-              </ul>
               {[...schedules.problems, ...(failure ? [failure] : [])].map((problem) => (
                 <p key={problem} className="error-text" role="alert">
                   {problem}

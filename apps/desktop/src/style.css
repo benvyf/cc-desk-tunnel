@@ -2340,15 +2340,6 @@ dialog:has(.release-notes) {
 .page-body > .button {
   margin-top: 18px;
 }
-.page-notes {
-  margin: 8px auto 0;
-  max-width: 520px;
-  padding-left: 18px;
-  line-height: 1.8;
-}
-.page-notes code {
-  overflow-wrap: anywhere;
-}
 .text-link {
   padding: 0;
   border: 0;
@@ -3310,7 +3301,6 @@ dialog:has(.picture-view) {
 }
 .message-content :is(p, li),
 .help-text p,
-.page-notes,
 .run-notice-text {
   text-wrap: pretty;
 }
@@ -3454,33 +3444,65 @@ dialog:has(.picture-view) {
   flex-wrap: wrap;
   gap: 6px;
 }
-.schedule-days label {
-  flex-direction: row;
-  align-items: center;
-  position: relative;
-  gap: 0;
-  padding: 0 12px;
+/* Weekdays are pills that are on or off (`aria-pressed`); the chosen ones are ink (spec §5.3). */
+.day-pill {
   height: 30px;
-  justify-content: center;
+  padding: 0 12px;
   border: 1px solid var(--line);
   border-radius: var(--radius-full);
+  background: transparent;
   color: var(--text-2);
-  font-weight: 400;
-  cursor: pointer;
+  font: inherit;
+  font-size: calc(13rem / 14);
+  transition:
+    background-color var(--cds-dur-snap) var(--cds-ease-out),
+    border-color var(--cds-dur-snap) var(--cds-ease-out);
 }
-.schedule-days input {
-  width: auto;
+.day-pill:hover {
+  border-color: var(--line-strong);
+  background: var(--hover);
 }
-/* Weekdays are toggle chips; the checkbox stays for keyboard and assistive technology. */
-.schedule-days label input {
-  position: absolute;
-  opacity: 0;
-  pointer-events: none;
-}
-.schedule-days label:has(input:checked) {
-  background: var(--ink);
+.day-pill[aria-pressed='true'] {
   border-color: var(--ink);
+  background: var(--ink);
   color: var(--ink-text);
+}
+.day-pill[aria-pressed='true']:hover {
+  background: var(--ink-hover);
+}
+/* A time is chosen as hours and minutes, 24-hour (SchedulePanel.tsx). */
+.schedule-time {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: calc(13rem / 14);
+  color: var(--muted);
+}
+.time-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-2);
+}
+.schedule-form .time-field select {
+  width: 72px;
+  padding: 0 26px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* What holds for every task, under the form, in small print. */
+.schedule-notes {
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: calc(12.5rem / 14);
+  line-height: 1.7;
+}
+.schedule-notes p {
+  margin: 0 0 4px;
+  text-wrap: pretty;
+}
+.schedule-notes code {
+  overflow-wrap: anywhere;
 }
 .schedule-warning {
   margin: 0;
@@ -5462,9 +5484,17 @@ details[open] > summary > .fold-chevron {
 .usage-filters select {
   padding: 0 30px 0 12px;
 }
+/* Five ranges fit the control whole; the quota's periods are a list beside it, quiet until one is chosen. */
 .usage-filters .segmented {
-  -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
-  mask-image: linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.usage-filters select[aria-label='额度周期']:not(.chosen) {
+  color: var(--muted);
+}
+.usage-filters select.chosen {
+  border-color: var(--line-strong);
+  background-color: var(--selected);
 }
 .usage-custom {
   display: flex;
