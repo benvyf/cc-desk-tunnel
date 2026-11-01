@@ -23,6 +23,7 @@ const selected = {
   ChevronDown: 'CaretDown',
   ChevronLeft: 'CaretLeft',
   ChevronRight: 'CaretRight',
+  ChevronsUpDown: 'CaretUpDown',
   CircleHelp: 'Question',
   Copy: 'Copy',
   Database: 'Database',

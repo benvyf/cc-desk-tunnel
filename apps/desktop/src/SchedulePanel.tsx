@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import { CalendarClock, Pencil, Play, Plus, Trash2 } from './icons.tsx';
 import type { Effort, NativeCapabilities, Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { describeSchedule, parseTasks, stamp } from './schedules.ts';
 import type { Schedule, Schedules, Task } from './schedules.ts';
+import SidebarShell from './SidebarShell.tsx';
 import { Button, IconButton } from './ui.tsx';
 
 // The editor's fields: every kind of rule and target keeps its own input, so switching kinds loses nothing.
@@ -314,12 +316,17 @@ export default function SchedulePanel({
   sessions,
   projects,
   capabilities,
+  back,
+  footer,
 }: {
   sideOpen?: boolean;
   schedules: Schedules;
   sessions: Session[];
   projects: string[];
   capabilities: NativeCapabilities | null;
+  // Back to the conversations, from the first row of the side column.
+  back?: () => void;
+  footer?: ReactNode;
 }) {
   // `null` is a new task; `undefined` shows the overview.
   const [editing, setEditing] = useState<Task | null | undefined>(undefined);
@@ -335,10 +342,12 @@ export default function SchedulePanel({
   };
   return (
     <>
-      <aside className="sidebar" inert={!sideOpen}>
-        <div className="sidebar-brand">
-          <span className="brand">定时任务</span>
-        </div>
+      <SidebarShell
+        open={sideOpen}
+        back={back}
+        header={<span className="brand">定时任务</span>}
+        footer={footer}
+      >
         <button type="button" className="side-action" onClick={() => setEditing(null)}>
           <Plus />
           新建任务
@@ -408,7 +417,7 @@ export default function SchedulePanel({
             );
           })}
         </nav>
-      </aside>
+      </SidebarShell>
       <main className="workspace">
         <section className="page" aria-label="定时任务">
           {editing !== undefined ? (

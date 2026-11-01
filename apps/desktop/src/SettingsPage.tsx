@@ -7,7 +7,6 @@ import {
   CircleHelp,
   Info,
   Keyboard,
-  Search,
   Settings2,
   SlidersHorizontal,
   UserRound,
@@ -25,6 +24,7 @@ import SettingsPanel from './SettingsPanel.tsx';
 import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
 import FontSizeSettings from './FontSizeSettings.tsx';
 import Brand from './Brand.tsx';
+import SidebarShell, { SearchField } from './SidebarShell.tsx';
 import type { NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
@@ -866,11 +866,16 @@ export default function SettingsPage({
   version,
   service,
   back,
+  backToChat,
+  footer,
   browser = false,
 }: {
   sideOpen?: boolean;
   // Given before a connection exists: only this computer's own settings are shown, and this leaves them.
   back?: () => void;
+  // Once connected: back to the conversations, from the first row of the side column.
+  backToChat?: () => void;
+  footer?: ReactNode;
   browser?: boolean;
   client: ProxyClient;
   capabilities?: NativeCapabilities | null;
@@ -896,24 +901,29 @@ export default function SettingsPage({
   );
   return (
     <>
-      <aside className="sidebar" inert={!sideOpen}>
-        <div className="sidebar-brand">
-          {back && (
-            <IconButton title="返回登录" onClick={back}>
-              <ArrowLeft />
-            </IconButton>
-          )}
-          <span className="brand">{back ? '本机设置' : '设置'}</span>
-        </div>
-        <label className="session-search">
-          <Search />
-          <input
-            aria-label="搜索设置"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索"
-          />
-        </label>
+      <SidebarShell
+        open={sideOpen}
+        // Before signing in the column stands alone on the page, outside the window's shell.
+        resizable={!back}
+        back={backToChat}
+        header={
+          <>
+            {back && (
+              <IconButton title="返回登录" onClick={back}>
+                <ArrowLeft />
+              </IconButton>
+            )}
+            <span className="brand">{back ? '本机设置' : '设置'}</span>
+          </>
+        }
+        footer={footer}
+      >
+        <SearchField
+          label="搜索设置"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="搜索"
+        />
         <nav className="session-list" aria-label="设置分类">
           {shown.map((item, index) => (
             <div key={item.id}>
@@ -933,7 +943,7 @@ export default function SettingsPage({
           ))}
           {shown.length === 0 && <p className="list-empty">没有匹配的设置</p>}
         </nav>
-      </aside>
+      </SidebarShell>
       <main className="workspace settings-workspace">
         {section === 'account' ? (
           account

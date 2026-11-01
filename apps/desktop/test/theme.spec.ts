@@ -177,7 +177,7 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
     expect(palette[2]).not.toBe(palette[0]);
     for (const button of [
       page.getByRole('button', { name: '收起侧栏', exact: true }),
-      page.getByRole('button', { name: '会话', exact: true }),
+      page.getByRole('button', { name: '返回会话', exact: true }),
     ]) {
       await button.hover();
       expect
@@ -186,7 +186,8 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
     }
     await expect.soft(page.locator('.sidebar')).toHaveCSS('border-top-left-radius', '0px');
     await expect.soft(page.locator('.workspace')).toHaveCSS('border-top-left-radius', '12px');
-    for (const destination of ['会话', '定时任务']) {
+    // Back to the conversations from the settings' column, then on to the schedules from theirs.
+    for (const destination of ['返回会话', '定时任务']) {
       await page.getByRole('button', { name: destination, exact: true }).click();
       expect(await colors()).toEqual(palette);
       await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
@@ -197,9 +198,11 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
     await page.setViewportSize({ width: 390, height: 600 });
     await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
     await expect(page.locator('.sidebar')).toBeVisible();
-    await expect.poll(async () => (await page.locator('.sidebar').boundingBox())?.x).toBe(44);
+    // Open on a narrow window, the column is laid over the page from the edge, over the rail.
+    await expect.poll(async () => (await page.locator('.sidebar').boundingBox())?.x).toBe(0);
+    await expect(page.locator('.rail')).toBeHidden();
     const panel = (await page.locator('.sidebar').boundingBox())!;
-    expect(panel.x).toBe(44);
+    expect(panel.x).toBe(0);
     expect(panel.y).toBe(40);
     expect(panel.x + panel.width).toBeLessThanOrEqual(390);
     await page.screenshot({ path: resolve(screenshots, `theme-drawer-${name}.png`) });

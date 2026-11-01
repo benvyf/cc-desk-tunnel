@@ -141,7 +141,7 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('button', { name: '设置与账号', exact: true })).toBeVisible();
 });
 
-test('a newer Build exposes the rail action, downloads, then installs after disconnect', async ({
+test('a newer Build exposes the update action, downloads, then installs after disconnect', async ({
   page,
 }, testInfo) => {
   const update = page.getByRole('button', { name: '更新', exact: true });
@@ -150,11 +150,25 @@ test('a newer Build exposes the rail action, downloads, then installs after disc
   await expect(update).toHaveCount(0);
   await page.evaluate(() => window.updateFixture.offer());
   await expect(update).toHaveAttribute('aria-haspopup', 'dialog');
-  const updateBox = await update.boundingBox();
-  const settingsBox = await page
-    .getByRole('button', { name: '设置与账号', exact: true })
-    .boundingBox();
-  expect(updateBox!.y + updateBox!.height).toBeLessThanOrEqual(settingsBox!.y);
+  // Open, the column puts the update beside the account at its foot; folded, the rail puts it above.
+  const account = page.getByRole('button', { name: '设置与账号', exact: true });
+  const updateBox = (await update.boundingBox())!;
+  const accountBox = (await account.boundingBox())!;
+  expect(updateBox.x).toBeGreaterThanOrEqual(accountBox.x + accountBox.width);
+  expect(updateBox.y).toBeGreaterThanOrEqual(accountBox.y);
+  expect(updateBox.y + updateBox.height).toBeLessThanOrEqual(accountBox.y + accountBox.height);
+  await expect(update).toHaveCSS('background-color', 'rgb(198, 97, 63)');
+  // Under the pointer the clay deepens, in either place.
+  await update.hover();
+  await expect(update).toHaveCSS('background-color', 'rgb(180, 85, 47)');
+  await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
+  await expect(page.locator('.sidebar')).toBeHidden();
+  const railUpdate = (await update.boundingBox())!;
+  expect(railUpdate.y + railUpdate.height).toBeLessThanOrEqual((await account.boundingBox())!.y);
+  await expect(update).toHaveCSS('background-color', 'rgb(198, 97, 63)');
+  await update.hover();
+  await expect(update).toHaveCSS('background-color', 'rgb(180, 85, 47)');
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
   await update.click();
   const dialog = page.getByRole('dialog', { name: '更新', exact: true });
   await expect(dialog).toContainText('目标版本：0.3.7 · Build 19');

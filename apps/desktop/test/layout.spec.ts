@@ -173,7 +173,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await done.click();
 
   // With the window out of sight, a run that waits for an answer and one that ends are both noted.
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page.evaluate(() => {
     document.hasFocus = () => false;
   });
@@ -602,7 +602,7 @@ test('approval modes are described where they are chosen, and models sit behind 
     .getByRole('button', { name: '常规', exact: true })
     .click();
   await page.getByRole('switch', { name: '允许绕过权限', exact: true }).click();
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await trigger.click();
   await expect(menu.getByRole('menuitemradio')).toHaveCount(5);
   await menu.getByRole('menuitemradio', { name: '绕过权限', exact: true }).click();

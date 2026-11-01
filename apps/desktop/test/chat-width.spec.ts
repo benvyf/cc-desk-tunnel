@@ -400,7 +400,7 @@ test('storage updates are observed even while Settings has unmounted the control
       }),
     );
   });
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect.poll(() => width(page)).toBe(1100);
 });
 

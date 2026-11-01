@@ -178,7 +178,7 @@ test('saved defaults survive reload, initialize new sessions before sending, and
     }
     await page.setViewportSize({ width: 1280, height: 900 });
   }
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect(page.getByRole('button', { name: '模型与推理强度', exact: true })).toContainText(
     'Sonnet',
   );
@@ -200,7 +200,7 @@ test('saved defaults survive reload, initialize new sessions before sending, and
   await page.getByRole('combobox', { name: '默认模型', exact: true }).selectOption('sonnet');
   await expect(page.getByRole('combobox', { name: '默认推理强度', exact: true })).toHaveValue('');
   await page.getByRole('combobox', { name: '默认推理强度', exact: true }).selectOption('high');
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page
     .getByRole('button', { name: `新建会话 · ${original.projectPath}`, exact: true })
     .click();

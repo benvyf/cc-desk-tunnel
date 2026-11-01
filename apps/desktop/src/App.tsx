@@ -70,6 +70,7 @@ import { sessionDefaultOptions } from './modelDefaults.ts';
 import { actions, comboOf, keyFor, show as comboText } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
 import Rail from './Rail.tsx';
+import { AccountArea } from './SidebarShell.tsx';
 import type { Page } from './Rail.tsx';
 import {
   AddProjectDialog,
@@ -217,6 +218,9 @@ export function App({
   const closeSide = useCallback(() => {
     if (narrow()) setSideOpen(false);
   }, []);
+  // Asked to open the conversations' search (the shortcut, the folded column); the side column says when it has.
+  const [searchAsked, setSearchAsked] = useState(false);
+  const searchDone = useCallback(() => setSearchAsked(false), []);
   // Crossing between the two layouts starts from each one's usual state.
   useEffect(() => {
     const query = matchMedia('(max-width: 700px)');
@@ -1486,12 +1490,16 @@ export function App({
           run: openServerUpgrade,
         }
       : undefined;
-  // The rail shows its button only for an update that exists, not for the standing offer to look for one.
+  // The update button shows only for an update that exists, not for the standing offer to look for one.
   const pendingUpdate = upgrade
     ? `客户端可升级到 ${upgrade}`
     : update && ['available', 'manual', 'installing', 'restarting'].includes(update.state)
       ? (serviceUpdate?.label ?? null)
       : null;
+  const updateLabel = host.serviceManagement ? (managedNotice ?? pendingUpdate) : null;
+  const openUpdate = (position: MenuPosition) =>
+    managedNotice ? setManagedUpdateOpen(true) : setMenu({ kind: 'update', ...position });
+  const openAccount = (position: MenuPosition) => setMenu({ kind: 'settings', ...position });
   // What a menu shows beside an item that has a shortcut.
   const hint = (action: Action) =>
     (prefs.shortcuts.enabled && comboText(keyFor(prefs, action))) || undefined;
@@ -1530,6 +1538,12 @@ export function App({
     },
   ];
   const toggleSide = () => setSideOpen((value) => !value);
+  // The search lives in the conversations' side column: go there, open the column, then the field.
+  const openSearch = () => {
+    if (place.page !== 'chat') open('chat');
+    setSideOpen(true);
+    setSearchAsked(true);
+  };
   const openTerminal = () => {
     if (terminalSessionId) {
       terminalWorkspace.current?.show(selected?.id);
@@ -1667,6 +1681,7 @@ export function App({
       forward: !terminalsActive && (() => step(1)),
       toggleSide,
       newSession: canCreate && (() => void newSession()),
+      search: openSearch,
       settings: () => open('settings'),
       find:
         !!selected &&
@@ -1879,6 +1894,24 @@ export function App({
                     label: menu.label,
                     items: barMenus.find((item) => item.label === menu.label)?.items ?? [],
                   };
+  // The account at the foot of every page's side column; it also tells whether the connection holds.
+  const accountArea = (
+    <AccountArea
+      name={accountName}
+      plan={
+        signedOut
+          ? undefined
+          : (state.account?.subscriptionType ?? capabilities?.account.subscriptionType)
+      }
+      connected={connected}
+      adapter={adapterName}
+      current={place.page === 'settings'}
+      openMenu={openAccount}
+      update={updateLabel}
+      updatePopup={managedNotice ? 'dialog' : 'menu'}
+      openUpdate={openUpdate}
+    />
+  );
   const sectionNames: Record<Section, string> = {
     account: '账号与额度',
     claude: 'Claude Code 设置',
@@ -1917,8 +1950,6 @@ export function App({
         terminalOpen={terminalsActive}
         terminalRefreshing={refreshing}
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
-        connected={connected}
-        adapterName={adapterName}
         togglePreview={sidebarAvailable && place.page === 'chat' ? preview.toggle : undefined}
         previewOpen={previewShown}
       />
@@ -1948,12 +1979,16 @@ export function App({
         page={place.page}
         go={(page) => open(page)}
         schedules={host.schedules}
-        update={host.serviceManagement ? (managedNotice ?? pendingUpdate) : null}
+        newSession={() => {
+          void newSession();
+        }}
+        canCreate={canCreate}
+        search={openSearch}
+        connected={connected}
+        update={updateLabel}
         updatePopup={managedNotice ? 'dialog' : 'menu'}
-        openUpdate={(position) =>
-          managedNotice ? setManagedUpdateOpen(true) : setMenu({ kind: 'update', ...position })
-        }
-        openSettings={(position) => setMenu({ kind: 'settings', ...position })}
+        openUpdate={openUpdate}
+        openAccount={openAccount}
       />
       <Presence kind="shade">
         {sideOpen && (
@@ -1983,6 +2018,8 @@ export function App({
           }}
           version={version}
           service={state.service}
+          backToChat={() => open('chat')}
+          footer={accountArea}
           account={
             <AccountPanel
               client={client}
@@ -2005,6 +2042,8 @@ export function App({
           sessions={sessions}
           projects={projects}
           capabilities={capabilities}
+          back={() => open('chat')}
+          footer={accountArea}
         />
       ) : (
         <>
@@ -2036,6 +2075,12 @@ export function App({
               setMenu({ kind: 'session', sessionId: session.id, ...position })
             }
             projectMenu={(path, position) => setMenu({ kind: 'project', path, ...position })}
+            schedules={host.schedules}
+            openSchedules={() => open('schedules')}
+            searchHint={hint('search')}
+            searchAsked={searchAsked}
+            searchDone={searchDone}
+            footer={accountArea}
           />
           <main className="workspace chat-workspace" ref={stopScope}>
             {currentError && (

@@ -1,8 +1,9 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Brand from './Brand.tsx';
-import SidebarResize from './SidebarResize.tsx';
+import SidebarShell, { SearchField } from './SidebarShell.tsx';
 import type { ReactNode } from 'react';
 import {
+  CalendarClock,
   ChevronDown,
   ChevronRight,
   Ellipsis,
@@ -13,7 +14,6 @@ import {
   Plus,
   Search,
   SquarePen,
-  X,
 } from './icons.tsx';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import type { ConnectedDevice } from './client.ts';
@@ -91,6 +91,12 @@ export default function Sidebar({
   createInProject,
   sessionMenu,
   projectMenu,
+  schedules = false,
+  openSchedules,
+  searchHint,
+  searchAsked = false,
+  searchDone,
+  footer,
 }: {
   sideOpen?: boolean;
   localProjects?: boolean;
@@ -115,12 +121,39 @@ export default function Sidebar({
   createInProject: (path: string) => void;
   sessionMenu: (session: Session, position: MenuPosition) => void;
   projectMenu: (path: string, position: MenuPosition) => void;
+  // The page of scheduled tasks, reached from a row under "new session" where there is one.
+  schedules?: boolean;
+  openSchedules?: () => void;
+  // The search's keyboard shortcut, shown on the row while it is under the pointer.
+  searchHint?: string;
+  // Asked from elsewhere (the shortcut, the folded column) to open the search; told back once it is open.
+  searchAsked?: boolean;
+  searchDone?: () => void;
+  footer?: ReactNode;
 }) {
   const prefs = usePrefs();
   const connectionName = useConnectionName();
   const { failed } = notifications;
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
+  const searchBox = useRef<HTMLInputElement>(null);
+  // The search row turns into the field in place, so nothing below it moves; putting it away clears it.
+  const closeSearch = () => {
+    setSearching(false);
+    setSearch('');
+  };
+  useEffect(() => {
+    if (!searchAsked) return;
+    setSearching(true);
+    searchDone?.();
+    // The column may be sliding in only now, and is not focusable until it shows: focus a frame later.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        searchBox.current?.focus();
+        searchBox.current?.select();
+      }),
+    );
+  }, [searchAsked, searchDone]);
   // The lists listed in full rather than their latest few, for this window only.
   const [listed, setListed] = useState<string[]>([]);
   const { pinned, plain, groups } = useMemo(() => {
@@ -347,39 +380,17 @@ export default function Sidebar({
     );
   }
   return (
-    <aside className="sidebar" inert={!sideOpen} ref={aside}>
-      <SidebarResize open={sideOpen} />
-      <div className="sidebar-brand">
-        <Brand connectionName={connectionName} />
-        <NoticeBell notifications={notifications} open={select} />
-        <IconButton
-          title={searching ? '关闭搜索' : '搜索'}
-          onClick={() => {
-            setSearching((value) => !value);
-            setSearch('');
-          }}
-        >
-          {searching ? <X /> : <Search />}
-        </IconButton>
-      </div>
-      {searching && (
-        <label className="session-search">
-          <Search />
-          <input
-            autoFocus
-            aria-label="搜索会话"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setSearching(false);
-                setSearch('');
-              }
-            }}
-            placeholder="搜索会话或项目"
-          />
-        </label>
-      )}
+    <SidebarShell
+      open={sideOpen}
+      asideRef={aside}
+      header={
+        <>
+          <Brand connectionName={connectionName} />
+          <NoticeBell notifications={notifications} open={select} />
+        </>
+      }
+      footer={footer}
+    >
       <button
         type="button"
         className="side-action new-session"
@@ -389,6 +400,37 @@ export default function Sidebar({
         <SquarePen />
         新建会话
       </button>
+      <div className="side-nav">
+        {searching ? (
+          <SearchField
+            label="搜索会话"
+            inputRef={searchBox}
+            autoFocus
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') closeSearch();
+            }}
+            onBlur={() => {
+              if (!search) closeSearch();
+            }}
+            placeholder="搜索会话或项目"
+            close={closeSearch}
+          />
+        ) : (
+          <button type="button" className="side-action nav-row" onClick={() => setSearching(true)}>
+            <Search />
+            <span>搜索</span>
+            {searchHint && <kbd aria-hidden="true">{searchHint}</kbd>}
+          </button>
+        )}
+        {schedules && (
+          <button type="button" className="side-action nav-row" onClick={openSchedules}>
+            <CalendarClock />
+            <span>定时任务</span>
+          </button>
+        )}
+      </div>
       <nav className="session-list" aria-label="会话列表">
         {pinned.length > 0 && <div className="list-heading">置顶</div>}
         {pinned.map(renderSession)}
@@ -558,6 +600,6 @@ export default function Sidebar({
           </small>
         </div>
       )}
-    </aside>
+    </SidebarShell>
   );
 }

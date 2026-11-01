@@ -209,10 +209,7 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
   await quota.click();
   await expect(page.getByRole('heading', { name: '账号与额度' }).first()).toBeVisible();
   await shot(page, '04-额度-点开账号页');
-  await page
-    .getByRole('navigation', { name: '页面' })
-    .getByRole('button', { name: '会话', exact: true })
-    .click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
 
   // A tool at work is word of the run, however long it writes nothing; its own row tells its time.
   await open(building);

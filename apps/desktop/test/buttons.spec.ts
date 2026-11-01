@@ -329,6 +329,7 @@ test('real settings, account and schedule actions preserve their contextual tier
   await log.click();
   await expect(page.getByRole('button', { name: '返回账号', exact: true })).toBeVisible();
   await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page.getByRole('button', { name: '定时任务', exact: true }).click();
   await page.getByRole('button', { name: '新建任务', exact: true }).first().click();
   const name = `按钮尺寸 ${Date.now()}`;

@@ -519,7 +519,7 @@ test('a scheduled task is edited, sent to its session when due, and can open a s
   await expect(row).toContainText('已发送');
   await expect(row).toContainText('不会再运行');
   await page.screenshot({ path: resolve(screenshots, 'schedule-list.png') });
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await settled(page);
   await expect(page.locator('.message.user .message-content')).toHaveText(
     new RegExp(`^\\[定时任务「${name}」· 计划时间 .+\\]\\s+检查项目状态$`),
@@ -536,7 +536,7 @@ test('a scheduled task is edited, sent to its session when due, and can open a s
   await page.getByRole('button', { name: `立即运行 ${name}`, exact: true }).click();
   await expect(row).toContainText('已发送');
   // The session being read keeps its place.
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect(
     page.locator('.session-select').filter({ has: page.getByText(name, { exact: true }) }),
   ).toHaveCount(1);

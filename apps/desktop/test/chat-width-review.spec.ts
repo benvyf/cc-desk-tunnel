@@ -92,7 +92,7 @@ test('real same-origin storage events synchronize both mounted and unmounted con
   await page.keyboard.press('Control+Comma');
   await expect(handle(page)).toHaveCount(0);
   await peer.evaluate(() => localStorage.setItem('cc-chat-content-width', '1100'));
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect.poll(() => width(page)).toBe(1100);
   await peer.close();
 });

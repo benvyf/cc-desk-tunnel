@@ -65,6 +65,7 @@ export const Check = icon(paths.CheckGlyph, 'Check');
 export const ChevronDown = icon(paths.ChevronDownGlyph, 'ChevronDown');
 export const ChevronLeft = icon(paths.ChevronLeftGlyph, 'ChevronLeft');
 export const ChevronRight = icon(paths.ChevronRightGlyph, 'ChevronRight');
+export const ChevronsUpDown = icon(paths.ChevronsUpDownGlyph, 'ChevronsUpDown');
 export const CircleHelp = icon(paths.CircleHelpGlyph, 'CircleHelp');
 export const Copy = icon(paths.CopyGlyph, 'Copy');
 export const Database = icon(paths.DatabaseGlyph, 'Database');

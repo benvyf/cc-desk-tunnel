@@ -1069,12 +1069,13 @@ button.chip.danger:hover:not(:disabled) {
   min-height: var(--control-lg);
   padding-block: 9px;
 }
-/* The window: a title bar across the top, then the rail of pages, the side column and the page itself. */
+/* The window: a title bar across the top, then the side column and the page itself. The side column has two
+   forms: open, it is the full column and the rail's track is empty; closed, it folds to the 52px rail. */
 .shell {
   --sidebar-max-width: max(264px, min(420px, calc(100vw - 452px)));
   --sidebar-size: clamp(264px, var(--sidebar-width, 284px), var(--sidebar-max-width));
   display: grid;
-  grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr);
+  grid-template-columns: 0 var(--sidebar-size) minmax(0, 1fr);
   grid-template-rows: var(--bar) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
@@ -1082,6 +1083,12 @@ button.chip.danger:hover:not(:disabled) {
 }
 .shell.side-closed {
   grid-template-columns: 52px 0 minmax(0, 1fr);
+}
+/* The rail is the closed column: while the column is open it is out of sight, of focus and of the
+   accessibility tree. */
+.shell:not(.side-closed) > .rail {
+  visibility: hidden;
+  overflow: hidden;
 }
 .shell > .sidebar {
   width: var(--sidebar-size);
@@ -1171,21 +1178,6 @@ html[data-platform='darwin'] .titlebar {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: calc(12rem / 14);
-  color: var(--muted);
-  white-space: nowrap;
-  padding: 2px 10px 2px 8px;
-  border-radius: var(--radius-full);
-  background: var(--hover);
-}
-.connection-status small {
-  color: var(--faint);
-  font-size: calc(11rem / 14);
 }
 .connection-dot,
 .running-dot {
@@ -1288,11 +1280,12 @@ dialog:has(.release-notes) {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 6px 0 12px;
+  padding: 8px 0 12px;
   min-height: 0;
   background: var(--frame);
 }
 .rail button {
+  position: relative;
   display: grid;
   place-items: center;
   width: var(--control-md);
@@ -1317,6 +1310,70 @@ dialog:has(.release-notes) {
 }
 .rail-space {
   flex: 1;
+}
+/* "New session" keeps its clay circle when the column is folded. */
+.rail .rail-new {
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--clay-emphasized);
+  color: #ffffff;
+  transition:
+    background-color var(--cds-dur-fast) var(--cds-ease-out),
+    scale var(--cds-dur-fast) var(--cds-ease-out);
+}
+.rail .rail-new:hover:not(:disabled) {
+  background: var(--send-hover);
+  color: #ffffff;
+  scale: 1.06;
+}
+/* Disabled (a native terminal has the window), it stays the same circle, only faded. */
+.rail .rail-new:disabled {
+  background: var(--clay-emphasized);
+  color: #ffffff;
+}
+.rail .rail-new svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+/* The account, folded to its mark; the dot tells whether the connection holds. */
+.rail .rail-avatar,
+.side-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.rail .rail-avatar:hover:not(:disabled) {
+  background: var(--ink-hover);
+}
+.rail .rail-avatar[aria-current='page'] {
+  background: var(--ink);
+  box-shadow:
+    0 0 0 2px var(--frame),
+    0 0 0 4px var(--line);
+}
+.account-mark {
+  width: auto;
+  height: 16px;
+  aspect-ratio: 116 / 237.21;
+}
+/* Ink is near-black in light and ivory in dark: the mark's dark stroke turns to ivory on it, and back. */
+.account-mark path:first-child {
+  fill: light-dark(#faf9f5, #b65d41);
+}
+.account-mark path:last-child {
+  fill: #d97757;
+}
+.rail-avatar > .connection-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 2px var(--frame);
 }
 .rail .rail-update,
 .login-update-button {
@@ -1374,8 +1431,38 @@ dialog:has(.release-notes) {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 12px 10px 6px 16px;
-  min-height: 52px;
+  padding: 10px 8px 4px 14px;
+  min-height: 48px;
+}
+/* Schedules and settings open with the way back to the conversations, above their heading. */
+.sidebar-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 20px);
+  margin: 10px 10px 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: calc(13rem / 14);
+  line-height: 20px;
+  text-align: left;
+}
+.sidebar-back:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sidebar-back svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.sidebar-back + .sidebar-brand {
+  min-height: 40px;
+  padding-top: 4px;
+  /* The page's name lines up with the arrow above it and the rows' icons below. */
+  padding-left: 20px;
 }
 .sidebar-brand .brand {
   flex: 1;
@@ -1440,10 +1527,63 @@ dialog:has(.release-notes) {
   background-color: var(--send-hover);
   scale: 1.06;
 }
+/* Search and the pages, as rows under "new session"; a hairline sets them apart from the list. */
+.side-nav {
+  display: flex;
+  flex-direction: column;
+}
+.side-nav::after {
+  content: '';
+  height: 1px;
+  margin: 4px 14px 2px;
+  background: var(--line-soft);
+}
+.side-action.nav-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.side-action.nav-row > svg.app-icon {
+  color: var(--text-2);
+}
+.nav-row kbd {
+  font: inherit;
+  font-size: calc(11.5rem / 14);
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
+}
+.nav-row:is(:hover, :focus-visible) kbd {
+  opacity: 1;
+}
 .session-search {
   position: relative;
   display: block;
   margin: 2px 10px 8px;
+}
+/* In place of the search row: the same height, margins and icon and text positions, so nothing moves. */
+.side-nav > .session-search {
+  margin: 0 10px 2px;
+}
+.side-nav > .session-search > svg.app-icon {
+  left: 10px;
+}
+.side-nav > .session-search input {
+  padding-left: 36px;
+}
+.session-search.closable input {
+  padding-right: 34px;
+}
+.session-search > .session-search-close {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  translate: 0 -50%;
+  color: var(--faint);
+}
+.session-search > .session-search-close:hover {
+  color: var(--text);
 }
 .session-search > svg.app-icon {
   position: absolute;
@@ -1455,6 +1595,7 @@ dialog:has(.release-notes) {
   transform: translateY(-50%);
 }
 .session-search input {
+  width: 100%;
   height: 34px;
   padding: 6px 12px 6px 34px;
   font-size: calc(13rem / 14);
@@ -1467,6 +1608,90 @@ dialog:has(.release-notes) {
   min-height: 0;
   overflow-y: auto;
   padding: 0 10px 20px;
+}
+/* The account at the foot of the column: the mark, who is signed in, the plan and whether the connection holds. */
+.sidebar-account {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.side-account-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  transition: background-color var(--cds-dur-snap) var(--cds-ease-out);
+}
+.side-account-button:hover,
+.side-account-button[aria-current='page'] {
+  background: var(--hover);
+}
+.side-account-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.side-account-who strong {
+  overflow: hidden;
+  font-size: calc(13.5rem / 14);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-status > .connection-dot {
+  width: 6px;
+  height: 6px;
+}
+.side-account-chevron {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
+}
+.side-account-update {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--clay-emphasized);
+  color: #ffffff;
+  transition: background-color var(--cds-dur-fast) var(--cds-ease-out);
+}
+.side-account-update:hover {
+  background: var(--send-hover);
+}
+.side-account-update svg.app-icon {
+  width: 14px;
+  height: 14px;
 }
 .session-list .side-action {
   width: 100%;
@@ -5648,9 +5873,10 @@ dialog::backdrop {
   .shell.side-closed {
     grid-template-columns: 44px 0 minmax(0, 1fr);
   }
+  /* Open, the column is laid over the page from the window's edge, over the rail it unfolds from. */
   .shell > .sidebar {
     position: fixed;
-    left: 44px;
+    left: 0;
     top: var(--bar);
     bottom: 0;
     width: min(284px, calc(100vw - 60px));
@@ -5666,7 +5892,7 @@ dialog::backdrop {
   .sidebar-shade {
     display: block;
     position: fixed;
-    inset: var(--bar) 0 0 44px;
+    inset: var(--bar) 0 0 0;
     z-index: 11;
     border: 0;
     background: var(--backdrop);
@@ -5674,8 +5900,7 @@ dialog::backdrop {
   .workspace {
     border-radius: var(--radius-xl) 0 0 0;
   }
-  .titlebar-menus button[aria-haspopup],
-  .connection-status small {
+  .titlebar-menus button[aria-haspopup] {
     display: none;
   }
   .titlebar h1 {

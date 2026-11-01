@@ -7,6 +7,8 @@ test('page and settings navigation use bold selected glyphs and restore regular 
 }) => {
   await page.goto('/');
   await login(page);
+  // The pages are on the rail, which is the side column folded.
+  await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
   const rail = page.getByRole('navigation', { name: '页面', exact: true });
   const chat = rail.getByRole('button', { name: '会话', exact: true });
   const schedules = rail.getByRole('button', { name: '定时任务', exact: true });
@@ -23,6 +25,7 @@ test('page and settings navigation use bold selected glyphs and restore regular 
   await expect(schedules.locator('svg')).toHaveAttribute('data-weight', 'regular');
   await rail.getByRole('button', { name: '设置与账号', exact: true }).click();
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
   const categories = page.getByRole('navigation', { name: '设置分类', exact: true });
   const general = categories.getByRole('button', { name: '常规', exact: true });
   const shortcuts = categories.getByRole('button', { name: '快捷键', exact: true });
