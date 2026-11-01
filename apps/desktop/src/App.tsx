@@ -42,7 +42,8 @@ import { CertificateWarning } from './WebGate.tsx';
 import { hostCapabilities } from './host-capabilities.ts';
 import AccountPanel from './AccountPanel.tsx';
 import { ProxyClient, RequestInterruptedError } from './client.ts';
-import Composer from './Composer.tsx';
+import Composer, { NewSessionComposer } from './Composer.tsx';
+import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
 import SideConversation from './SideConversation.tsx';
 import { latest } from './nativeState.ts';
@@ -367,6 +368,16 @@ export function App({
     [selected?.id, recorded, unfinished],
   );
   const history = selected ? state.history[selected.id] : undefined;
+  // A session nothing has been said in yet, and the home page with none open, show the new-session layout: the
+  // greeting and the input box together in the upper middle of the page (spec §4.2, §5.10).
+  const blank = useMemo(() => isBlank(events), [events]);
+  const fresh = selected
+    ? !selected.activeRun &&
+      history?.loaded === true &&
+      !history.loading &&
+      !history.hasEarlier &&
+      blank
+    : true;
   const nativeSession = latest(events, 'native.session');
   // Each turn's report is a reason to ask for the session's figures again.
   const turnReports = useMemo(
@@ -970,6 +981,7 @@ export function App({
   async function createSession(projectPath: string) {
     const response = await client.request({ type: 'session.create', title: '新会话', projectPath });
     if (response.sessionId) await initializeSession(response.sessionId);
+    return response.sessionId;
   }
   async function initializeSession(sessionId: string) {
     const options = sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models);
@@ -993,7 +1005,11 @@ export function App({
     show(sessionId);
   }
   async function createInProject(path: string) {
-    await act(() => createSession(path));
+    let created: string | undefined;
+    await act(async () => {
+      created = await createSession(path);
+    });
+    return created;
   }
   async function addProject() {
     if (!window.desktop?.chooseProject) {
@@ -1006,30 +1022,45 @@ export function App({
     });
   }
   // The desktop gives an ordinary session a local directory; the browser creates one on the server.
-  async function newSession() {
+  // Makes a session where a new one goes, and tells which, once it is made and open.
+  async function newSession(): Promise<string | undefined> {
+    let created: string | undefined;
     if (browser) {
       await act(async () => {
         const response = await client.request({ type: 'server.session.create', title: '新会话' });
         if (response.sessionId) await initializeSession(response.sessionId);
+        created = response.sessionId;
       });
-      return;
+      return created;
     }
     if (window.desktop) {
       await act(async () => {
         const directory = await window.desktop!.createWorkspace();
         try {
-          await createSession(directory);
+          created = await createSession(directory);
         } catch (error) {
           await window.desktop!.removeWorkspace(directory);
           throw error;
         }
       });
-      return;
+      return created;
     }
     const path =
       (away ? undefined : selected?.projectPath) ?? projects[0] ?? sessions[0]?.projectPath;
-    if (path) await createInProject(path);
-    else await addProject();
+    if (path) return createInProject(path);
+    await addProject();
+  }
+  // The home page is a new session not yet made (spec §5.11): its first message makes it, then goes to it. The
+  // words stay in the box until the session exists, so nothing written is lost if making it fails.
+  const [homeDraft, setHomeDraft] = useState('');
+  async function startSession(text: string) {
+    const sessionId = await newSession();
+    if (!sessionId) return;
+    setHomeDraft('');
+    setFocusDraftSession(sessionId);
+    await act(async () => {
+      await client.request({ type: 'message.send', sessionId, text, scenario });
+    });
   }
   // A due task is an ordinary message: to its session once that is idle, or to a session made for it. It is
   // never queued into a run, and waits while this window's native terminal is open.
@@ -2094,7 +2125,10 @@ export function App({
             searchDone={searchDone}
             footer={accountArea}
           />
-          <main className="workspace chat-workspace" ref={stopScope}>
+          <main
+            className={`workspace chat-workspace${fresh && !terminalsActive ? ' new-session' : ''}`}
+            ref={stopScope}
+          >
             {currentError && (
               <div className="error-banner" role="alert">
                 <span>{currentError}</span>
@@ -2175,9 +2209,7 @@ export function App({
               clock={clock}
               progress={selected ? state.progress[selected.id] : undefined}
               busy={busy}
-              newSession={() => {
-                void newSession();
-              }}
+              fresh={fresh}
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={
                 controlsDisabled || away
@@ -2358,7 +2390,17 @@ export function App({
                 stop={stopRun}
               />
             )}
-            {selected && (!away || (browser && remote)) && !terminalsActive && (
+            {!selected && !terminalsActive && (
+              <NewSessionComposer
+                draft={homeDraft}
+                setDraft={setHomeDraft}
+                disabled={!canCreate}
+                start={(text) => {
+                  void startSession(text);
+                }}
+              />
+            )}
+            {selected && !fresh && (!away || (browser && remote)) && !terminalsActive && (
               <SessionBar
                 client={client}
                 sessionId={selected.id}

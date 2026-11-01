@@ -57,6 +57,11 @@ export type TranscriptItem =
       exitCode?: number | null;
     };
 
+// A session nothing has been said in yet: no question, reply, step or notice to show. Such a session opens on the
+// new-session layout (spec §5.10–5.11). A session of many events has surely had something said.
+export const isBlank = (events: SessionEvent[]) =>
+  events.length < 200 && transcript(events).length === 0;
+
 export function transcript(events: SessionEvent[]): TranscriptItem[] {
   const items: TranscriptItem[] = [];
   const byId = new Map<string, TranscriptItem>();

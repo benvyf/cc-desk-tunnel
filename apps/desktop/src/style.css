@@ -3203,18 +3203,24 @@ dialog:has(.picture-view) {
   color: var(--text);
   overflow-wrap: anywhere;
 }
-/* A new session: the greeting and the composer sit together in the upper middle of the page, as in Claude. */
-.workspace:has(.transcript.is-empty) .conversation-frame {
+/* A new session, and the home page with none open (App.tsx gives the page `new-session`): the greeting and the
+   input box are one group in the upper middle of the page, as Claude's new chat. */
+.chat-workspace.new-session .conversation-frame {
   flex: 0 0 auto;
   margin-top: max(18vh, 96px);
 }
-.workspace:has(.transcript.is-empty) .conversation {
+.chat-workspace.new-session .conversation {
   overflow: visible;
   padding-bottom: 28px;
 }
-.workspace:has(.transcript.is-empty) .composer-area {
+.chat-workspace.new-session .composer-area {
   flex: 1;
   justify-content: flex-start;
+}
+.new-session-note {
+  padding-left: 4px;
+  color: var(--faint);
+  font-size: calc(12rem / 14);
 }
 .empty-project {
   color: var(--faint);

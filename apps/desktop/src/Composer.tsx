@@ -630,3 +630,72 @@ export default function Composer({
     </div>
   );
 }
+
+// The input box of the page with no session open, as Claude's new chat: the greeting above it, and what is
+// written here starts a session with it as the first message. Nothing is made on the service before that (spec
+// §5.11: the home page is the new session, not another empty state). The model, approval mode and attachments
+// are chosen in the session once it exists.
+export function NewSessionComposer({
+  draft,
+  setDraft,
+  disabled,
+  start,
+}: {
+  draft: string;
+  setDraft: (text: string) => void;
+  disabled: boolean;
+  start: (text: string) => void;
+}) {
+  const input = useRef<HTMLTextAreaElement>(null);
+  const interfaceFontSize = usePrefs().fontSizes.interface;
+  useLayoutEffect(() => fitDraft(input.current), [draft, interfaceFontSize]);
+  useEffect(() => {
+    if (!disabled) input.current?.focus();
+  }, [disabled]);
+  const submit = () => {
+    if (draft.trim() && !disabled) start(draft);
+  };
+  return (
+    <div className="composer-area new-session-composer">
+      <form
+        className="composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          submit();
+        }}
+      >
+        <div className="composer-input">
+          <textarea
+            ref={input}
+            aria-label="新会话的第一条消息"
+            placeholder="随心输入…"
+            value={draft}
+            disabled={disabled}
+            maxLength={messageLimit}
+            rows={2}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                event.preventDefault();
+                submit();
+              }
+            }}
+          />
+        </div>
+        <div className="composer-toolbar">
+          <span className="new-session-note">发送后新建会话</span>
+          <span className="toolbar-space" />
+          <button
+            type="submit"
+            className="icon-button send-button"
+            aria-label="新建会话并发送"
+            title="新建会话并发送"
+            disabled={!draft.trim() || disabled}
+          >
+            <ArrowUp />
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+}

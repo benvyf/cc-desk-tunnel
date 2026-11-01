@@ -21,9 +21,7 @@ import {
   Globe,
   Image as ImageIcon,
   LoaderCircle,
-  MessageSquare,
   Pencil,
-  Plus,
   Search,
   Spark,
   SquareTerminal,
@@ -553,6 +551,14 @@ function NoticeLine({ item, resume }: { item: Notice; resume?: () => void }) {
   return <RunNotice text={item.text} error={error} resume={resume} />;
 }
 
+// A new session greets with Claude's spark.
+const Greeting = () => (
+  <div className="empty-greeting">
+    <Spark className="empty-greeting-mark" />
+    <h2 lang="en">You’re here!</h2>
+  </div>
+);
+
 // How long a turn took, without the time it stood stopped before it was taken up again.
 const spent = (turn: Turn) => duration(turn.startedAt, Date.parse(turn.endedAt!) - turn.pausedMs);
 
@@ -689,7 +695,7 @@ export default function Conversation({
   clock,
   progress,
   busy,
-  newSession,
+  fresh,
   loadEarlier,
   replyApproval,
   stopTask,
@@ -720,7 +726,8 @@ export default function Conversation({
   native: boolean;
   ownsRun: boolean;
   busy: boolean;
-  newSession: () => void;
+  // Nothing has been said in the session yet (App.tsx): it greets, and the input box stands under the greeting.
+  fresh: boolean;
   loadEarlier: () => Promise<void>;
   findRequest: number;
   // Ends one background task of the run, or the run with all of them.
@@ -1027,14 +1034,7 @@ export default function Conversation({
     return () => observer.disconnect();
   }, [session?.id, findOpen]);
 
-  const showGreeting =
-    !!session &&
-    history?.loaded === true &&
-    turns.length === 0 &&
-    !history.loading &&
-    !history.hasEarlier &&
-    !loadError &&
-    !session.activeRun;
+  const showGreeting = fresh && !loadError;
   return (
     <QuoteActionsContext.Provider
       value={
@@ -1248,18 +1248,9 @@ export default function Conversation({
             }}
           >
             {!session ? (
-              <div className="empty-state">
-                <MessageSquare />
-                <h2>新会话</h2>
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={!connected}
-                  onClick={newSession}
-                >
-                  <Plus />
-                  新建会话
-                </button>
+              // The home page is the new session not yet made: the same greeting, over its input box (App.tsx).
+              <div className="transcript is-empty">
+                <Greeting />
               </div>
             ) : (
               <div className={`transcript${showGreeting ? ' is-empty' : ''}`} ref={transcriptRoot}>
@@ -1284,12 +1275,7 @@ export default function Conversation({
                     同步会话
                   </div>
                 )}
-                {showGreeting && (
-                  <div className="empty-greeting">
-                    <Spark className="empty-greeting-mark" />
-                    <h2 lang="en">You’re here!</h2>
-                  </div>
-                )}
+                {showGreeting && <Greeting />}
                 <LinkPlace.Provider value={place}>
                   {turns.map((turn, index) => (
                     <TurnView

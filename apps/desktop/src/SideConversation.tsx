@@ -12,6 +12,7 @@ import { quoteMessage } from './quotes.ts';
 import type { QuoteReference, SetQuotes } from './quotes.ts';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import { latest } from './nativeState.ts';
+import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
 
 export default function SideConversation({
@@ -59,6 +60,15 @@ export default function SideConversation({
     unfinished = state.live[sessionId];
   const events = useMemo(() => client.shown(sessionId), [client, sessionId, recorded, unfinished]);
   const history = state.history[sessionId];
+  // Nothing said in it yet: it greets (see App.tsx).
+  const blank = useMemo(() => isBlank(events), [events]);
+  const fresh =
+    !!session &&
+    !session.activeRun &&
+    history?.loaded === true &&
+    !history.loading &&
+    !history.hasEarlier &&
+    blank;
   useEffect(
     () => client.observeSession(sessionId),
     [client, sessionId, state.sideConversations, !!session],
@@ -206,7 +216,7 @@ export default function SideConversation({
         clock={clock}
         progress={state.progress[sessionId]}
         busy={busy}
-        newSession={() => {}}
+        fresh={fresh}
         loadEarlier={() => client.loadEarlier(sessionId)}
         findRequest={0}
         here={here}

@@ -271,7 +271,11 @@ test('login loads the directory only; project search and session rename do not f
   );
   await page.goto('/');
   await login(page);
-  await expect(page.getByRole('textbox', { name: '消息' })).toHaveCount(0);
+  // No session is opened: the home page's box only starts a new one.
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveCount(0);
+  await expect(
+    page.getByRole('textbox', { name: '新会话的第一条消息', exact: true }),
+  ).toBeVisible();
   expect(requests).toEqual([]);
   const title = await createSession(page, '会话索引');
   await search(page, title);
@@ -287,7 +291,7 @@ test('login loads the directory only; project search and session rename do not f
   await expect(page.locator('.session-row')).toHaveCount(0);
   await page.reload();
   await login(page);
-  await expect(page.getByRole('textbox', { name: '消息' })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveCount(0);
   await search(page, renamed);
   await page.locator('.session-select').click();
   await expect(page.locator('.session-row.selected strong')).toHaveText(renamed);
