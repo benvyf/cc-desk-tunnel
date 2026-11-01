@@ -525,11 +525,14 @@ test('a scheduled task is edited, sent to its session when due, and can open a s
     new RegExp(`^\\[定时任务「${name}」· 计划时间 .+\\]\\s+检查项目状态$`),
   );
   await openTasks();
+  // A task's actions appear when its row is under the pointer.
+  await row.hover();
   await page.getByRole('button', { name: `编辑 ${name}`, exact: true }).click();
   await page.getByLabel('发送到').selectOption('new');
   await page.getByLabel('项目目录').fill('D:\\工作\\中文项目');
   await page.getByRole('button', { name: '保存任务', exact: true }).click();
   await expect(row).toContainText('新会话 · 中文项目');
+  await row.hover();
   await page.getByRole('button', { name: `立即运行 ${name}`, exact: true }).click();
   await expect(row).toContainText('已发送');
   // The session being read keeps its place.
@@ -539,6 +542,7 @@ test('a scheduled task is edited, sent to its session when due, and can open a s
   ).toHaveCount(1);
   await expect(page.locator('.session-row.selected strong')).toHaveText(title);
   await openTasks();
+  await row.hover();
   await page.getByRole('button', { name: `删除 ${name}`, exact: true }).click();
   await page.getByRole('button', { name: '确认删除', exact: true }).click();
   await expect(row).toHaveCount(0);

@@ -46,7 +46,7 @@ for (const theme of ['light', 'dark'])
             await pane
               .locator('.code-block')
               .evaluate((el) => getComputedStyle(el).backgroundColor),
-          ).toBe('rgb(23, 23, 22)');
+          ).toBe('rgb(29, 28, 26)');
         }
         const geometry = await pane.evaluate((el) => {
           const pane = el.getBoundingClientRect();

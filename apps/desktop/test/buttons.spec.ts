@@ -125,15 +125,20 @@ for (const theme of ['light', 'dark']) {
           (Math.max(foreground, background) + 0.05) / (Math.min(foreground, background) + 0.05)
         );
       });
-    await expect(primary).toHaveCSS('color', 'rgb(255, 255, 255)');
-    await expect(primary.locator('svg')).toHaveCSS('color', 'rgb(255, 255, 255)');
+    // Primary actions are ink: ivory on near-black in light, near-black on ivory in dark.
+    const ink =
+      theme === 'light'
+        ? { text: 'rgb(250, 249, 245)', hover: 'rgb(61, 61, 58)' }
+        : { text: 'rgb(31, 30, 29)', hover: 'rgb(232, 230, 220)' };
+    await expect(primary).toHaveCSS('color', ink.text);
+    await expect(primary.locator('svg')).toHaveCSS('color', ink.text);
     expect(await ratio()).toBeGreaterThanOrEqual(4.5);
     const resting = await primary.evaluate((button) => getComputedStyle(button).backgroundColor);
     await primary.hover();
     await expect
       .poll(() => primary.evaluate((button) => getComputedStyle(button).backgroundColor))
       .not.toBe(resting);
-    await expect(primary).toHaveCSS('background-color', 'rgb(163, 68, 39)');
+    await expect(primary).toHaveCSS('background-color', ink.hover);
     expect(await ratio()).toBeGreaterThanOrEqual(4.5);
     const secondary = page.getByTestId('secondary-md');
     const ghost = page.getByTestId('ghost-md');
@@ -190,8 +195,8 @@ test('system theme, explicit theme and reduced motion apply to every button vari
   const secondary = page.getByTestId('secondary-md');
   const ghost = page.getByTestId('ghost-md');
   for (const [theme, text, muted] of [
-    ['light', 'rgb(32, 32, 30)', 'rgb(107, 104, 99)'],
-    ['dark', 'rgb(222, 220, 214)', 'rgb(164, 161, 155)'],
+    ['light', 'rgb(20, 20, 19)', 'rgb(107, 106, 100)'],
+    ['dark', 'rgb(250, 249, 245)', 'rgb(156, 154, 146)'],
   ] as const) {
     await page.emulateMedia({ colorScheme: theme });
     await page.evaluate(() => {
@@ -264,7 +269,7 @@ test('real login and dialog use large and default actions without changing submi
   await page.goto('/');
   const connect = page.getByRole('button', { name: '连接', exact: true });
   expect((await connect.boundingBox())!.height).toBe(44);
-  await expect(connect).toHaveCSS('color', 'rgb(255, 255, 255)');
+  await expect(connect).toHaveCSS('color', 'rgb(250, 249, 245)');
   for (const theme of ['light', 'dark']) {
     await page.evaluate((theme) => {
       document.documentElement.dataset.theme = theme;
@@ -334,6 +339,8 @@ test('real settings, account and schedule actions preserve their contextual tier
   await page.getByLabel('发送到').selectOption('new');
   await page.getByLabel('项目目录', { exact: true }).fill('D:\\工作\\按钮控件');
   await page.getByRole('button', { name: '保存任务', exact: true }).click();
+  // A task's actions appear when its row is under the pointer.
+  await page.locator('.schedule-row').filter({ hasText: name }).hover();
   await page.getByRole('button', { name: `删除 ${name}`, exact: true }).click();
   await page.setViewportSize({ width: 320, height: 844 });
   await page.getByRole('button', { name: '展开会话列表', exact: true }).click();

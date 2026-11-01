@@ -53,9 +53,12 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await shot(page, '01-会话');
 
   // A pinned session moves under its own heading; a project gets a local name and a pin of its own.
+  // A session row offers one action, "…"; pinning is in its menu.
   const row = page.locator('.session-row.selected');
   await row.hover();
-  await row.getByRole('button', { name: '置顶', exact: true }).click();
+  await expect(row.getByRole('button', { name: '置顶', exact: true })).toBeHidden();
+  await row.getByRole('button', { name: '会话操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '置顶', exact: true }).click();
   await expect(page.locator('.list-heading').first()).toHaveText('置顶');
   await page.getByRole('button', { name: `项目操作 · ${project}`, exact: true }).click();
   await shot(page, '02-项目菜单');

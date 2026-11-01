@@ -159,7 +159,8 @@ test('a newer Build exposes the rail action, downloads, then installs after disc
   const dialog = page.getByRole('dialog', { name: '更新', exact: true });
   await expect(dialog).toContainText('目标版本：0.3.7 · Build 19');
   await expect(dialog).toContainText('修复连接问题，保留定制功能。');
-  await expect(update).toHaveCSS('background-color', 'rgb(10, 132, 255)');
+  // An available update is a clay circle, the brand's call to act.
+  await expect(update).toHaveCSS('background-color', 'rgb(198, 97, 63)');
   await page.screenshot({ path: testInfo.outputPath('update-dialog.png') });
   await page.evaluate(() => {
     document.documentElement.dataset.theme = 'dark';

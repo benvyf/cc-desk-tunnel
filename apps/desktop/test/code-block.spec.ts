@@ -175,7 +175,8 @@ test('reference geometry, dark canvas and narrow scrolling work in both themes',
     await page.emulateMedia({ colorScheme });
     const code = page.locator('.code-block');
     await expect(code).toHaveCSS('border-radius', '12px');
-    await expect(code).toHaveCSS('background-color', 'rgb(23, 23, 22)');
+    // The dark canvas sits on Claude's warm charcoal in either theme.
+    await expect(code).toHaveCSS('background-color', 'rgb(29, 28, 26)');
     const header = (await page.locator('.code-header').boundingBox())!;
     const body = (await page.locator('pre').boundingBox())!;
     expect(header.y + header.height).toBeLessThanOrEqual(body.y + 1);

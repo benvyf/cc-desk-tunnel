@@ -214,7 +214,8 @@ test('greeting stays readable when its local font cannot load', async ({ page })
     const font = Array.from(document.fonts).find((font) => font.family.includes('CC Greeting'));
     return { family, display: font?.display };
   });
-  expect(style.family).toContain('Georgia');
+  // Without the greeting subset, the bundled Newsreader (the reply serif) still draws it.
+  expect(style.family).toContain('CC Serif');
   expect(style.display).toBe('swap');
   await page.setViewportSize({ width: 380, height: 560 });
   await page.screenshot({

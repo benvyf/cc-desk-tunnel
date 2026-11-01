@@ -33,14 +33,16 @@ for (const theme of ['light', 'dark']) {
     }, theme);
     const control = page.getByRole('group', { name: '导航', exact: true });
     await expect(control).toHaveCSS('height', '36px');
-    await expect(control).toHaveCSS('border-radius', '999px');
+    // A rounded track of translucent ink with a raised indicator nested 2px inside it.
+    await expect(control).toHaveCSS('border-radius', '8px');
     await expect(control).toHaveCSS(
       'background-color',
-      theme === 'light' ? 'rgb(233, 233, 233)' : 'rgb(37, 37, 37)',
+      theme === 'light' ? 'rgba(20, 20, 19, 0.06)' : 'rgba(0, 0, 0, 0.22)',
     );
+    await expect(control.locator('.segmented-indicator')).toHaveCSS('border-radius', '6px');
     await expect(control.locator('.segmented-indicator')).toHaveCSS(
       'background-color',
-      theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(68, 68, 68)',
+      theme === 'light' ? 'rgb(255, 255, 255)' : 'rgb(69, 68, 63)',
     );
     const bounds = (await control.boundingBox())!;
     const button = (await control

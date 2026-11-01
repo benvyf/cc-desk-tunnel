@@ -105,7 +105,7 @@ test('composer grows and shrinks without shifting on focus; bubbles stay open an
   await settled(page);
   await expect(page.locator('.message.user .message-content').last()).toHaveCSS(
     'border-radius',
-    '20px',
+    '16px',
   );
   await expect(page.locator('.message.assistant .message-content').last()).toHaveCSS(
     'background-color',
