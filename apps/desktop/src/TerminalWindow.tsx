@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import NativeTerminal, { type TerminalHandle, type TerminalPhase } from './NativeTerminal.tsx';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { SquareTerminal, X, Plus, ChevronDown } from './icons.tsx';
+import { SquareTerminal, X, Plus, ChevronDown, Pencil, ScrollText, Search } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { folderName } from './paths.ts';
 import { terminalTarget } from './terminalLinks.ts';
@@ -496,67 +496,81 @@ export default function TerminalWindow({
             }
           }}
         >
-          <input
-            autoFocus
-            aria-label="筛选终端"
-            placeholder="搜索别名、项目或节点"
-            value={filter}
-            aria-controls="terminal-results"
-            aria-activedescendant={
-              selectedMenuTab ? `terminal-result-${selectedMenuTab.tabId}` : undefined
-            }
-            onChange={(event) => {
-              setFilter(event.target.value);
-              setMenuIndex(0);
-            }}
-            onKeyDown={(event) => {
-              if (event.nativeEvent.isComposing) return;
-              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                event.preventDefault();
-                if (matchingTabs.length)
-                  setMenuIndex(
-                    (index) =>
-                      (Math.min(index, matchingTabs.length - 1) +
-                        (event.key === 'ArrowDown' ? 1 : matchingTabs.length - 1)) %
-                      matchingTabs.length,
-                  );
-              } else if (event.key === 'Enter' && selectedMenuTab) {
-                event.preventDefault();
-                finishMenu(selectedMenuTab.tabId);
+          {/* A menu of the open terminals (audit G2): the search sits at its top, each terminal is one row with
+              its state's dot, and what can be done follows under a rule. */}
+          <label className="terminal-list-search">
+            <Search />
+            <input
+              autoFocus
+              aria-label="筛选终端"
+              placeholder="搜索别名、项目或节点"
+              value={filter}
+              aria-controls="terminal-results"
+              aria-activedescendant={
+                selectedMenuTab ? `terminal-result-${selectedMenuTab.tabId}` : undefined
               }
-            }}
-          />
+              onChange={(event) => {
+                setFilter(event.target.value);
+                setMenuIndex(0);
+              }}
+              onKeyDown={(event) => {
+                if (event.nativeEvent.isComposing) return;
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                  event.preventDefault();
+                  if (matchingTabs.length)
+                    setMenuIndex(
+                      (index) =>
+                        (Math.min(index, matchingTabs.length - 1) +
+                          (event.key === 'ArrowDown' ? 1 : matchingTabs.length - 1)) %
+                        matchingTabs.length,
+                    );
+                } else if (event.key === 'Enter' && selectedMenuTab) {
+                  event.preventDefault();
+                  finishMenu(selectedMenuTab.tabId);
+                }
+              }}
+            />
+          </label>
           <div id="terminal-results" role="listbox" aria-label="匹配终端">
             {!matchingTabs.length && <p role="status">没有匹配的终端</p>}
             {matchingTabs.map((tab) => (
-              <Button
+              <button
+                type="button"
                 key={tab.tabId}
                 id={`terminal-result-${tab.tabId}`}
+                className="terminal-list-row"
                 role="option"
+                data-phase={tab.phase}
                 aria-selected={selectedMenuTab?.tabId === tab.tabId}
                 title={`${tab.alias || folderName(tab.source.projectPath)} · ${tab.source.projectPath} · ${nodeName} · ${tab.source.device?.name ?? ''}`}
-                size="sm"
                 onClick={() => finishMenu(tab.tabId)}
               >
-                {tab.alias || folderName(tab.source.projectPath)} · {tab.detail}
-                <small>
+                <span className="terminal-list-name">
+                  {tab.alias || folderName(tab.source.projectPath)}
+                  <small> · {tab.detail}</small>
+                </span>
+                <small className="terminal-list-path">
                   {tab.source.projectPath} · {nodeName} · {tab.source.device?.name}
                 </small>
-              </Button>
+              </button>
             ))}
           </div>
-          <Button
-            size="sm"
+          <hr />
+          <button
+            type="button"
+            className="terminal-list-action"
             disabled={!multi || !connected || closing}
             onClick={() => {
               setProject(true);
               setMenu(false);
             }}
           >
+            <Plus />
             选项目新建
-          </Button>
-          <Button
-            size="sm"
+          </button>
+          <button
+            type="button"
+            className="terminal-list-action"
             disabled={!active}
             onClick={() => {
               setAlias(active?.alias ?? '');
@@ -564,19 +578,22 @@ export default function TerminalWindow({
               setMenu(false);
             }}
           >
+            <Pencil />
             标签别名
-          </Button>
+          </button>
           {state.terminalHistory && (
-            <Button
-              size="sm"
+            <button
+              type="button"
+              className="terminal-list-action"
               disabled={!connected || closing || !active}
               onClick={() => {
                 setHistorySource(active.source);
                 setMenu(false);
               }}
             >
+              <ScrollText />
               继续官方历史
-            </Button>
+            </button>
           )}
         </div>
       )}

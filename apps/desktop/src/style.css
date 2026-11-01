@@ -7101,15 +7101,37 @@ dialog:has(.web-settings-form) {
   background: var(--popover);
   box-shadow: var(--shadow-popover);
 }
-.terminal-list button {
-  overflow-wrap: anywhere;
-  white-space: normal;
-  text-align: left;
-  justify-content: flex-start;
+/* The open terminals as a menu (audit G2): the search inside its top, one row per terminal with its state's
+   dot and where it runs under the name, then the actions under a rule, as menu rows. */
+.terminal-list-search {
+  position: relative;
+  display: block;
+  margin: 0 0 4px;
+}
+.terminal-list-search > svg.app-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
+  translate: 0 -50%;
+}
+.terminal-list-search > input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 32px;
   border: 0;
-  border-radius: var(--radius-md);
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
   background: transparent;
-  padding: 6px 10px;
+  font-size: calc(13rem / 14);
+  box-shadow: none;
+}
+.terminal-list-search > input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-bottom-color: var(--focus);
 }
 .terminal-list [role='listbox'] {
   display: flex;
@@ -7117,29 +7139,72 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   overflow: auto;
 }
-.terminal-list [role='option'] {
+.terminal-list [role='listbox'] > p {
+  margin: 6px 10px;
+  color: var(--faint);
+  font-size: calc(12.5rem / 14);
+}
+.terminal-list-row,
+.terminal-list-action {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  padding: 6px 10px;
+  color: var(--text);
+  font-size: calc(13.5rem / 14);
+  text-align: left;
 }
-.terminal-list [role='option'][aria-selected='true'] {
+.terminal-list-row {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+}
+.terminal-list-row::before {
+  content: '';
+  grid-row: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5e5d59;
+}
+.terminal-list-row[data-phase='running']::before {
+  background: var(--clay);
+}
+.terminal-list-row > span,
+.terminal-list-row > small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-list-row > small,
+.terminal-list-name > small {
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+.terminal-list-row[aria-selected='true'] {
   background: var(--selected);
 }
-.terminal-list [role='option']:hover,
-.terminal-list button:hover {
+.terminal-list-row:hover,
+.terminal-list-action:hover:not(:disabled) {
   background: var(--hover);
 }
-.terminal-list small {
-  color: var(--muted);
-  font-size: calc(11rem / 14);
+.terminal-list > hr {
+  width: calc(100% - 12px);
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
 }
-.terminal-list input {
-  margin-bottom: 4px;
-  background: #262624;
+.terminal-list-action > svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--muted);
 }
 .terminal-panels {
   display: flex;
@@ -7681,10 +7746,20 @@ dialog:has(.web-settings-form) {
   border: 0;
   color: var(--text-2);
 }
-.terminal-draft-body {
+/* The draft is a small input box (audit G3): one rounded card holding the text, and under it attachments on the
+   left and "paste into the terminal" on the right, the rest behind "…". */
+.terminal-draft-card {
   display: grid;
-  gap: 4px;
-  padding: 4px 0;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #262624;
+  transition: border-color var(--cds-dur-snap) var(--cds-ease-out);
+}
+.terminal-draft-card:focus-within {
+  border-color: var(--focus);
 }
 .terminal-draft textarea {
   min-height: 44px;
@@ -7694,18 +7769,72 @@ dialog:has(.web-settings-form) {
   max-height: 14vh;
   font-family: var(--font-mono);
   font-size: var(--code-font-size, 13px);
-  border: 1px solid var(--line);
-  border-radius: var(--radius-lg);
-  background: #262624;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   color: var(--text);
-  padding: 10px 12px;
+  padding: 6px 6px 2px;
   outline: none;
+  box-shadow: none;
+}
+.terminal-draft textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.terminal-draft-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-draft-toolbar .button.primary {
+  --button-height: 28px;
 }
 .terminal-draft p,
 .terminal-draft small {
   margin: 0;
   font-size: calc(11rem / 14);
   color: var(--muted);
+}
+.terminal-draft-message {
+  min-width: 0;
+}
+.terminal-draft-more {
+  position: relative;
+}
+.terminal-draft-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  display: grid;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+}
+.terminal-draft-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: calc(13rem / 14);
+  text-align: left;
+}
+.terminal-draft-menu > button:hover {
+  background: var(--hover);
+}
+.terminal-draft-menu > button.danger {
+  color: var(--danger-text);
+}
+.terminal-draft-menu svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 .terminal-history-list {
   display: grid;
@@ -7752,25 +7881,47 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   background: var(--surface);
 }
+/* A pane's one heading row (audit H1): its tabs, scrolling sideways when many, then its controls as icons, and
+   on the first docked pane the preview's own controls after a hairline. */
 .preview-pane-heading {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px 8px;
-  min-height: 32px;
+  padding: 0 6px 0 0;
+  min-height: 40px;
   border-bottom: 1px solid var(--line-soft);
   flex: none;
 }
-.preview-pane-heading > span {
+.preview-pane-heading > .preview-tabs {
   flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  border-bottom: 0;
+}
+.preview-pane-grip {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 12px;
   color: var(--muted);
   font-size: var(--font-caption);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.preview-pane.is-focused > .preview-pane-heading > span {
-  color: var(--text);
+.preview-pane-actions,
+.preview-pane-heading > .preview-heading-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.preview-pane-heading > .preview-heading-actions {
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line-soft);
+}
+.preview-pane:not(.is-focused) .preview-tab.active {
+  border-bottom-color: var(--line-strong);
 }
 .preview-pane[data-drop] {
   outline: 2px solid var(--clay);
@@ -7889,10 +8040,7 @@ dialog:has(.web-settings-form) {
     width: 130px;
   }
   .preview-pane-heading {
-    padding-inline: 4px;
-  }
-  .preview-pane-heading > span {
-    display: none;
+    padding-inline: 0 4px;
   }
 }
 

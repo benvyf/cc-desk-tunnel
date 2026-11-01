@@ -8,6 +8,7 @@ const doc = (page: Page) =>
     has: page.locator('.preview-code, .preview-markdown, .preview-loading, .preview-unavailable'),
   });
 const offset = (element: Locator) => element.evaluate((node) => node.scrollTop);
+// PDF offsets stay well inside the page at 125%, whatever height the preview's heading leaves the pages.
 async function at(element: Locator, top: number, left?: number) {
   await expect.poll(async () => Math.abs((await offset(element)) - top)).toBeLessThanOrEqual(2);
   if (left !== undefined)
@@ -305,7 +306,7 @@ test('user wheel input during delayed PDF refresh preempts the recreated PDF res
   await page.getByLabel('PDF 页码').fill('3');
   await button(page, '放大 PDF').click();
   await expect(pages).toHaveAttribute('aria-busy', 'false');
-  await scroll(pages, 350, 50);
+  await scroll(pages, 300, 50);
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -318,7 +319,7 @@ test('user wheel input during delayed PDF refresh preempts the recreated PDF res
         return saved.reading?.sessions.session?.[tab?.id]?.top ?? -1;
       }),
     )
-    .toBe(350);
+    .toBe(300);
   await change(page, '多页报告.pdf', { delayMs: 1000 });
   await expect(page.getByRole('status')).toContainText('正在读取文件');
   await doc(page).hover();
@@ -607,7 +608,7 @@ test('same PDF tab and pane ids across sessions retain independent page and zoom
   await page.getByLabel('PDF 页码').fill('3');
   await button(page, '放大 PDF').click();
   await expect(pages).toHaveAttribute('aria-busy', 'false');
-  await scroll(pages, 350, 50);
+  await scroll(pages, 300, 50);
   await cloneTabToOtherSession(page);
   await expect(pages).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
@@ -622,7 +623,7 @@ test('same PDF tab and pane ids across sessions retain independent page and zoom
   await expect(pages).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
   await expect(page.locator('.preview-pdf')).toContainText('125%');
-  await at(pages, 350, 50);
+  await at(pages, 300, 50);
 });
 
 test('failed PDF current-page rendering preserves page, zoom and offset until a valid refresh', async ({
@@ -635,7 +636,7 @@ test('failed PDF current-page rendering preserves page, zoom and offset until a 
   await page.getByLabel('PDF 页码').fill('3');
   await button(page, '放大 PDF').click();
   await expect(pages).toHaveAttribute('aria-busy', 'false');
-  await scroll(pages, 350, 50);
+  await scroll(pages, 300, 50);
   await change(page, '多页报告.pdf', { badPage: 3 });
   await expect(page.getByRole('alert')).toContainText('PDF 页面无法显示');
   const saved = await page.evaluate(() => {
@@ -645,12 +646,12 @@ test('failed PDF current-page rendering preserves page, zoom and offset until a 
     const tab = layout.boards.session.tabs.find((tab: any) => tab.target.endsWith('多页报告.pdf'));
     return layout.reading.sessions.session[tab.id];
   });
-  expect(saved).toMatchObject({ kind: 'pdf', page: 3, zoom: 1.25, top: 350, left: 50 });
+  expect(saved).toMatchObject({ kind: 'pdf', page: 3, zoom: 1.25, top: 300, left: 50 });
   await change(page, '多页报告.pdf', {});
   await expect(pages).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
   await expect(page.locator('.preview-pdf')).toContainText('125%');
-  await at(pages, 350, 50);
+  await at(pages, 300, 50);
   expect((await counts(page)).reads).toBe(3);
 });
 
@@ -667,7 +668,7 @@ test('multi-page PDF restores page three at 125 percent and scroll after float/d
   await button(page, '放大 PDF').click();
   await ready();
   await expect(page.locator('.preview-pdf canvas')).toHaveAttribute('aria-label', 'PDF 第 3 页');
-  await scroll(pages, 350, 50);
+  await scroll(pages, 300, 50);
   await button(page, '分栏预览').click();
   await expect(page.locator('.preview-pane')).toHaveCount(2);
   await ready();
@@ -682,18 +683,18 @@ test('multi-page PDF restores page three at 125 percent and scroll after float/d
   await expect(page.locator('.preview-pdf')).toContainText('125%');
   await button(page, '停靠预览').click();
   await ready();
-  await scroll(pages, 350, 50);
+  await scroll(pages, 300, 50);
   await restart(page);
   await ready();
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
   await expect(page.locator('.preview-pdf')).toContainText('125%');
-  await at(pages, 350, 50);
+  await at(pages, 300, 50);
   await change(page, '多页报告.pdf', { pages: 2, delayMs: 500 });
   await expect(page.getByRole('status')).toContainText('正在读取文件');
   await ready();
   await expect(page.getByLabel('PDF 页码')).toHaveValue('2');
   await expect(page.locator('.preview-pdf')).toContainText('125%');
-  await at(pages, 350, 50);
+  await at(pages, 300, 50);
   await button(page, '上一页').click();
   await ready();
   await at(pages, 0, 0);

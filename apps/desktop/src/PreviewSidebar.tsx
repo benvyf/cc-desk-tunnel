@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FileText, FolderOpen, Globe, Plus, X } from './icons.tsx';
+import { FileText, FolderOpen, Globe, Maximize2, Minimize2, Plus, X } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { previewWebsite } from './preview.ts';
 import type { PreviewSurface, PreviewWorkspace } from './preview.ts';
@@ -40,7 +40,7 @@ export default function PreviewSidebar({
     (
       tab ??
       resizeHandle.current?.parentElement?.querySelector<HTMLButtonElement>(
-        '.preview-heading button',
+        '.preview-heading-actions button',
       )
     )?.focus();
   };
@@ -101,6 +101,55 @@ export default function PreviewSidebar({
       setError(e instanceof Error ? e.message : '无法打开文件。');
     }
   };
+  // The preview's own controls. In the main window they end the first docked pane's tab row, so the heading is
+  // two rows, tabs and path (audit H1). The terminal window keeps a heading of its own: on Windows it is the strip
+  // under the system's window buttons. With every pane floating, the heading comes back to carry them.
+  const headerActions = (
+    <div className="preview-heading-actions">
+      {root && (
+        <IconButton
+          title="工作区目录"
+          size="sm"
+          aria-pressed={workspace.tree}
+          onClick={workspace.toggleTree}
+        >
+          <FileText />
+        </IconButton>
+      )}
+      <IconButton
+        title="打开本机文件"
+        size="sm"
+        disabled={!filesAvailable}
+        onClick={() => void pick()}
+      >
+        <FolderOpen />
+      </IconButton>
+      <IconButton
+        title="打开本机网站"
+        disabled={!filesAvailable}
+        size="sm"
+        onClick={() => {
+          setError('');
+          setWebsite(true);
+        }}
+      >
+        <Globe />
+      </IconButton>
+      <IconButton
+        title={full ? '还原预览' : '放大预览'}
+        size="sm"
+        aria-pressed={full}
+        onClick={() => setFull((value) => !value)}
+      >
+        {full ? <Minimize2 /> : <Maximize2 />}
+      </IconButton>
+      <IconButton title="收起预览" size="sm" onClick={collapse}>
+        <X />
+      </IconButton>
+    </div>
+  );
+  const docked = workspace.panes.find((pane) => !pane.floating);
+  const inRow = surface === 'main' && !!docked;
   return (
     <aside
       className={`preview-sidebar ${full ? 'preview-full' : ''}`}
@@ -156,51 +205,12 @@ export default function PreviewSidebar({
           }
         }}
       />
-      <header className="preview-heading">
-        <strong>预览</strong>
-        <div className="preview-heading-actions">
-          {root && (
-            <IconButton
-              title="工作区目录"
-              size="sm"
-              aria-pressed={workspace.tree}
-              onClick={workspace.toggleTree}
-            >
-              <FileText />
-            </IconButton>
-          )}
-          <IconButton
-            title="打开本机文件"
-            size="sm"
-            disabled={!filesAvailable}
-            onClick={() => void pick()}
-          >
-            <FolderOpen />
-          </IconButton>
-          <IconButton
-            title="打开本机网站"
-            disabled={!filesAvailable}
-            size="sm"
-            onClick={() => {
-              setError('');
-              setWebsite(true);
-            }}
-          >
-            <Globe />
-          </IconButton>
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label={full ? '还原预览' : '放大预览'}
-            onClick={() => setFull((value) => !value)}
-          >
-            {full ? '还原' : '放大'}
-          </Button>
-          <IconButton title="收起预览" size="sm" onClick={collapse}>
-            <X />
-          </IconButton>
-        </div>
-      </header>
+      {!inRow && (
+        <header className="preview-heading">
+          <strong>预览</strong>
+          {headerActions}
+        </header>
+      )}
       {error && !website && (
         <p role="alert" className="preview-error">
           {error}
@@ -225,6 +235,7 @@ export default function PreviewSidebar({
               filesAvailable={filesAvailable}
               register={registerPane}
               focus={focusPane}
+              actions={inRow && pane.id === docked!.id ? headerActions : undefined}
               workspace={workspace}
               surface={surface}
               empty={

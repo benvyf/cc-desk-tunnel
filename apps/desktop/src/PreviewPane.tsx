@@ -2,7 +2,16 @@ import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Button, IconButton } from './ui.tsx';
-import { FileText, Globe, MessageSquare, X } from './icons.tsx';
+import {
+  ArrowLeftRight,
+  Columns2,
+  FileText,
+  Globe,
+  MessageSquare,
+  PanelDock,
+  PictureInPicture,
+  X,
+} from './icons.tsx';
 import PreviewContent from './PreviewContent.tsx';
 import { usePrefs } from './prefs.ts';
 import { fitFloat } from './previewLayout.ts';
@@ -19,6 +28,7 @@ export default function PreviewPaneView({
   filesAvailable = true,
   register,
   focus,
+  actions,
 }: {
   pane: PreviewPane;
   workspace: PreviewWorkspace;
@@ -29,6 +39,8 @@ export default function PreviewPaneView({
   filesAvailable?: boolean;
   register: (id: string, element: HTMLElement | null) => void;
   focus: (id: string) => void;
+  // The preview's own controls (the tree, opening, enlarging, closing), carried by the first docked pane's row.
+  actions?: ReactNode;
 }) {
   const viewport = doc.defaultView ?? window;
   const { fontSizes } = usePrefs();
@@ -69,6 +81,7 @@ export default function PreviewPaneView({
     <section
       ref={(element) => register(pane.id, element)}
       data-preview-pane={pane.id}
+      aria-label={floating ? '浮动预览' : '预览窗格'}
       className={`preview-pane ${floating ? 'preview-pane-floating' : ''} ${workspace.focused === pane.id ? 'is-focused' : ''}`}
       style={
         floating
@@ -132,56 +145,10 @@ export default function PreviewPaneView({
           doc.body.removeAttribute('data-preview-resizing');
         }}
       >
-        <span>{floating ? '浮动预览' : '预览窗格'}</span>
-        {floating ? (
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label="停靠预览"
-            onClick={() => workspace.dock(pane.id)}
-          >
-            停靠
-          </Button>
-        ) : (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="分栏预览"
-              disabled={tabs.length < 2 || workspace.panes.length >= 4}
-              onClick={() => workspace.split(pane.id, pane.active)}
-            >
-              分栏
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              aria-label="浮动预览"
-              disabled={!active || workspace.panes.length >= 4}
-              onClick={() => workspace.float(pane.active)}
-            >
-              浮动
-            </Button>
-          </>
-        )}
-        {workspace.panes.length > 1 && (
-          <Button
-            size="sm"
-            variant="ghost"
-            aria-label="移动到下一窗格"
-            disabled={!active}
-            onClick={() =>
-              workspace.move(
-                pane.active,
-                workspace.panes[(workspace.panes.indexOf(pane) + 1) % workspace.panes.length].id,
-              )
-            }
-          >
-            移动
-          </Button>
-        )}
-      </header>
-      {!!tabs.length && (
+        {/* One row (audit H1): the pane's tabs, then its own controls as icons, and for the first docked pane the
+            preview's controls; the file's path and actions are the second row (PreviewContent.tsx). */}
+        {/* A floating pane is moved by its name at the start of the row. */}
+        {floating && <span className="preview-pane-grip">浮动预览</span>}
         <div className="preview-tabs" role="tablist" aria-label="预览标签">
           {tabs.map((tab, index) => (
             <div
@@ -258,7 +225,49 @@ export default function PreviewPaneView({
             </div>
           ))}
         </div>
-      )}
+        <span className="preview-pane-actions">
+          {floating ? (
+            <IconButton title="停靠预览" size="sm" onClick={() => workspace.dock(pane.id)}>
+              <PanelDock />
+            </IconButton>
+          ) : (
+            <>
+              <IconButton
+                title="分栏预览"
+                size="sm"
+                disabled={tabs.length < 2 || workspace.panes.length >= 4}
+                onClick={() => workspace.split(pane.id, pane.active)}
+              >
+                <Columns2 />
+              </IconButton>
+              <IconButton
+                title="浮动预览"
+                size="sm"
+                disabled={!active || workspace.panes.length >= 4}
+                onClick={() => workspace.float(pane.active)}
+              >
+                <PictureInPicture />
+              </IconButton>
+            </>
+          )}
+          {workspace.panes.length > 1 && (
+            <IconButton
+              title="移动到下一窗格"
+              size="sm"
+              disabled={!active}
+              onClick={() =>
+                workspace.move(
+                  pane.active,
+                  workspace.panes[(workspace.panes.indexOf(pane) + 1) % workspace.panes.length].id,
+                )
+              }
+            >
+              <ArrowLeftRight />
+            </IconButton>
+          )}
+        </span>
+        {actions}
+      </header>
       <div
         className="preview-content"
         id={content}

@@ -164,6 +164,11 @@ test('history refresh failure and changed connection invalidate results and conf
 });
 
 test('clear discards pending file selection and clipboard image preparation', async ({ page }) => {
+  // Clearing is behind the draft box's "…", with copying (audit G3).
+  const clear = async () => {
+    await page.getByRole('button', { name: '更多操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '清空', exact: true }).click();
+  };
   await page.evaluate(() => {
     (window as any).desktop = {
       terminalWindow: { focus() {}, setActive() {} },
@@ -182,7 +187,7 @@ test('clear discards pending file selection and clipboard image preparation', as
   });
   await page.getByRole('button', { name: '编辑输入', exact: true }).click();
   await page.getByRole('button', { name: '添加附件', exact: true }).click();
-  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await clear();
   await page.evaluate(() => (window as any).finishFiles(['D:\\discard.png']));
   await expect(page.locator('.attachment-tile')).toHaveCount(0);
   await page.getByRole('textbox', { name: '多行终端草稿' }).evaluate((input) => {
@@ -193,7 +198,7 @@ test('clear discards pending file selection and clipboard image preparation', as
   });
   await expect(page.getByText('处理中…')).toBeVisible();
   await page.waitForFunction(() => !!(window as any).finishImage);
-  await page.getByRole('button', { name: '清空', exact: true }).click();
+  await clear();
   await page.evaluate(() => (window as any).finishImage('D:\\discard.png'));
   await expect(page.locator('.attachment-tile')).toHaveCount(0);
 });
