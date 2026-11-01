@@ -15,6 +15,9 @@ test('narrow standalone settings remain interactive while connected settings fol
   await expect(page.locator('.page-title')).toHaveText('快捷键');
   await page.getByRole('button', { name: '返回登录', exact: true }).click();
   await login(page);
+  // Below 600px even the folded rail gives way: the account is reached in the column, laid over the page.
+  await expect(page.locator('.rail')).toBeHidden();
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
   await expect(page.locator('.shell .sidebar')).toHaveAttribute('inert', '');
@@ -142,7 +145,8 @@ test('sidebar motion preserves the viewport coordinates of the session tooltip',
 }) => {
   await page.goto('/');
   await login(page);
-  await createSession(page, '侧栏坐标');
+  // The card comes only for a title the row cuts off.
+  await createSession(page, '侧栏坐标：一个长到在侧栏里一定会被截断显示的会话标题');
   await expect(page.locator('.sidebar')).toHaveCSS('translate', 'none');
   const row = page.locator('.session-row.selected');
   await row.hover();

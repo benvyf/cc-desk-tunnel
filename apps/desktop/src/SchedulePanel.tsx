@@ -6,7 +6,7 @@ import { folderName } from './paths.ts';
 import { describeSchedule, parseTasks, stamp } from './schedules.ts';
 import type { Schedule, Schedules, Task } from './schedules.ts';
 import SidebarShell from './SidebarShell.tsx';
-import { Button, IconButton } from './ui.tsx';
+import { Button, IconButton, Switch } from './ui.tsx';
 
 // The editor's fields: every kind of rule and target keeps its own input, so switching kinds loses nothing.
 type Form = {
@@ -363,21 +363,21 @@ export default function SchedulePanel({
                 key={task.id}
                 className={`schedule-row ${editing?.id === task.id ? 'selected' : ''}`}
               >
-                <input
-                  type="checkbox"
-                  aria-label={`启用 ${task.name}`}
+                <Switch
+                  small
+                  label={`启用 ${task.name}`}
                   checked={task.enabled}
-                  onChange={(event) =>
+                  onChange={(enabled) =>
                     void store(
-                      tasks.map((item) =>
-                        item.id === task.id ? { ...item, enabled: event.target.checked } : item,
-                      ),
+                      tasks.map((item) => (item.id === task.id ? { ...item, enabled } : item)),
                     )
                   }
                 />
+                {/* Three short lines: the name, the rule and where it goes, and when it runs next. Each keeps to
+                    one line; the whole of it is in the line's tooltip. */}
                 <span>
-                  <strong>{task.name}</strong>
-                  <small>
+                  <strong title={task.name}>{task.name}</strong>
+                  <small title={`${describeSchedule(task.schedule)} · ${where(task)}`}>
                     {describeSchedule(task.schedule)} · {where(task)}
                   </small>
                   <small>

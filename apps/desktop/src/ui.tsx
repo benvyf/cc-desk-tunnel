@@ -49,18 +49,21 @@ export function Switch({
   label,
   checked,
   disabled = false,
+  small = false,
   onChange,
 }: {
   label: string;
   checked: boolean;
   disabled?: boolean;
+  // The 28×16 switch of a list row (a scheduled task); the usual one is 36×20.
+  small?: boolean;
   onChange: (checked: boolean) => void;
 }) {
   return (
     <button
       type="button"
       role="switch"
-      className="switch"
+      className={small ? 'switch small' : 'switch'}
       aria-label={label}
       aria-checked={checked}
       disabled={disabled}
@@ -122,13 +125,15 @@ export type MenuItem = {
   separated?: boolean;
   run: () => void;
 };
-export type MenuPosition = { x: number; y: number; above?: boolean };
+// `width`, when given, makes the menu as wide as the control it opens from (the account at the column's foot).
+export type MenuPosition = { x: number; y: number; above?: boolean; width?: number };
 // One menu serves right-click (opens at the pointer) and every button that opens a list beside itself.
 export function Menu({
   label,
   x,
   y,
   above = false,
+  width,
   heading,
   items,
   onClose,
@@ -146,7 +151,7 @@ export function Menu({
     menu.style.left = `${Math.max(8, Math.min(x, innerWidth - width - 8))}px`;
     menu.style.top = `${Math.max(8, top)}px`;
     menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
-  }, [x, y, above]);
+  }, [x, y, above, width]);
   useEffect(() => {
     const outside = (event: PointerEvent) => {
       if (!ref.current?.contains(event.target as Node)) onClose();
@@ -166,6 +171,7 @@ export function Menu({
       role="menu"
       aria-label={label}
       ref={ref}
+      style={width ? { width, minWidth: 0 } : undefined}
       onContextMenu={(event) => event.preventDefault()}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {

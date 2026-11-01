@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getPrefs, setPrefs, sidebarWidthRange } from './prefs.ts';
+import { getPrefs, pageMinWidth, setPrefs, sidebarWidthRange } from './prefs.ts';
 
 const { min, max, default: defaultWidth } = sidebarWidthRange;
-// Account for the page rail and preserve 400px for chat whenever the window permits.
-const maxWidth = (shell: HTMLElement) => Math.max(min, Math.min(max, shell.clientWidth - 52 - 400));
+// The open column stands beside the page alone (the rail shows only when it is folded) and leaves the page the
+// room it keeps; a wider column would fold itself away on this window.
+const maxWidth = (shell: HTMLElement) =>
+  Math.max(min, Math.min(max, shell.clientWidth - pageMinWidth));
 const clamp = (width: number, ceiling: number) =>
   Math.max(min, Math.min(ceiling, Math.round(width)));
 

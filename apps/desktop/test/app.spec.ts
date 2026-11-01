@@ -629,24 +629,26 @@ test('a session on another computer is listed apart, read, and taken over with a
   // Under the other computer its sessions stand by project, as they do on their own computer.
   await expect(
     other
-      .locator('.elsewhere-project:has-text("中文项目") + .session-row')
+      .locator('.elsewhere-project:has(> h2:has-text("中文项目")) .session-row')
       .filter({ hasText: title }),
   ).toHaveCount(1);
   // The computer, and the project under it, fold away and open again as a project here does.
   // Every test's browser is a computer named alike: the headings are told apart by their place in the list,
-  // which folding the rows under them leaves as it is.
-  const toggle = async (heading: string) =>
+  // which folding the rows under them leaves as it is. The project's row heads the section the session is in;
+  // the computer's heading stands before its projects.
+  const toggle = async (heading: 'project' | 'computer') =>
     other.locator('.project-toggle').nth(
       await row.evaluate((element, heading) => {
-        let above = element.previousElementSibling!;
-        while (!above.classList.contains(heading)) above = above.previousElementSibling!;
+        let above: Element = element.closest('.elsewhere-project')!;
+        if (heading === 'computer')
+          while (!above.classList.contains('device-heading')) above = above.previousElementSibling!;
         return [...document.querySelectorAll('.project-toggle')].indexOf(
           above.querySelector('.project-toggle')!,
         );
       }, heading),
     );
-  const project = await toggle('elsewhere-project');
-  const computer = await toggle('list-heading');
+  const project = await toggle('project');
+  const computer = await toggle('computer');
   await project.click();
   await expect(row).toHaveCount(0);
   await expect(project).toHaveAttribute('aria-expanded', 'false');

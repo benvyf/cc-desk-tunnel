@@ -607,6 +607,18 @@ label:has(> input[type='checkbox']) {
 .switch[aria-checked='true']::after {
   transform: translateX(16px);
 }
+/* A list row's switch (a scheduled task): 28×16, its knob 12px. */
+.switch.small {
+  width: 28px;
+  height: 16px;
+}
+.switch.small::after {
+  width: 12px;
+  height: 12px;
+}
+.switch.small[aria-checked='true']::after {
+  transform: translateX(12px);
+}
 .chip {
   display: inline-flex;
   align-items: center;
@@ -901,7 +913,7 @@ button.chip.danger:hover:not(:disabled) {
 }
 .settings-only {
   display: grid;
-  grid-template-columns: 284px minmax(0, 1fr);
+  grid-template-columns: 288px minmax(0, 1fr);
   height: 100dvh;
   padding-top: var(--bar);
   background: var(--chrome);
@@ -1070,19 +1082,33 @@ button.chip.danger:hover:not(:disabled) {
   padding-block: 9px;
 }
 /* The window: a title bar across the top, then the side column and the page itself. The side column has two
-   forms: open, it is the full column and the rail's track is empty; closed, it folds to the 52px rail. */
+   forms: open, it is the full column and the rail's track is empty; closed, it folds to the 52px rail. A window
+   narrower than the column and the 600px the page keeps (App.tsx) folds it on its own (`side-overlay`): opened
+   then, it is laid over the page instead of beside it, and below 600px even the rail gives way. */
 .shell {
-  --sidebar-max-width: max(264px, min(420px, calc(100vw - 452px)));
-  --sidebar-size: clamp(264px, var(--sidebar-width, 284px), var(--sidebar-max-width));
+  --sidebar-max-width: max(240px, min(420px, calc(100vw - 600px)));
+  --sidebar-size: clamp(240px, var(--sidebar-width, 288px), var(--sidebar-max-width));
+  --rail-size: 0px;
+  --sidebar-track: var(--sidebar-size);
   display: grid;
-  grid-template-columns: 0 var(--sidebar-size) minmax(0, 1fr);
+  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
   grid-template-rows: var(--bar) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
   background: var(--frame);
 }
-.shell.side-closed {
-  grid-template-columns: 52px 0 minmax(0, 1fr);
+.shell.side-closed,
+.shell.side-overlay {
+  --rail-size: 52px;
+  --sidebar-track: 0px;
+}
+@media (max-width: 599px) {
+  .shell.side-overlay {
+    --rail-size: 0px;
+  }
+  .shell.side-overlay > .rail {
+    visibility: hidden;
+  }
 }
 /* The rail is the closed column: while the column is open it is out of sight, of focus and of the
    accessibility tree. */
@@ -1609,6 +1635,46 @@ dialog:has(.release-notes) {
   overflow-y: auto;
   padding: 0 10px 20px;
 }
+/* While the native terminal has the window, the list stays readable and says why its rows do not open. */
+.side-terminal-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 4px 10px 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  color: var(--text-2);
+  font-size: calc(12.5rem / 14);
+  line-height: 18px;
+}
+.side-terminal-note > button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.side-terminal-note > button:hover {
+  text-decoration-color: currentColor;
+}
+.session-select[aria-disabled='true'] {
+  cursor: default;
+}
+/* "New session" waits while the terminal has the window, or the connection is not there; it stays legible, and
+   its tooltip says why. */
+.side-action.new-session:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+.side-action.new-session:disabled::before {
+  opacity: 0.45;
+}
 /* The account at the foot of the column: the mark, who is signed in, the plan and whether the connection holds. */
 .sidebar-account {
   flex: none;
@@ -1732,22 +1798,40 @@ dialog:has(.release-notes) {
 .device-state.online::before {
   background: var(--ok);
 }
-.elsewhere-project {
+/* A heading that folds its group, "other devices" or one of them: the words, then the folding arrow under the
+   pointer (or the keyboard's focus); folded, the count and the dot of the state that most needs the user. */
+.project-toggle.heading-toggle {
+  flex: 0 1 auto;
+  gap: 6px;
+  color: inherit;
+}
+.project-toggle.heading-toggle > span {
+  flex: 0 1 auto;
+}
+.heading-toggle > .fold-caret {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
+}
+:is(.list-heading, .device-heading):hover > .heading-toggle > .fold-caret,
+.heading-toggle:focus-visible > .fold-caret,
+.heading-toggle[aria-expanded='false'] > .fold-caret {
+  opacity: 1;
+}
+.list-heading:has(> .heading-toggle) {
+  justify-content: flex-start;
+}
+/* Each other computer: its name as a second-level heading, and whether it is online in a pill. */
+.device-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px 2px 18px;
-  color: var(--muted);
+  gap: 8px;
+  min-height: 28px;
+  padding: 6px 8px 2px 10px;
+  color: var(--text-2);
   font-size: calc(12.5rem / 14);
-}
-.list-heading > .project-toggle,
-.elsewhere-project > .project-toggle {
-  gap: 6px;
-}
-.list-heading > .project-toggle > svg.app-icon,
-.elsewhere-project > .project-toggle > svg.app-icon {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  font-weight: 500;
 }
 .list-heading .icon-button {
   width: var(--control-sm);
@@ -1795,11 +1879,27 @@ dialog:has(.release-notes) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-toggle > svg.app-icon {
+.project-toggle svg.app-icon {
   flex: none;
   width: var(--icon-sm);
   height: var(--icon-sm);
   color: var(--faint);
+}
+/* A project's folder turns into the folding arrow under the pointer or the keyboard's focus. */
+.project-toggle > .fold-icon {
+  display: grid;
+  flex: none;
+}
+.fold-icon > svg.app-icon {
+  grid-area: 1 / 1;
+}
+.fold-icon > .fold-caret,
+.project-group > h2:is(:hover, :has(:focus-visible)) .fold-folder {
+  visibility: hidden;
+}
+.project-group > h2:is(:hover, :has(:focus-visible)) .fold-caret {
+  visibility: visible;
+  color: var(--muted);
 }
 .project-toggle > small {
   flex: none;
@@ -1820,7 +1920,7 @@ dialog:has(.release-notes) {
   padding-left: 25px;
 }
 .project-empty {
-  margin: 2px 0 8px 35px;
+  margin: 2px 0 8px 10px;
   font-size: calc(12.5rem / 14);
   color: var(--faint);
 }
@@ -1834,6 +1934,9 @@ dialog:has(.release-notes) {
   font: inherit;
   font-size: calc(12.5rem / 14);
   cursor: pointer;
+}
+.project-more.loose {
+  margin-left: 10px;
 }
 .project-more:hover {
   color: var(--text);
@@ -1912,10 +2015,6 @@ dialog:has(.release-notes) {
 .session-row:hover .row-action,
 .session-row:focus-within .row-action {
   display: inline-flex;
-}
-/* A session row offers one quiet action, "…"; pinning lives in its menu, as in Claude. */
-.session-row .row-action:not(.session-more) {
-  display: none;
 }
 /* A project's buttons keep their place, so the name does not jump when they appear. */
 .project-group > h2 .row-action {
@@ -2453,52 +2552,26 @@ kbd {
 .schedule-row.selected {
   background: var(--selected);
 }
-.schedule-row > input {
-  flex: none;
-  width: auto;
-  margin-top: 4px;
-}
-/* A task's enable checkbox is drawn as a compact switch. */
-.schedule-row > input[type='checkbox'] {
-  position: relative;
-  width: 28px !important;
-  height: 16px;
-  margin-top: 3px;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--line-strong);
-}
-.schedule-row > input[type='checkbox']::after {
-  content: '';
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  background: #fff;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
-  transition: transform var(--cds-dur-snap) var(--cds-ease-overshoot);
-}
-/* The checked switch has no tick, in either theme. */
-.schedule-row > input[type='checkbox']:checked {
-  border: 0;
-  background: var(--clay-emphasized) !important;
-}
-.schedule-row > input[type='checkbox']:checked::after {
-  transform: translateX(12px);
+.schedule-row > .switch {
+  margin-top: 2px;
 }
 .schedule-row > span {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   flex: 1 1 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+}
+.schedule-row strong,
+.schedule-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .schedule-row strong {
   font-weight: 500;
   font-size: 1rem;
+  line-height: 20px;
 }
 .schedule-row small {
   color: var(--muted);
@@ -5825,8 +5898,29 @@ dialog::backdrop {
   overflow-wrap: anywhere;
   margin-bottom: 10px;
 }
-.sidebar-shade {
+/* Folded on its own by a narrow window, the column opens over the page from the window's edge, over the rail it
+   unfolds from, with a shade over the rest. */
+.shell.side-overlay > .sidebar {
+  position: fixed;
+  left: 0;
+  top: var(--bar);
+  bottom: 0;
+  width: min(clamp(240px, var(--sidebar-width, 288px), 420px), calc(100vw - 48px));
+  z-index: 12;
+  box-shadow: var(--shadow-popover);
+}
+.shell.side-overlay .sidebar-resize {
   display: none;
+}
+.shell.side-overlay.side-closed > .sidebar {
+  translate: -100% 0;
+}
+.sidebar-shade {
+  position: fixed;
+  inset: var(--bar) 0 0 0;
+  z-index: 11;
+  border: 0;
+  background: var(--backdrop);
 }
 @media (max-width: 700px) {
   .sidebar-brand,
@@ -5868,34 +5962,6 @@ dialog::backdrop {
   }
   .settings-only .workspace {
     flex: 1;
-  }
-  .shell,
-  .shell.side-closed {
-    grid-template-columns: 44px 0 minmax(0, 1fr);
-  }
-  /* Open, the column is laid over the page from the window's edge, over the rail it unfolds from. */
-  .shell > .sidebar {
-    position: fixed;
-    left: 0;
-    top: var(--bar);
-    bottom: 0;
-    width: min(284px, calc(100vw - 60px));
-    z-index: 12;
-    box-shadow: var(--shadow-popover);
-  }
-  .sidebar-resize {
-    display: none;
-  }
-  .shell.side-closed > .sidebar {
-    translate: -100% 0;
-  }
-  .sidebar-shade {
-    display: block;
-    position: fixed;
-    inset: var(--bar) 0 0 0;
-    z-index: 11;
-    border: 0;
-    background: var(--backdrop);
   }
   .workspace {
     border-radius: var(--radius-xl) 0 0 0;
@@ -7032,16 +7098,11 @@ dialog:has(.web-settings-form) {
 
 /* File and website previews use the existing session layout; the native browser only covers its viewport. */
 .shell.has-preview {
-  --preview-offset: var(--sidebar-size);
   --preview-size: min(
     var(--preview-width, 440px),
-    max(320px, calc(100vw - 52px - var(--preview-offset) - 360px))
+    max(320px, calc(100vw - var(--rail-size) - var(--sidebar-track) - 360px))
   );
-  grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr) var(--preview-size);
-}
-.shell.side-closed.has-preview {
-  --preview-offset: 0px;
-  grid-template-columns: 52px 0 minmax(0, 1fr) var(--preview-size);
+  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr) var(--preview-size);
 }
 .shell.has-preview > .terminal-workspace-slot {
   grid-column: 2 / 4;
@@ -7324,7 +7385,7 @@ dialog:has(.web-settings-form) {
 }
 .preview-full {
   position: fixed;
-  inset: var(--bar) 0 0 52px;
+  inset: var(--bar) 0 0 var(--rail-size, 0px);
   width: auto !important;
   z-index: 20;
 }
@@ -7389,10 +7450,7 @@ dialog:has(.web-settings-form) {
 }
 @media (max-width: 1050px) {
   .shell.has-preview {
-    grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr);
-  }
-  .shell.side-closed.has-preview {
-    grid-template-columns: 52px 0 minmax(0, 1fr);
+    grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
   }
   .shell.has-preview > .terminal-workspace-slot {
     grid-column: 2 / -1;
@@ -7402,11 +7460,11 @@ dialog:has(.web-settings-form) {
     top: var(--bar);
     right: 0;
     bottom: 0;
-    width: min(var(--preview-width, 440px), calc(100% - 52px));
+    width: min(var(--preview-width, 440px), calc(100% - var(--rail-size)));
     box-shadow: var(--shadow-popover);
   }
   .shell > .preview-full {
-    left: 52px;
+    left: var(--rail-size);
     width: auto;
   }
   .preview-resize {
@@ -7414,15 +7472,8 @@ dialog:has(.web-settings-form) {
   }
 }
 @media (max-width: 700px) {
-  .shell.has-preview,
-  .shell.side-closed.has-preview {
-    grid-template-columns: 44px 0 minmax(0, 1fr);
-  }
   .shell > .preview-sidebar {
-    width: calc(100% - 44px);
-  }
-  .shell > .preview-full {
-    left: 44px;
+    width: calc(100% - var(--rail-size));
   }
   .preview-heading {
     padding-inline: 6px;

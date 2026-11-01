@@ -32,7 +32,10 @@ export const replyFonts = [
   { font: 'ui', label: '与界面一致', detail: '回复与界面使用同一种无衬线字体' },
 ] as const;
 export type ReplyFont = (typeof replyFonts)[number]['font'];
-export const sidebarWidthRange = { min: 264, max: 420, default: 284 };
+export const sidebarWidthRange = { min: 240, max: 420, default: 288 };
+// The page keeps at least this much beside the open column; a window narrower than the column and this folds the
+// column away, and opening it then lays it over the page.
+export const pageMinWidth = 600;
 export type Prefs = {
   sidebarWidth: number;
   busyEnter: 'queue' | 'steer';
@@ -45,8 +48,8 @@ export type Prefs = {
   // Whether the sessions on the user's other computers are listed in the sidebar.
   elsewhereOpen: boolean;
   // Which of the other computers, and which folders on them, are folded away: a computer by its id, a folder by
-  // the computer's id, a line break and the folder's pathKey(), and the sessions with no project by the
-  // computer's id and a line break.
+  // the computer's id, a line break and the folder's pathKey(). (Earlier versions also folded a computer's
+  // sessions without a project, by its id and a line break; they are now listed under the computer itself.)
   collapsedElsewhere: string[];
   projectNames: Record<string, string>;
   notify: { enabled: boolean; sound: boolean } & Record<NotifyKind, boolean>;

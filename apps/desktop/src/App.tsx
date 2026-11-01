@@ -65,7 +65,7 @@ import { exportSession } from './exportSession.ts';
 import { onSharedChange, saveShared, shared, useShared } from './shared.ts';
 import { useNotifications } from './notifications.ts';
 import { folderName, isInside, isNewer, pathKey, withProject } from './paths.ts';
-import { getPrefs, setPrefs, toggled, usePrefs } from './prefs.ts';
+import { getPrefs, pageMinWidth, setPrefs, toggled, usePrefs } from './prefs.ts';
 import { sessionDefaultOptions } from './modelDefaults.ts';
 import { actions, comboOf, keyFor, show as comboText } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
@@ -112,7 +112,9 @@ type OpenMenu = MenuPosition &
     | { kind: 'update' }
     | { kind: 'bar'; label: string }
   );
-const narrow = () => matchMedia('(max-width: 700px)').matches;
+// A window too narrow for the side column and the room the page keeps folds the column away; opened, it is then
+// laid over the page.
+const overlaid = (sidebarWidth: number) => innerWidth < sidebarWidth + pageMinWidth;
 // The computer's projects, which the windows of its connections share (see shared.ts).
 function savedProjects(value: unknown = shared('projects')): string[] {
   try {
@@ -213,21 +215,31 @@ export function App({
   const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
-  // The side column is shown beside the page on a wide window and laid over it on a narrow one.
-  const [sideOpen, setSideOpen] = useState(() => !narrow());
+  // The side column is shown beside the page on a wide window and laid over it on a narrow one: narrower than
+  // the column and the 600px the page keeps (spec §4.3, §6.6).
+  const [overlay, setOverlay] = useState(() => overlaid(getPrefs().sidebarWidth));
+  const overlayNow = useRef(overlay);
+  const [sideOpen, setSideOpen] = useState(() => !overlayNow.current);
   const closeSide = useCallback(() => {
-    if (narrow()) setSideOpen(false);
+    if (overlayNow.current) setSideOpen(false);
   }, []);
   // Asked to open the conversations' search (the shortcut, the folded column); the side column says when it has.
   const [searchAsked, setSearchAsked] = useState(false);
   const searchDone = useCallback(() => setSearchAsked(false), []);
-  // Crossing between the two layouts starts from each one's usual state.
+  // Crossing between the two layouts starts from each one's usual state: open beside the page, folded over it.
+  const sidebarWidth = usePrefs().sidebarWidth;
   useEffect(() => {
-    const query = matchMedia('(max-width: 700px)');
-    const follow = () => setSideOpen(!query.matches);
-    query.addEventListener('change', follow);
-    return () => query.removeEventListener('change', follow);
-  }, []);
+    const follow = () => {
+      const next = overlaid(sidebarWidth);
+      if (next === overlayNow.current) return;
+      overlayNow.current = next;
+      setOverlay(next);
+      setSideOpen(!next);
+    };
+    follow();
+    window.addEventListener('resize', follow);
+    return () => window.removeEventListener('resize', follow);
+  }, [sidebarWidth]);
   const [place, setPlace] = useState<Place>({
     page: 'chat',
     section: browser ? 'general' : 'account',
@@ -1923,7 +1935,7 @@ export function App({
   };
   return (
     <div
-      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''} ${previewShown ? 'has-preview' : ''}`}
+      className={`shell ${sideOpen ? '' : 'side-closed'} ${overlay ? 'side-overlay' : ''} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''} ${previewShown ? 'has-preview' : ''}`}
       style={
         {
           '--sidebar-width': `${prefs.sidebarWidth}px`,
@@ -1991,7 +2003,7 @@ export function App({
         openAccount={openAccount}
       />
       <Presence kind="shade">
-        {sideOpen && (
+        {overlay && sideOpen && (
           <button
             className="sidebar-shade"
             aria-label="收起侧栏"
@@ -2060,6 +2072,7 @@ export function App({
             busy={busy}
             refreshing={refreshing}
             terminalOpen={terminalsActive}
+            showTerminal={openTerminal}
             notifications={notifications}
             select={show}
             newSession={() => {
@@ -2374,6 +2387,7 @@ export function App({
             x={menu.x}
             y={menu.y}
             above={menu.above}
+            width={menu.width}
             onClose={closeMenu}
             items={openMenu.items}
           />

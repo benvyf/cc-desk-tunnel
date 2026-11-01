@@ -78,6 +78,13 @@ export const above = (element: HTMLElement): MenuPosition => {
   const box = element.getBoundingClientRect();
   return { x: box.left, y: box.top - 4, above: true };
 };
+// The account's menu grows upward from the account area, as wide as it and lined up with its edges (Claude's).
+const spanning = (element: HTMLElement): MenuPosition => {
+  const area = element.closest('.sidebar-account') ?? element;
+  const box = area.getBoundingClientRect();
+  const inset = parseFloat(getComputedStyle(area).paddingLeft) || 0;
+  return { x: box.left + inset, y: box.top - 4, above: true, width: box.width - 2 * inset };
+};
 
 // The account at the foot of the side column: who is signed in, on which plan, and whether the connection
 // holds. It opens the menu of settings, help and disconnecting; an update waiting to be installed sits beside it.
@@ -114,7 +121,7 @@ export function AccountArea({
         aria-haspopup="menu"
         aria-current={current ? 'page' : undefined}
         title={adapter}
-        onClick={(event) => openMenu(above(event.currentTarget))}
+        onClick={(event) => openMenu(spanning(event.currentTarget))}
       >
         <span className="side-avatar">
           <BrandMark className="account-mark" />

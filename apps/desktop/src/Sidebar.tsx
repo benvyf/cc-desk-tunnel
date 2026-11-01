@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Brand from './Brand.tsx';
 import SidebarShell, { SearchField } from './SidebarShell.tsx';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import {
   CalendarClock,
   ChevronDown,
@@ -9,7 +9,6 @@ import {
   Ellipsis,
   Folder,
   FolderOpen,
-  Laptop,
   Pin,
   Plus,
   Search,
@@ -61,6 +60,17 @@ function activity(session: Session, state: RowState | undefined) {
 
 // A list of sessions shows its latest few until it is listed in full.
 const PAGE = 5;
+// The card with a row's whole title waits this long under the pointer, and shows only for a cut-off title.
+const CARD_DELAY = 700;
+// The keyboard's way to a row's menu, as Windows has it: Shift+F10 or the menu key.
+const asksForMenu = (event: KeyboardEvent) =>
+  event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
+const below = (element: HTMLElement) => {
+  const box = element.getBoundingClientRect();
+  return { x: box.left + 8, y: box.bottom + 2 };
+};
+// The rows ↑ and ↓ move between in the list: sessions, folding rows and "show all".
+const listRows = '.session-select, .project-toggle, .project-more';
 
 // Another computer's sessions: by project folder, and those without a project.
 type Elsewhere = {
@@ -84,6 +94,7 @@ export default function Sidebar({
   busy,
   refreshing,
   terminalOpen,
+  showTerminal,
   notifications,
   select,
   newSession,
@@ -114,6 +125,8 @@ export default function Sidebar({
   refreshing: boolean;
   // This window's native terminal is open: it has the window until it is closed.
   terminalOpen: boolean;
+  // Brings the open terminal back to the front.
+  showTerminal?: () => void;
   notifications: Notifications;
   select: (sessionId: string) => void;
   newSession: () => void;
@@ -239,7 +252,8 @@ export default function Sidebar({
   // A search shows what it found, folded or not.
   const othersOpen = prefs.elsewhereOpen || !!search.trim();
 
-  // A card beside the row tells what the short line cannot: the whole title, the project and the time.
+  // A card beside the row tells what the short line cannot: the whole title, the project and the time. It waits
+  // a moment and shows only when the title is cut off.
   const [card, setCard] = useState<{ session: Session; top: number; left: number } | null>(null);
   const hover = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const aside = useRef<HTMLElement>(null);
@@ -249,30 +263,32 @@ export default function Sidebar({
   };
   useEffect(() => leave, []);
 
-  // Folds a list away and opens it again; folded, it tells how many sessions the list holds and whether one runs.
+  // What a folded list most needs the user for: the state of the one session that ranks highest.
+  const topState = (members: Session[]) =>
+    members
+      .map((session) => rowState(session, failed))
+      .reduce<RowState | undefined>(
+        (top, next) => (next && (!top || stateRank[next] > stateRank[top]) ? next : top),
+        undefined,
+      );
+  // A project's row: the folder, which turns into the folding arrow under the pointer, and its name. Folded, it
+  // tells how many sessions the project holds and whether one of them needs the user.
   function foldToggle({
     open,
     label,
-    icon,
     name,
     members,
     toggle,
+    onKeyDown,
   }: {
     open: boolean;
     label: string;
-    icon: ReactNode;
     name: string;
     members: Session[];
     toggle: () => void;
+    onKeyDown?: (event: KeyboardEvent<HTMLButtonElement>) => void;
   }) {
-    const state = open
-      ? undefined
-      : members
-          .map((session) => rowState(session, failed))
-          .reduce<RowState | undefined>(
-            (top, next) => (next && (!top || stateRank[next] > stateRank[top]) ? next : top),
-            undefined,
-          );
+    const state = open ? undefined : topState(members);
     return (
       <button
         type="button"
@@ -281,9 +297,45 @@ export default function Sidebar({
         aria-label={`${open ? '收起' : '展开'}${label}`}
         data-state={state}
         onClick={toggle}
+        onKeyDown={onKeyDown}
       >
-        {icon}
+        <span className="fold-icon" aria-hidden="true">
+          {open ? <FolderOpen className="fold-folder" /> : <Folder className="fold-folder" />}
+          {open ? <ChevronDown className="fold-caret" /> : <ChevronRight className="fold-caret" />}
+        </span>
         <span>{name}</span>
+        {state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
+        {!open && members.length > 0 && <small>{members.length}</small>}
+      </button>
+    );
+  }
+  // A heading that folds its group (the other computers, and each of them): the words, and the folding arrow
+  // beside them under the pointer, like Claude's. Folded, it carries the same count and dot as a project.
+  function foldHeading({
+    open,
+    label,
+    name,
+    members,
+    toggle,
+  }: {
+    open: boolean;
+    label: string;
+    name: string;
+    members: Session[];
+    toggle: () => void;
+  }) {
+    const state = open ? undefined : topState(members);
+    return (
+      <button
+        type="button"
+        className="project-toggle heading-toggle"
+        aria-expanded={open}
+        aria-label={`${open ? '收起' : '展开'}${label}`}
+        data-state={state}
+        onClick={toggle}
+      >
+        <span>{name}</span>
+        {open ? <ChevronDown className="fold-caret" /> : <ChevronRight className="fold-caret" />}
         {state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
         {!open && members.length > 0 && <small>{members.length}</small>}
       </button>
@@ -293,8 +345,9 @@ export default function Sidebar({
     setPrefs((value) => ({ ...value, collapsedElsewhere: toggled(value.collapsedElsewhere, key) }));
 
   // A list shows its latest few sessions, and also the open one and those at work or failed wherever they are,
-  // until it is listed in full. A search lists all it found.
-  function renderSessions(key: string, members: Session[]) {
+  // until it is listed in full. A search lists all it found. `loose` lists stand at the column's edge rather
+  // than under a project, and their "show all" lines up with them.
+  function renderSessions(key: string, members: Session[], loose = false) {
     const kept = members.filter(
       (session, index) =>
         index < PAGE || session.id === selectedId || session.activeRun || failed.has(session.id),
@@ -306,17 +359,17 @@ export default function Sidebar({
         {(full ? members : kept).map(renderSession)}
         <button
           type="button"
-          className="project-more"
+          className={`project-more${loose ? ' loose' : ''}`}
+          aria-expanded={full}
           onClick={() => setListed((value) => toggled(value, key))}
         >
-          {full ? '收起' : `展开显示（还有 ${members.length - kept.length} 个）`}
+          {full ? '收起' : `显示全部 (${members.length})`}
         </button>
       </>
     );
   }
 
   function renderSession(session: Session) {
-    const isPinned = prefs.pinnedSessions.includes(session.id);
     const state = rowState(session, failed);
     return (
       <div
@@ -329,42 +382,39 @@ export default function Sidebar({
           sessionMenu(session, { x: event.clientX, y: event.clientY });
         }}
         onMouseEnter={(event) => {
-          const row = event.currentTarget.getBoundingClientRect();
+          const row = event.currentTarget;
           clearTimeout(hover.current);
-          hover.current = setTimeout(
-            () =>
-              setCard({
-                session,
-                top: row.top,
-                left: aside.current!.getBoundingClientRect().right + 8,
-              }),
-            600,
-          );
+          hover.current = setTimeout(() => {
+            const title = row.querySelector('strong');
+            if (!title || title.scrollWidth <= title.clientWidth) return;
+            setCard({
+              session,
+              top: row.getBoundingClientRect().top,
+              left: aside.current!.getBoundingClientRect().right + 8,
+            });
+          }, CARD_DELAY);
         }}
         onMouseLeave={leave}
       >
         <button
           type="button"
           className="session-select"
-          disabled={terminalOpen}
-          onClick={() => select(session.id)}
+          // While the terminal has the window the rows stay readable; they only do not open.
+          aria-disabled={terminalOpen || undefined}
+          onClick={() => {
+            if (!terminalOpen) select(session.id);
+          }}
+          onKeyDown={(event) => {
+            if (!asksForMenu(event)) return;
+            event.preventDefault();
+            leave();
+            sessionMenu(session, below(event.currentTarget));
+          }}
         >
           <strong>{session.title}</strong>
           {state && <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
           <small>{activity(session, state)}</small>
         </button>
-        <IconButton
-          title={isPinned ? '取消置顶' : '置顶'}
-          className="row-action"
-          onClick={() =>
-            setPrefs((value) => ({
-              ...value,
-              pinnedSessions: toggled(value.pinnedSessions, session.id),
-            }))
-          }
-        >
-          <Pin />
-        </IconButton>
         <IconButton
           title="会话操作"
           className="row-action session-more"
@@ -379,6 +429,23 @@ export default function Sidebar({
       </div>
     );
   }
+  // ↑ and ↓ move between the list's rows, Home and End to its ends; Enter opens one, as any button.
+  const moveInList = (event: KeyboardEvent<HTMLElement>) => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    const target = event.target as HTMLElement;
+    if (!target.matches(listRows)) return;
+    const rows = [...event.currentTarget.querySelectorAll<HTMLElement>(listRows)];
+    const at = rows.indexOf(target);
+    const next =
+      event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? rows.length - 1
+          : Math.max(0, Math.min(rows.length - 1, at + (event.key === 'ArrowDown' ? 1 : -1)));
+    event.preventDefault();
+    rows[next]?.focus();
+    rows[next]?.scrollIntoView({ block: 'nearest' });
+  };
   return (
     <SidebarShell
       open={sideOpen}
@@ -395,6 +462,7 @@ export default function Sidebar({
         type="button"
         className="side-action new-session"
         disabled={!connected || busy || refreshing || terminalOpen}
+        title={terminalOpen ? '终端窗口打开时不能新建会话' : undefined}
         onClick={newSession}
       >
         <SquarePen />
@@ -431,7 +499,17 @@ export default function Sidebar({
           </button>
         )}
       </div>
-      <nav className="session-list" aria-label="会话列表">
+      {terminalOpen && (
+        <div className="side-terminal-note" role="status">
+          <span>终端窗口使用中，关闭后可切换会话</span>
+          {showTerminal && (
+            <button type="button" onClick={showTerminal}>
+              回到终端
+            </button>
+          )}
+        </div>
+      )}
+      <nav className="session-list" aria-label="会话列表" onKeyDown={moveInList}>
         {pinned.length > 0 && <div className="list-heading">置顶</div>}
         {pinned.map(renderSession)}
         {localProjects && (
@@ -462,7 +540,6 @@ export default function Sidebar({
                 {foldToggle({
                   open: !collapsed,
                   label: `项目 · ${name}`,
-                  icon: collapsed ? <Folder /> : <FolderOpen />,
                   name,
                   members,
                   toggle: () =>
@@ -470,6 +547,11 @@ export default function Sidebar({
                       ...value,
                       collapsedProjects: toggled(value.collapsedProjects, key),
                     })),
+                  onKeyDown: (event) => {
+                    if (!asksForMenu(event)) return;
+                    event.preventDefault();
+                    projectMenu(path, below(event.currentTarget));
+                  },
                 })}
                 {prefs.pinnedProjects.includes(key) && <Pin className="pin-mark" />}
                 <IconButton
@@ -491,8 +573,8 @@ export default function Sidebar({
                   <Plus />
                 </IconButton>
               </h2>
+              {/* An empty project shows no placeholder: its row offers "+" under the pointer. */}
               {!collapsed && renderSessions(key, members)}
-              {!collapsed && !members.length && <p className="project-empty">暂无会话</p>}
             </section>
           );
         })}
@@ -502,32 +584,33 @@ export default function Sidebar({
         {plain.length > 0 && <div className="list-heading">最近</div>}
         {plain.map(renderSession)}
         {othersCount > 0 && (
-          <section className="project-group">
-            <h2 title="这些会话的项目目录在你的其他电脑上；那台电脑在线时可以直接在这里操作，也可以接到这台电脑上继续">
-              {foldToggle({
+          <section className="elsewhere-group">
+            <div
+              className="list-heading"
+              title="这些会话的项目目录在你的其他电脑上；那台电脑在线时可以直接在这里操作，也可以接到这台电脑上继续"
+            >
+              {foldHeading({
                 open: othersOpen,
                 label: '其他设备的会话',
-                icon: <Laptop />,
                 name: '其他设备',
                 members: elsewhere,
                 toggle: () =>
                   setPrefs((value) => ({ ...value, elsewhereOpen: !value.elsewhereOpen })),
               })}
-            </h2>
+            </div>
             {othersOpen &&
               others.map(([id, device]) => {
-                // Each computer, and each folder on it, folds the same way a project does; a search opens them.
+                // Each computer folds under its name, and each folder on it as a project does; a search opens
+                // them. Its sessions without a project are listed under its name, after its projects.
                 const open = (key: string) =>
                   !!search.trim() || !prefs.collapsedElsewhere.includes(key);
                 const projects = [...device.projects.entries()];
-                const plainKey = `${id}\n`;
                 return (
                   <Fragment key={id}>
-                    <div className="list-heading">
-                      {foldToggle({
+                    <div className="device-heading">
+                      {foldHeading({
                         open: open(id),
                         label: `设备 · ${device.name}`,
-                        icon: open(id) ? <ChevronDown /> : <ChevronRight />,
                         name: device.name,
                         members: [
                           ...projects.flatMap(([, project]) => project.sessions),
@@ -544,36 +627,21 @@ export default function Sidebar({
                         const key = `${id}\n${path}`;
                         const name = folderName(project.path);
                         return (
-                          <Fragment key={path}>
-                            <div className="elsewhere-project" title={project.path}>
+                          <section className="project-group elsewhere-project" key={path}>
+                            <h2 title={project.path}>
                               {foldToggle({
                                 open: open(key),
                                 label: `项目 · ${device.name} · ${name}`,
-                                icon: open(key) ? <FolderOpen /> : <Folder />,
                                 name,
                                 members: project.sessions,
                                 toggle: foldElsewhere(key),
                               })}
-                            </div>
+                            </h2>
                             {open(key) && renderSessions(key, project.sessions)}
-                          </Fragment>
+                          </section>
                         );
                       })}
-                    {open(id) && device.plain.length > 0 && projects.length > 0 && (
-                      <div className="elsewhere-project">
-                        {foldToggle({
-                          open: open(plainKey),
-                          label: `普通会话 · ${device.name}`,
-                          icon: open(plainKey) ? <FolderOpen /> : <Folder />,
-                          name: '普通会话',
-                          members: device.plain,
-                          toggle: foldElsewhere(plainKey),
-                        })}
-                      </div>
-                    )}
-                    {open(id) &&
-                      (open(plainKey) || !projects.length) &&
-                      renderSessions(plainKey, device.plain)}
+                    {open(id) && renderSessions(`${id}\n`, device.plain, true)}
                   </Fragment>
                 );
               })}
@@ -596,7 +664,7 @@ export default function Sidebar({
           </span>
           <small>
             {activity(card.session, rowState(card.session, failed))} ·{' '}
-            {new Date(card.session.updatedAt).toLocaleString('zh-CN')}
+            {new Date(card.session.updatedAt).toLocaleString('zh-CN', { hour12: false })}
           </small>
         </div>
       )}

@@ -229,7 +229,11 @@ test('a project lists its latest five sessions until it is listed in full', asyn
     await expect(group.locator('.session-row.selected')).toHaveCount(1);
     await expect(rows).toHaveCount(Math.min(count, 5));
   }
-  await group.getByRole('button', { name: '展开显示（还有 7 个）', exact: true }).click();
+  // "Show all" names the whole count, and lines up with the session titles above it.
+  const more = group.getByRole('button', { name: '显示全部 (12)', exact: true });
+  const titleLeft = (await rows.first().locator('strong').boundingBox())!.x;
+  expect(Math.abs((await more.boundingBox())!.x - titleLeft)).toBeLessThanOrEqual(1);
+  await more.click();
   await expect(rows).toHaveCount(12);
   const list = page.getByRole('navigation', { name: '会话列表', exact: true });
   const scroll = await list.evaluate((node) => {
@@ -248,9 +252,7 @@ test('a project lists its latest five sessions until it is listed in full', asyn
   await group.getByRole('button', { name: '收起', exact: true }).click();
   await expect(rows).toHaveCount(6);
   await expect(rows.last()).toContainText(oldest!);
-  await expect(
-    group.getByRole('button', { name: '展开显示（还有 6 个）', exact: true }),
-  ).toBeVisible();
+  await expect(group.getByRole('button', { name: '显示全部 (12)', exact: true })).toBeVisible();
   await rows.first().locator('.session-select').click();
   await expect(rows).toHaveCount(5);
   // A search lists every session it finds.
