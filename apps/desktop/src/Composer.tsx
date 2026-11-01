@@ -8,7 +8,7 @@ import type { Attachment, SetAttachments } from './attachments.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import {
-  ArrowRight,
+  ArrowUp,
   GitBranch,
   Play,
   Plus,
@@ -620,7 +620,7 @@ export default function Composer({
                     messageTooLong
                   }
                 >
-                  <ArrowRight />
+                  <ArrowUp />
                 </button>
               </>
             )

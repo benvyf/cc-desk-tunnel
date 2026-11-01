@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -16,7 +16,7 @@ import type { ProxyClient } from './client.ts';
 import WebAccessSettings from './WebAccessSettings.tsx';
 import Help from './Help.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
-import { connectionWaits, setPrefs, themes, usePrefs, waitRange } from './prefs.ts';
+import { connectionWaits, replyFonts, setPrefs, themes, usePrefs, waitRange } from './prefs.ts';
 import { viewModes } from './transcriptView.ts';
 import type { ConnectionWaits, NotifyKind } from './prefs.ts';
 import { inSummary, sampleStats, statFields, summaryText } from './turnStats.ts';
@@ -56,7 +56,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '主题 外观 字体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter',
+      '主题 外观 字体 回复字体 衬线 混排 宋体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter',
   },
   {
     id: 'notifications',
@@ -115,9 +115,34 @@ const waits: { step: keyof ConnectionWaits; title: string; detail: string }[] = 
     detail: '从连上服务端到隧道接通的总时间；至少比上一项多 35 秒',
   },
 ];
+// In a row of option cards the arrow keys, Home and End move the choice, as in any radio group.
+function moveChoice(
+  event: KeyboardEvent<HTMLElement>,
+  count: number,
+  index: number,
+  choose: (next: number) => void,
+) {
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? count - 1
+        : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+          ? (index + 1) % count
+          : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+            ? (index + count - 1) % count
+            : null;
+  if (next === null) return;
+  event.preventDefault();
+  choose(next);
+  event.currentTarget.querySelectorAll('button')[next].focus();
+}
+
 // How much of the work behind a reply is shown is a choice of this computer's window too.
 function ThemeSettings() {
-  const { theme } = usePrefs();
+  const { theme, replyFont } = usePrefs();
+  const font = replyFonts.find((entry) => entry.font === replyFont) ?? replyFonts[0];
   return (
     <>
       <h2 className="page-heading">外观</h2>
@@ -131,24 +156,14 @@ function ThemeSettings() {
             className="theme-options"
             role="radiogroup"
             aria-label="主题"
-            onKeyDown={(event) => {
-              if (event.altKey || event.ctrlKey || event.metaKey) return;
-              const index = themes.findIndex((entry) => entry.theme === theme);
-              const next =
-                event.key === 'Home'
-                  ? 0
-                  : event.key === 'End'
-                    ? themes.length - 1
-                    : event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                      ? (index + 1) % themes.length
-                      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                        ? (index + themes.length - 1) % themes.length
-                        : null;
-              if (next === null) return;
-              event.preventDefault();
-              setPrefs((prefs) => ({ ...prefs, theme: themes[next].theme }));
-              event.currentTarget.querySelectorAll('button')[next].focus();
-            }}
+            onKeyDown={(event) =>
+              moveChoice(
+                event,
+                themes.length,
+                themes.findIndex((entry) => entry.theme === theme),
+                (next) => setPrefs((prefs) => ({ ...prefs, theme: themes[next].theme })),
+              )
+            }
           >
             {themes.map((entry) => (
               <button
@@ -171,6 +186,42 @@ function ThemeSettings() {
                 <span className="theme-option-label">
                   {entry.label}
                   {entry.theme === theme && <Check aria-hidden="true" />}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="setting-row stat-picks">
+          <span>
+            <strong>回复字体</strong>
+            <small>{font.detail}</small>
+          </span>
+          <div
+            className="theme-options"
+            role="radiogroup"
+            aria-label="回复字体"
+            onKeyDown={(event) =>
+              moveChoice(event, replyFonts.length, replyFonts.indexOf(font), (next) =>
+                setPrefs((prefs) => ({ ...prefs, replyFont: replyFonts[next].font })),
+              )
+            }
+          >
+            {replyFonts.map((entry) => (
+              <button
+                type="button"
+                key={entry.font}
+                role="radio"
+                className="theme-option"
+                aria-checked={entry === font}
+                tabIndex={entry === font ? 0 : -1}
+                onClick={() => setPrefs((prefs) => ({ ...prefs, replyFont: entry.font }))}
+              >
+                <span className="font-preview" data-preview={entry.font} aria-hidden="true">
+                  Aa 字
+                </span>
+                <span className="theme-option-label">
+                  {entry.label}
+                  {entry === font && <Check aria-hidden="true" />}
                 </span>
               </button>
             ))}

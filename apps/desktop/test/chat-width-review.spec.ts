@@ -15,7 +15,7 @@ async function begin(page: Page) {
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 35, y + 20);
-  await expect.poll(() => width(page)).toBe(890);
+  await expect.poll(() => width(page)).toBe(838);
   return { x: x + 35, y: y + 20 };
 }
 
@@ -65,7 +65,7 @@ for (const button of ['right', 'middle'] as const) {
     await expect(page.locator('.chat-workspace')).not.toHaveAttribute('data-chat-width-dragging');
     const saved = await page.evaluate(() => localStorage.getItem('cc-chat-content-width'));
     // Browser context-menu/autoscroll capture cancellation or an ordinary commit must both end the gesture.
-    expect(await width(page)).toBe(saved === null ? 820 : Number(saved));
+    expect(await width(page)).toBe(saved === null ? 768 : Number(saved));
     const ended = await width(page);
     await page.mouse.move(at.x + 100, at.y + 20);
     expect(await width(page)).toBe(ended);

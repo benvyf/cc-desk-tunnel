@@ -390,3 +390,151 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
   await expect(disconnected).toHaveAttribute('role', 'alert');
   await expect(disconnected.getByRole('button')).toHaveCount(0);
 });
+
+test('the side list names each run state on its row and keeps a failure until the session is opened', async ({
+  page,
+}) => {
+  const connectionId = randomUUID();
+  const now = new Date().toISOString();
+  const make = (
+    title: string,
+    run: Partial<NonNullable<Session['activeRun']>> | null,
+  ): Session => ({
+    id: randomUUID(),
+    title,
+    autoTitle: false,
+    projectPath: 'D:\\工作\\状态',
+    permissionMode: 'auto',
+    model: null,
+    effort: null,
+    createdAt: now,
+    updatedAt: now,
+    activeRun: run && { id: randomUUID(), status: 'running', connectionId, ...run },
+  });
+  const failing = make('稍后失败', null);
+  const sessions = [
+    failing,
+    make('正在运行', {}),
+    make('等待审批中', { status: 'awaiting_approval', waiting: 'approval' }),
+    make('等待回答中', { status: 'awaiting_approval', waiting: 'question' }),
+    make('后台任务中', { waiting: 'background' }),
+    make('终端里运行', { surface: 'terminal' }),
+  ];
+  let send: (value: unknown) => void = () => {};
+  await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
+    send = (value) => route.send(JSON.stringify(value));
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'device') return;
+      if (message.type === 'auth')
+        return send({
+          type: 'ready',
+          protocolVersion: PROTOCOL_VERSION,
+          version: '0.0.1',
+          connectionId,
+          adapter: 'claude-code',
+          sessions,
+        });
+      if (message.type === 'session.subscribe')
+        send({
+          type: 'session.snapshot',
+          requestId: message.requestId,
+          session: sessions.find((item) => item.id === message.sessionId),
+          mode: 'replace',
+          firstSequence: 0,
+          lastSequence: 0,
+          hasEarlier: false,
+          events: [],
+        });
+      send({ type: 'response', requestId: message.requestId, ok: true });
+    });
+  });
+  await page.goto('/');
+  await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18891/ws');
+  await page
+    .getByLabel('服务凭据', { exact: true })
+    .fill('test-only-status-token-with-enough-length');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  const row = (title: string) => page.locator('.session-row').filter({ hasText: title });
+  // The colour a token gives in the side list, to compare a dot or a word with.
+  const token = (name: string) =>
+    page.evaluate((name) => {
+      const probe = document.createElement('i');
+      probe.style.color = `var(${name})`;
+      document.querySelector('.sidebar')!.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    }, name);
+  const dot = (title: string) =>
+    row(title)
+      .locator('.running-dot')
+      .evaluate((node) => getComputedStyle(node).backgroundColor);
+  const word = (title: string) =>
+    row(title)
+      .locator('.session-select small')
+      .evaluate((node) => getComputedStyle(node).color);
+  for (const [title, state, label, alive, colour, text] of [
+    ['正在运行', 'running', '运行中', true, '--clay', '--accent'],
+    ['等待审批中', 'approval', '等待审批', false, '--warn', '--warn-text'],
+    ['等待回答中', 'question', '等待回答', false, '--warn', '--warn-text'],
+    ['后台任务中', 'background', '后台任务', true, '--faint', '--muted'],
+    ['终端里运行', 'terminal', '原生终端', true, '--faint', '--muted'],
+  ] as const) {
+    await expect(row(title)).toHaveAttribute('data-state', state);
+    await expect(row(title).locator('small')).toHaveText(label);
+    await expect(row(title).locator('.running-dot')).toHaveClass(
+      alive ? /breathing/ : /^running-dot$/,
+    );
+    expect(await dot(title)).toBe(await token(colour));
+    expect(await word(title)).toBe(await token(text));
+  }
+  await expect(row(failing.title)).not.toHaveAttribute('data-state');
+  await expect(row(failing.title).locator('.running-dot')).toHaveCount(0);
+
+  // A run that fails while another session is on screen leaves its row red until it is opened.
+  await row(failing.title).locator('.session-select').click();
+  await row('正在运行').locator('.session-select').click();
+  const run = { id: randomUUID(), status: 'running' as const, connectionId };
+  send({ type: 'session.updated', session: { ...failing, activeRun: run } });
+  await expect(row(failing.title)).toHaveAttribute('data-state', 'running');
+  send({ type: 'session.updated', session: { ...failing, activeRun: null } });
+  send({
+    type: 'session.event',
+    event: {
+      sessionId: failing.id,
+      runId: run.id,
+      sequence: 1,
+      createdAt: new Date().toISOString(),
+      payload: { type: 'run.status', status: 'failed', connectionId },
+    },
+  });
+  await expect(row(failing.title)).toHaveAttribute('data-state', 'failed');
+  await expect(row(failing.title).locator('small')).toHaveText('失败');
+  await expect(row(failing.title).locator('.running-dot')).not.toHaveClass(/breathing/);
+  expect(await dot(failing.title)).toBe(await token('--danger'));
+  expect(await word(failing.title)).toBe(await token('--danger-text'));
+  // The state stays readable under the pointer, where the time gives way to the row's action.
+  await row(failing.title).hover();
+  await expect(row(failing.title).locator('small')).toBeVisible();
+
+  // Folded, the project shows the one state that most needs the user.
+  const project = page.locator('.project-toggle').filter({ hasText: '状态' });
+  await project.click();
+  await expect(project).toHaveAttribute('data-state', 'failed');
+  await expect(project.locator('.running-dot')).not.toHaveClass(/breathing/);
+  await project.click();
+  await row(failing.title).locator('.session-select').click();
+  await expect(row(failing.title)).not.toHaveAttribute('data-state');
+  await project.click();
+  await expect(project).toHaveAttribute('data-state', 'approval');
+  await project.click();
+
+  // Running again clears a failure as well.
+  await row('正在运行').locator('.session-select').click();
+  send({
+    type: 'session.updated',
+    session: { ...failing, activeRun: { ...run, id: randomUUID() } },
+  });
+  await expect(row(failing.title)).toHaveAttribute('data-state', 'running');
+});

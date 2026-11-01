@@ -149,3 +149,63 @@ test('a live interface size change refits a mounted draft without typing or resi
   });
   await expect.poll(() => draft.evaluate((box) => box.clientHeight)).toBe(before);
 });
+
+test('the reply face is chosen in Appearance, ships its Chinese serif, survives reload and leaves titles serif', async ({
+  page,
+}) => {
+  await settings(page);
+  const faces = page.getByRole('radiogroup', { name: '回复字体', exact: true });
+  const face = (name: string) => faces.getByRole('radio', { name, exact: true });
+  await expect(face('衬线')).toHaveAttribute('aria-checked', 'true');
+  await samples(page);
+  const reply = page.locator('.font-size-samples .message.assistant p');
+  const title = page.locator('.page-title');
+  const family = (target: typeof reply) =>
+    target.evaluate((node) => getComputedStyle(node).fontFamily);
+  expect(await family(reply)).toMatch(/^"CC Serif", .*"CC Serif SC"/);
+  // The bundled Chinese serif loads, in both of its weights, and holds the characters of a reply.
+  const loaded = await page.evaluate(async () =>
+    Promise.all(
+      ['400', '600'].map(async (weight) => {
+        const fonts = await document.fonts.load(`${weight} 16px "CC Serif SC"`, '回复字体');
+        return fonts.map((font) => `${font.weight} ${font.status}`).join();
+      }),
+    ),
+  );
+  expect(loaded).toEqual(['400 loaded', '600 loaded']);
+  expect(
+    await page.evaluate(() => document.fonts.check('16px "CC Serif SC"', '这是简体中文回复')),
+  ).toBe(true);
+
+  await face('混排').click();
+  await expect(page.locator('html')).toHaveAttribute('data-reply-font', 'mixed');
+  await expect(faces.locator('xpath=../span/small')).toHaveText('英文 Newsreader，中文与界面相同');
+  expect(await family(reply)).toMatch(/^"CC Serif", "Microsoft YaHei UI"/);
+  expect(await family(reply)).not.toContain('CC Serif SC');
+  // Titles and the greeting keep the serif whatever replies use.
+  expect(await family(title)).toContain('CC Serif SC');
+
+  await face('混排').press('ArrowRight');
+  await expect(face('与界面一致')).toBeFocused();
+  await expect(face('与界面一致')).toHaveAttribute('aria-checked', 'true');
+  expect(await family(reply)).toBe(
+    await page.locator('body').evaluate((node) => getComputedStyle(node).fontFamily),
+  );
+  expect(await family(title)).toContain('CC Serif SC');
+  expect(await page.evaluate(() => JSON.parse(localStorage['proxy-prefs']).replyFont)).toBe('ui');
+
+  await settings(page);
+  await expect(face('与界面一致')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-reply-font', 'ui');
+  await face('与界面一致').press('End');
+  await face('与界面一致').press('Home');
+  await expect(face('衬线')).toBeFocused();
+  await expect(page.locator('html')).toHaveAttribute('data-reply-font', 'serif');
+  // An unknown saved value falls back to the serif.
+  await page.evaluate(() => {
+    const prefs = JSON.parse(localStorage['proxy-prefs']);
+    localStorage['proxy-prefs'] = JSON.stringify({ ...prefs, replyFont: 'comic' });
+  });
+  await settings(page);
+  await expect(face('衬线')).toHaveAttribute('aria-checked', 'true');
+});

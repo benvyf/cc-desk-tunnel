@@ -62,7 +62,7 @@ test('glyph scales, baseline, spinner and keyboard copy feedback survive the mig
     const copyPath = '/src/copy.tsx';
     const React = (await import(reactPath)).default;
     const { createRoot } = (await import(domPath)).default;
-    const { Search, Spark, LoaderCircle, ArrowRight } = await import(iconsPath);
+    const { Search, Spark, LoaderCircle, ArrowUp } = await import(iconsPath);
     const { CopyButton } = await import(copyPath);
     const root = document.createElement('main');
     document.body.replaceChildren(root);
@@ -89,7 +89,7 @@ test('glyph scales, baseline, spinner and keyboard copy feedback survive the mig
         React.createElement(
           'button',
           { className: 'send-button', 'aria-label': '发送消息' },
-          React.createElement(ArrowRight),
+          React.createElement(ArrowUp),
         ),
         React.createElement(CopyButton, { text: '图标复制验证', label: '复制内容' }),
       ),
@@ -111,6 +111,9 @@ test('glyph scales, baseline, spinner and keyboard copy feedback survive the mig
     await expect(glyph).toHaveAttribute('data-weight', 'regular');
   }
   await expect(page.getByTestId('spark').locator('svg')).toHaveAttribute('viewBox', '0 0 256 256');
+  // The send glyph is drawn pointing up; the stylesheet does not turn it.
+  await expect(page.locator('.send-button svg')).toHaveCSS('rotate', 'none');
+  await expect(page.locator('.send-button svg')).toHaveCSS('transform', 'none');
   await expect(page.getByTestId('spinner').locator('svg')).toHaveCSS('animation-name', 'spin');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(page.getByTestId('spinner').locator('svg')).toHaveCSS('animation-name', 'none');

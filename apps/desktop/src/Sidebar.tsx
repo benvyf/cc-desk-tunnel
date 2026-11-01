@@ -25,12 +25,38 @@ import { useConnectionName } from './shared.ts';
 import { IconButton } from './ui.tsx';
 import type { MenuPosition } from './ui.tsx';
 
-function activity(session: Session) {
-  if (!session.activeRun) return ago(Date.parse(session.updatedAt));
-  if (session.activeRun.surface === 'terminal') return '原生终端';
-  if (session.activeRun.waiting === 'background') return '后台任务';
-  if (session.activeRun.status !== 'awaiting_approval') return '运行中';
-  return session.activeRun.waiting === 'question' ? '等待回答' : '等待审批';
+// What a session is doing, as its row names it in `data-state`: the stylesheet colours the dot and the word by it.
+type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed';
+const stateLabels: Record<RowState, string> = {
+  running: '运行中',
+  approval: '等待审批',
+  question: '等待回答',
+  background: '后台任务',
+  terminal: '原生终端',
+  failed: '失败',
+};
+// A folded list shows the one state that most needs the user.
+const stateRank: Record<RowState, number> = {
+  failed: 3,
+  approval: 2,
+  question: 2,
+  running: 1,
+  background: 0,
+  terminal: 0,
+};
+function rowState(session: Session, failed: ReadonlySet<string>): RowState | undefined {
+  const run = session.activeRun;
+  if (!run) return failed.has(session.id) ? 'failed' : undefined;
+  if (run.surface === 'terminal') return 'terminal';
+  if (run.waiting === 'background') return 'background';
+  if (run.status !== 'awaiting_approval') return 'running';
+  return run.waiting === 'question' ? 'question' : 'approval';
+}
+// A run that is alive breathes; one that waits for the user, or has failed, rests.
+const breathes = (state: RowState) =>
+  state === 'running' || state === 'background' || state === 'terminal';
+function activity(session: Session, state: RowState | undefined) {
+  return state ? stateLabels[state] : ago(Date.parse(session.updatedAt));
 }
 
 // A list of sessions shows its latest few until it is listed in full.
@@ -92,6 +118,7 @@ export default function Sidebar({
 }) {
   const prefs = usePrefs();
   const connectionName = useConnectionName();
+  const { failed } = notifications;
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
   // The lists listed in full rather than their latest few, for this window only.
@@ -205,17 +232,26 @@ export default function Sidebar({
     members: Session[];
     toggle: () => void;
   }) {
+    const state = open
+      ? undefined
+      : members
+          .map((session) => rowState(session, failed))
+          .reduce<RowState | undefined>(
+            (top, next) => (next && (!top || stateRank[next] > stateRank[top]) ? next : top),
+            undefined,
+          );
     return (
       <button
         type="button"
         className="project-toggle"
         aria-expanded={open}
         aria-label={`${open ? '收起' : '展开'}${label}`}
+        data-state={state}
         onClick={toggle}
       >
         {icon}
         <span>{name}</span>
-        {!open && members.some((session) => session.activeRun) && <i className="running-dot" />}
+        {state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
         {!open && members.length > 0 && <small>{members.length}</small>}
       </button>
     );
@@ -223,11 +259,12 @@ export default function Sidebar({
   const foldElsewhere = (key: string) => () =>
     setPrefs((value) => ({ ...value, collapsedElsewhere: toggled(value.collapsedElsewhere, key) }));
 
-  // A list shows its latest few sessions, and also the open one and those at work wherever they are, until it is
-  // listed in full. A search lists all it found.
+  // A list shows its latest few sessions, and also the open one and those at work or failed wherever they are,
+  // until it is listed in full. A search lists all it found.
   function renderSessions(key: string, members: Session[]) {
     const kept = members.filter(
-      (session, index) => index < PAGE || session.id === selectedId || session.activeRun,
+      (session, index) =>
+        index < PAGE || session.id === selectedId || session.activeRun || failed.has(session.id),
     );
     if (search.trim() || kept.length === members.length) return members.map(renderSession);
     const full = listed.includes(key);
@@ -247,9 +284,11 @@ export default function Sidebar({
 
   function renderSession(session: Session) {
     const isPinned = prefs.pinnedSessions.includes(session.id);
+    const state = rowState(session, failed);
     return (
       <div
         className={`session-row ${selectedId === session.id ? 'selected' : ''}`}
+        data-state={state}
         key={session.id}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -278,12 +317,8 @@ export default function Sidebar({
           onClick={() => select(session.id)}
         >
           <strong>{session.title}</strong>
-          {session.activeRun && (
-            <span
-              className={`running-dot${session.activeRun.status === 'awaiting_approval' ? '' : ' breathing'}`}
-            />
-          )}
-          <small>{activity(session)}</small>
+          {state && <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
+          <small>{activity(session, state)}</small>
         </button>
         <IconButton
           title={isPinned ? '取消置顶' : '置顶'}
@@ -518,7 +553,8 @@ export default function Sidebar({
               : card.session.projectPath}
           </span>
           <small>
-            {activity(card.session)} · {new Date(card.session.updatedAt).toLocaleString('zh-CN')}
+            {activity(card.session, rowState(card.session, failed))} ·{' '}
+            {new Date(card.session.updatedAt).toLocaleString('zh-CN')}
           </small>
         </div>
       )}

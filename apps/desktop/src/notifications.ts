@@ -20,6 +20,9 @@ export type Notifications = {
   push: (notice: Pick<Notice, 'kind' | 'title' | 'body' | 'sessionId'>) => void;
   markRead: () => void;
   clear: () => void;
+  // Sessions whose last run failed: the list marks them until they are opened or run again, whether or not
+  // failures raise a notice.
+  failed: ReadonlySet<string>;
 };
 const kept = 50;
 const away = () => !document.hasFocus() || document.visibilityState === 'hidden';
@@ -30,8 +33,20 @@ const away = () => !document.hasFocus() || document.visibilityState === 'hidden'
 // about it counts as read. Only what waits for the user's answer also asks for attention in the taskbar.
 export function useNotifications(client: ProxyClient, viewing: () => string | null): Notifications {
   const [notices, setNotices] = useState<Notice[]>([]);
+  const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
   const view = useRef(viewing);
   view.current = viewing;
+  const mark = useCallback(
+    (sessionId: string, failure: boolean) =>
+      setFailed((current) => {
+        if (current.has(sessionId) === failure) return current;
+        const next = new Set(current);
+        if (failure) next.add(sessionId);
+        else next.delete(sessionId);
+        return next;
+      }),
+    [],
+  );
 
   const push = useCallback<Notifications['push']>((notice) => {
     const prefs = getPrefs().notify;
@@ -59,6 +74,7 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
     const read = () => {
       const sessionId = view.current();
       if (!sessionId || away()) return;
+      mark(sessionId, false);
       setNotices((current) =>
         current.some((notice) => !notice.read && notice.sessionId === sessionId)
           ? current.map((notice) =>
@@ -74,7 +90,7 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
       window.removeEventListener('focus', read);
       document.removeEventListener('visibilitychange', read);
     };
-  }, [seen]);
+  }, [seen, mark]);
 
   useEffect(() => {
     let previous = new Map<string, Session['activeRun']>();
@@ -91,6 +107,7 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
         for (const session of sessions) {
           const before = previous.get(session.id);
           const now = session.activeRun;
+          if (now && !before) mark(session.id, false);
           if (now?.surface === 'terminal' || before?.surface === 'terminal') continue;
           if (now?.status === 'awaiting_approval' && before?.status !== 'awaiting_approval')
             waiting(session);
@@ -123,18 +140,21 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
         // Stopping a run is the user's own doing.
         if (outcome === 'cancelled') return;
         const error = events.findLast((event) => event.payload.type === 'run.error')?.payload;
-        if (outcome === 'failed' || error)
+        if (outcome === 'failed' || error) {
+          // The session being read in a focused window shows the failure itself.
+          if (away() || session.id !== view.current()) mark(session.id, true);
           push({
             kind: 'failed',
             title: '任务失败',
             body: `${session.title}${error?.type === 'run.error' ? `：${error.message}` : ''}`,
             sessionId: session.id,
           });
-        else push({ kind: 'done', title: '任务完成', body: session.title, sessionId: session.id });
+        } else
+          push({ kind: 'done', title: '任务完成', body: session.title, sessionId: session.id });
       });
     inspect();
     return client.subscribe(inspect);
-  }, [client, push]);
+  }, [client, push, mark]);
 
   return {
     notices,
@@ -145,5 +165,6 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
       [],
     ),
     clear: useCallback(() => setNotices([]), []),
+    failed,
   };
 }

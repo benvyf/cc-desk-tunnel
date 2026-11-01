@@ -20,6 +20,22 @@
   font-display: swap;
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F;
 }
+/* Noto Serif SC (Source Han Serif, OFL), cut down to the GB2312 characters: the Chinese of replies, page titles
+   and dialogs, regular and semibold. What it lacks falls to the interface's Chinese face. */
+@font-face {
+  font-family: 'CC Serif SC';
+  src: url('./fonts/noto-serif-sc-gb2312-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'CC Serif SC';
+  src: url('./fonts/noto-serif-sc-gb2312-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
 :root,
 .theme-preview {
   /* The frame (title bar, rail and side column), the page that rests on it, then cards, inputs and popovers. */
@@ -37,14 +53,18 @@
 :root {
   color-scheme: light dark;
   /* Controls and lists use the interface face; what Claude writes uses the serif; code is monospaced.
-     Without a Chinese serif on the system, replies pair the Latin serif with the interface's Chinese face. */
+     Replies follow the settings (`data-reply-font`, below): the serif, the Latin serif with the interface's
+     Chinese, or the interface face itself. Titles and the greeting keep the serif. */
   --font-ui:
     'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC',
     system-ui, sans-serif;
-  --font-reply:
-    'CC Serif', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'Songti SC',
-    'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', serif;
-  --font-display: var(--font-reply);
+  --font-reply-serif:
+    'CC Serif', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'CC Serif SC',
+    'Songti SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', serif;
+  --font-reply-mixed:
+    'CC Serif', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+  --font-reply: var(--font-reply-serif);
+  --font-display: var(--font-reply-serif);
   --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'Microsoft YaHei UI', monospace;
   --surface: var(--surface-2);
   /* What floats over the page: menus, dialogs and tips. */
@@ -162,6 +182,28 @@
   --code-inline-text: light-dark(#8e2626, #ec9a8a);
   --code-inline-bg: light-dark(rgb(20 20 19 / 5%), rgb(250 249 245 / 7%));
   --code-shadow: none;
+  /* The terminal is the same warm night in either app theme; NativeTerminal.tsx hands these to xterm. Every
+     colour but black reads at 4.5:1 or more on the canvas. */
+  --terminal-bg: #141413;
+  --terminal-fg: #faf9f5;
+  --terminal-cursor: #d97757;
+  --terminal-selection: #633d2c;
+  --terminal-black: #3d3c39;
+  --terminal-red: #e06c6c;
+  --terminal-green: #8fb573;
+  --terminal-yellow: #e0a43c;
+  --terminal-blue: #6a9bcc;
+  --terminal-magenta: #c48fb4;
+  --terminal-cyan: #6fb3a9;
+  --terminal-white: #c2c0b6;
+  --terminal-bright-black: #8e8c84;
+  --terminal-bright-red: #f08a8a;
+  --terminal-bright-green: #a9c98f;
+  --terminal-bright-yellow: #e8bd6a;
+  --terminal-bright-blue: #8fb5dc;
+  --terminal-bright-magenta: #d6a8c9;
+  --terminal-bright-cyan: #8fcbc1;
+  --terminal-bright-white: #faf9f5;
   /* Chart series, from Anthropic's supporting colours; the usage trend puts input (sky) first. */
   --series-1: #c6613f;
   --series-2: #6a9bcc;
@@ -194,6 +236,12 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 }
+:root[data-reply-font='mixed'] {
+  --font-reply: var(--font-reply-mixed);
+}
+:root[data-reply-font='ui'] {
+  --font-reply: var(--font-ui);
+}
 .native-terminal {
   /* ANSI output keeps a warm dark canvas; its controls must use the same palette in either app theme. */
   --text: #faf9f5;
@@ -207,7 +255,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #141413;
+  background: var(--terminal-bg);
   color: var(--text);
   border-bottom: 0;
 }
@@ -243,10 +291,10 @@
   height: 100%;
   padding: 5px 4px;
 }
-/* xterm paints its canvas inline; until its theme follows these tokens, the warm canvas must win. */
-.terminal-host .xterm-viewport,
-.terminal-host .xterm-screen {
-  background-color: #141413 !important;
+/* xterm paints its theme (NativeTerminal.tsx) on the scrolling area only; the viewport behind that inset would
+   keep xterm.css's black, so it takes the same token. */
+.terminal-host .xterm .xterm-viewport {
+  background-color: var(--terminal-bg);
 }
 .message.thinking {
   color: var(--muted);
@@ -1658,22 +1706,38 @@ dialog:has(.release-notes) {
   display: none;
 }
 /* A state stays readable under the pointer: only the time gives way to the row's action. */
-.session-row:hover .session-select:has(.running-dot) small,
-.session-row:focus-within .session-select:has(.running-dot) small {
+.session-row[data-state]:hover .session-select small,
+.session-row[data-state]:focus-within .session-select small {
   display: inline;
 }
-.session-select:has(.running-dot.breathing) small {
+/* Each row names its state in `data-state` (Sidebar.tsx), as does a folded list for the one that most needs
+   the user; the dot and the word take their colour from it. Running breathes in clay. Waiting for the user (an
+   approval or a question) is amber and still, with a halo. What goes on after Claude's turn (background tasks)
+   or outside the conversation (the native terminal) is grey. A failure is red until the session is opened. */
+.session-row[data-state='running'] .session-select small {
   color: var(--accent);
 }
-/* Waiting for the user (an approval or a question) is amber and still, with a halo; running breathes in clay. */
-.session-select .running-dot:not(.breathing),
-.project-toggle .running-dot:not(.breathing) {
+:is(.session-row, .project-toggle):is([data-state='approval'], [data-state='question'])
+  .running-dot {
   background: var(--warn);
   box-shadow: 0 0 0 3px light-dark(rgb(169 116 15 / 16%), rgb(224 164 60 / 18%));
 }
-.session-select:has(.running-dot:not(.breathing)) small {
+.session-row:is([data-state='approval'], [data-state='question']) .session-select small {
   color: var(--warn-text);
   font-weight: 500;
+}
+:is(.session-row, .project-toggle):is([data-state='background'], [data-state='terminal'])
+  .running-dot {
+  background: var(--faint);
+}
+.session-row:is([data-state='background'], [data-state='terminal']) .session-select small {
+  color: var(--muted);
+}
+:is(.session-row, .project-toggle)[data-state='failed'] .running-dot {
+  background: var(--danger);
+}
+.session-row[data-state='failed'] .session-select small {
+  color: var(--danger-text);
 }
 .session-card {
   position: fixed;
@@ -2773,7 +2837,7 @@ dialog:has(.picture-view) {
   line-height: 1.5;
 }
 .transcript {
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto;
   min-width: 0;
 }
@@ -3346,7 +3410,7 @@ details[open] > summary > .fold-chevron {
   gap: 0 6px;
   box-sizing: border-box;
   width: 100%;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: -16px auto 0;
   padding: 0 28px 8px;
   font-size: calc(12rem / 14);
@@ -3864,7 +3928,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   align-self: center;
   width: calc(100% - 56px);
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   min-height: 24px;
   gap: 8px;
   margin: 0 0 4px;
@@ -4009,7 +4073,7 @@ details[open] > summary > .fold-chevron {
 .composer-context {
   display: flex;
   gap: 6px;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto 8px;
   min-width: 0;
   align-items: center;
@@ -4026,7 +4090,7 @@ details[open] > summary > .fold-chevron {
   flex-direction: column;
   width: 100%;
   min-height: 0;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto;
   border: 0;
   border-radius: var(--radius-2xl);
@@ -4269,7 +4333,7 @@ details[open] > summary > .fold-chevron {
 }
 .follow-up-queue {
   width: calc(100% - 28px);
-  max-width: calc(var(--chat-content-width, 820px) - 28px);
+  max-width: calc(var(--chat-content-width, 768px) - 28px);
   min-width: 0;
   flex-shrink: 0;
   margin: 0 auto -14px;
@@ -4661,7 +4725,7 @@ details[open] > summary > .fold-chevron {
 }
 .slash-menu {
   bottom: calc(100% - 44px);
-  left: max(28px, calc((100% - 820px) / 2));
+  left: max(28px, calc((100% - var(--chat-content-width, 768px)) / 2));
   width: 340px;
   max-width: calc(100vw - 40px);
   max-height: min(340px, 50vh);
@@ -4734,9 +4798,6 @@ details[open] > summary > .fold-chevron {
   background: var(--send);
   color: #fff;
   opacity: 0.4;
-}
-.send-button svg.app-icon {
-  rotate: -90deg; /* The arrow points up; phase 2 ships the ArrowUp glyph and drops this. */
 }
 .stop-button {
   background: var(--ink);
@@ -5470,7 +5531,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto 18px;
   padding: 12px 14px;
   border: 1px solid var(--line);
@@ -5932,6 +5993,29 @@ dialog::backdrop {
   border-radius: 5px;
   background: var(--surface-3);
 }
+/* Each reply face shows itself, on the page's paper. */
+.font-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: calc(24rem / 14);
+  line-height: 1;
+  white-space: nowrap;
+}
+.font-preview[data-preview='serif'] {
+  font-family: var(--font-reply-serif);
+}
+.font-preview[data-preview='mixed'] {
+  font-family: var(--font-reply-mixed);
+}
+.font-preview[data-preview='ui'] {
+  font-family: var(--font-ui);
+}
 .theme-option-label {
   display: flex;
   align-items: center;
@@ -5956,7 +6040,8 @@ dialog::backdrop {
     align-items: center;
     gap: 10px;
   }
-  .theme-preview {
+  .theme-preview,
+  .font-preview {
     height: 56px;
   }
 }
@@ -6593,7 +6678,7 @@ dialog:has(.web-settings-form) {
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: #141413;
+  background: var(--terminal-bg);
 }
 .terminal-panel {
   display: flex;

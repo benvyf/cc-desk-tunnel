@@ -24,6 +24,14 @@ export const themes = [
   { theme: 'dark', label: '深色' },
 ] as const;
 export type Theme = (typeof themes)[number]['theme'];
+// The face Claude's replies are set in. The page shows the choice as `data-reply-font` on its root (main.tsx),
+// and the top of style.css gives each its fonts; the Chinese serif ships with the program.
+export const replyFonts = [
+  { font: 'serif', label: '衬线', detail: '英文 Newsreader，中文思源宋体，最接近 Claude' },
+  { font: 'mixed', label: '混排', detail: '英文 Newsreader，中文与界面相同' },
+  { font: 'ui', label: '与界面一致', detail: '回复与界面使用同一种无衬线字体' },
+] as const;
+export type ReplyFont = (typeof replyFonts)[number]['font'];
 export const sidebarWidthRange = { min: 264, max: 420, default: 284 };
 export type Prefs = {
   sidebarWidth: number;
@@ -57,6 +65,7 @@ export type Prefs = {
   // The strip under the input box with the whole session's figures; chosen the same way.
   sessionBar: { enabled: boolean; summary: Record<string, boolean> };
   theme: Theme;
+  replyFont: ReplyFont;
   fontSizes: FontSizes;
   sessionDefaults: SessionDefaults;
 };
@@ -90,6 +99,7 @@ const defaults: Prefs = {
   view: defaultView,
   sessionBar: { enabled: false, summary: {} },
   theme: 'system',
+  replyFont: 'serif',
   fontSizes: defaultFontSizes,
   sessionDefaults: { model: null, effort: null },
 };
@@ -165,6 +175,8 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
         ),
       },
       theme: themes.find((entry) => entry.theme === saved.theme)?.theme ?? defaults.theme,
+      replyFont:
+        replyFonts.find((entry) => entry.font === saved.replyFont)?.font ?? defaults.replyFont,
       fontSizes: readFontSizes(saved.fontSizes),
       sessionDefaults: readSessionDefaults(saved.sessionDefaults),
     };

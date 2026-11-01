@@ -4,7 +4,7 @@ export const chatWidthMin = 640;
 export const chatWidthEdges = 120;
 export const resolveChatWidth = (column: number, preference: number | null) =>
   Math.min(
-    Math.max(chatWidthMin, preference ?? 820),
+    Math.max(chatWidthMin, preference ?? 768),
     Math.max(chatWidthMin, column - chatWidthEdges),
   );
 

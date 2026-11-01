@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Terminal } from '@xterm/xterm';
+import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { RequestFailedError, type ProxyClient } from './client.ts';
 import { X } from './icons.tsx';
@@ -16,6 +17,27 @@ export type TerminalHandle = {
   focus: () => void;
   paste: (text: string) => void;
 };
+// The canvas takes its colours from the stylesheet's `--terminal-*` tokens (top of style.css): the same warm
+// night in either app theme. Each ANSI colour has a token of its name, its bright one `--terminal-bright-…`.
+const ansi = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'] as const;
+function terminalTheme(element: Element): ITheme {
+  const style = getComputedStyle(element);
+  const token = (name: string) => style.getPropertyValue(`--terminal-${name}`).trim() || undefined;
+  return {
+    background: token('bg'),
+    foreground: token('fg'),
+    cursor: token('cursor'),
+    cursorAccent: token('bg'),
+    selectionBackground: token('selection'),
+    ...Object.fromEntries(
+      ansi.flatMap((name) => [
+        [name, token(name)],
+        [`bright${name[0].toUpperCase()}${name.slice(1)}`, token(`bright-${name}`)],
+      ]),
+    ),
+  };
+}
+
 export default function NativeTerminal({
   client,
   sessionId,
@@ -71,12 +93,7 @@ export default function NativeTerminal({
         allowNonHttpProtocols: true,
         activate: (_event, target) => followLink(target),
       },
-      theme: {
-        background: '#0b0b0a',
-        foreground: '#dedcd6',
-        cursor: '#d97757',
-        selectionBackground: '#633d2c',
-      },
+      theme: terminalTheme(host.current!),
     });
     const fit = new FitAddon();
     terminal.loadAddon(fit);
@@ -100,6 +117,15 @@ export default function NativeTerminal({
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     const connectionId = client.state?.connectionId;
     const minimumRows = client.state?.terminalWorkspace?.minRows ?? 5;
+    // A window opened for the terminal is handed the page's stylesheets as it opens; one that is still loading
+    // has no tokens yet, so the colours are taken again once it has.
+    const repaint = () => {
+      if (!disposed) terminal.options.theme = terminalTheme(host.current!);
+    };
+    const loading = [
+      ...host.current!.ownerDocument.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
+    ].filter((link) => !link.sheet);
+    for (const link of loading) link.addEventListener('load', repaint);
     function followLink(target: string) {
       if (disposed) return;
       if (client.state?.connectionId !== connectionId || phaseNow() === 'disconnected') {
@@ -489,6 +515,7 @@ export default function NativeTerminal({
       view.removeEventListener('resize', onWindowResize);
       input.dispose();
       links.dispose();
+      for (const link of loading) link.removeEventListener('load', repaint);
       unwatch?.();
       view.cancelAnimationFrame(resizeFrame);
       callbacks.current.register?.(null);
