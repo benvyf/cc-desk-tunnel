@@ -1,9 +1,20 @@
 import { useContext, useId, useLayoutEffect, useRef, useState } from 'react';
 import { SearchExpanded } from './ConversationFind.tsx';
+import { CircleAlert, RotateCcw } from './icons.tsx';
 
 // Keep the complete notice in the DOM for selection, copying and search. Only ordinary notices fold;
 // errors always show every line. Resizing can turn a short notice into an overflowing one.
-export default function RunNotice({ text, error }: { text: string; error: boolean }) {
+// A failure is one red bar where the turn ends (spec §5.9); the notice that ends the latest turn, a failure or a
+// stop, carries the way to take it up again.
+export default function RunNotice({
+  text,
+  error,
+  resume,
+}: {
+  text: string;
+  error: boolean;
+  resume?: () => void;
+}) {
   const id = useId();
   const content = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -25,27 +36,36 @@ export default function RunNotice({ text, error }: { text: string; error: boolea
   }, [text, error]);
 
   return (
-    <div className={`run-notice${error ? ' failed' : ''}`}>
-      <div
-        id={id}
-        ref={content}
-        className={`run-notice-text${shown ? ' expanded' : ''}`}
-        role={error ? 'alert' : 'status'}
-        data-search-content
-        data-copy-text={text}
-      >
-        {text}
-      </div>
-      {!error && overflowing && !searching && (
-        <button
-          type="button"
-          className="notice-toggle"
-          aria-expanded={expanded}
-          aria-controls={id}
-          data-search-ignore
-          onClick={() => setExpanded(!expanded)}
+    <div className={`run-notice${error ? ' failed' : ''}${resume ? ' resumable' : ''}`}>
+      {error && <CircleAlert className="run-notice-mark" aria-hidden="true" />}
+      <div className="run-notice-body">
+        <div
+          id={id}
+          ref={content}
+          className={`run-notice-text${shown ? ' expanded' : ''}`}
+          role={error ? 'alert' : 'status'}
+          data-search-content
+          data-copy-text={text}
         >
-          {expanded ? '收起' : '展开全文'}
+          {text}
+        </div>
+        {!error && overflowing && !searching && (
+          <button
+            type="button"
+            className="notice-toggle"
+            aria-expanded={expanded}
+            aria-controls={id}
+            data-search-ignore
+            onClick={() => setExpanded(!expanded)}
+          >
+            {expanded ? '收起' : '展开全文'}
+          </button>
+        )}
+      </div>
+      {resume && (
+        <button type="button" className="button" data-size="sm" onClick={resume}>
+          <RotateCcw />
+          继续上一轮
         </button>
       )}
     </div>

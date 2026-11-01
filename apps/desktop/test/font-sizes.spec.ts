@@ -30,7 +30,7 @@ test('interface and code sizes update independently, survive reload, reject unfi
   const prose = page.locator('.font-size-samples .message.user p');
   const block = page.locator('.font-size-samples .code-block pre');
   const inline = page.locator('.font-size-samples p code');
-  const input = page.locator('.font-size-samples .tool-input');
+  const input = page.locator('.font-size-samples .tool-input .tool-command');
   await expect(prose).toHaveCSS('font-size', user(14));
   await expect(block).toHaveCSS('font-size', '13px');
   await ui.fill('18');

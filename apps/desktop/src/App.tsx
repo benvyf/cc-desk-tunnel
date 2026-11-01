@@ -88,7 +88,6 @@ import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
-import { RunSummary } from './RunStatus.tsx';
 import { FollowUps } from './followUps.ts';
 import FollowUpQueue from './FollowUpQueue.tsx';
 import PreviewSidebar from './PreviewSidebar.tsx';
@@ -2165,6 +2164,9 @@ export function App({
                   : undefined
               }
               sideQuoteAvailable={connected && state.sideConversations}
+              resume={
+                stopped && !inputDisabled && !terminalsActive ? () => void resume() : undefined
+              }
               events={events}
               history={history}
               connected={connected}
@@ -2295,15 +2297,6 @@ export function App({
                 <Laptop />
                 <p>设备“{selected.device?.name ?? '未知设备'}”未连接，当前只能查看会话。</p>
               </div>
-            )}
-            {selected && (!away || remote) && !terminalsActive && !history?.loading && (
-              <RunSummary
-                session={selected}
-                events={state.events[selected.id] ?? []}
-                clock={clock}
-                connected={connected}
-                resume={stopped && !inputDisabled ? () => void resume() : undefined}
-              />
             )}
 
             {selected && (!away || remote) && !terminalsActive && (

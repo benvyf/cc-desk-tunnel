@@ -1,3 +1,4 @@
+import { lineChanges } from './lineDiff.ts';
 import type { TranscriptItem, Work } from './transcript.ts';
 
 type Tool = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -45,7 +46,6 @@ function fields(input: string): Record<string, unknown> {
   }
 }
 const text = (value: unknown) => (typeof value === 'string' ? value : '');
-const lineCount = (value: unknown) => (text(value) ? text(value).split('\n').length : 0);
 const fileName = (value: unknown) => text(value).split(/[\\/]/).at(-1) ?? '';
 
 export const categoryOf = (tool: Tool): Category => categories[tool.name] ?? 'other';
@@ -64,9 +64,14 @@ export function describe(tool: Tool, active: boolean) {
   else if (category === 'edit') {
     subject = fileName(input.file_path ?? input.notebook_path);
     const edits = Array.isArray(input.edits) ? (input.edits as Record<string, unknown>[]) : [input];
+    // Counted as the diff under the call shows them: lines both texts share are neither.
     for (const edit of edits) {
-      added += lineCount(edit.new_string ?? edit.content ?? edit.new_source);
-      removed += lineCount(edit.old_string);
+      const change = lineChanges(
+        text(edit.old_string),
+        text(edit.new_string ?? edit.content ?? edit.new_source),
+      );
+      added += change.added;
+      removed += change.removed;
     }
   } else if (category === 'read') subject = fileName(input.file_path);
   else if (category === 'search') subject = text(input.pattern) || text(input.query);

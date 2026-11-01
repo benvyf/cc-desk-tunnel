@@ -62,6 +62,10 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
   const byId = new Map<string, TranscriptItem>();
   const byApproval = new Map<string, Extract<TranscriptItem, { kind: 'tool' }>>();
   let compacting: Compact | undefined;
+  // The runs that said why they failed: their error is the notice, and their failed status adds none.
+  const errored = new Set(
+    events.filter((event) => event.payload.type === 'run.error').map((event) => event.runId),
+  );
   function add(item: TranscriptItem) {
     items.push(item);
     byId.set(item.id, item);
@@ -206,6 +210,16 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
         id: `error-${sequence}`,
         runId,
         text: payload.message,
+        error: true,
+        at,
+      });
+    // A run that failed without saying why still says that it failed, once, where the turn ends (spec §5.9).
+    if (payload.type === 'run.status' && payload.status === 'failed' && !errored.has(runId))
+      items.push({
+        kind: 'notice',
+        id: `status-${sequence}`,
+        runId,
+        text: payload.reason ?? '本轮执行失败',
         error: true,
         at,
       });

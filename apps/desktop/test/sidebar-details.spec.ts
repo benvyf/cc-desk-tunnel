@@ -28,7 +28,11 @@ function session(title: string, projectPath: string, age: number, extra: Partial
 const running = session('压测脚本', 'D:\\work\\api', 1, {
   activeRun: { id: randomUUID(), status: 'running', connectionId: randomUUID() },
 } as Partial<Session>);
-const long = session('修复时区导致的统计偏差（UTC 与本地时间混用）以及报表里的重复行', 'D:\\work\\api', 5);
+const long = session(
+  '修复时区导致的统计偏差（UTC 与本地时间混用）以及报表里的重复行',
+  'D:\\work\\api',
+  5,
+);
 const short = session('审计日志', 'D:\\work\\api', 9);
 const docs = session('整理发布说明', 'D:\\work\\docs', 30);
 const elsewhere = [
@@ -197,15 +201,14 @@ test('a project row turns its folder into the folding arrow; the other computers
   await expect(page.locator('.elsewhere-project > h2')).toHaveText(['review']);
   const loose = row(page, '批量重命名照片');
   await expect(loose).toBeVisible();
-  const left = async (selector: string) =>
-    (await page.locator(selector).first().boundingBox())!.x;
+  const left = async (selector: string) => (await page.locator(selector).first().boundingBox())!.x;
   expect((await loose.boundingBox())!.x).toBe(await left('.device-heading'));
   expect(await left('.elsewhere-project > h2')).toBe(await left('.project-group > h2'));
   await page.getByRole('button', { name: '收起设备 · 家里台式机', exact: true }).click();
   await expect(loose).toHaveCount(0);
 });
 
-test('the list moves with ↑ ↓ and opens a row\'s menu from the keyboard', async ({ page }) => {
+test("the list moves with ↑ ↓ and opens a row's menu from the keyboard", async ({ page }) => {
   await connect(page);
   const first = row(page, '压测脚本').locator('.session-select');
   await first.focus();

@@ -18,8 +18,12 @@ export function mount() {
         </div>
       </div>
       <div className="tool-detail">
-        <pre className="tool-input">{'- before\n+ after'}</pre>
-        <pre className="tool-output">工具输出</pre>
+        <div className="tool-section tool-input">
+          <pre className="tool-command">{'npm test -- --run src/auth'}</pre>
+        </div>
+        <div className="tool-section tool-results">
+          <pre className="tool-output">工具输出</pre>
+        </div>
       </div>
     </>,
   );

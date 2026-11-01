@@ -211,17 +211,18 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
   await shot(page, '04-额度-点开账号页');
   await page.getByRole('button', { name: '返回会话', exact: true }).click();
 
-  // A tool at work is word of the run, however long it writes nothing; its own row tells its time.
+  // A tool at work is word of the run, however long it writes nothing; its own row tells its time. The run's state
+  // is said once, at the end of the conversation: Claude's spark and "正在执行…".
   await open(building);
   const status = page.locator('.transcript > .run-indicator');
-  await expect(status).toHaveText('运行中');
+  await expect(status).toHaveText('正在执行…');
   await expect(page.locator('.transcript')).toContainText('正在运行命令');
-  await expect(status.locator('.running-dot')).toHaveClass(/breathing/);
+  await expect(status.locator('.run-spark')).toHaveClass(/breathing/);
   await shot(page, '05-运行中-工具在执行');
-  // A run from which nothing has come for minutes says so, and its dot rests.
+  // A run from which nothing has come for minutes says so, and its spark rests.
   await open(silent);
   await expect(status).toHaveText('仍在运行 · 已 5 分钟没有新输出');
-  await expect(status.locator('.running-dot')).not.toHaveClass(/breathing/);
+  await expect(status.locator('.run-spark')).not.toHaveClass(/breathing/);
   await shot(page, '06-运行中-长时间没有输出');
   // Word from the run brings it back.
   send({
@@ -230,13 +231,11 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
     runId: silent.activeRun!.id,
     payload: { type: 'text.delta', messageId: randomUUID(), text: '继续。' },
   });
-  await expect(status).toHaveText('运行中', { timeout: 15000 });
-  const summary = page.getByLabel('当前任务状态', { exact: true });
-  await expect(summary).toContainText('正在执行');
-  expect(await summary.evaluate((element) => getComputedStyle(element).backgroundColor)).toBe(
-    'rgba(0, 0, 0, 0)',
-  );
-  expect(await summary.evaluate((element) => getComputedStyle(element).borderTopWidth)).toBe('0px');
+  await expect(status).toHaveText('正在执行…', { timeout: 15000 });
+  // Nothing above the input box says it again.
+  await expect(page.getByLabel('当前任务状态', { exact: true })).toHaveCount(0);
+  await expect(page.locator('.run-summary')).toHaveCount(0);
+  // Waiting for an answer that no card here asks for, the line says so, amber and still.
   send({
     type: 'session.updated',
     session: {
@@ -244,8 +243,10 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
       activeRun: { ...silent.activeRun!, status: 'awaiting_approval', waiting: 'question' },
     },
   });
-  await expect(summary).toContainText('等待你回答');
-  await expect(summary.locator('.running-dot')).not.toHaveClass(/breathing/);
+  await expect(status).toHaveText('等待回答');
+  await expect(status.locator('.running-dot')).not.toHaveClass(/breathing/);
+  const resume = page.getByRole('button', { name: '继续上一轮' });
+  const notices = page.locator('.transcript .run-notice');
   let sequence = 3;
   for (const outcome of ['cancelled', 'failed', 'completed'] as const) {
     send({ type: 'session.updated', session: { ...silent, activeRun: null } });
@@ -256,15 +257,22 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
       ...(outcome === 'cancelled' ? { reason: '服务停止，运行未重放。' } : {}),
     };
     send({ type: 'session.event', event: event(silent, sequence++, 0, payload) });
-    const label =
-      outcome === 'cancelled' ? '本轮已停止' : outcome === 'failed' ? '本轮执行失败' : '本轮已完成';
-    await expect(summary).toContainText(label);
-    await expect(summary).toBeInViewport();
-    if (outcome === 'cancelled') await expect(summary).toContainText('服务停止，运行未重放。');
-    if (outcome !== 'completed')
-      await expect(summary.getByRole('button', { name: '继续上一轮' })).toBeEnabled();
-    else await expect(summary.getByRole('button')).toHaveCount(0);
+    // Finished, nothing is said; stopped or failed, the turn's last notice says so and offers to go on.
+    await expect(status).toHaveCount(0);
+    if (outcome === 'completed') {
+      await expect(resume).toHaveCount(0);
+      await expect(page.locator('.transcript')).not.toContainText('本轮已完成');
+      continue;
+    }
+    await expect(resume).toHaveCount(1);
+    await expect(resume).toBeEnabled();
+    await expect(notices.last().getByRole('button', { name: '继续上一轮' })).toBeVisible();
+    if (outcome === 'cancelled')
+      await expect(notices.last()).toContainText('服务停止，运行未重放。');
     if (outcome === 'failed') {
+      // A failure that says nothing of itself still says that it failed, once.
+      await expect(notices.last()).toHaveClass(/failed/);
+      await expect(notices.last()).toContainText('本轮执行失败');
       send({
         type: 'session.event',
         event: event(silent, sequence++, 0, {
@@ -273,12 +281,15 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
           message: '模拟执行中断，请检查网络',
         }),
       });
-      await expect(summary).toHaveAttribute('role', 'alert');
-      await expect(summary).toContainText('模拟执行中断，请检查网络');
-      await shot(page, '07-任务失败-输入框上方状态');
+      // Told why, the reason is the one red bar: the general words give way, and nothing repeats it.
+      await expect(notices.last()).toContainText('模拟执行中断，请检查网络');
+      await expect(page.getByText('本轮执行失败', { exact: true })).toHaveCount(0);
+      await expect(page.getByText('模拟执行中断，请检查网络', { exact: true })).toHaveCount(1);
+      await expect(notices.last().getByRole('alert')).toBeVisible();
+      await expect(resume).toBeInViewport();
+      await shot(page, '07-任务失败-对话中的提示条');
       await page.setViewportSize({ width: 390, height: 720 });
-      await expect(summary).toBeInViewport();
-      await expect(summary.getByRole('button', { name: '继续上一轮' })).toBeInViewport();
+      await expect(resume).toBeInViewport();
       const longReason = '模拟执行中断：连接远程执行服务失败，请检查网络及工作空间状态。'.repeat(
         12,
       );
@@ -290,12 +301,13 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
           message: longReason,
         }),
       });
-      await expect(summary.locator('.run-summary-detail')).toHaveAttribute('title', longReason);
-      const bounds = await summary.boundingBox();
-      expect(bounds!.x).toBeGreaterThanOrEqual(0);
-      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(390);
-      expect(bounds!.height).toBeLessThan(100);
-      await expect(summary.getByRole('button', { name: '继续上一轮' })).toBeInViewport();
+      await expect(notices.last()).toContainText(longReason);
+      await expect(resume).toHaveCount(1);
+      const bounds = (await notices.last().boundingBox())!;
+      expect(bounds.x).toBeGreaterThanOrEqual(0);
+      expect(bounds.x + bounds.width).toBeLessThanOrEqual(390);
+      await resume.scrollIntoViewIfNeeded();
+      await expect(resume).toBeInViewport();
       await shot(page, '08-任务失败-窄窗口');
       await page.setViewportSize({ width: 1280, height: 900 });
     }
@@ -305,8 +317,8 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
     type: 'session.updated',
     session: { ...silent, activeRun: { ...silent.activeRun!, id: nextRunId } },
   });
-  await expect(summary).toContainText('正在执行');
-  await expect(summary).not.toContainText('模拟执行中断');
+  await expect(status).toHaveText('正在执行…');
+  await expect(resume).toHaveCount(0);
   send({ type: 'session.updated', session: { ...silent, activeRun: null } });
   send({
     type: 'session.event',
@@ -320,72 +332,13 @@ test('a run tells what it is doing, background tasks tell they are alive, and th
       runId: nextRunId,
     },
   });
-  await expect(summary).toContainText('新一轮任务中断');
-  await expect(summary).not.toContainText('模拟执行中断');
-  await summary.getByRole('button', { name: '继续上一轮' }).click();
+  await expect(notices.last()).toContainText('新一轮任务中断');
+  await expect(page.getByText('新一轮任务中断', { exact: true })).toHaveCount(1);
+  await expect(resume).toHaveCount(1);
+  await resume.click();
   await expect.poll(() => continuedSession).toBe(silent.id);
-  await expect(summary).toContainText('正在执行');
-  await expect(summary).not.toContainText('新一轮任务中断');
-  send({ type: 'session.updated', session: { ...silent, activeRun: null } });
-  send({
-    type: 'session.event',
-    event: {
-      ...event(silent, sequence++, 0, {
-        type: 'run.status',
-        status: 'failed',
-        connectionId,
-        reason: '连接断开前已确认失败',
-      }),
-      runId: randomUUID(),
-    },
-  });
-  await expect(summary).toContainText('连接断开前已确认失败');
-  // This manual native fixture returns to login on socket close. Exercise the disconnected
-  // presentation directly so an already confirmed outcome remains visible in remote mode.
-  await page.evaluate(
-    async ({ session, events }) => {
-      const source = '/src/RunStatus.tsx';
-      const reactPath = '/node_modules/.vite/deps/react.js';
-      const domPath = '/node_modules/.vite/deps/react-dom_client.js';
-      const [{ RunSummary }, react, dom] = await Promise.all([
-        import(source),
-        import(reactPath),
-        import(domPath),
-      ]);
-      const { createElement } = react.default ?? react;
-      const { createRoot } = dom.default ?? dom;
-      const container = document.createElement('div');
-      container.id = 'disconnected-status-fixture';
-      document.body.append(container);
-      createRoot(container).render(
-        createElement(RunSummary, {
-          session,
-          events,
-          connected: false,
-          clock: { now: () => Date.now(), activityAt: () => 0 },
-          resume: () => {},
-        }),
-      );
-    },
-    {
-      session: { ...silent, activeRun: null },
-      events: [
-        event(silent, sequence++, 0, {
-          type: 'run.status',
-          status: 'failed',
-          connectionId,
-          reason: '连接断开前已确认失败',
-        }),
-      ],
-    },
-  );
-  const disconnected = page
-    .locator('#disconnected-status-fixture')
-    .getByLabel('当前任务状态', { exact: true });
-  await expect(disconnected).toContainText('本轮执行失败');
-  await expect(disconnected).toContainText('连接断开前已确认失败');
-  await expect(disconnected).toHaveAttribute('role', 'alert');
-  await expect(disconnected.getByRole('button')).toHaveCount(0);
+  await expect(status).toHaveText('正在执行…');
+  await expect(resume).toHaveCount(0);
 });
 
 test('the side list names each run state on its row and keeps a failure until the session is opened', async ({

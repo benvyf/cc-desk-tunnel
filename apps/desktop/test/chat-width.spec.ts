@@ -295,7 +295,7 @@ test('drag frames do not persist or mutate the transcript; release writes once',
   });
 });
 
-test('queue, run summary and session statistics follow the shared width', async ({ page }) => {
+test('queue, run status and session statistics follow the shared width', async ({ page }) => {
   await page.setViewportSize({ width: 1700, height: 950 });
   const f = await chatWidthFixture(page);
   await page.evaluate(async () => {
@@ -311,7 +311,8 @@ test('queue, run summary and session statistics follow the shared width', async 
   const value = await width(page);
   expect(await width(page, '.composer')).toBe(value);
   expect(await width(page, '.follow-up-queue')).toBe(value - 28);
-  expect(await width(page, '.run-summary')).toBe(value);
+  // The run's state is said at the end of the conversation, in its column.
+  expect(await width(page, '.transcript > .run-indicator')).toBe(value);
   expect(await width(page, '.session-bar')).toBe(value);
 });
 
