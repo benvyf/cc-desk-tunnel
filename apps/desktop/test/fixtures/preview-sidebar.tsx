@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
+import { useLeaving } from '../../src/Presence.tsx';
 import { previewSpan, usePreviewWorkspace } from '../../src/preview.ts';
 import { linkTarget } from '../../src/links.ts';
 import type { PreviewBrowserState, PreviewFile } from '../../src/preview.ts';
@@ -384,6 +385,8 @@ function Fixture() {
       </Button>
     </div>
   );
+  // As in App.tsx: the preview slides out before it goes.
+  const leaving = useLeaving(opened && board.expanded);
   return terminal ? (
     <div className="terminal-preview-layout" style={{ height: '100dvh' }}>
       <div className="terminal-workspace" data-native-controls="true">
@@ -409,7 +412,9 @@ function Fixture() {
         </Button>
       </header>
       <main className="workspace">{controls}</main>
-      {opened && board.expanded && <PreviewSidebar workspace={board} root={folder} />}
+      {opened && (board.expanded || leaving) && (
+        <PreviewSidebar workspace={board} root={folder} leaving={!board.expanded} />
+      )}
     </div>
   );
 }

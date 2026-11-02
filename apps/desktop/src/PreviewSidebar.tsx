@@ -13,12 +13,15 @@ export default function PreviewSidebar({
   root,
   filesAvailable = true,
   renderChat,
+  leaving = false,
 }: {
   workspace: PreviewWorkspace;
   surface?: PreviewSurface;
   root?: string;
   filesAvailable?: boolean;
   renderChat?: (tab: import('./preview.ts').PreviewTab) => ReactNode;
+  // Put away and sliding out (Presence.tsx useLeaving): seen, but no longer used.
+  leaving?: boolean;
 }) {
   const [website, setWebsite] = useState(false);
   const [url, setUrl] = useState('http://localhost:5173');
@@ -157,10 +160,17 @@ export default function PreviewSidebar({
           it slides in over a shade, and a click on the shade puts it away. The close button stays the keyboard's
           way out, so the shade is for the pointer only. */}
       {surface === 'main' && (
-        <div className="preview-shade" aria-hidden="true" onClick={collapse} />
+        <div
+          className="preview-shade"
+          aria-hidden="true"
+          data-leaving={leaving || undefined}
+          onClick={leaving ? undefined : collapse}
+        />
       )}
       <aside
         className={`preview-sidebar ${full ? 'preview-full' : ''}`}
+        data-leaving={leaving || undefined}
+        inert={leaving}
         style={{ '--preview-width': `${previewSpan(width, tree)}px` } as CSSProperties}
         aria-label="文件与网站预览"
       >

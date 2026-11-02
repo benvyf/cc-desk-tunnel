@@ -158,6 +158,8 @@
   --cds-ease-out: cubic-bezier(0.165, 0.84, 0.44, 1);
   --cds-ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
   --cds-ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
+  /* A surface leaves faster than it came: it is no longer what the reader looks at. */
+  --cds-dur-exit: calc(var(--cds-dur-base) * 0.6);
   /* Single-line controls share these heights; multiline content can grow. */
   --control-xs: 20px;
   --control-sm: 24px;
@@ -1132,8 +1134,15 @@ button.chip.danger:hover:not(:disabled) {
   --sidebar-size: clamp(240px, var(--sidebar-width, 288px), var(--sidebar-max-width));
   --rail-size: 0px;
   --sidebar-track: var(--sidebar-size);
+  --preview-size: min(
+    var(--preview-width, 440px),
+    max(320px, calc(100vw - var(--rail-size) - var(--sidebar-track) - 360px))
+  );
+  /* The preview's column is always there, 0 wide until a preview is open: the tracks then change in width only,
+     and the page glides instead of jumping when the side column or the preview opens or closes. */
+  --preview-track: 0px;
   display: grid;
-  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
+  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr) var(--preview-track);
   grid-template-rows: var(--bar) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
@@ -1177,7 +1186,16 @@ button.chip.danger:hover:not(:disabled) {
   visibility: hidden;
   pointer-events: none;
 }
-.shell,
+.shell {
+  transition:
+    grid-template-columns var(--cds-dur-sheet) var(--cds-ease-snap),
+    background-color var(--cds-dur-slow) var(--cds-ease-out);
+}
+/* Dragging a width or the window follows the pointer at once. */
+.shell:is([data-sidebar-resizing], [data-window-resizing]),
+.shell:has(> .preview-sidebar[data-preview-resizing]) {
+  transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
+}
 .workspace,
 .titlebar {
   transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
@@ -4144,6 +4162,23 @@ details[open] > summary > .fold-chevron {
 }
 .thinking-block::details-content {
   transition: content-visibility var(--cds-dur-sheet) allow-discrete;
+}
+/* The steps of a turn, a tool's details and a run of work open like the thinking block, growing to their height;
+   they fold up at once, as before (their content is unmounted on closing, Conversation.tsx Fold). Not while
+   searching: the find box scrolls to a match in a fold it opens, and needs the fold's final height at once. */
+details:is(.turn-process, .work, .tool):not(.thinking-block) {
+  interpolate-size: allow-keywords;
+}
+details:is(.turn-process, .work, .tool):not(.thinking-block)::details-content {
+  block-size: 0;
+  overflow: clip;
+}
+details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-content {
+  block-size: auto;
+  transition: block-size var(--cds-dur-sheet) var(--cds-ease-snap);
+}
+.searching details:is(.turn-process, .work, .tool)::details-content {
+  transition: none;
 }
 .thinking-grid {
   display: grid;
@@ -7266,16 +7301,43 @@ dialog:has(.web-settings-form) {
   margin-top: 10px;
 }
 
-/* Floating surfaces keep their viewport-fitting transforms; only opacity changes here. */
+/* Floating surfaces unfold from the edge that faces their control while they fade in, as Windows menus do: a clip
+   that opens, so the box has its final size and place from the first frame (nothing moves under the pointer, and
+   the transforms that fit a surface to the viewport stay untouched). They leave by fading only. The clip ends
+   beyond the box and is dropped when the animation ends, so it never cuts the shadow. */
 .motion-presence {
   display: contents;
 }
 .motion-presence > * {
-  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
+  animation:
+    motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both,
+    motion-unfold var(--cds-dur-base) var(--cds-ease-snap) backwards;
 }
 .motion-presence[data-state='exit'] > * {
-  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-fade-out var(--cds-dur-exit) var(--cds-ease-out) both;
   pointer-events: none;
+}
+/* The edge each surface unfolds from: the one that faces its control (`--unfold` is the clip it starts from). */
+.motion-presence > * {
+  --unfold: 0 0 50% 0;
+}
+.motion-presence > :is(.menu[data-placement='above'], .permission-menu, .slash-menu, .model-menu),
+.motion-presence > .turn-stats-card:not(.below) {
+  --unfold: 50% 0 0 0;
+}
+/* Tooltips, cards that follow the pointer and shades only fade. */
+.motion-presence > :is(.session-card, .context-tooltip, .sidebar-shade) {
+  animation: motion-fade-in var(--cds-dur-snap) var(--cds-ease-out) both;
+}
+/* “回到底部” rises a little into place above the input box as it fades in. */
+.motion-presence > .to-end {
+  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-state='enter'] > .to-end > .to-end-button {
+  animation: motion-rise var(--cds-dur-base) var(--cds-ease-snap) backwards;
+}
+.motion-presence[data-state='exit'] > :is(.session-card, .context-tooltip) {
+  animation: motion-fade-out var(--cds-dur-snap) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'] > dialog {
   animation: motion-dialog-in var(--cds-dur-base) var(--cds-ease-snap) both;
@@ -7285,7 +7347,7 @@ dialog:has(.web-settings-form) {
   position: fixed;
   inset: 0;
   z-index: var(--z-dialog);
-  animation: motion-dialog-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-dialog-out var(--cds-dur-exit) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'][data-state='exit']::before {
   content: '';
@@ -7294,15 +7356,17 @@ dialog:has(.web-settings-form) {
   z-index: 39;
   background: var(--backdrop);
   pointer-events: none;
-  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-fade-out var(--cds-dur-exit) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'] > dialog::backdrop {
   animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'][data-state='exit'] > dialog::backdrop {
-  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-fade-out var(--cds-dur-exit) var(--cds-ease-out) both;
 }
-.motion-presence[data-kind='shade'] > * {
+/* A shade fades with the panel it lies under, coming and going at the panel's pace. */
+.motion-presence[data-kind='shade'] > *,
+.motion-presence[data-kind='shade'][data-state='exit'] > * {
   animation-duration: var(--cds-dur-sheet);
 }
 .segmented button,
@@ -7316,6 +7380,10 @@ dialog:has(.web-settings-form) {
 }
 .settings-workspace {
   animation: motion-fade-in var(--cds-dur-sheet) var(--cds-ease-snap);
+}
+/* Coming back from the settings, the conversation fades in as the settings did. */
+.shell > main.workspace:not(.settings-workspace) {
+  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out);
 }
 .stream-grapheme {
   animation: motion-stream-in var(--cds-stream-reveal) var(--cds-ease-out) both;
@@ -7335,6 +7403,23 @@ dialog:has(.web-settings-form) {
   }
   to {
     opacity: 0;
+  }
+}
+@keyframes motion-unfold {
+  from {
+    clip-path: inset(var(--unfold));
+  }
+  /* Opens to the box itself, then lets the shadow out for the last instant. */
+  99% {
+    clip-path: inset(0);
+  }
+  to {
+    clip-path: inset(-48px);
+  }
+}
+@keyframes motion-rise {
+  from {
+    translate: 0 6px;
   }
 }
 @keyframes motion-dialog-in {
@@ -7831,11 +7916,12 @@ dialog:has(.web-settings-form) {
 
 /* File and website previews use the existing session layout; the native browser only covers its viewport. */
 .shell.has-preview {
-  --preview-size: min(
-    var(--preview-width, 440px),
-    max(320px, calc(100vw - var(--rail-size) - var(--sidebar-track) - 360px))
-  );
-  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr) var(--preview-size);
+  --preview-track: var(--preview-size);
+}
+/* As wide as the preview from the start: while its column opens, it comes in from the window's right edge, and
+   while the column closes (data-leaving, Presence.tsx useLeaving) it goes out the same way. */
+.shell > .preview-sidebar {
+  width: var(--preview-size);
 }
 .shell.has-preview > .terminal-workspace-slot {
   grid-column: 2 / 4;
@@ -8247,6 +8333,11 @@ dialog:has(.web-settings-form) {
     translate: 100% 0;
   }
 }
+@keyframes preview-slide-out {
+  to {
+    translate: 100% 0;
+  }
+}
 @keyframes preview-shade-in {
   from {
     opacity: 0;
@@ -8254,7 +8345,7 @@ dialog:has(.web-settings-form) {
 }
 @media (max-width: 1050px) {
   .shell.has-preview {
-    grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
+    --preview-track: 0px;
   }
   .shell.has-preview > .terminal-workspace-slot {
     grid-column: 2 / -1;
@@ -8277,6 +8368,13 @@ dialog:has(.web-settings-form) {
     z-index: 14;
     background: var(--backdrop);
     animation: preview-shade-in var(--cds-dur-sheet) var(--cds-ease-out);
+  }
+  .shell > .preview-sidebar[data-leaving] {
+    animation: preview-slide-out var(--cds-dur-sheet) var(--cds-ease-snap) forwards;
+  }
+  .shell > .preview-shade[data-leaving] {
+    animation: motion-fade-out var(--cds-dur-sheet) var(--cds-ease-out) forwards;
+    pointer-events: none;
   }
   .shell > .preview-full {
     left: var(--rail-size);

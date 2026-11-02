@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactElement } from 'react';
 
 // Retain a dismissed surface only for its visual exit. Input and accessibility end immediately.
@@ -60,4 +60,23 @@ export default function Presence({
       </div>
     )
   );
+}
+
+// For a panel that is not a floating surface (the preview column, a fold): true while it is being put away, for as
+// long as the CSS time token says its exit lasts, so its content can stay rendered — and inert — until it is out of
+// sight. With reduced motion the tokens are 0ms and this is never true for longer than a render.
+export function useLeaving(shown: boolean, token = '--cds-dur-sheet') {
+  const [leaving, setLeaving] = useState(false);
+  const [was, setWas] = useState(shown);
+  if (shown !== was) {
+    setWas(shown);
+    setLeaving(!shown);
+  }
+  useEffect(() => {
+    if (!leaving) return;
+    const ms = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(token)) || 0;
+    const timer = setTimeout(() => setLeaving(false), ms);
+    return () => clearTimeout(timer);
+  }, [leaving, token]);
+  return leaving;
 }

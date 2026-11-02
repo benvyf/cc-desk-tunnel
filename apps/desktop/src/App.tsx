@@ -82,7 +82,7 @@ import SettingsPage from './SettingsPage.tsx';
 import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
 import TitleBar from './TitleBar.tsx';
-import Presence from './Presence.tsx';
+import Presence, { useLeaving } from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
 import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
@@ -222,10 +222,51 @@ export function App({
   const closeSide = useCallback(() => {
     if (overlayNow.current) setSideOpen(false);
   }, []);
+  // The column laid over the page is put away like a drawer: by Esc or its shade, and the focus goes back to the
+  // button that opens it again instead of falling to the page.
+  const putAwaySide = useCallback(() => {
+    setSideOpen(false);
+    requestAnimationFrame(() => {
+      const open = [
+        ...document.querySelectorAll<HTMLElement>('button[aria-label="展开会话列表"]'),
+      ].find((button) => button.getClientRects().length > 0 && !button.closest('[inert]'));
+      open?.focus({ preventScroll: true });
+    });
+  }, []);
   // Asked to open the conversations' search (the shortcut, the folded column); the side column says when it has.
   const [searchAsked, setSearchAsked] = useState(false);
   const searchDone = useCallback(() => setSearchAsked(false), []);
   // Crossing between the two layouts starts from each one's usual state: open beside the page, folded over it.
+  useEffect(() => {
+    if (!overlay || !sideOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      // Menus, dialogs and the column's own search field answer Esc first.
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, [role="menu"], dialog')) return;
+      if (document.querySelector('dialog[open], .menu')) return;
+      event.preventDefault();
+      putAwaySide();
+    };
+    // Captured before the double-Esc stop shortcut, which leaves a prevented key alone.
+    window.addEventListener('keydown', escape, true);
+    return () => window.removeEventListener('keydown', escape, true);
+  }, [overlay, sideOpen, putAwaySide]);
+  // While the window is being resized the columns follow it at once instead of gliding after it (style.css).
+  useEffect(() => {
+    let timer = 0;
+    const resizing = () => {
+      const shell = document.querySelector('.shell');
+      shell?.setAttribute('data-window-resizing', '');
+      clearTimeout(timer);
+      timer = window.setTimeout(() => shell?.removeAttribute('data-window-resizing'), 200);
+    };
+    window.addEventListener('resize', resizing);
+    return () => {
+      window.removeEventListener('resize', resizing);
+      clearTimeout(timer);
+    };
+  }, []);
   const sidebarWidth = usePrefs().sidebarWidth;
   useEffect(() => {
     const follow = () => {
@@ -327,6 +368,8 @@ export function App({
   const sidebarAvailable =
     previewAvailable || (!!selected && preview.tabs.some((tab) => tab.kind === 'chat'));
   const previewShown = sidebarAvailable && preview.expanded && place.page === 'chat';
+  // Put away, the preview slides out before it goes (style.css, .preview-sidebar[data-leaving]).
+  const previewLeaving = useLeaving(previewShown);
   // Another computer's session is worked on from here while that computer is connected and its commands
   // reach it: what is sent here runs there, as if sent there.
   const reachable = (session: Session) =>
@@ -2040,11 +2083,7 @@ export function App({
       />
       <Presence kind="shade">
         {overlay && sideOpen && (
-          <button
-            className="sidebar-shade"
-            aria-label="收起侧栏"
-            onClick={() => setSideOpen(false)}
-          />
+          <button className="sidebar-shade" aria-label="收起侧栏" onClick={putAwaySide} />
         )}
       </Presence>
       {place.page === 'settings' ? (
@@ -2436,8 +2475,9 @@ export function App({
           />
         )}
       </Presence>
-      {previewShown && (
+      {(previewShown || previewLeaving) && (
         <PreviewSidebar
+          leaving={!previewShown}
           workspace={preview}
           filesAvailable={previewAvailable}
           root={previewAvailable ? selected?.projectPath : undefined}
