@@ -158,6 +158,8 @@
   --cds-ease-out: cubic-bezier(0.165, 0.84, 0.44, 1);
   --cds-ease-snap: cubic-bezier(0.32, 0.72, 0, 1);
   --cds-ease-overshoot: cubic-bezier(0.34, 1.3, 0.64, 1);
+  /* A surface leaves faster than it came: it is no longer what the reader looks at. */
+  --cds-dur-exit: calc(var(--cds-dur-base) * 0.6);
   /* Single-line controls share these heights; multiline content can grow. */
   --control-xs: 20px;
   --control-sm: 24px;
@@ -7266,16 +7268,43 @@ dialog:has(.web-settings-form) {
   margin-top: 10px;
 }
 
-/* Floating surfaces keep their viewport-fitting transforms; only opacity changes here. */
+/* Floating surfaces unfold from the edge that faces their control while they fade in, as Windows menus do: a clip
+   that opens, so the box has its final size and place from the first frame (nothing moves under the pointer, and
+   the transforms that fit a surface to the viewport stay untouched). They leave by fading only. The clip ends
+   beyond the box and is dropped when the animation ends, so it never cuts the shadow. */
 .motion-presence {
   display: contents;
 }
 .motion-presence > * {
-  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
+  animation:
+    motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both,
+    motion-unfold var(--cds-dur-base) var(--cds-ease-snap) backwards;
 }
 .motion-presence[data-state='exit'] > * {
-  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-fade-out var(--cds-dur-exit) var(--cds-ease-out) both;
   pointer-events: none;
+}
+/* The edge each surface unfolds from: the one that faces its control (`--unfold` is the clip it starts from). */
+.motion-presence > * {
+  --unfold: 0 0 50% 0;
+}
+.motion-presence > :is(.menu[data-placement='above'], .permission-menu, .slash-menu, .model-menu),
+.motion-presence > .turn-stats-card:not(.below) {
+  --unfold: 50% 0 0 0;
+}
+/* Tooltips, cards that follow the pointer and shades only fade. */
+.motion-presence > :is(.session-card, .context-tooltip, .sidebar-shade) {
+  animation: motion-fade-in var(--cds-dur-snap) var(--cds-ease-out) both;
+}
+/* “回到底部” rises a little into place above the input box as it fades in. */
+.motion-presence > .to-end {
+  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
+}
+.motion-presence[data-state='enter'] > .to-end > .to-end-button {
+  animation: motion-rise var(--cds-dur-base) var(--cds-ease-snap) backwards;
+}
+.motion-presence[data-state='exit'] > :is(.session-card, .context-tooltip) {
+  animation: motion-fade-out var(--cds-dur-snap) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'] > dialog {
   animation: motion-dialog-in var(--cds-dur-base) var(--cds-ease-snap) both;
@@ -7285,7 +7314,7 @@ dialog:has(.web-settings-form) {
   position: fixed;
   inset: 0;
   z-index: var(--z-dialog);
-  animation: motion-dialog-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-dialog-out var(--cds-dur-exit) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'][data-state='exit']::before {
   content: '';
@@ -7294,15 +7323,17 @@ dialog:has(.web-settings-form) {
   z-index: 39;
   background: var(--backdrop);
   pointer-events: none;
-  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-fade-out var(--cds-dur-exit) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'] > dialog::backdrop {
   animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'][data-state='exit'] > dialog::backdrop {
-  animation: motion-fade-out var(--cds-dur-base) var(--cds-ease-out) both;
+  animation: motion-fade-out var(--cds-dur-exit) var(--cds-ease-out) both;
 }
-.motion-presence[data-kind='shade'] > * {
+/* A shade fades with the panel it lies under, coming and going at the panel's pace. */
+.motion-presence[data-kind='shade'] > *,
+.motion-presence[data-kind='shade'][data-state='exit'] > * {
   animation-duration: var(--cds-dur-sheet);
 }
 .segmented button,
@@ -7335,6 +7366,23 @@ dialog:has(.web-settings-form) {
   }
   to {
     opacity: 0;
+  }
+}
+@keyframes motion-unfold {
+  from {
+    clip-path: inset(var(--unfold));
+  }
+  /* Opens to the box itself, then lets the shadow out for the last instant. */
+  99% {
+    clip-path: inset(0);
+  }
+  to {
+    clip-path: inset(-48px);
+  }
+}
+@keyframes motion-rise {
+  from {
+    translate: 0 6px;
   }
 }
 @keyframes motion-dialog-in {

@@ -222,10 +222,36 @@ export function App({
   const closeSide = useCallback(() => {
     if (overlayNow.current) setSideOpen(false);
   }, []);
+  // The column laid over the page is put away like a drawer: by Esc or its shade, and the focus goes back to the
+  // button that opens it again instead of falling to the page.
+  const putAwaySide = useCallback(() => {
+    setSideOpen(false);
+    requestAnimationFrame(() => {
+      const open = [
+        ...document.querySelectorAll<HTMLElement>('button[aria-label="展开会话列表"]'),
+      ].find((button) => button.getClientRects().length > 0 && !button.closest('[inert]'));
+      open?.focus({ preventScroll: true });
+    });
+  }, []);
   // Asked to open the conversations' search (the shortcut, the folded column); the side column says when it has.
   const [searchAsked, setSearchAsked] = useState(false);
   const searchDone = useCallback(() => setSearchAsked(false), []);
   // Crossing between the two layouts starts from each one's usual state: open beside the page, folded over it.
+  useEffect(() => {
+    if (!overlay || !sideOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      // Menus, dialogs and the column's own search field answer Esc first.
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, [role="menu"], dialog')) return;
+      if (document.querySelector('dialog[open], .menu')) return;
+      event.preventDefault();
+      putAwaySide();
+    };
+    // Captured before the double-Esc stop shortcut, which leaves a prevented key alone.
+    window.addEventListener('keydown', escape, true);
+    return () => window.removeEventListener('keydown', escape, true);
+  }, [overlay, sideOpen, putAwaySide]);
   const sidebarWidth = usePrefs().sidebarWidth;
   useEffect(() => {
     const follow = () => {
@@ -2040,11 +2066,7 @@ export function App({
       />
       <Presence kind="shade">
         {overlay && sideOpen && (
-          <button
-            className="sidebar-shade"
-            aria-label="收起侧栏"
-            onClick={() => setSideOpen(false)}
-          />
+          <button className="sidebar-shade" aria-label="收起侧栏" onClick={putAwaySide} />
         )}
       </Presence>
       {place.page === 'settings' ? (

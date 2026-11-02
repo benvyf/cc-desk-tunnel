@@ -23,6 +23,7 @@ import { setPrefs, toggled, usePrefs } from './prefs.ts';
 import { useConnectionName } from './shared.ts';
 import { IconButton } from './ui.tsx';
 import type { MenuPosition } from './ui.tsx';
+import Presence from './Presence.tsx';
 
 // What a session is doing, as its row names it in `data-state`: the stylesheet colours the dot and the word by it.
 type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed';
@@ -653,21 +654,23 @@ export default function Sidebar({
           pinned.length === 0 &&
           othersCount === 0 && <p className="list-empty">没有匹配会话</p>}
       </nav>
-      {card && (
-        <div className="session-card" role="tooltip" style={{ top: card.top, left: card.left }}>
-          <strong>{card.session.title}</strong>
-          <span>
-            <Folder />
-            {isInside(card.session.projectPath, workspaceRoots)
-              ? '普通会话'
-              : card.session.projectPath}
-          </span>
-          <small>
-            {activity(card.session, rowState(card.session, failed))} ·{' '}
-            {new Date(card.session.updatedAt).toLocaleString('zh-CN', { hour12: false })}
-          </small>
-        </div>
-      )}
+      <Presence>
+        {card && (
+          <div className="session-card" role="tooltip" style={{ top: card.top, left: card.left }}>
+            <strong>{card.session.title}</strong>
+            <span>
+              <Folder />
+              {isInside(card.session.projectPath, workspaceRoots)
+                ? '普通会话'
+                : card.session.projectPath}
+            </span>
+            <small>
+              {activity(card.session, rowState(card.session, failed))} ·{' '}
+              {new Date(card.session.updatedAt).toLocaleString('zh-CN', { hour12: false })}
+            </small>
+          </div>
+        )}
+      </Presence>
     </SidebarShell>
   );
 }

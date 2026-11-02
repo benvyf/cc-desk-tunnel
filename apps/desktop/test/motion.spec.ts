@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { createSession, login } from './helpers.ts';
+import { createSession, login, send, settled } from './helpers.ts';
 
 test('narrow standalone settings remain interactive while connected settings follow the sidebar toggle', async ({
   page,
@@ -270,4 +270,137 @@ test('streaming reveals appended prose without fading history or changing Markdo
   await render('已经完成的回复。', false);
   await expect(page.locator('.stream-reveal')).toHaveCount(0);
   await expect(paragraph).toHaveText('已经完成的回复。');
+});
+
+// Motion pass M1 (2026-11-02): surfaces unfold from their control without changing size, leave faster than they
+// came, and give the focus back to what opened them.
+test('menus unfold in place from their control and hand the focus back on Esc, Tab and choosing', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  const trigger = page.getByRole('button', { name: '设置与账号', exact: true });
+  await page.evaluate(() => document.documentElement.style.setProperty('--cds-dur-base', '800ms'));
+  await trigger.click();
+  const menu = page.getByRole('menu', { name: '设置与账号' });
+  await expect(menu).toBeVisible();
+  // Unfolding is a clip: the box is already where and as large as it ends.
+  const opening = await menu.evaluate((element) => ({
+    names: element.getAnimations().map((animation) => (animation as CSSAnimation).animationName),
+    box: element.getBoundingClientRect().toJSON(),
+    placement: (element as HTMLElement).dataset.placement,
+  }));
+  expect(opening.names).toEqual(expect.arrayContaining(['motion-fade-in', 'motion-unfold']));
+  expect(opening.placement).toBe('above');
+  await menu.evaluate((element) =>
+    Promise.all(element.getAnimations().map((animation) => animation.finished)),
+  );
+  expect(await menu.evaluate((element) => element.getBoundingClientRect().toJSON())).toEqual(
+    opening.box,
+  );
+  await expect(menu).toHaveCSS('clip-path', 'none');
+  // Home and End reach the ends of the list.
+  const items = menu.locator('button:not(:disabled)');
+  await page.keyboard.press('End');
+  await expect(items.last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await expect(items.first()).toBeFocused();
+  // Esc puts the menu away and the focus back on its button; the exit is shorter than the entrance.
+  await page.keyboard.press('Escape');
+  await expect(trigger).toBeFocused();
+  const exit = await page
+    .locator('.motion-presence[data-state="exit"] > .menu')
+    .evaluate((element) => element.getAnimations()[0]?.effect?.getTiming().duration);
+  expect(exit).toBe(480);
+  // Tab leaves the menu from its button.
+  await trigger.press('Enter');
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(menu).toHaveCount(0);
+  await expect(trigger).not.toBeFocused();
+  expect(await page.evaluate(() => document.activeElement !== document.body)).toBe(true);
+  // A right-clicked session row gets the focus back as well.
+  await createSession(page, '菜单焦点');
+  const row = page.locator('.session-row.selected .session-select');
+  await row.focus();
+  await page.locator('.session-row.selected').click({ button: 'right' });
+  await expect(page.getByRole('menu')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(row).toBeFocused();
+});
+
+test('the column over a narrow window closes with Esc and returns the focus to its button', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 680, height: 800 });
+  await page.goto('/');
+  await login(page);
+  const open = page.getByRole('button', { name: '展开会话列表', exact: true }).first();
+  await open.click();
+  await expect(page.locator('.sidebar-shade')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.shell')).toHaveClass(/side-closed/);
+  await expect(open).toBeFocused();
+  await open.click();
+  await page.locator('.sidebar-shade').click({ position: { x: 300, y: 300 } });
+  await expect(page.locator('.shell')).toHaveClass(/side-closed/);
+  await expect(open).toBeFocused();
+});
+
+test('find and “回到底部” come and go with motion and leave the focus somewhere useful', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  await createSession(page, '动效查找');
+  await send(page, Array.from({ length: 90 }, (_, index) => `第 ${index + 1} 行`).join('\n'));
+  await settled(page);
+  const input = page.getByRole('textbox', { name: '消息' });
+  await input.focus();
+  await page.keyboard.press('Control+f');
+  const find = page.getByRole('search', { name: '对话内查找' });
+  await expect(find).toBeVisible();
+  expect(
+    await find.evaluate((element) =>
+      element.getAnimations().map((animation) => (animation as CSSAnimation).animationName),
+    ),
+  ).toContain('motion-unfold');
+  await page.keyboard.press('Escape');
+  // Back where the reader was typing, and no ring drawn around the conversation.
+  await expect(input).toBeFocused();
+  await expect(page.locator('.conversation-find')).toHaveCount(0);
+  await page.locator('.workspace .conversation').hover();
+  await page.mouse.wheel(0, -1500);
+  const back = page.getByRole('button', { name: '回到底部', exact: true });
+  await expect(back).toBeVisible();
+  expect(
+    await back.evaluate((element) =>
+      element.getAnimations().map((animation) => (animation as CSSAnimation).animationName),
+    ),
+  ).toContain('motion-rise');
+  await back.focus();
+  await page.keyboard.press('Enter');
+  await expect(input).toBeFocused();
+  await expect(back).toHaveCount(0);
+  // Opened from the button, the find box gives the focus to the conversation without a keyboard ring.
+  await page.getByRole('button', { name: '打开对话查找', exact: true }).click();
+  await page.getByRole('button', { name: '关闭查找（Esc）', exact: true }).click();
+  const conversation = page.locator('.workspace .conversation');
+  await expect(page.getByRole('button', { name: '打开对话查找', exact: true })).toBeFocused();
+  await page.keyboard.press('Control+f');
+  await page.keyboard.press('Escape');
+  expect(await conversation.evaluate((element) => element.matches(':focus-visible'))).toBe(false);
+});
+
+test('the session card fades in and out instead of popping', async ({ page }) => {
+  await page.goto('/');
+  await login(page);
+  await createSession(page, '悬停卡片：一个长到在侧栏里一定会被截断显示的会话标题');
+  const row = page.locator('.session-row.selected');
+  await row.hover();
+  const card = page.getByRole('tooltip');
+  await expect(card).toBeVisible();
+  await page.mouse.move(900, 400);
+  await expect(page.locator('.motion-presence[data-state="exit"] > .session-card')).toHaveCount(1);
+  await expect(page.locator('.session-card')).toHaveCount(0);
 });
