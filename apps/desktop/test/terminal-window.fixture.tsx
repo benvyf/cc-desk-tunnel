@@ -3,6 +3,20 @@ import { createRoot } from 'react-dom/client';
 import TerminalWindow from '../src/TerminalWindow.tsx';
 import TitleBar from '../src/TitleBar.tsx';
 import '../src/style.css';
+import { Terminal } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import { PredictiveEchoAddon } from 'xterm-zerolag-input';
+import { setPrefs } from '../src/prefs.ts';
+const terminalInstances: Terminal[] = [];
+if (new URLSearchParams(location.search).get('predictive') === '1') {
+  // Match the recorded Linux PTY grid independently of the test browser's font metrics.
+  FitAddon.prototype.proposeDimensions = () => ({ cols: 100, rows: 35 });
+  const open = Terminal.prototype.open;
+  Terminal.prototype.open = function (parent) {
+    terminalInstances.push(this);
+    return open.call(this, parent);
+  };
+}
 const requests: object[] = [];
 const controls: object[] = [];
 const listeners = new Set<(message: any) => void>();
@@ -165,6 +179,14 @@ function Fixture() {
 root.render(React.createElement(React.StrictMode, null, React.createElement(Fixture)));
 Object.assign(window, {
   terminalTest: {
+    terminalInstances,
+    setPrediction: (value: boolean) =>
+      setPrefs((prefs) => ({ ...prefs, terminalPredictiveEcho: value })),
+    failPrediction: () => {
+      PredictiveEchoAddon.prototype.predictChar = () => {
+        throw new Error('fixture prediction failure');
+      };
+    },
     requests,
     controls,
     setCloseMode: (mode: typeof closeMode) => {

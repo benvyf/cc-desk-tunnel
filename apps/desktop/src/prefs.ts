@@ -65,6 +65,8 @@ export type Prefs = {
   quota: boolean;
   // Whether Clawd stands on the session's message box (Clawd.tsx).
   mascot: boolean;
+  // Optional local display prediction for the remote native terminal.
+  terminalPredictiveEcho: boolean;
   // How much of the work behind a reply is shown.
   view: TranscriptView;
   // The strip under the input box with the whole session's figures; chosen the same way.
@@ -102,6 +104,7 @@ const defaults: Prefs = {
   stats: { enabled: false, summary: {} },
   quota: false,
   mascot: true,
+  terminalPredictiveEcho: false,
   view: defaultView,
   sessionBar: { enabled: false, summary: {} },
   theme: 'system',
@@ -162,6 +165,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
       bypassPermissions: saved.bypassPermissions === true,
       quota: saved.quota === true,
       mascot: saved.mascot !== false,
+      terminalPredictiveEcho: saved.terminalPredictiveEcho === true,
       view: {
         mode: viewModes.find((entry) => entry.mode === saved.view?.mode)?.mode ?? defaultView.mode,
       },

@@ -1,8 +1,108 @@
 import { test, expect, _electron as electron } from '@playwright/test';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
+
+test('detached Electron terminal predicts on its own document and disables without restarting', async () => {
+  test.setTimeout(60000);
+  const directory = mkdtempSync(join(tmpdir(), 'cc-terminal-echo-electron-'));
+  const preload = join(directory, 'preload.cjs');
+  const main = join(directory, 'main.cjs');
+  writeFileSync(
+    preload,
+    `const {contextBridge}=require('electron');contextBridge.exposeInMainWorld('desktop',{boot:{shared:{prefs:{terminalPredictiveEcho:true}}},onSharedChanged:()=>()=>{},saveShared:async()=>{},terminalWindow:{appearance:async()=>({nativeControls:true}),focus:()=>{},setActive:()=>{},control:()=>{},finishClose:()=>{},onRequestClose:()=>()=>{},onClosed:()=>()=>{}}});`,
+  );
+  writeFileSync(
+    main,
+    `const {app,BrowserWindow,Menu}=require('electron');const {installTerminalWindow,isTerminalWindow}=require(${JSON.stringify(resolve('apps/desktop/electron/terminal-window.cjs'))});app.setPath('userData',${JSON.stringify(join(directory, 'profile'))});app.whenReady().then(()=>{const win=new BrowserWindow({show:false,webPreferences:{preload:${JSON.stringify(preload)},contextIsolation:true,sandbox:true,backgroundThrottling:false}});installTerminalWindow(win,Menu);win.loadURL('http://127.0.0.1:15173/test/terminal-window.fixture.html?predictive=1');});app.on('before-quit',()=>{for(const win of BrowserWindow.getAllWindows())if(isTerminalWindow(win))win.destroy();});`,
+  );
+  const application = await electron.launch({
+    executablePath:
+      process.env.CC_TEST_ELECTRON || resolve('node_modules/electron/dist/electron.exe'),
+    args: [main],
+  });
+  try {
+    const owner = await application.firstWindow();
+    await owner.waitForFunction(() => !!(window as any).terminalTest);
+    await expect.poll(() => application.windows().length).toBe(2);
+    const child = application.windows().find((window) => window !== owner)!;
+    await expect(child.locator('.xterm-helper-textarea')).toBeFocused();
+    const events: { kind: string; label?: string; data?: string }[] = JSON.parse(
+      readFileSync(new URL('./fixtures/terminal-echo/linux295.json', import.meta.url), 'utf8'),
+    ).events;
+    const start = events.findIndex((event) => event.kind === 'input' && event.label === 'ascii-a');
+    const prefix = events
+      .slice(0, start)
+      .filter((event) => event.kind === 'output')
+      .map((event) => event.data)
+      .join('');
+    const echo = events
+      .slice(
+        start,
+        events.findIndex((event) => event.kind === 'checkpoint' && event.label === 'ascii-c'),
+      )
+      .filter((event) => event.kind === 'output')
+      .map((event) => event.data)
+      .join('');
+    await owner.evaluate(
+      (data) =>
+        (window as any).terminalTest.emit({
+          type: 'terminal.data',
+          data,
+          bytes: new TextEncoder().encode(data).length,
+        }),
+      prefix,
+    );
+    await expect
+      .poll(() =>
+        owner.evaluate(() => {
+          const terminal = (window as any).terminalTest.terminalInstances.at(-1);
+          return [terminal.cols, terminal.rows, terminal.buffer.active.cursorX];
+        }),
+      )
+      .toEqual([100, 35, 2]);
+    await owner.evaluate(() => {
+      (window as any).terminalTest.controls.length = 0;
+    });
+    await child.keyboard.type('abc');
+    await expect(child.locator('[data-predictive-echo] span')).toHaveText(['a', 'b', 'c']);
+    await owner.evaluate(
+      (data) =>
+        (window as any).terminalTest.emit({
+          type: 'terminal.data',
+          data,
+          bytes: new TextEncoder().encode(data).length,
+        }),
+      echo,
+    );
+    await expect(child.locator('[data-predictive-echo] span')).toHaveCount(0);
+    await child.keyboard.press('d');
+    await expect(child.locator('[data-predictive-echo] span')).toHaveText(['d']);
+    await owner.evaluate(() => (window as any).terminalTest.setPrediction(false));
+    await expect(child.locator('[data-predictive-echo]')).toHaveCount(0);
+    expect(
+      await owner.evaluate(() =>
+        (window as any).terminalTest.controls
+          .filter((control: any) => control.type === 'terminal.input')
+          .map((control: any) => control.data),
+      ),
+    ).toEqual(['a', 'b', 'c', 'd']);
+    expect(
+      await owner.evaluate(
+        () =>
+          (window as any).terminalTest.requests.filter(
+            (request: any) => request.type === 'terminal.open',
+          ).length,
+      ),
+    ).toBe(1);
+  } finally {
+    await application.close();
+    if (resolve(directory, '..') !== resolve(tmpdir()))
+      throw new Error('Unexpected test directory');
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
 
 test('detached terminal has native window controls, exact input, resize, focus and cleanup', async () => {
   test.setTimeout(90000);
