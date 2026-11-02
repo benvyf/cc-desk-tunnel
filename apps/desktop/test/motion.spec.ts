@@ -513,3 +513,89 @@ test('a fold of steps grows to its height and the conversation fades back after 
     );
   expect(names).toContain('motion-fade-in');
 });
+
+// Motion pass M3 (2026-11-03): feedback at one pace, every control answers a press, the switch does not bounce,
+// and with reduced motion surfaces still fade briefly while nothing moves.
+test('hover is feedback at 60ms and every control answers a press', async ({ page }) => {
+  await page.goto('/');
+  await login(page);
+  const row = page.locator('.sidebar .side-action.new-session');
+  const durations = (locator: ReturnType<Page['locator']>) =>
+    locator.evaluate((element) => getComputedStyle(element).transitionDuration);
+  expect(await durations(row)).toMatch(/^0\.06s/);
+  expect(await durations(page.getByRole('button', { name: '设置与账号', exact: true }))).toBe(
+    '0.06s',
+  );
+  await createSession(page, '反馈节奏');
+  expect(await durations(page.locator('.session-row').first())).toMatch(/^0\.06s/);
+  for (const control of [page.locator('.workspace .chip:visible').first()]) {
+    await control.hover();
+    await page.mouse.down();
+    await expect(control).toHaveCSS('scale', '0.98');
+    await page.mouse.move(10, 790);
+    await page.mouse.up();
+  }
+  const selected = await page.evaluate(() => {
+    const probe = document.createElement('i');
+    probe.style.background = 'var(--selected)';
+    document.querySelector('.sidebar')!.append(probe);
+    const value = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return value;
+  });
+  await row.hover();
+  await page.mouse.down();
+  await expect(row).toHaveCSS('background-color', selected);
+  await page.mouse.move(10, 790);
+  await page.mouse.up();
+});
+
+test('the switch slides without bouncing', async ({ page }) => {
+  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page
+    .getByRole('navigation', { name: '设置分类' })
+    .getByRole('button', { name: '常规', exact: true })
+    .click();
+  const timing = await page
+    .locator('button[role="switch"]')
+    .first()
+    .evaluate((element) => getComputedStyle(element, '::after').transitionTimingFunction);
+  expect(timing).toBe('cubic-bezier(0.32, 0.72, 0, 1)');
+});
+
+test('with reduced motion surfaces still fade briefly while nothing unfolds or slides', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/');
+  await login(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  const menu = page.getByRole('menu', { name: '设置与账号' });
+  await expect(menu).toBeVisible();
+  const opening = await menu.evaluate((element) =>
+    element
+      .getAnimations()
+      .map((animation) => [
+        (animation as CSSAnimation).animationName,
+        animation.effect?.getTiming().duration,
+      ]),
+  );
+  expect(opening).toEqual([['motion-fade-in', 120]]);
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  // The side column fades without sliding; the page takes its place at once.
+  await page.getByRole('banner').getByRole('button', { name: '收起侧栏', exact: true }).click();
+  await expect(page.locator('.sidebar')).toHaveCSS('translate', 'none');
+  expect(
+    await page.locator('.shell').evaluate((shell) => getComputedStyle(shell).transitionDuration),
+  ).toMatch(/^0s/);
+  // Controls answer at once; the column's resize handle too.
+  expect(
+    await page
+      .locator('.sidebar-resize')
+      .evaluate((element) => getComputedStyle(element, '::after').transitionDuration),
+  ).toBe('0s');
+});
