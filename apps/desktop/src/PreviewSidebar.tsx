@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FolderOpen, Globe, ListTree, Maximize2, Minimize2, X } from './icons.tsx';
+import { FolderOpen, Globe, ListTree, Maximize2, Minimize2, Plus, X } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { previewSpan, previewWebsite } from './preview.ts';
 import type { PreviewSurface, PreviewWorkspace } from './preview.ts';
@@ -249,23 +249,14 @@ export default function PreviewSidebar({
                 workspace={workspace}
                 surface={surface}
                 empty={
-                  // One sentence, no large icon (spec §5.11); opening a file is a word in it.
                   <div className="preview-empty">
-                    {filesAvailable ? (
-                      <p>
-                        {root ? '从工作区目录选择文件，或' : ''}
-                        <button
-                          type="button"
-                          className="preview-empty-link"
-                          onClick={() => void pick()}
-                        >
-                          打开文件
-                        </button>
-                        {root ? '。' : '，在这里查看。'}
-                      </p>
-                    ) : (
-                      <p>文件预览需要项目所在的设备。</p>
-                    )}
+                    <FolderOpen />
+                    <h2>在这里查看成果</h2>
+                    <p>选择目录中的文件，或打开本机文件。</p>
+                    <Button onClick={() => void pick()}>
+                      <Plus />
+                      打开文件
+                    </Button>
                   </div>
                 }
               />

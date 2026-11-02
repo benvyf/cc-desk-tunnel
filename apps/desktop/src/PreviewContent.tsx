@@ -479,16 +479,9 @@ export default function PreviewContent({
       )}
       {file?.kind === 'html' && !source && workspace.restoredTabs.has(tab.id) ? (
         <div className="preview-empty">
-          <p>
-            已恢复 HTML 标签。
-            <button
-              type="button"
-              className="preview-empty-link"
-              onClick={() => workspace.activate(tab.id)}
-            >
-              加载此预览
-            </button>
-          </p>
+          <FileText />
+          <p>已恢复 HTML 标签。点击后加载页面。</p>
+          <Button onClick={() => workspace.activate(tab.id)}>加载此预览</Button>
         </div>
       ) : file?.kind === 'pdf' ? (
         <Suspense

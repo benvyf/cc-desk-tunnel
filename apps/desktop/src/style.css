@@ -7613,7 +7613,6 @@ dialog:has(.web-settings-form) {
   width: var(--icon-lg);
   height: var(--icon-lg);
 }
-/* An empty place says one sentence, without a large icon (spec §5.11); its one action is a word in it. */
 .preview-empty {
   display: flex;
   flex-direction: column;
@@ -7626,29 +7625,23 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   overflow: auto;
 }
+.preview-empty > svg {
+  color: var(--muted);
+  width: var(--icon-xl);
+  height: var(--icon-xl);
+}
+.preview-empty h2,
 .preview-empty p {
   margin: 0;
-  max-width: 36ch;
+}
+.preview-empty p {
   color: var(--muted);
-  font-size: calc(13rem / 14);
-  line-height: 1.6;
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
 }
-.preview-empty-link {
-  display: inline;
-  min-height: 0;
-  margin: 0 0.15em;
-  padding: 0;
-  border: 0;
-  background: none;
-  color: var(--text);
-  font: inherit;
-  text-decoration: underline;
-  text-decoration-color: var(--line-strong);
-  text-underline-offset: 3px;
-  cursor: pointer;
-}
-.preview-empty-link:hover {
-  text-decoration-color: currentColor;
+.preview-empty h2 {
+  font-size: var(--font-title);
+  font-weight: 500;
 }
 .preview-empty-actions {
   display: flex;

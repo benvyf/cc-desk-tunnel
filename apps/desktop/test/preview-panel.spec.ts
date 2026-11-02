@@ -1,8 +1,8 @@
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
-// The right-hand preview panel follows the side column's rules (phase 3g): tree rows, the one-sentence empty
-// state, the blue divider, the path row, tabs without clay, the narrow window's overlay and the terminal strip.
+// The right-hand preview panel follows the side column's rules (phase 3g): tree rows, the blue divider, the
+// path row, tabs without clay, the narrow window's overlay and the terminal strip; the empty state stays as it was.
 const fixture = '/test/fixtures/preview-sidebar.html';
 const pane = (page: Page) => page.getByRole('complementary', { name: '文件与网站预览' });
 const settle = (page: Page) =>
@@ -75,16 +75,14 @@ test('the workspace tree has the side column rows and its own column', async ({ 
   ).toBeVisible();
 });
 
-test('an empty preview says one sentence with the action in it', async ({ page }) => {
+// benben kept the original empty state (2026-11-02): folder icon, title, one line and an "open file" button.
+test('an empty preview keeps its icon, title and open button', async ({ page }) => {
   await page.goto(fixture);
   await page.getByRole('button', { name: '展开空栏', exact: true }).click();
   const empty = pane(page).locator('.preview-empty');
-  await expect(empty).toHaveText('从工作区目录选择文件，或打开文件。');
-  await expect(empty.locator('svg')).toHaveCount(0);
-  await expect(empty.locator('h2')).toHaveCount(0);
-  await expect(
-    empty.locator('p').getByRole('button', { name: '打开文件', exact: true }),
-  ).toBeVisible();
+  await expect(empty.locator('> svg')).toHaveCSS('width', '32px');
+  await expect(empty.getByRole('heading', { name: '在这里查看成果' })).toBeVisible();
+  await expect(empty.locator('p')).toHaveText('选择目录中的文件，或打开本机文件。');
   await empty.getByRole('button', { name: '打开文件', exact: true }).click();
   await expect(pane(page).getByRole('tab', { name: '说明.md' })).toBeVisible();
 });
