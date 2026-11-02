@@ -74,87 +74,95 @@ export default function WebGate() {
   }, [expired]);
   if (session?.authenticated)
     return <App browser={{ selfSigned: session.selfSigned, expired, logout }} />;
+  // The same page as the client's sign-in (LoginPage): the brand, a serif title, the fields without a card, and
+  // a full-width ink button.
   return (
-    <main className="web-login">
-      <section className="web-login-body">
-        <h1>
-          <Brand />
-        </h1>
-        <p className="muted">登录服务端工作台</p>
-        {session?.selfSigned && <CertificateWarning />}
-        {!session ? (
-          <>
-            <p role="status">{busy ? '正在连接服务…' : error}</p>
-            {!busy && (
-              <button className="button" onClick={() => void check()}>
-                重试
-              </button>
-            )}
-          </>
-        ) : (
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              if (busy) return;
-              const current = ++generation.current;
-              setBusy(true);
-              setError('');
-              void browserLogin({ password, ...(session.totpEnabled ? { code } : {}) })
-                .then(
-                  (value) => {
-                    if (current !== generation.current) return;
-                    setPassword('');
-                    setCode('');
-                    setSession(value);
-                  },
-                  (error: unknown) => {
-                    if (current === generation.current)
-                      setError(error instanceof Error ? error.message : '登录失败。');
-                  },
-                )
-                .finally(() => {
-                  if (current === generation.current) setBusy(false);
-                });
-            }}
-          >
-            <label>
-              服务凭据
-              <input
-                type="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-                disabled={busy}
-              />
-            </label>
-            {session.totpEnabled && (
+    <main className="login-page web-login">
+      <div className="login-content web-login-body">
+        <Brand />
+        <section className="login-card" aria-labelledby="web-login-heading">
+          <div className="login-title">
+            <h1 id="web-login-heading">登录网页版</h1>
+          </div>
+          <p className="login-subtitle">用服务凭据登录这台服务端的工作台。</p>
+          {session?.selfSigned && <CertificateWarning />}
+          {!session ? (
+            <div className="connection-form">
+              <p role="status" className={busy ? 'muted' : 'error-text'}>
+                {busy ? '正在连接服务…' : error}
+              </p>
+              {!busy && (
+                <button className="button login-submit" onClick={() => void check()}>
+                  重试
+                </button>
+              )}
+            </div>
+          ) : (
+            <form
+              className="connection-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (busy) return;
+                const current = ++generation.current;
+                setBusy(true);
+                setError('');
+                void browserLogin({ password, ...(session.totpEnabled ? { code } : {}) })
+                  .then(
+                    (value) => {
+                      if (current !== generation.current) return;
+                      setPassword('');
+                      setCode('');
+                      setSession(value);
+                    },
+                    (error: unknown) => {
+                      if (current === generation.current)
+                        setError(error instanceof Error ? error.message : '登录失败。');
+                    },
+                  )
+                  .finally(() => {
+                    if (current === generation.current) setBusy(false);
+                  });
+              }}
+            >
               <label>
-                验证器动态码
+                服务凭据
                 <input
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  value={code}
-                  onChange={(event) => setCode(event.target.value)}
+                  type="password"
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
                   required
                   disabled={busy}
                 />
               </label>
-            )}
-            {!session.totpEnabled && <p className="muted">建议开启验证器两步验证。</p>}
-            {error && (
-              <p className="error" role="alert">
-                {error}
-              </p>
-            )}
-            <button className="button primary" disabled={busy}>
-              {busy ? '正在登录…' : '登录'}
-            </button>
-          </form>
-        )}
-      </section>
+              {session.totpEnabled && (
+                <label>
+                  验证器动态码
+                  <input
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    pattern="[0-9]{6}"
+                    maxLength={6}
+                    value={code}
+                    onChange={(event) => setCode(event.target.value)}
+                    required
+                    disabled={busy}
+                  />
+                </label>
+              )}
+              {!session.totpEnabled && <p className="login-hint">建议开启验证器两步验证。</p>}
+              {error && (
+                <p className="error-text" role="alert">
+                  {error}
+                </p>
+              )}
+              <button className="button primary login-submit" data-size="lg" disabled={busy}>
+                {busy ? '正在登录…' : '登录'}
+              </button>
+            </form>
+          )}
+        </section>
+      </div>
     </main>
   );
 }

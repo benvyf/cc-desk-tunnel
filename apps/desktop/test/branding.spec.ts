@@ -103,7 +103,9 @@ test('Electron uses CC SPACE while retaining an explicit profile and recognizing
   });
   try {
     const page = await application.firstWindow();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
     expect(await application.evaluate(({ app }) => app.getPath('userData'))).toBe(profile);
     expect(await page.evaluate(() => window.desktop!.windowSettings())).toEqual({

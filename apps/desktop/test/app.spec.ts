@@ -184,7 +184,9 @@ test('Electron loads the built UI with sandbox and closes its execution connecti
   let sessionTitle = '';
   try {
     const page = await application.firstWindow();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     const security = await application.evaluate(({ BrowserWindow }) => {
       const contents = BrowserWindow.getAllWindows()[0].webContents as unknown as {
         getLastWebPreferences: () => {

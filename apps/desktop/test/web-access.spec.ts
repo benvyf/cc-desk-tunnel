@@ -160,7 +160,19 @@ test('production browser logs in with TOTP, sends no desktop identity, and expos
   page,
 }) => {
   const fixture = await browserFixture(page);
-  await expect(page.getByRole('heading', { name: 'CC SPACE', exact: true })).toBeVisible();
+  // The gate is laid out as the client's sign-in: the brand, a serif title, a full-width ink button.
+  await expect(page.getByRole('heading', { name: '登录网页版', exact: true })).toBeVisible();
+  await expect(page.locator('.web-login .login-card')).toHaveCSS('box-shadow', 'none');
+  const [gateCard, gateButton] = await Promise.all([
+    page.locator('.web-login form').boundingBox(),
+    page.getByRole('button', { name: '登录', exact: true }).boundingBox(),
+  ]);
+  expect(Math.abs(gateButton!.width - gateCard!.width)).toBeLessThanOrEqual(1);
+  expect(
+    await page
+      .getByRole('heading', { name: '登录网页版' })
+      .evaluate((node) => getComputedStyle(node).fontFamily),
+  ).toContain('CC Serif');
   expect(
     await page
       .locator('.web-login-body .brand')

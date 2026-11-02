@@ -389,3 +389,29 @@ for (const key of ['Enter', 'Space']) {
     await expect(page.getByLabel('服务证书指纹', { exact: true })).toBeFocused();
   });
 }
+
+// F1 (phase 3m): a product title, no simulation badge, and the development builds' connection mode as a quiet
+// line of links under the button rather than a control above the fields.
+test('the title speaks of the service, and the development mode switch is a line under the button', async ({
+  page,
+}) => {
+  await desktopLogin(page);
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('连接到 CC SPACE 服务');
+  await expect(page.locator('.login-page .badge, .login-page .segmented')).toHaveCount(0);
+  const modes = page.getByRole('group', { name: '连接方式' });
+  const remote = modes.getByRole('button', { name: '远程代理', exact: true });
+  const local = modes.getByRole('button', { name: '本地模拟', exact: true });
+  await expect(remote).toHaveAttribute('aria-pressed', 'true');
+  await expect(local).toHaveAttribute('aria-pressed', 'false');
+  const [line, submit] = await Promise.all([
+    modes.boundingBox(),
+    page.getByRole('button', { name: '连接', exact: true }).boundingBox(),
+  ]);
+  expect(line!.y).toBeGreaterThan(submit!.y + submit!.height);
+  await local.click();
+  await expect(local).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByText('高级连接选项')).toHaveCount(0);
+  await expect(page.locator('.login-page')).not.toContainText('离线模拟');
+  await remote.click();
+  await expect(page.getByText('高级连接选项')).toBeVisible();
+});

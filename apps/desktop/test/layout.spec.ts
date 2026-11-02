@@ -634,7 +634,9 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
   });
   try {
     const page = await application.firstWindow();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     await login(page);
     // This repository stands in for the user's project.
     const repository = resolve('.');

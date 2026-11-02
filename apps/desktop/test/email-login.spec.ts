@@ -74,6 +74,9 @@ test('email-only login ignores legacy credentials, selects a workspace and exits
   page,
 }) => {
   await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  // Laid out as the connection sign-in (F1): no card, no tinted backdrop.
+  await expect(page.locator('.email-login-card')).toHaveCSS('box-shadow', 'none');
+  await expect(page.locator('.email-login-page')).toHaveCSS('background-image', 'none');
   await expect(page.getByLabel('服务地址', { exact: true })).toHaveCount(0);
   expect(await page.evaluate(() => (window as any).legacyLoginReads)).toBe(0);
   expect(await page.evaluate(() => localStorage.getItem('proxy-url'))).toBeNull();

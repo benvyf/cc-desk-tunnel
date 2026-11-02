@@ -796,7 +796,6 @@ button.chip.danger:hover:not(:disabled) {
 /* The installed client's only sign-in surface. Connection details come from the management center. */
 .email-login-page {
   padding-top: clamp(calc(var(--bar) + 28px), 15dvh, 140px);
-  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft), transparent 65%);
 }
 .email-login-page .login-content {
   max-width: 448px;
@@ -804,13 +803,15 @@ button.chip.danger:hover:not(:disabled) {
 .email-login-page .login-content > .brand {
   margin-bottom: 24px;
 }
+/* Like the connection sign-in: the fields stand on the page, without a card (F1). */
 .email-login-card {
-  padding: 32px;
-  box-shadow: var(--shadow-md);
+  padding: 8px 4px;
+  box-shadow: none;
 }
+/* Left-aligned like the connection sign-in's title (LoginPage). */
 .email-login-heading {
   margin-bottom: 28px;
-  text-align: center;
+  text-align: left;
 }
 .email-login-heading h1 {
   font-size: calc(30rem / 14);
@@ -1023,6 +1024,39 @@ button.chip.danger:hover:not(:disabled) {
 }
 .login-advanced[open] > summary .app-icon {
   transform: rotate(90deg);
+}
+/* Development builds: how this window connects, a quiet line under the button (F1). */
+.login-mode-line {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -6px 0 0;
+  color: var(--faint);
+  font-size: var(--font-caption);
+}
+.login-mode-line span {
+  margin-right: 4px;
+}
+.login-mode-line button {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+.login-mode-line button:hover {
+  color: var(--text);
+}
+.login-mode-line button[aria-pressed='true'] {
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: default;
 }
 .login-hint {
   margin: 8px 0 0;
@@ -6939,30 +6973,21 @@ dialog::backdrop {
 }
 
 /* Browser access uses the workbench's existing rows and dialogs, not a second shell. */
-.web-login {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+/* The browser's sign-in is laid out by .login-page (LoginPage); the gate's certificate note sits under the title. */
+.web-login .web-trust-warning {
+  margin: 0 0 20px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-md);
+  background: var(--warn-soft);
 }
-.web-login-body {
-  width: min(100%, 400px);
-}
-.web-login-body h1 {
-  margin: 0 0 8px;
-  font-size: calc(26rem / 14);
-}
-.web-login-body form,
 .web-settings-form fieldset {
   display: grid;
   gap: 18px;
 }
-.web-login-body label,
 .web-settings-form label {
   display: grid;
   gap: 6px;
 }
-.web-login-body input,
 .web-settings-form input,
 .web-settings-form textarea {
   width: 100%;
