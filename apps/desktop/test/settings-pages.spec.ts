@@ -102,6 +102,10 @@ test('about names the web version and opens the release notes; help has contents
     .click();
   const notes = page.getByRole('dialog', { name: '0.3.7 的更新内容' });
   await expect(notes).toBeVisible();
+  // The notes stay in the window: no button or link to GitHub.
+  await expect(notes).not.toContainText(/GitHub/i);
+  await expect(notes.locator('a[href*="github.com"]')).toHaveCount(0);
+  await expect(notes.getByRole('button')).toHaveText(['', '关闭']);
   await notes.getByRole('button', { name: '关闭', exact: true }).last().click();
   await expect(notes).toHaveCount(0);
 

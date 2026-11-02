@@ -719,8 +719,8 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
     const notes = page.getByRole('dialog');
     await expect(notes.getByRole('heading', { name: /的更新内容$/ })).toBeVisible();
     await expect(notes).toContainText('升级说明');
-    // A link into the repository goes to that file on GitHub (see notes-quota.test.mjs), and from there to the
-    // user's browser: whatever this version's notes link to, no link is left relative to the program's page.
+    // A link into the repository or to GitHub keeps only its words (see notes-quota.test.mjs): whatever this
+    // version's notes link to, no link is left relative to the program's page, and none goes to GitHub.
     expect(
       await notes
         .locator('.release-notes a')

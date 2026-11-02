@@ -1,13 +1,12 @@
 import { useEffect, useState } from 'react';
 import changelog from '../../../CHANGELOG.md?raw';
-import { absoluteLinks, releaseSection } from './notes.ts';
-import { project } from './project.tsx';
+import { releaseSection, withoutRepositoryLinks } from './notes.ts';
 import RichText from './RichText.tsx';
 import { Modal } from './ui.tsx';
 
 // What changed in a version, shown where the user decides about an upgrade. This program carries the notes up
-// to its own version; those of a newer one are read from that release's page on GitHub, and when that cannot
-// be reached the page is offered instead.
+// to its own version; those of a newer one are read when the dialog opens. The dialog names no outside site and
+// offers no link away from it: notes that cannot be read are said to be unavailable.
 export default function ReleaseNotes({
   version,
   onClose,
@@ -30,8 +29,7 @@ export default function ReleaseNotes({
       current = false;
     };
   }, [carried, version]);
-  const text = carried ? absoluteLinks(carried, project.url, version) : fetched;
-  const page = `${project.url}/releases/tag/v${version}`;
+  const text = (carried ?? fetched) && withoutRepositoryLinks((carried ?? fetched)!);
   return (
     <Modal title={`${version} 的更新内容`} onClose={onClose}>
       <div
@@ -47,23 +45,10 @@ export default function ReleaseNotes({
         {text ? (
           <RichText text={text} />
         ) : (
-          <p className="muted">
-            {failed ? '没能从 GitHub 读到这一版的说明，可以到发布页查看。' : '正在读取…'}
-          </p>
+          <p className="muted">{failed ? '暂时读不到这一版的更新内容。' : '正在读取…'}</p>
         )}
       </div>
       <div className="setting-actions">
-        {project.url && (
-          <button
-            type="button"
-            className="button"
-            onClick={() =>
-              window.desktop ? void window.desktop.openExternal(page) : window.open(page)
-            }
-          >
-            在 GitHub 发布页查看
-          </button>
-        )}
         <button type="button" className="button primary" onClick={onClose}>
           关闭
         </button>
