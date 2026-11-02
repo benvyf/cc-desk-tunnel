@@ -5215,6 +5215,147 @@ details[open] > summary > .fold-chevron {
   inherits: false;
   initial-value: -30%;
 }
+/* The top level burns: the fill flows like molten metal under the sweep, embers rise from it, a ring of fire turns
+   round the handle and the title glows in flowing gold and red. Reduced motion keeps the colours, stills the flow
+   and the ring, and drops the embers. */
+.effort-track {
+  position: relative;
+}
+@property --flow {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+.effort-view[data-effort='max'] {
+  --effort-gold: light-dark(#e98a2c, #fcd34d);
+  --effort-ember: light-dark(#c2410c, #f97316);
+  /* The title's gradient keeps to colours readable as text (at least 4.5:1 on the menu). */
+  --effort-title-ember: light-dark(#b4400e, #f97316);
+  --effort-title-gold: light-dark(#b45309, #fcd34d);
+}
+.effort-view[data-effort='max'] input[type='range'] {
+  background:
+    linear-gradient(
+        100deg,
+        transparent calc(var(--shine) - 14%),
+        rgb(255 255 255 / var(--effort-glint, 0.36)) var(--shine),
+        transparent calc(var(--shine) + 14%)
+      )
+      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+    linear-gradient(
+        90deg,
+        var(--effort-fill) calc(var(--flow) - 100%),
+        var(--effort-gold) calc(var(--flow) - 75%),
+        var(--effort-ember) calc(var(--flow) - 50%),
+        var(--effort-fill) calc(var(--flow) - 25%),
+        var(--effort-fill) var(--flow),
+        var(--effort-gold) calc(var(--flow) + 25%),
+        var(--effort-ember) calc(var(--flow) + 50%),
+        var(--effort-fill) calc(var(--flow) + 75%),
+        var(--effort-fill) calc(var(--flow) + 100%)
+      )
+      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+    var(--hover);
+  box-shadow: 0 0 14px -2px color-mix(in srgb, var(--effort-ember) 55%, transparent);
+}
+.effort-view[data-effort='max'] input[type='range']:enabled {
+  animation:
+    effort-sweep var(--effort-pace, 1.25s) linear infinite,
+    effort-flow 2.6s linear infinite;
+}
+@keyframes effort-flow {
+  to {
+    --flow: 100%;
+  }
+}
+.effort-flare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+/* A ring of fire round the handle: a turning conic gradient, hollowed to a 3px band just outside it. */
+.effort-ring {
+  position: absolute;
+  top: 50%;
+  left: calc(15px + (100% - 30px) * var(--at, 1));
+  width: 38px;
+  height: 38px;
+  margin: -19px 0 0 -19px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 15%,
+    var(--effort-gold) 35%,
+    var(--effort-ember) 55%,
+    transparent 75% 100%
+  );
+  -webkit-mask: radial-gradient(
+    closest-side,
+    transparent calc(100% - 3.5px),
+    #000 calc(100% - 3px)
+  );
+  mask: radial-gradient(closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  animation: effort-spin 1.4s linear infinite;
+}
+@keyframes effort-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+/* Embers: small square sparks, gold and red, rising from the fill and going out. */
+.effort-flare > i {
+  position: absolute;
+  bottom: 40%;
+  left: calc(15px + (100% - 30px) * var(--x));
+  width: 4px;
+  height: 4px;
+  background: var(--effort-gold);
+  box-shadow: 0 0 5px var(--effort-ember);
+  opacity: 0;
+  animation: effort-ember 1.9s ease-out infinite;
+  animation-delay: calc(var(--i) * -0.27s);
+}
+.effort-flare > i:nth-child(odd) {
+  background: var(--effort-ember);
+  animation-duration: 2.3s;
+}
+@keyframes effort-ember {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    scale: 1;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: calc((var(--i) - 3) * 2px) -30px;
+    scale: 0.4;
+  }
+}
+/* The title in flowing gold and red, with a glow. */
+.effort-view[data-effort='max'] .effort-heading strong {
+  background: linear-gradient(
+      90deg,
+      var(--effort-text),
+      var(--effort-title-ember),
+      var(--effort-title-gold),
+      var(--effort-title-ember),
+      var(--effort-text)
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--effort-ember) 45%, transparent));
+  animation: effort-title 2.6s linear infinite;
+}
+@keyframes effort-title {
+  to {
+    background-position: 200% 0;
+  }
+}
 @keyframes effort-sweep {
   from {
     --shine: -30%;
@@ -5238,8 +5379,14 @@ details[open] > summary > .fold-chevron {
 }
 @media (prefers-reduced-motion: reduce) {
   .model-menu input[type='range'],
-  .effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb {
+  .effort-view[data-effort='max'] input[type='range']:enabled,
+  .effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb,
+  .effort-view[data-effort='max'] .effort-heading strong,
+  .effort-ring {
     animation: none;
+  }
+  .effort-flare > i {
+    display: none;
   }
 }
 .model-options {

@@ -147,14 +147,35 @@ export default function ComposerControls({
                   <ChevronRight />
                 </button>
                 {levels.length > 0 && (
-                  <EffortSlider
-                    key={model ?? 'default'}
-                    levels={levels}
-                    value={effort ?? actual ?? null}
-                    disabled={disabled}
-                    onPreview={setPreview}
-                    onCommit={(value) => configure({ effort: value })}
-                  />
+                  // The track and, at the top level, what it gives off: embers rising from the fill and a
+                  // ring turning round the handle (style.css). Both are decoration only.
+                  <div
+                    className="effort-track"
+                    style={
+                      {
+                        '--at':
+                          Math.max(0, levels.indexOf(shownEffort ?? 'high')) /
+                          Math.max(1, levels.length - 1),
+                      } as CSSProperties
+                    }
+                  >
+                    <EffortSlider
+                      key={model ?? 'default'}
+                      levels={levels}
+                      value={effort ?? actual ?? null}
+                      disabled={disabled}
+                      onPreview={setPreview}
+                      onCommit={(value) => configure({ effort: value })}
+                    />
+                    {shownEffort === 'max' && (
+                      <span className="effort-flare" aria-hidden="true">
+                        <span className="effort-ring" />
+                        {[0.08, 0.22, 0.37, 0.5, 0.63, 0.76, 0.9].map((x, index) => (
+                          <i key={x} style={{ '--x': x, '--i': index } as CSSProperties} />
+                        ))}
+                      </span>
+                    )}
+                  </div>
                 )}
                 {levels.length > 0 && (
                   <div className="effort-ticks">

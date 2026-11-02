@@ -157,21 +157,29 @@ test('keyboard preview can be cancelled and the slider fits both themes with red
 });
 
 // Effort as heat (style.css): each level colours the slider, its title and tick, and sets how fast a light
-// sweeps along the fill; the top level's handle breathes a halo. Reduced motion keeps the colours only.
-test('each effort level has its own colour and sweep, and reduced motion stills them', async ({
+// sweeps along the fill. The top level burns: a flowing fill, a ring turning round the handle, embers, a breathing
+// halo and a flowing gold title. Reduced motion keeps the colours only.
+test('each effort level has its own colour and sweep; the top level burns; reduced motion stills them', async ({
   page,
 }) => {
   const slider = await fixture(page);
   const view = page.locator('.effort-view');
   const heading = page.locator('.effort-heading strong');
-  const motion = () =>
+  const tick = page.locator('.effort-ticks button.current');
+  const running = () =>
     page.evaluate(() =>
-      document.getAnimations().map((a) => ({
-        name: (a as CSSAnimation).animationName,
-        duration: a.effect!.getTiming().duration,
-      })),
+      document
+        .getAnimations()
+        .filter((a) => a.playState === 'running')
+        .map((a) => ({
+          name: (a as CSSAnimation).animationName,
+          duration: Number(a.effect!.getTiming().duration),
+        })),
     );
-  const haloMoves = async () => {
+  const names = async () => new Set((await running()).map((a) => a.name));
+  // The handle's halo is drawn on its pseudo-element, which the animation list does not include: watch the strip
+  // just above the handle instead, which only the halo and the ring reach.
+  const aboveHandleMoves = async () => {
     const box = (await slider.boundingBox())!;
     const at = Number(await slider.inputValue()) / Number(await slider.getAttribute('max'));
     const x = box.x + 15 + (box.width - 30) * at;
@@ -199,23 +207,20 @@ test('each effort level has its own colour and sweep, and reduced motion stills 
     ['中', 'medium'],
     ['高', 'high'],
     ['极高', 'xhigh'],
-    ['最高', 'max'],
   ]) {
     await pick(name, level);
     colours[level] = await heading.evaluate((el) => getComputedStyle(el).color);
-    const running = await motion();
-    sweeps[level] = Number(running.find((a) => a.name === 'effort-sweep')!.duration);
-    // The handle's halo is drawn on its pseudo-element, which the animation list does not include: watch
-    // the strip just above the handle instead, which only the halo reaches.
-    expect(await haloMoves()).toBe(level === 'max');
-    await expect(page.locator('.effort-ticks button.current')).toHaveCSS('color', colours[level]);
+    await expect(tick).toHaveCSS('color', colours[level]);
+    sweeps[level] = (await running()).find((a) => a.name === 'effort-sweep')!.duration;
+    expect(await names()).not.toContain('effort-spin');
+    await expect(page.locator('.effort-flare')).toHaveCount(0);
+    expect(await aboveHandleMoves()).toBe(false);
   }
-  expect(new Set(Object.values(colours)).size).toBe(5);
+  expect(new Set(Object.values(colours)).size).toBe(4);
   // The harder Claude thinks, the quicker the sweep.
   expect(sweeps.low).toBeGreaterThan(sweeps.medium);
   expect(sweeps.medium).toBeGreaterThan(sweeps.high);
   expect(sweeps.high).toBeGreaterThan(sweeps.xhigh);
-  expect(sweeps.xhigh).toBeGreaterThan(sweeps.max);
   // 高 keeps the accent the title had before.
   await pick('高', 'high');
   expect(await heading.evaluate((el) => getComputedStyle(el).color)).toBe(
@@ -228,9 +233,35 @@ test('each effort level has its own colour and sweep, and reduced motion stills 
       return value;
     }),
   );
-  await page.emulateMedia({ reducedMotion: 'reduce' });
+
   await pick('最高', 'max');
-  expect((await motion()).filter((a) => a.name === 'effort-sweep')).toEqual([]);
-  expect(await haloMoves()).toBe(false);
-  expect(await heading.evaluate((el) => getComputedStyle(el).color)).toBe(colours.max);
+  const flare = page.locator('.effort-flare');
+  await expect(flare).toHaveAttribute('aria-hidden', 'true');
+  await expect(flare.locator('.effort-ring')).toHaveCount(1);
+  await expect(flare.locator('i')).toHaveCount(7);
+  const burning = await running();
+  for (const name of ['effort-sweep', 'effort-flow', 'effort-spin', 'effort-ember', 'effort-title'])
+    expect(burning.map((a) => a.name)).toContain(name);
+  expect(burning.find((a) => a.name === 'effort-sweep')!.duration).toBeLessThan(sweeps.xhigh);
+  // The ring sits round the handle, which is at the end of the track.
+  const [ring, track] = [
+    (await flare.locator('.effort-ring').boundingBox())!,
+    (await slider.boundingBox())!,
+  ];
+  expect(Math.abs(ring.x + ring.width / 2 - (track.x + track.width - 15))).toBeLessThan(1.5);
+  // The title is drawn by its gradient (the text itself is clear) and the tick keeps the level's colour.
+  await expect(heading).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
+  await expect(heading).toHaveCSS('background-clip', 'text');
+  const maxText = await view.evaluate((el) =>
+    getComputedStyle(el).getPropertyValue('--effort-text'),
+  );
+  expect(maxText.trim()).not.toBe('');
+  expect(await aboveHandleMoves()).toBe(true);
+
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await expect
+    .poll(async () => [...(await names())].filter((n) => n.startsWith('effort-')))
+    .toEqual([]);
+  await expect(flare.locator('i').first()).toBeHidden();
+  expect(await aboveHandleMoves()).toBe(false);
 });
