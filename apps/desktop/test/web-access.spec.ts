@@ -540,7 +540,7 @@ for (const browser of [false, true])
     await page
       .locator('.setting-row')
       .filter({ hasText: '两步验证' })
-      .getByRole('button', { name: '设置', exact: true })
+      .getByRole('button', { name: '开启两步验证', exact: true })
       .click();
     if (browser) {
       await expect(page.getByRole('img', { name: '验证器二维码' })).toHaveCount(0);
@@ -635,11 +635,10 @@ for (const browser of [false, true])
     }
     await page.getByRole('button', { name: '取消', exact: true }).click();
     await expect(page.locator('.web-totp-secret')).toHaveCount(0);
-    await page
-      .locator('.setting-row')
-      .filter({ hasText: '两步验证' })
-      .getByRole('button', { name: '设置', exact: true })
-      .click();
+    // The row says the state, then offers what changes it.
+    const totpRow = page.locator('.setting-row').filter({ hasText: '两步验证' });
+    await expect(totpRow.locator('.web-state')).toHaveText('未开启');
+    await totpRow.getByRole('button', { name: '开启两步验证', exact: true }).click();
     if (browser) {
       await expect(page.getByLabel('服务凭据', { exact: true })).toHaveValue('');
       await page.getByLabel('服务凭据', { exact: true }).fill('test-password');
@@ -656,8 +655,9 @@ for (const browser of [false, true])
       page
         .locator('.setting-row')
         .filter({ hasText: '两步验证' })
-        .getByRole('button', { name: '关闭', exact: true }),
+        .getByRole('button', { name: '关闭两步验证', exact: true }),
     ).toBeVisible();
+    await expect(totpRow.locator('.web-state.on')).toHaveText('已开启');
     const calls = await page.evaluate(() =>
       (
         window as unknown as { settingsFixture: { calls: Record<string, unknown>[] } }
@@ -690,7 +690,7 @@ test('desktop TOTP setup retries errors and discards a pending result on disconn
     page
       .locator('.setting-row')
       .filter({ hasText: '两步验证' })
-      .getByRole('button', { name: '设置', exact: true })
+      .getByRole('button', { name: '开启两步验证', exact: true })
       .click();
   await open();
   await expect(page.getByRole('alert')).toContainText('生成失败');

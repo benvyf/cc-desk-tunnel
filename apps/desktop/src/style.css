@@ -2511,6 +2511,49 @@ a:hover,
 .help-text {
   padding: 14px 20px;
 }
+/* The help page's contents: its topics as a two-column list of links under the title. */
+.help-toc {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+  margin: 0 0 8px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.help-toc button {
+  justify-self: start;
+  max-width: 100%;
+  min-height: var(--control-sm);
+  padding: 3px 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: calc(13.5rem / 14);
+  text-align: left;
+}
+.help-toc button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.page .page-heading[id^='help-'] {
+  scroll-margin-top: 20px;
+}
+/* Two keys pressed one after the other, each in its keycap. */
+.key-combo {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+/* A ghost button standing alone under a list (“恢复默认组合键”): its words in line with the rows' titles. */
+.page-body > .button.ghost.page-link-button {
+  margin-left: calc(-1 * var(--button-padding) - 1px);
+}
+/* A note under a group of rows keeps its distance from the last row (E2). */
+.page-body .card + p.muted {
+  margin-top: 12px;
+}
 .help-text p {
   margin: 0 0 8px;
   line-height: 1.8;
@@ -2539,7 +2582,8 @@ kbd {
   font-family: inherit;
   font-size: calc(12.5rem / 14);
 }
-.key-list kbd {
+.key-list kbd,
+.keycap {
   padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -5619,19 +5663,60 @@ details[open] > summary > .fold-chevron {
   gap: 14px;
   margin-bottom: 25px;
 }
-.account-avatar {
-  display: grid;
-  place-items: center;
+/* The account page is a settings page like the others: the same column, its refresh button in the title's row. */
+.account-page.page {
+  display: block;
+}
+.page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.page-title-row .page-title {
+  margin: 0;
+}
+/* The column's avatar (S mark on ink), at the size of a page's identity. */
+.side-avatar.account-avatar {
   width: 48px;
   height: 48px;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--ink);
-  color: var(--ink-text);
 }
-.account-avatar svg.app-icon {
-  width: var(--icon-lg);
-  height: var(--icon-lg);
+.account-avatar .account-mark {
+  height: 24px;
+}
+.account-none {
+  color: var(--faint);
+}
+/* Values still being read (AccountPanel): grey bars that breathe, still when motion is reduced. */
+.skeleton {
+  display: inline-block;
+  max-width: 100%;
+  height: 0.9em;
+  vertical-align: -0.1em;
+  border-radius: var(--radius-xs);
+  background: var(--hover);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+.skeleton-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin: 10px 0 7px;
+  border-radius: var(--radius-full);
+}
+.quota-pending > div {
+  align-items: center;
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }
 .account-identity > div {
   min-width: 0;
@@ -6305,6 +6390,34 @@ details[open] > summary > .fold-chevron {
 }
 .error-banner span {
   overflow-wrap: anywhere;
+}
+/* An error inside a page: a tinted bar with its icon, not a bare line of text. */
+.inline-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-size: calc(13rem / 14);
+  overflow-wrap: anywhere;
+}
+.inline-alert svg.app-icon {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  margin-top: 2px;
+}
+/* A setting's state in words beside the action that changes it (web access, two-step verification). */
+.web-state {
+  font-size: calc(12.5rem / 14);
+  color: var(--muted);
+}
+.web-state.on {
+  color: var(--ok-text);
 }
 .connection-banner {
   background: var(--warn-soft);

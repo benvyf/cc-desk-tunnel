@@ -24,6 +24,8 @@ import SettingsPanel from './SettingsPanel.tsx';
 import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
 import FontSizeSettings from './FontSizeSettings.tsx';
 import Brand from './Brand.tsx';
+import ReleaseNotes from './ReleaseNotes.tsx';
+import Presence from './Presence.tsx';
 import SidebarShell, { SearchField } from './SidebarShell.tsx';
 import type { NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import { useShared } from './shared.ts';
@@ -811,7 +813,18 @@ function Notices() {
   );
 }
 
-function About({ version, service }: { version: string; service: string | null }) {
+function About({
+  version,
+  service,
+  checkUpdate,
+}: {
+  version: string;
+  service: string | null;
+  checkUpdate?: () => void;
+}) {
+  const [notes, setNotes] = useState(false);
+  // In a browser the page comes from the service, so its notes are the service's version's.
+  const notesVersion = version || service;
   return (
     <section className="page" aria-label="关于与更新">
       <div className="page-body">
@@ -819,12 +832,31 @@ function About({ version, service }: { version: string; service: string | null }
         <Brand className="about-brand" />
         <div className="card">
           <Row title="客户端版本">
-            <span className="setting-value">{version || '浏览器开发入口'}</span>
+            <span className="setting-value">{version || '网页版'}</span>
           </Row>
           <Row title="服务端版本">
             <span className="setting-value">{service ?? '未知'}</span>
           </Row>
+          {notesVersion && (
+            <Row title="版本说明" detail={`${notesVersion} 的更新内容`}>
+              <button type="button" className="button" onClick={() => setNotes(true)}>
+                查看
+              </button>
+            </Row>
+          )}
+          {checkUpdate && (
+            <Row title="客户端更新" detail="查看有没有新版本，有的话在这里下载和安装">
+              <button type="button" className="button" onClick={checkUpdate}>
+                检查更新
+              </button>
+            </Row>
+          )}
         </div>
+        <Presence kind="dialog">
+          {notes && notesVersion && (
+            <ReleaseNotes version={notesVersion} onClose={() => setNotes(false)} />
+          )}
+        </Presence>
         {window.desktop && (
           <>
             <h2 className="page-heading">排查</h2>
@@ -881,6 +913,7 @@ export default function SettingsPage({
   backToChat,
   footer,
   browser = false,
+  checkUpdate,
 }: {
   sideOpen?: boolean;
   // Given before a connection exists: only this computer's own settings are shown, and this leaves them.
@@ -902,6 +935,8 @@ export default function SettingsPage({
   chooseWorkspace: (reset: boolean) => void;
   version: string;
   service: string | null;
+  // Opens the client's update dialog; only the desktop client updates itself.
+  checkUpdate?: () => void;
 }) {
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
@@ -988,7 +1023,7 @@ export default function SettingsPage({
         ) : section === 'help' ? (
           <Help />
         ) : (
-          <About version={version} service={service} />
+          <About version={version} service={service} checkUpdate={checkUpdate} />
         )}
       </main>
     </>

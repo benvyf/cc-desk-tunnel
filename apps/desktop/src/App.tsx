@@ -2050,6 +2050,7 @@ export function App({
       {place.page === 'settings' ? (
         <SettingsPage
           sideOpen={sideOpen}
+          checkUpdate={window.desktop?.managedUpdate ? () => setManagedUpdateOpen(true) : undefined}
           client={client}
           capabilities={signedOut ? null : capabilities}
           browser={!!browser}
