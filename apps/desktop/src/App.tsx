@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { productName } from './Brand.tsx';
+import { BrandMark, productName } from './Brand.tsx';
 import type { CSSProperties } from 'react';
 import {
   CircleHelp,
@@ -31,7 +31,6 @@ import {
   SquareTerminal,
   Trash2,
   Unplug,
-  UserRound,
   X,
 } from './icons.tsx';
 import { GithubMark, openProject, project } from './project.tsx';
@@ -1549,8 +1548,14 @@ export function App({
     ...(host.accountManagement
       ? [
           {
-            label: `账号 · ${accountName}`,
-            icon: <UserRound />,
+            // The account as at the column's foot: the S mark, the account number, the plan.
+            label: accountName,
+            name: accountName === '账号' ? '账号' : `账号 ${accountName}`,
+            icon: (
+              <span className="side-avatar menu-avatar">
+                <BrandMark className="account-mark" />
+              </span>
+            ),
             detail: signedOut
               ? '请在 Ubuntu 服务端登录 Claude Code'
               : (state.account?.subscriptionType ??

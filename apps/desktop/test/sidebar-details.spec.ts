@@ -316,3 +316,51 @@ test('a scheduled task is switched on and off by a small switch, its actions flo
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
   await expect(task).toContainText('已停用');
 });
+
+// Phase 3k (spec §5.4, §5.5): the bell's panel opens under it without covering the column's actions, and keeps an
+// icon when empty; dialogs' buttons are words only; the account menu's head wears the column's avatar.
+test('the notices open under the bell, empty with an icon; the delete dialog and the account menu speak plainly', async ({
+  page,
+}) => {
+  await connect(page);
+  const bell = page.getByRole('button', { name: '通知', exact: true });
+  await bell.click();
+  const panel = page.getByRole('dialog', { name: '通知', exact: true });
+  await panel.evaluate((node) => Promise.all(node.getAnimations().map((item) => item.finished)));
+  const [bellBox, box] = await Promise.all([bell.boundingBox(), panel.boundingBox()]);
+  expect(Math.abs(box!.x - bellBox!.x)).toBeLessThanOrEqual(1);
+  expect(box!.width).toBe(320);
+  expect(box!.y).toBeGreaterThanOrEqual(bellBox!.y + bellBox!.height);
+  // The column's own actions stay uncovered: their labels are still what is under the pointer.
+  for (const name of ['新建会话', '搜索', '定时任务']) {
+    const label = page.locator('.sidebar').getByRole('button', { name, exact: true }).first();
+    const at = (await label.boundingBox())!;
+    expect(
+      await label.evaluate(
+        (node, [x, y]) => node.contains(document.elementFromPoint(x, y)),
+        [at.x + 40, at.y + at.height / 2],
+      ),
+    ).toBe(true);
+  }
+  const empty = panel.locator('.notice-empty');
+  await expect(empty.locator('svg')).toBeVisible();
+  await expect(empty.locator('strong')).toHaveText('暂无通知');
+  await expect(empty).toContainText('会话完成、出错或需要审批时会出现在这里。');
+  await page.keyboard.press('Escape');
+
+  await row(page, '审计日志').locator('.session-select').focus();
+  await page.keyboard.press('ContextMenu');
+  await page.getByRole('menuitem', { name: '删除', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '删除会话' });
+  await expect(dialog).toContainText('会话记录会被删除，项目文件不受影响。');
+  await expect(dialog).not.toContainText('原生');
+  await expect(dialog.locator('.dialog-actions svg')).toHaveCount(0);
+  await dialog.getByRole('button', { name: '取消', exact: true }).click();
+
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  const head = page.getByRole('menu', { name: '设置与账号' }).getByRole('menuitem').first();
+  await expect(head).toHaveAccessibleName('账号');
+  await expect(head.locator('.menu-label')).not.toContainText('·');
+  await expect(head.locator('.side-avatar svg.account-mark')).toBeVisible();
+  expect((await head.locator('.side-avatar').boundingBox())!.width).toBe(24);
+});

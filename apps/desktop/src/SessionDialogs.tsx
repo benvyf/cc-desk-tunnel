@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { Check, Plus, Trash2 } from './icons.tsx';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import { folderName } from './paths.ts';
 import { isMac } from './platform.ts';
@@ -53,7 +52,6 @@ export function AddProjectDialog({
             取消
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !connected}>
-            <Plus />
             {action}
           </Button>
         </div>
@@ -64,7 +62,6 @@ export function AddProjectDialog({
 
 export function DeleteSessionDialog({
   session,
-  native,
   busy,
   connected,
   error,
@@ -72,6 +69,7 @@ export function DeleteSessionDialog({
   confirm,
 }: DialogProps & {
   session: Session;
+  // Both kinds of session say the same now (only the session's record goes; the project's files stay).
   native: boolean;
   confirm: () => void;
 }) {
@@ -83,11 +81,7 @@ export function DeleteSessionDialog({
       }}
     >
       <p className="delete-question">删除“{session.title}”？</p>
-      <p className="muted">
-        {native
-          ? '原生 Claude Code 会话及代理展示记录将删除，本机项目文件保持不变。'
-          : '会话记录将被删除，项目文件保持不变。'}
-      </p>
+      <p className="muted">会话记录会被删除，项目文件不受影响。</p>
       {error && (
         <p className="error-text" role="alert">
           {error}
@@ -98,7 +92,6 @@ export function DeleteSessionDialog({
           取消
         </Button>
         <Button variant="danger" disabled={busy || !connected} onClick={confirm}>
-          <Trash2 />
           删除
         </Button>
       </div>
@@ -152,7 +145,6 @@ export function RenameSessionDialog({
             取消
           </Button>
           <Button type="submit" variant="primary" disabled={busy || !connected}>
-            <Check />
             保存
           </Button>
         </div>
@@ -198,7 +190,6 @@ export function RenameProjectDialog({
         <div className="dialog-actions">
           <Button onClick={close}>取消</Button>
           <Button type="submit" variant="primary">
-            <Check />
             保存
           </Button>
         </div>

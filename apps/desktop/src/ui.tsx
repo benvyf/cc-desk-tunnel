@@ -112,6 +112,8 @@ export function Modal({
 
 export type MenuItem = {
   label: string;
+  // What a screen reader calls the item, when the visible label alone would not say what it is.
+  name?: string;
   icon?: ReactNode;
   // A line under the label saying what the choice does.
   detail?: string;
@@ -197,7 +199,7 @@ export function Menu({
             type="button"
             role={item.checked === undefined ? 'menuitem' : 'menuitemradio'}
             aria-checked={item.checked}
-            aria-label={item.label}
+            aria-label={item.name ?? item.label}
             className={`${item.danger ? 'danger' : ''} ${item.detail ? 'detailed' : ''}`}
             disabled={item.disabled}
             onClick={() => {

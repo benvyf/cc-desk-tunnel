@@ -2111,12 +2111,15 @@ dialog:has(.release-notes) {
   font-size: calc(10rem / 14);
   line-height: 15px;
 }
+/* Opens under the bell, its left edge in line with it, over the page rather than back over the column's own
+   actions (spec §5.4). */
 .notice-list {
   position: absolute;
   z-index: 20;
   top: calc(100% + 6px);
-  left: -120px;
-  width: 300px;
+  left: 0;
+  width: 320px;
+  max-width: calc(100vw - 16px);
   max-height: min(420px, 70dvh);
   overflow-y: auto;
   padding: 6px;
@@ -2133,12 +2136,37 @@ dialog:has(.release-notes) {
 }
 .notice-list header button {
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
-  color: var(--accent);
+  color: var(--muted);
   font-size: calc(12rem / 14);
   min-height: var(--control-xs);
   line-height: 16px;
   padding: 2px 6px;
+}
+.notice-list header button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.notice-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 18px 16px 22px;
+  text-align: center;
+  font-size: calc(12.5rem / 14);
+  color: var(--muted);
+}
+.notice-empty svg.app-icon {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 4px;
+  color: var(--faint);
+}
+.notice-empty strong {
+  font-size: calc(13.5rem / 14);
+  font-weight: 500;
+  color: var(--text);
 }
 .notice {
   display: grid;
@@ -2270,6 +2298,15 @@ dialog:has(.release-notes) {
 .menu-label {
   flex: 1;
   min-width: 0;
+}
+/* The account at the head of its menu wears the column's avatar, a little smaller. */
+.menu button > .menu-avatar {
+  width: 24px;
+  height: 24px;
+  margin-left: -4px;
+}
+.menu-avatar .account-mark {
+  height: 13px;
 }
 .menu-label small {
   display: block;
