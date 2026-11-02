@@ -40,7 +40,7 @@
 }
 .preview-pdf-page .textLayer > :not(.markedContent),
 .preview-pdf-page .textLayer .markedContent span:not(.markedContent) {
-  z-index: 1;
+  z-index: var(--z-content, 1);
   --font-height: 0;
   font-size: calc(var(--text-scale-factor) * var(--font-height));
   --scale-x: 1;

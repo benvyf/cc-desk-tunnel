@@ -131,6 +131,14 @@
   --radius-xl: 16px;
   --radius-2xl: 20px;
   --radius-full: 999px;
+  /* Stacking tiers (spec §3): content, sticky headers, the side column, popovers, dialogs, toasts. Values between
+     the tiers order things inside one of them. */
+  --z-content: 1;
+  --z-sticky: 10;
+  --z-sidebar: 20;
+  --z-popover: 30;
+  --z-dialog: 40;
+  --z-toast: 50;
   /* Application glyph sizes; charts and formula SVGs keep their own geometry. */
   --icon-xs: 12px;
   --icon-sm: 16px;
@@ -2099,7 +2107,7 @@ dialog:has(.release-notes) {
 }
 .session-card {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   display: grid;
   gap: 4px;
   width: 280px;
@@ -2149,7 +2157,7 @@ dialog:has(.release-notes) {
    actions (spec §5.4). */
 .notice-list {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   top: calc(100% + 6px);
   left: 0;
   width: 320px;
@@ -2239,7 +2247,7 @@ dialog:has(.release-notes) {
 }
 .menu,
 .permission-menu {
-  z-index: 30;
+  z-index: var(--z-popover);
   min-width: 190px;
   padding: 4px;
   border: 0;
@@ -2828,7 +2836,7 @@ kbd {
   max-height: min(120px, 100%);
   padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--raised);
   color: var(--text);
   box-shadow: var(--shadow-sm);
@@ -3164,7 +3172,7 @@ a.link-elsewhere {
 /* Where a link leads, beside it; after a click, what came of it. */
 .link-card {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   display: grid;
   gap: 5px;
   max-width: 360px;
@@ -3892,7 +3900,7 @@ details[open] > summary > .fold-chevron {
 }
 .turn-stats-card {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   bottom: calc(100% + 6px);
   left: 0;
   width: min(280px, 90vw);
@@ -4450,7 +4458,7 @@ details[open] > summary > .fold-chevron {
   margin: 5px 0 0;
   padding: 2px 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--muted);
   font-size: var(--font-caption-small);
@@ -4685,7 +4693,7 @@ details[open] > summary > .fold-chevron {
 }
 .composer {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-content);
   display: flex;
   flex-direction: column;
   width: 100%;
@@ -4745,7 +4753,7 @@ details[open] > summary > .fold-chevron {
   height: 96px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   color: var(--text);
 }
@@ -4766,7 +4774,7 @@ details[open] > summary > .fold-chevron {
   max-width: 82px;
   height: 20px;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-1);
   color: var(--muted);
   font-family: var(--font-mono);
@@ -4940,7 +4948,7 @@ details[open] > summary > .fold-chevron {
   padding: 2px 8px 14px;
   border: 1px solid var(--line);
   border-bottom: 0;
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
   background: var(--surface-2);
   font-size: calc(12rem / 14);
   box-shadow: var(--shadow-sm);
@@ -6149,7 +6157,7 @@ details[open] > summary > .fold-chevron {
   display: block;
   width: 100%;
   max-width: 28px;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
   background: var(--accent);
 }
 .usage-bars > div > i,
@@ -6535,6 +6543,9 @@ dialog::backdrop {
 }
 .managed-server-upgrade {
   overflow-wrap: anywhere;
+}
+.managed-server-upgrade > .setting-actions {
+  margin-top: 22px;
 }
 .dialog-form {
   display: flex;
@@ -6927,7 +6938,7 @@ dialog::backdrop {
 .theme-preview-message {
   width: 58%;
   height: 13px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-2);
 }
 .theme-preview-composer {
@@ -7273,7 +7284,7 @@ dialog:has(.web-settings-form) {
   display: block;
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-dialog);
   animation: motion-dialog-out var(--cds-dur-base) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'][data-state='exit']::before {
@@ -7553,7 +7564,7 @@ dialog:has(.web-settings-form) {
 }
 .terminal-list {
   position: absolute;
-  z-index: 10;
+  z-index: var(--z-sticky);
   top: 40px;
   right: 5px;
   width: min(360px, calc(100% - 10px));
@@ -7789,8 +7800,16 @@ dialog:has(.web-settings-form) {
 .shell.web-self-signed.has-terminal-workspace > .workspace {
   grid-row: 4;
 }
+.terminal-file-where {
+  margin: -6px 0 2px;
+  color: var(--muted);
+  font-size: calc(12.5rem / 14);
+}
 .terminal-file-path {
   overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: calc(12.5rem / 14);
+  color: var(--text-2);
 }
 .terminal-file-image {
   display: block;
@@ -7798,9 +7817,14 @@ dialog:has(.web-settings-form) {
   max-height: 45vh;
   object-fit: contain;
 }
+/* The file's text on a quiet panel, like a code block's body. */
 .terminal-file-text {
   max-height: 45vh;
   overflow: auto;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -8041,7 +8065,7 @@ dialog:has(.web-settings-form) {
   top: -16px;
   background: var(--surface);
   padding: 8px 0;
-  z-index: 1;
+  z-index: var(--z-content);
   display: flex;
   gap: 4px;
   margin-bottom: 12px;
@@ -8127,7 +8151,7 @@ dialog:has(.web-settings-form) {
   width: 8px;
   cursor: col-resize;
   touch-action: none;
-  z-index: 1;
+  z-index: var(--z-content);
 }
 .preview-resize::after {
   content: '';
@@ -8153,7 +8177,7 @@ dialog:has(.web-settings-form) {
   position: fixed;
   inset: var(--bar) 0 0 var(--rail-size, 0px);
   width: auto !important;
-  z-index: 20;
+  z-index: var(--z-sidebar);
 }
 .terminal-preview-layout {
   display: flex;

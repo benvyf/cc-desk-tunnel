@@ -224,8 +224,9 @@ test('ready update keeps install and close together on desktop and narrow window
     const a = (await install.boundingBox())!;
     const b = (await close.boundingBox())!;
     expect(Math.abs(a.y - b.y)).toBeLessThan(1);
-    expect(b.x - a.x - a.width).toBeCloseTo(8, 0);
-    expect(b.x + b.width).toBeLessThanOrEqual(width);
+    // The main action last, at the right (spec §5.5): 关闭 then 安装并重启.
+    expect(a.x - b.x - b.width).toBeCloseTo(8, 0);
+    expect(a.x + a.width).toBeLessThanOrEqual(width);
   }
   await dialog.getByRole('button', { name: '断开当前连接' }).click();
   await expect(install).toBeEnabled();
