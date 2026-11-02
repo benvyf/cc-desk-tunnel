@@ -12,7 +12,9 @@ import { quoteMessage } from './quotes.ts';
 import type { QuoteReference, SetQuotes } from './quotes.ts';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import { latest } from './nativeState.ts';
+import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
+import { GitBranch } from './icons.tsx';
 
 export default function SideConversation({
   client,
@@ -59,6 +61,15 @@ export default function SideConversation({
     unfinished = state.live[sessionId];
   const events = useMemo(() => client.shown(sessionId), [client, sessionId, recorded, unfinished]);
   const history = state.history[sessionId];
+  // Nothing said in it yet: it greets (see App.tsx).
+  const blank = useMemo(() => isBlank(events), [events]);
+  const fresh =
+    !!session &&
+    !session.activeRun &&
+    history?.loaded === true &&
+    !history.loading &&
+    !history.hasEarlier &&
+    blank;
   useEffect(
     () => client.observeSession(sessionId),
     [client, sessionId, state.sideConversations, !!session],
@@ -180,11 +191,14 @@ export default function SideConversation({
       data-side-session={sessionId}
       ref={stopScope}
     >
-      <header className="side-conversation-source">
-        <strong>{session.title}</strong>
-        <span title={parent?.title}>
-          继承{parent ? `“${parent.title}”` : '来源会话'}的创建时快照，后续追问独立保存。
-        </span>
+      {/* One line under the tab, which already names it: where it branched from. The conversation's own find
+          button sits at the end of this line (style.css). */}
+      <header
+        className="side-conversation-source"
+        title={`继承${parent ? `“${parent.title}”` : '来源会话'}创建时的快照，后续追问独立保存。`}
+      >
+        <GitBranch />
+        <span>继承{parent ? `“${parent.title}”` : '来源会话'}的快照 · 后续追问独立保存</span>
       </header>
       {!connected && (
         <p className="connection-banner" role="status">
@@ -206,7 +220,7 @@ export default function SideConversation({
         clock={clock}
         progress={state.progress[sessionId]}
         busy={busy}
-        newSession={() => {}}
+        fresh={fresh}
         loadEarlier={() => client.loadEarlier(sessionId)}
         findRequest={0}
         here={here}

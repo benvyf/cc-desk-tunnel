@@ -15,11 +15,11 @@ async function begin(page: Page) {
   await page.mouse.move(x, y);
   await page.mouse.down();
   await page.mouse.move(x + 35, y + 20);
-  await expect.poll(() => width(page)).toBe(890);
+  await expect.poll(() => width(page)).toBe(838);
   return { x: x + 35, y: y + 20 };
 }
 
-test('a captured indicator stays under the pointer when the conversation header grows', async ({
+test('a captured indicator stays under the pointer when the find box opens over the conversation', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1700, height: 950 });
@@ -28,8 +28,9 @@ test('a captured indicator stays under the pointer when the conversation header 
   const before = (await handle(page).boundingBox())!;
   await page.keyboard.press('Control+f');
   await expect(page.locator('.conversation-find')).toBeVisible();
+  // The find box floats over the conversation (phase 3n), so the column below it does not move.
   const after = (await handle(page).boundingBox())!;
-  expect(after.y).toBeGreaterThan(before.y);
+  expect(after.y).toBe(before.y);
   await expect
     .poll(() =>
       handle(page).evaluate(
@@ -65,7 +66,7 @@ for (const button of ['right', 'middle'] as const) {
     await expect(page.locator('.chat-workspace')).not.toHaveAttribute('data-chat-width-dragging');
     const saved = await page.evaluate(() => localStorage.getItem('cc-chat-content-width'));
     // Browser context-menu/autoscroll capture cancellation or an ordinary commit must both end the gesture.
-    expect(await width(page)).toBe(saved === null ? 820 : Number(saved));
+    expect(await width(page)).toBe(saved === null ? 768 : Number(saved));
     const ended = await width(page);
     await page.mouse.move(at.x + 100, at.y + 20);
     expect(await width(page)).toBe(ended);
@@ -92,7 +93,7 @@ test('real same-origin storage events synchronize both mounted and unmounted con
   await page.keyboard.press('Control+Comma');
   await expect(handle(page)).toHaveCount(0);
   await peer.evaluate(() => localStorage.setItem('cc-chat-content-width', '1100'));
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect.poll(() => width(page)).toBe(1100);
   await peer.close();
 });

@@ -315,7 +315,8 @@ test('a long conversation opens at its end', async ({ page }) => {
 test('coming back from the settings, the conversation is at its end again', async ({ page }) => {
   await open(page);
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect(page.getByText(`第${turns - 1}轮的回答。`)).toBeVisible();
   expect(await fromEnd(page)).toBeLessThan(2);
 });

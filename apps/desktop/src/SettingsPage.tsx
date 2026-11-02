@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import type { ReactNode } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import {
   ArrowLeft,
   Bell,
@@ -7,7 +7,6 @@ import {
   CircleHelp,
   Info,
   Keyboard,
-  Search,
   Settings2,
   SlidersHorizontal,
   UserRound,
@@ -16,7 +15,7 @@ import type { ProxyClient } from './client.ts';
 import WebAccessSettings from './WebAccessSettings.tsx';
 import Help from './Help.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
-import { connectionWaits, setPrefs, themes, usePrefs, waitRange } from './prefs.ts';
+import { connectionWaits, replyFonts, setPrefs, themes, usePrefs, waitRange } from './prefs.ts';
 import { viewModes } from './transcriptView.ts';
 import type { ConnectionWaits, NotifyKind } from './prefs.ts';
 import { inSummary, sampleStats, statFields, summaryText } from './turnStats.ts';
@@ -25,6 +24,9 @@ import SettingsPanel from './SettingsPanel.tsx';
 import SessionDefaultsSettings from './SessionDefaultsSettings.tsx';
 import FontSizeSettings from './FontSizeSettings.tsx';
 import Brand from './Brand.tsx';
+import ReleaseNotes from './ReleaseNotes.tsx';
+import Presence from './Presence.tsx';
+import SidebarShell, { SearchField } from './SidebarShell.tsx';
 import type { NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import { useShared } from './shared.ts';
 import type { ListedConnection } from './shared.ts';
@@ -56,7 +58,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '主题 外观 字体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter',
+      '主题 外观 Clawd 小人 吉祥物 动画 字体 回复字体 衬线 混排 宋体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter',
   },
   {
     id: 'notifications',
@@ -115,9 +117,34 @@ const waits: { step: keyof ConnectionWaits; title: string; detail: string }[] = 
     detail: '从连上服务端到隧道接通的总时间；至少比上一项多 35 秒',
   },
 ];
+// In a row of option cards the arrow keys, Home and End move the choice, as in any radio group.
+function moveChoice(
+  event: KeyboardEvent<HTMLElement>,
+  count: number,
+  index: number,
+  choose: (next: number) => void,
+) {
+  if (event.altKey || event.ctrlKey || event.metaKey) return;
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? count - 1
+        : event.key === 'ArrowRight' || event.key === 'ArrowDown'
+          ? (index + 1) % count
+          : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+            ? (index + count - 1) % count
+            : null;
+  if (next === null) return;
+  event.preventDefault();
+  choose(next);
+  event.currentTarget.querySelectorAll('button')[next].focus();
+}
+
 // How much of the work behind a reply is shown is a choice of this computer's window too.
 function ThemeSettings() {
-  const { theme } = usePrefs();
+  const { theme, replyFont, mascot } = usePrefs();
+  const font = replyFonts.find((entry) => entry.font === replyFont) ?? replyFonts[0];
   return (
     <>
       <h2 className="page-heading">外观</h2>
@@ -131,24 +158,14 @@ function ThemeSettings() {
             className="theme-options"
             role="radiogroup"
             aria-label="主题"
-            onKeyDown={(event) => {
-              if (event.altKey || event.ctrlKey || event.metaKey) return;
-              const index = themes.findIndex((entry) => entry.theme === theme);
-              const next =
-                event.key === 'Home'
-                  ? 0
-                  : event.key === 'End'
-                    ? themes.length - 1
-                    : event.key === 'ArrowRight' || event.key === 'ArrowDown'
-                      ? (index + 1) % themes.length
-                      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
-                        ? (index + themes.length - 1) % themes.length
-                        : null;
-              if (next === null) return;
-              event.preventDefault();
-              setPrefs((prefs) => ({ ...prefs, theme: themes[next].theme }));
-              event.currentTarget.querySelectorAll('button')[next].focus();
-            }}
+            onKeyDown={(event) =>
+              moveChoice(
+                event,
+                themes.length,
+                themes.findIndex((entry) => entry.theme === theme),
+                (next) => setPrefs((prefs) => ({ ...prefs, theme: themes[next].theme })),
+              )
+            }
           >
             {themes.map((entry) => (
               <button
@@ -176,6 +193,54 @@ function ThemeSettings() {
             ))}
           </div>
         </div>
+        <div className="setting-row stat-picks">
+          <span>
+            <strong>回复字体</strong>
+            <small>{font.detail}</small>
+          </span>
+          <div
+            className="theme-options"
+            role="radiogroup"
+            aria-label="回复字体"
+            onKeyDown={(event) =>
+              moveChoice(event, replyFonts.length, replyFonts.indexOf(font), (next) =>
+                setPrefs((prefs) => ({ ...prefs, replyFont: replyFonts[next].font })),
+              )
+            }
+          >
+            {replyFonts.map((entry) => (
+              <button
+                type="button"
+                key={entry.font}
+                role="radio"
+                className="theme-option"
+                aria-checked={entry === font}
+                tabIndex={entry === font ? 0 : -1}
+                onClick={() => setPrefs((prefs) => ({ ...prefs, replyFont: entry.font }))}
+              >
+                <span className="font-preview" data-preview={entry.font} aria-hidden="true">
+                  Aa 字
+                </span>
+                <span className="theme-option-label">
+                  {entry.label}
+                  {entry === font && <Check aria-hidden="true" />}
+                </span>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="card">
+        <Row
+          title="输入框上的 Clawd"
+          detail="会话输入框右上角的像素小人：Claude 运行时敲电脑，等你处理时招手，空闲时站着眨眼"
+        >
+          <Switch
+            label="输入框上的 Clawd"
+            checked={mascot}
+            onChange={(value) => setPrefs((prefs) => ({ ...prefs, mascot: value }))}
+          />
+        </Row>
       </div>
     </>
   );
@@ -748,7 +813,18 @@ function Notices() {
   );
 }
 
-function About({ version, service }: { version: string; service: string | null }) {
+function About({
+  version,
+  service,
+  checkUpdate,
+}: {
+  version: string;
+  service: string | null;
+  checkUpdate?: () => void;
+}) {
+  const [notes, setNotes] = useState(false);
+  // In a browser the page comes from the service, so its notes are the service's version's.
+  const notesVersion = version || service;
   return (
     <section className="page" aria-label="关于与更新">
       <div className="page-body">
@@ -756,12 +832,31 @@ function About({ version, service }: { version: string; service: string | null }
         <Brand className="about-brand" />
         <div className="card">
           <Row title="客户端版本">
-            <span className="setting-value">{version || '浏览器开发入口'}</span>
+            <span className="setting-value">{version || '网页版'}</span>
           </Row>
           <Row title="服务端版本">
             <span className="setting-value">{service ?? '未知'}</span>
           </Row>
+          {notesVersion && (
+            <Row title="版本说明" detail={`${notesVersion} 的更新内容`}>
+              <button type="button" className="button" onClick={() => setNotes(true)}>
+                查看
+              </button>
+            </Row>
+          )}
+          {checkUpdate && (
+            <Row title="客户端更新" detail="查看有没有新版本，有的话在这里下载和安装">
+              <button type="button" className="button" onClick={checkUpdate}>
+                检查更新
+              </button>
+            </Row>
+          )}
         </div>
+        <Presence kind="dialog">
+          {notes && notesVersion && (
+            <ReleaseNotes version={notesVersion} onClose={() => setNotes(false)} />
+          )}
+        </Presence>
         {window.desktop && (
           <>
             <h2 className="page-heading">排查</h2>
@@ -815,11 +910,17 @@ export default function SettingsPage({
   version,
   service,
   back,
+  backToChat,
+  footer,
   browser = false,
+  checkUpdate,
 }: {
   sideOpen?: boolean;
   // Given before a connection exists: only this computer's own settings are shown, and this leaves them.
   back?: () => void;
+  // Once connected: back to the conversations, from the first row of the side column.
+  backToChat?: () => void;
+  footer?: ReactNode;
   browser?: boolean;
   client: ProxyClient;
   capabilities?: NativeCapabilities | null;
@@ -834,6 +935,8 @@ export default function SettingsPage({
   chooseWorkspace: (reset: boolean) => void;
   version: string;
   service: string | null;
+  // Opens the client's update dialog; only the desktop client updates itself.
+  checkUpdate?: () => void;
 }) {
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
@@ -845,24 +948,29 @@ export default function SettingsPage({
   );
   return (
     <>
-      <aside className="sidebar" inert={!sideOpen}>
-        <div className="sidebar-brand">
-          {back && (
-            <IconButton title="返回登录" onClick={back}>
-              <ArrowLeft />
-            </IconButton>
-          )}
-          <span className="brand">{back ? '本机设置' : '设置'}</span>
-        </div>
-        <label className="session-search">
-          <Search />
-          <input
-            aria-label="搜索设置"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="搜索"
-          />
-        </label>
+      <SidebarShell
+        open={sideOpen}
+        // Before signing in the column stands alone on the page, outside the window's shell.
+        resizable={!back}
+        back={backToChat}
+        header={
+          <>
+            {back && (
+              <IconButton title="返回登录" onClick={back}>
+                <ArrowLeft />
+              </IconButton>
+            )}
+            <span className="brand">{back ? '本机设置' : '设置'}</span>
+          </>
+        }
+        footer={footer}
+      >
+        <SearchField
+          label="搜索设置"
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="搜索"
+        />
         <nav className="session-list" aria-label="设置分类">
           {shown.map((item, index) => (
             <div key={item.id}>
@@ -882,7 +990,7 @@ export default function SettingsPage({
           ))}
           {shown.length === 0 && <p className="list-empty">没有匹配的设置</p>}
         </nav>
-      </aside>
+      </SidebarShell>
       <main className="workspace settings-workspace">
         {section === 'account' ? (
           account
@@ -915,7 +1023,7 @@ export default function SettingsPage({
         ) : section === 'help' ? (
           <Help />
         ) : (
-          <About version={version} service={service} />
+          <About version={version} service={service} checkUpdate={checkUpdate} />
         )}
       </main>
     </>

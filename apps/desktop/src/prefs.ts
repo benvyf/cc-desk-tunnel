@@ -24,7 +24,18 @@ export const themes = [
   { theme: 'dark', label: '深色' },
 ] as const;
 export type Theme = (typeof themes)[number]['theme'];
-export const sidebarWidthRange = { min: 264, max: 420, default: 284 };
+// The face Claude's replies are set in. The page shows the choice as `data-reply-font` on its root (main.tsx),
+// and the top of style.css gives each its fonts; the Chinese serif ships with the program.
+export const replyFonts = [
+  { font: 'serif', label: '衬线', detail: '英文 Newsreader，中文思源宋体，最接近 Claude' },
+  { font: 'mixed', label: '混排', detail: '英文 Newsreader，中文与界面相同' },
+  { font: 'ui', label: '与界面一致', detail: '回复与界面使用同一种无衬线字体' },
+] as const;
+export type ReplyFont = (typeof replyFonts)[number]['font'];
+export const sidebarWidthRange = { min: 240, max: 420, default: 288 };
+// The page keeps at least this much beside the open column; a window narrower than the column and this folds the
+// column away, and opening it then lays it over the page.
+export const pageMinWidth = 600;
 export type Prefs = {
   sidebarWidth: number;
   busyEnter: 'queue' | 'steer';
@@ -37,8 +48,8 @@ export type Prefs = {
   // Whether the sessions on the user's other computers are listed in the sidebar.
   elsewhereOpen: boolean;
   // Which of the other computers, and which folders on them, are folded away: a computer by its id, a folder by
-  // the computer's id, a line break and the folder's pathKey(), and the sessions with no project by the
-  // computer's id and a line break.
+  // the computer's id, a line break and the folder's pathKey(). (Earlier versions also folded a computer's
+  // sessions without a project, by its id and a line break; they are now listed under the computer itself.)
   collapsedElsewhere: string[];
   projectNames: Record<string, string>;
   notify: { enabled: boolean; sound: boolean } & Record<NotifyKind, boolean>;
@@ -52,11 +63,14 @@ export type Prefs = {
   stats: { enabled: boolean; summary: Record<string, boolean> };
   // Whether the quota used is shown beside the message box.
   quota: boolean;
+  // Whether Clawd stands on the session's message box (Clawd.tsx).
+  mascot: boolean;
   // How much of the work behind a reply is shown.
   view: TranscriptView;
   // The strip under the input box with the whole session's figures; chosen the same way.
   sessionBar: { enabled: boolean; summary: Record<string, boolean> };
   theme: Theme;
+  replyFont: ReplyFont;
   fontSizes: FontSizes;
   sessionDefaults: SessionDefaults;
 };
@@ -87,9 +101,11 @@ const defaults: Prefs = {
   bypassPermissions: false,
   stats: { enabled: false, summary: {} },
   quota: false,
+  mascot: true,
   view: defaultView,
   sessionBar: { enabled: false, summary: {} },
   theme: 'system',
+  replyFont: 'serif',
   fontSizes: defaultFontSizes,
   sessionDefaults: { model: null, effort: null },
 };
@@ -145,6 +161,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
       ) as ConnectionWaits,
       bypassPermissions: saved.bypassPermissions === true,
       quota: saved.quota === true,
+      mascot: saved.mascot !== false,
       view: {
         mode: viewModes.find((entry) => entry.mode === saved.view?.mode)?.mode ?? defaultView.mode,
       },
@@ -165,6 +182,8 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
         ),
       },
       theme: themes.find((entry) => entry.theme === saved.theme)?.theme ?? defaults.theme,
+      replyFont:
+        replyFonts.find((entry) => entry.font === saved.replyFont)?.font ?? defaults.replyFont,
       fontSizes: readFontSizes(saved.fontSizes),
       sessionDefaults: readSessionDefaults(saved.sessionDefaults),
     };

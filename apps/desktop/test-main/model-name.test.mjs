@@ -49,5 +49,5 @@ test('complete and custom labels are preserved; default and raw model IDs can di
   assert.equal(modelName({ value: 'opus', displayName: 'Opus' }, 'claude-opus-5-5'), 'Opus 5.5');
   assert.equal(modelName(undefined, 'provider/model-v2'), 'provider/model-v2');
   assert.equal(modelName({ value: 'opus', displayName: 'Opus' }, 'claude-sonnet-4-6'), 'Opus');
-  assert.equal(modelName(undefined), '原生默认');
+  assert.equal(modelName(undefined), '默认模型');
 });

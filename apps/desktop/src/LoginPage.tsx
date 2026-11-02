@@ -1,10 +1,9 @@
-import { ChevronRight, Download, Globe, Laptop, Unplug } from './icons.tsx';
+import { ChevronRight, Download, Unplug } from './icons.tsx';
 import Brand from './Brand.tsx';
 import { useEffect, useState } from 'react';
 import { thisDevice } from './device.ts';
 import { useConnectionName } from './shared.ts';
 import { Button } from './ui.tsx';
-import { SegmentedControl } from './SegmentedControl.tsx';
 
 export type ConnectionForm = {
   authMethod?: 'email' | 'manual';
@@ -101,8 +100,7 @@ export default function LoginPage({
         <Brand connectionName={connectionName} />
         <section className="login-card" aria-labelledby="login-heading">
           <div className="login-title">
-            <h1 id="login-heading">连接代理服务</h1>
-            {form.mode === 'local' && <span className="badge simulation">离线模拟</span>}
+            <h1 id="login-heading">连接到 CC SPACE 服务</h1>
           </div>
           <p className="login-subtitle">连接你的工作空间，继续创作与开发。</p>
           <form
@@ -113,18 +111,6 @@ export default function LoginPage({
             }}
             className="connection-form"
           >
-            {window.desktop?.dev && (
-              <SegmentedControl
-                className="connection-modes"
-                label="连接方式"
-                value={form.mode}
-                options={[
-                  { value: 'local', label: '本地模拟', icon: <Laptop /> },
-                  { value: 'remote', label: '远程代理', icon: <Globe /> },
-                ]}
-                onChange={(mode) => change({ mode })}
-              />
-            )}
             <label>
               服务地址
               <input
@@ -289,6 +275,28 @@ export default function LoginPage({
               <Unplug />
               {connecting ? '连接中…' : '连接'}
             </Button>
+            {/* Development builds can also reach the local simulation: a quiet line under the form, the way
+                in use in body colour and the other a link, instead of a control above the fields. */}
+            {window.desktop?.dev && (
+              <p className="login-mode-line" role="group" aria-label="连接方式">
+                <span>连接方式</span>
+                {(
+                  [
+                    ['remote', '远程代理'],
+                    ['local', '本地模拟'],
+                  ] as const
+                ).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    aria-pressed={form.mode === mode}
+                    onClick={() => change({ mode })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </p>
+            )}
           </form>
         </section>
       </div>

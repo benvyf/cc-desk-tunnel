@@ -141,8 +141,6 @@ function Fixture() {
       toggleSide() {},
       menus: [{ label: '帮助', items: [] }],
       openMenu() {},
-      connected: true,
-      adapterName: 'fixture',
       terminalAvailable: true,
       terminalOpen: open,
       openTerminal() {

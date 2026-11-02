@@ -94,7 +94,7 @@ export default function EffortSlider({
       step="any"
       disabled={disabled || levels.length < 2}
       value={current}
-      aria-valuetext={shown ? effortNames[shown] : '原生默认'}
+      aria-valuetext={shown ? effortNames[shown] : '跟随模型'}
       data-unset={shown ? undefined : ''}
       style={{ '--fill': `${max ? (current / max) * 100 : 0}%` } as CSSProperties}
       onPointerDown={() => {

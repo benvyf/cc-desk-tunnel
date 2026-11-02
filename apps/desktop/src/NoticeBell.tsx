@@ -64,7 +64,14 @@ export default function NoticeBell({
                 </button>
               )}
             </header>
-            {notices.length === 0 && <p className="list-empty">暂无通知</p>}
+            {/* As the other empty places of the window: an icon, a title and what will appear here. */}
+            {notices.length === 0 && (
+              <div className="notice-empty">
+                <Bell />
+                <strong>暂无通知</strong>
+                <span>会话完成、出错或需要审批时会出现在这里。</span>
+              </div>
+            )}
             {notices.map((notice) => (
               <button
                 type="button"

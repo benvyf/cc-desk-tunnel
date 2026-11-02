@@ -152,8 +152,40 @@ test('busy Enter and its opposite preserve queue order, edits and immediate stee
   const { requests, finish } = await fixture(page);
   const box = page.getByRole('textbox', { name: '消息', exact: true });
   const queue = page.getByRole('region', { name: '待发送消息' });
-  const mode = page.getByLabel('繁忙时的发送行为');
-  await expect(mode).toHaveValue('queue');
+  // How Enter sends while a run is going is chosen in the small menu beside the send button (spec §5.10).
+  await expect(page.locator('.composer select')).toHaveCount(0);
+  const mode = page.getByRole('button', { name: '发送方式', exact: true });
+  const send = page.getByRole('button', { name: '排队发送', exact: true });
+  const [modeBox, sendBox] = await Promise.all([mode.boundingBox(), send.boundingBox()]);
+  expect(Math.abs(modeBox!.x + modeBox!.width + 2 - sendBox!.x)).toBeLessThanOrEqual(1);
+  await mode.click();
+  const menu = page.getByRole('menu', { name: '发送方式', exact: true });
+  await expect(menu.locator('.menu-heading')).toHaveText('按 Enter 时');
+  await expect(menu.getByRole('menuitemradio', { name: '排队发送' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  await expect(menu.getByRole('menuitemradio', { name: '排队发送' }).locator('kbd')).toHaveText(
+    'Enter',
+  );
+  await expect(menu.getByRole('menuitemradio', { name: '插话发送' }).locator('kbd')).toHaveText(
+    'Ctrl+Enter',
+  );
+  // It opens above the button, its right edge in line with the input box's toolbar.
+  const [menuBox, toolbar] = await Promise.all([
+    menu.boundingBox(),
+    page.locator('.composer-toolbar').boundingBox(),
+  ]);
+  expect(menuBox!.y + menuBox!.height).toBeLessThanOrEqual(modeBox!.y);
+  expect(Math.abs(menuBox!.x + menuBox!.width - (toolbar!.x + toolbar!.width))).toBeLessThanOrEqual(
+    1,
+  );
+  await page.keyboard.press('Escape');
+  await expect(menu).toHaveCount(0);
+  await mode.click();
+  await expect(menu).toBeVisible();
+  await mode.click();
+  await expect(menu).toHaveCount(0);
   await box.fill('排队第一条');
   await box.press('Enter');
   await expect(queue).toContainText('排队第一条');
@@ -161,7 +193,10 @@ test('busy Enter and its opposite preserve queue order, edits and immediate stee
   await box.fill('马上补充');
   await box.press('Control+Enter');
   await expect.poll(() => requests.map((request) => request.text)).toEqual(['马上补充']);
-  await mode.selectOption('steer');
+  await mode.click();
+  await menu.getByRole('menuitemradio', { name: '插话发送' }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '插话发送', exact: true })).toBeVisible();
   await box.fill('排队第二条');
   await box.press('Control+Enter');
   await expect(queue).toContainText('排队第二条');
@@ -423,7 +458,7 @@ test('sidebar divider clamps, cancels and remembers width without disturbing cha
     await page.mouse.down();
   };
   await composer.fill('拖动侧栏时保留这份草稿');
-  await expect.poll(width).toBe(284);
+  await expect.poll(width).toBe(288);
   await start();
   await page.mouse.move(1000, 250, { steps: 12 });
   await expect.poll(width).toBe(420);
@@ -439,38 +474,43 @@ test('sidebar divider clamps, cancels and remembers width without disturbing cha
   await page.screenshot({ path: resolve(folder, '08-侧栏拖动-420px.png') });
   await start();
   await page.mouse.move(80, 250, { steps: 8 });
-  await expect.poll(width).toBe(264);
+  await expect.poll(width).toBe(240);
   await page.mouse.up();
-  await expect.poll(saved).toBe(264);
+  await expect.poll(saved).toBe(240);
   await start();
   await page.mouse.move(430, 250, { steps: 4 });
-  await expect.poll(width).toBeGreaterThan(264);
+  await expect.poll(width).toBeGreaterThan(240);
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect.poll(width).toBe(264);
-  await expect.poll(saved).toBe(264);
+  await expect.poll(width).toBe(240);
+  await expect.poll(saved).toBe(240);
   await expect(page.locator('.shell')).not.toHaveAttribute('data-sidebar-resizing');
   await divider.focus();
   await divider.press('End');
   await expect.poll(width).toBe(420);
-  await page.setViewportSize({ width: 800, height: 900 });
-  await expect.poll(width).toBe(348);
-  await expect(divider).toHaveAttribute('aria-valuemax', '348');
-  expect((await page.locator('main.workspace').boundingBox())!.width).toBeGreaterThanOrEqual(400);
+  await expect(divider).toHaveAttribute('aria-valuemax', '420');
+  // A window narrower than the column and the 600px the page keeps folds the column away, without forgetting
+  // its width; opened then, it lies over the page at that width and cannot be dragged.
+  await page.setViewportSize({ width: 1000, height: 900 });
+  await expect(page.locator('.shell')).toHaveClass(/side-overlay/);
+  await expect(sidebar).toBeHidden();
+  expect((await page.locator('main.workspace').boundingBox())!.width).toBeGreaterThanOrEqual(900);
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
+  await expect.poll(async () => (await sidebar.boundingBox())?.x).toBe(0);
+  await expect.poll(width).toBe(420);
+  await expect(divider).toBeHidden();
   expect(await saved()).toBe(420);
-  await divider.click();
-  expect(await saved()).toBe(420);
-  await expect.poll(width).toBe(348);
   await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(page.locator('.shell')).not.toHaveClass(/side-overlay/);
   await expect.poll(width).toBe(420);
   await page.keyboard.press('Control+b');
   await expect(sidebar).toBeHidden();
   await page.keyboard.press('Control+b');
   await expect.poll(width).toBe(420);
   await divider.dblclick();
-  await expect.poll(width).toBe(284);
+  await expect.poll(width).toBe(288);
   await divider.press('ArrowRight');
-  await expect.poll(width).toBe(294);
+  await expect.poll(width).toBe(298);
   await page.reload();
   if (await page.getByLabel('服务地址', { exact: true }).isVisible()) {
     await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18892/ws');
@@ -479,7 +519,7 @@ test('sidebar divider clamps, cancels and remembers width without disturbing cha
       .fill('test-only-follow-up-credential-long-enough');
     await page.getByRole('button', { name: '连接', exact: true }).click();
   }
-  await expect.poll(width).toBe(294);
+  await expect.poll(width).toBe(298);
   await page.setViewportSize({ width: 390, height: 800 });
   await expect(divider).toBeHidden();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(390);
@@ -540,19 +580,21 @@ test('sidebar drag coalesces pointer bursts and releases cleanly when interrupte
   await expect(shell).not.toHaveAttribute('data-sidebar-resizing');
   await page.mouse.up();
   await page.keyboard.press('Control+b');
-  await expect.poll(width).toBe(284);
+  await expect.poll(width).toBe(288);
   await start();
   await page.mouse.move(430, 250);
   await page.setViewportSize({ width: 800, height: 900 });
   await expect(shell).not.toHaveAttribute('data-sidebar-resizing');
   await page.mouse.up();
-  await expect.poll(width).toBe(284);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await expect(sidebar).toBeVisible();
+  await expect.poll(width).toBe(288);
   await start();
   await page.mouse.move(430, 250);
   await page.evaluate(() => window.dispatchEvent(new Event('blur')));
   await expect(shell).not.toHaveAttribute('data-sidebar-resizing');
   await page.mouse.up();
-  await expect.poll(width).toBe(284);
+  await expect.poll(width).toBe(288);
   expect(await saved()).toBeUndefined();
   const composer = page.getByRole('textbox', { name: '消息', exact: true });
   await composer.fill('取消拖动后可以正常输入');

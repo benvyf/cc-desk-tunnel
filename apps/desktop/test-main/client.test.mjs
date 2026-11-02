@@ -485,7 +485,8 @@ test('conversation folds a finished turn into question, activity and answer', ()
     (({ verb, subject, added, removed }) => ({ verb, subject, added, removed }))(
       describe(turn.steps[1].items[1], true),
     ),
-    { verb: '编辑', subject: 'app.py', added: 3, removed: 1 },
+    // Counted as the diff shows them: "a" stays, "b" and "c" come in.
+    { verb: '编辑', subject: 'app.py', added: 2, removed: 0 },
   );
   events.push(
     event(65, {

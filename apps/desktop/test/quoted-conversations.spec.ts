@@ -387,6 +387,75 @@ test('selected quote opens an independent side conversation with explicit send a
   await expect(mainBox).toHaveValue('主会话草稿保持原样');
 });
 
+test('a side conversation names its source in one line that also holds its find button', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  const source = side.locator('.side-conversation-source');
+  await expect(source).toContainText(`继承“${f.parent.title}”的快照`);
+  await expect(source).toHaveAttribute('title', /后续追问独立保存/);
+  const line = (await source.boundingBox())!;
+  expect(line.height).toBeLessThanOrEqual(40);
+  const find = (await side
+    .getByRole('button', { name: '打开对话查找', exact: true })
+    .boundingBox())!;
+  expect(find.y).toBeGreaterThanOrEqual(line.y);
+  expect(find.y + find.height).toBeLessThanOrEqual(line.y + line.height);
+  // The conversation starts right under that line.
+  const conversation = (await side.locator('.conversation').boundingBox())!;
+  expect(Math.round(conversation.y)).toBe(Math.round(line.y + line.height));
+});
+
+test('Clawd stands on the session box, follows its run and stays off the side conversation', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const box = page.locator('.workspace form.composer');
+  const clawd = page.locator('.workspace .composer-stack > svg.clawd');
+  await expect(clawd).toHaveCount(1);
+  await expect(clawd).toHaveAttribute('data-state', 'idle');
+  const [c, b] = [(await clawd.boundingBox())!, (await box.boundingBox())!];
+  // Feet on the box's top edge, at its right.
+  expect(Math.abs(c.y + c.height - b.y)).toBeLessThan(1.5);
+  expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);
+  expect(c.x).toBeGreaterThan(b.x + b.width / 2);
+  const run = randomUUID();
+  f.updateRun(f.parent.id, { id: run, status: 'running', connectionId: randomUUID() });
+  await expect(clawd).toHaveAttribute('data-state', 'working');
+  f.updateRun(f.parent.id, {
+    id: run,
+    status: 'awaiting_approval',
+    connectionId: randomUUID(),
+    waiting: 'approval',
+  });
+  await expect(clawd).toHaveAttribute('data-state', 'waiting');
+  f.updateRun(f.parent.id, null);
+  await expect(clawd).toHaveAttribute('data-state', 'idle');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await expect(side.locator('form.composer')).toBeVisible();
+  await expect(side.locator('svg.clawd')).toHaveCount(0);
+});
+
+test('with the setting off there is no Clawd on the session box', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('proxy-prefs', JSON.stringify({ mascot: false })),
+  );
+  await fixture(page);
+  await expect(page.locator('.workspace form.composer')).toBeVisible();
+  await expect(page.locator('svg.clawd')).toHaveCount(0);
+});
+
 test('a running main conversation is not stopped or sent to when stopping a side answer', async ({
   page,
 }) => {
@@ -1121,7 +1190,8 @@ test('double Escape fixed shortcut is explained with the existing settings contr
   await page.getByRole('button', { name: '快捷键', exact: true }).click();
   const settings = page.getByRole('region', { name: '快捷键', exact: true });
   await expect(settings).toContainText('停止当前回答');
-  await expect(settings.locator('kbd')).toHaveText('Esc · Esc');
+  // Two keycaps since phase 3l.
+  await expect(settings.locator('.key-combo kbd')).toHaveText(['Esc', 'Esc']);
   await page.screenshot({
     path: info.outputPath('double-escape-shortcut-settings.png'),
     animations: 'disabled',

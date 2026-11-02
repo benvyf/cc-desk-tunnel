@@ -110,7 +110,21 @@ export default function ManagedUpdateDialog({
             断开当前连接
           </button>
         )}
+        {/* The main action last, at the right (spec §5.5); 关闭 before it. */}
         <div className="managed-update-buttons">
+          {['idle', 'error'].includes(phase) && (
+            <button className="button" disabled={working} onClick={() => void run('check')}>
+              重新检查
+            </button>
+          )}
+          {phase === 'downloading' && (
+            <button className="button" onClick={() => void run('cancel')}>
+              取消下载
+            </button>
+          )}
+          <button className="button" onClick={onClose}>
+            关闭
+          </button>
           {phase === 'available' && !incompatible && (
             <button
               className="button primary"
@@ -118,11 +132,6 @@ export default function ManagedUpdateDialog({
               onClick={() => void run('download')}
             >
               下载更新
-            </button>
-          )}
-          {phase === 'downloading' && (
-            <button className="button" onClick={() => void run('cancel')}>
-              取消下载
             </button>
           )}
           {phase === 'ready' && !incompatible && (
@@ -134,14 +143,6 @@ export default function ManagedUpdateDialog({
               安装并重启
             </button>
           )}
-          {['idle', 'error'].includes(phase) && (
-            <button className="button" disabled={working} onClick={() => void run('check')}>
-              重新检查
-            </button>
-          )}
-          <button className="button" onClick={onClose}>
-            关闭
-          </button>
         </div>
       </div>
     </Modal>

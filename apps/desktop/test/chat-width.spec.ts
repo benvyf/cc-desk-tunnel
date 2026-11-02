@@ -113,9 +113,9 @@ test('keyboard controls and double click follow the local divider conventions', 
   await chatWidthFixture(page);
   await handle(page, 'left').focus();
   await page.keyboard.press('ArrowLeft');
-  await expect.poll(() => width(page)).toBe(830);
+  await expect.poll(() => width(page)).toBe(778);
   await page.keyboard.press('ArrowRight');
-  await expect.poll(() => width(page)).toBe(820);
+  await expect.poll(() => width(page)).toBe(768);
   await page.keyboard.press('Home');
   await expect.poll(() => width(page)).toBe(640);
   await expect(handle(page, 'left')).toHaveAttribute('aria-valuenow', '640');
@@ -125,7 +125,7 @@ test('keyboard controls and double click follow the local divider conventions', 
   const navigator = (await main(page).locator('.turn-navigation').boundingBox())!;
   expect(h.x + h.width).toBeLessThanOrEqual(navigator.x);
   await handle(page).dblclick();
-  await expect.poll(() => width(page)).toBe(820);
+  await expect.poll(() => width(page)).toBe(768);
   expect(await page.evaluate(() => localStorage.getItem('cc-chat-content-width'))).toBeNull();
 });
 
@@ -295,7 +295,7 @@ test('drag frames do not persist or mutate the transcript; release writes once',
   });
 });
 
-test('queue, run summary and session statistics follow the shared width', async ({ page }) => {
+test('queue, run status and session statistics follow the shared width', async ({ page }) => {
   await page.setViewportSize({ width: 1700, height: 950 });
   const f = await chatWidthFixture(page);
   await page.evaluate(async () => {
@@ -311,7 +311,8 @@ test('queue, run summary and session statistics follow the shared width', async 
   const value = await width(page);
   expect(await width(page, '.composer')).toBe(value);
   expect(await width(page, '.follow-up-queue')).toBe(value - 28);
-  expect(await width(page, '.run-summary')).toBe(value);
+  // The run's state is said at the end of the conversation, in its column.
+  expect(await width(page, '.transcript > .run-indicator')).toBe(value);
   expect(await width(page, '.session-bar')).toBe(value);
 });
 
@@ -340,25 +341,25 @@ test('storage errors preserve an operable chat and the current in-memory drag pr
   await page.setViewportSize({ width: 1700, height: 950 });
   await chatWidthFixture(page);
   await drag(page, 'right', 70);
-  await expect.poll(() => width(page)).toBe(960);
+  await expect.poll(() => width(page)).toBe(908);
   await drag(page, 'left', 50, false);
   await page.keyboard.press('Escape');
   await page.mouse.up();
-  await expect.poll(() => width(page)).toBe(960);
+  await expect.poll(() => width(page)).toBe(908);
   await page.getByRole('textbox', { name: '消息', exact: true }).fill('存储不可用时仍可输入');
   await page
     .locator('.session-row')
     .filter({ hasText: '宽度测试第二会话' })
     .locator('.session-select')
     .click();
-  await expect.poll(() => width(page)).toBe(960);
+  await expect.poll(() => width(page)).toBe(908);
   await handle(page).dblclick();
   await page
     .locator('.session-row')
     .filter({ hasText: '宽度测试主会话' })
     .locator('.session-select')
     .click();
-  await expect.poll(() => width(page)).toBe(820);
+  await expect.poll(() => width(page)).toBe(768);
   expect(errors).toEqual([]);
 });
 
@@ -400,7 +401,7 @@ test('storage updates are observed even while Settings has unmounted the control
       }),
     );
   });
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await expect.poll(() => width(page)).toBe(1100);
 });
 
@@ -470,5 +471,5 @@ test('a pointermove burst merges into one width mutation and a cancelled RAF can
     );
   });
   await page.mouse.up();
-  await expect.poll(() => width(page)).toBe(820);
+  await expect.poll(() => width(page)).toBe(768);
 });

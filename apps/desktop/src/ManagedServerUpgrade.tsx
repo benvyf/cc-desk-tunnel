@@ -173,16 +173,21 @@ export default function ManagedServerUpgrade({
       }
     }
   }
+  // As every dialog (spec §5.5): what it is about first, then the buttons in one row at the right, the main one
+  // last; the check is one of them rather than a button above the text.
+  const checkButton = (
+    <button
+      key="check"
+      className={candidate || canReconnect ? 'button' : 'button primary'}
+      type="button"
+      disabled={disabled || working}
+      onClick={() => void check()}
+    >
+      检查服务端更新
+    </button>
+  );
   return (
     <section className="managed-server-upgrade" aria-label="配套服务端升级">
-      <button
-        className="button"
-        type="button"
-        disabled={disabled || working}
-        onClick={() => void check()}
-      >
-        检查服务端更新
-      </button>
       <p className="muted">有新版时可直接更新。请先结束任务；更新期间会暂时断开连接。</p>
       {text && <p role="status">{text}</p>}
       {candidate && (
@@ -194,24 +199,21 @@ export default function ManagedServerUpgrade({
         </>
       )}
       <div className="setting-actions">
-        {candidate && (
+        {help && (
           <button
-            className="button primary"
+            className="button"
             type="button"
-            disabled={disabled || working}
-            onClick={() => void install()}
+            onClick={() => {
+              void api
+                .openManager()
+                .catch(() =>
+                  setText(
+                    '无法打开 CC管理中心，请访问 https://api.ghostapi.org/cc-updates/admin/updates',
+                  ),
+                );
+            }}
           >
-            确认升级到 Build {candidate.build}
-          </button>
-        )}
-        {canReconnect && reconnect && (
-          <button
-            type="button"
-            className={candidate ? 'button' : 'button primary'}
-            disabled={disabled || working}
-            onClick={reconnect}
-          >
-            重新连接
+            打开 CC管理中心
           </button>
         )}
         {(working || candidate) && (
@@ -230,21 +232,25 @@ export default function ManagedServerUpgrade({
             取消等待
           </button>
         )}
-        {help && (
+        {!candidate && checkButton}
+        {canReconnect && reconnect && (
           <button
-            className="button"
             type="button"
-            onClick={() => {
-              void api
-                .openManager()
-                .catch(() =>
-                  setText(
-                    '无法打开 CC管理中心，请访问 https://api.ghostapi.org/cc-updates/admin/updates',
-                  ),
-                );
-            }}
+            className={candidate ? 'button' : 'button primary'}
+            disabled={disabled || working}
+            onClick={reconnect}
           >
-            打开 CC管理中心
+            重新连接
+          </button>
+        )}
+        {candidate && (
+          <button
+            className="button primary"
+            type="button"
+            disabled={disabled || working}
+            onClick={() => void install()}
+          >
+            确认升级到 Build {candidate.build}
           </button>
         )}
       </div>

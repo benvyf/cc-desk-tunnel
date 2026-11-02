@@ -21,9 +21,7 @@ import {
   Globe,
   Image as ImageIcon,
   LoaderCircle,
-  MessageSquare,
   Pencil,
-  Plus,
   Search,
   Spark,
   SquareTerminal,
@@ -36,6 +34,7 @@ import type { Category } from './activity.ts';
 import type { HistoryState, TaskProgress } from './client.ts';
 import { RunStatus, TaskLine } from './RunStatus.tsx';
 import RunNotice from './RunNotice.tsx';
+import { approvalQuestion, toolInput } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import { conversation } from './transcript.ts';
@@ -257,70 +256,71 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
         </span>
       }
     >
-      {() => (
-        <div className="tool-detail">
-          <CopyButton text={tool.input} label="复制工具输入" />
-          <pre className="tool-input" data-search-content>
-            {tool.input}
-          </pre>
-          {tool.liveOutput && !tool.output && (
-            <pre className="tool-output" data-search-content>
-              {tool.liveOutput}
-            </pre>
-          )}
-          {pictures ? (
-            <>
-              {pictures.text && (
-                <>
-                  <CopyButton text={pictures.text} label="复制工具输出" />
-                  <pre className="tool-output" data-search-content>
-                    {pictures.text}
-                  </pre>
-                </>
-              )}
-              <div className="tool-pictures">
-                {pictures.pictures.map((picture, index) => (
-                  <Picture key={index} src={pictureUrl(picture)} alt={`图片 ${index + 1}`} />
-                ))}
+      {() => {
+        // The input in the shape its tool reads (ToolInput.tsx); "input" and "output" head their parts of the card,
+        // with copy beside them under the pointer.
+        const input = toolInput(tool.name, tool.input);
+        const exit =
+          tool.exitCode !== null && tool.exitCode !== undefined ? `退出码 ${tool.exitCode}` : '';
+        const output = pictures ? pictures.text : tool.output || tool.liveOutput;
+        return (
+          <div className="tool-detail">
+            {approval && <p className="approval-title">{approvalQuestion(tool.name)}</p>}
+            <div className="tool-section tool-input">
+              <div className="tool-section-head">
+                <span>{input.label}</span>
+                <CopyButton text={input.copy} label="复制工具输入" />
               </div>
-            </>
-          ) : (
-            tool.output && (
-              <>
-                <CopyButton text={tool.output} label="复制工具输出" />
-                <pre className="tool-output" data-search-content>
-                  {tool.exitCode !== null &&
-                    tool.exitCode !== undefined &&
-                    `退出码 ${tool.exitCode}\n`}
-                  {tool.output}
-                </pre>
-              </>
-            )
-          )}
-          {approval && (
-            <div className="approval-actions">
-              <button
-                type="button"
-                className="button secondary"
-                disabled={live.busy || live.answered(tool)}
-                onClick={() => live.reply(tool, false)}
-              >
-                <X />
-                拒绝
-              </button>
-              <button
-                type="button"
-                className="button primary"
-                disabled={live.busy || live.answered(tool)}
-                onClick={() => live.reply(tool, true)}
-              >
-                <Check />
-                允许
-              </button>
+              {input.body}
             </div>
-          )}
-        </div>
-      )}
+            {(output || pictures) && (
+              <div className="tool-section tool-results">
+                {output && (
+                  <>
+                    <div className="tool-section-head">
+                      <span>{tool.output || pictures ? '输出' : '输出（进行中）'}</span>
+                      {exit && tool.output && <small>{exit}</small>}
+                      <CopyButton text={output} label="复制工具输出" />
+                    </div>
+                    <pre className="tool-output" data-search-content>
+                      {output}
+                    </pre>
+                  </>
+                )}
+                {pictures && (
+                  <div className="tool-pictures">
+                    {pictures.pictures.map((picture, index) => (
+                      <Picture key={index} src={pictureUrl(picture)} alt={`图片 ${index + 1}`} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+            {approval && (
+              <div className="approval-actions">
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={live.busy || live.answered(tool)}
+                  onClick={() => live.reply(tool, false)}
+                >
+                  <X />
+                  拒绝
+                </button>
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={live.busy || live.answered(tool)}
+                  onClick={() => live.reply(tool, true)}
+                >
+                  <Check />
+                  允许
+                </button>
+              </div>
+            )}
+          </div>
+        );
+      }}
     </Fold>
   );
 }
@@ -546,10 +546,18 @@ function CompactMark({ item, active, now }: { item: Compact; active: boolean; no
   );
 }
 
-function NoticeLine({ item }: { item: Notice }) {
+function NoticeLine({ item, resume }: { item: Notice; resume?: () => void }) {
   const error = item.kind === 'notice' && item.error;
-  return <RunNotice text={item.text} error={error} />;
+  return <RunNotice text={item.text} error={error} resume={resume} />;
 }
+
+// A new session greets with Claude's spark.
+const Greeting = () => (
+  <div className="empty-greeting">
+    <Spark className="empty-greeting-mark" />
+    <h2 lang="en">You’re here!</h2>
+  </div>
+);
 
 // How long a turn took, without the time it stood stopped before it was taken up again.
 const spent = (turn: Turn) => duration(turn.startedAt, Date.parse(turn.endedAt!) - turn.pausedMs);
@@ -568,12 +576,15 @@ function TurnView({
   live,
   latest,
   held,
+  resume,
 }: {
   turn: Turn;
   native: boolean;
   live: Live;
   latest: boolean;
   held: boolean;
+  // Given to the latest turn while it stands stopped or failed: its last notice offers to go on.
+  resume?: () => void;
 }) {
   const active = !turn.endedAt;
   const expanded = usePrefs().view.mode === 'expanded';
@@ -654,9 +665,21 @@ function TurnView({
           </div>
         )
       )}
-      {turn.notices.map((item) => (
-        <NoticeLine key={item.id} item={item} />
+      {turn.notices.map((item, index) => (
+        <NoticeLine
+          key={item.id}
+          item={item}
+          resume={index === turn.notices.length - 1 ? resume : undefined}
+        />
       ))}
+      {/* A stop or failure that left no notice still says so once, with the way to go on. */}
+      {resume && !turn.notices.length && (
+        <RunNotice
+          text={turn.outcome === 'failed' ? '本轮执行失败' : '本轮已停止'}
+          error={turn.outcome === 'failed'}
+          resume={resume}
+        />
+      )}
     </>
   );
 }
@@ -672,7 +695,7 @@ export default function Conversation({
   clock,
   progress,
   busy,
-  newSession,
+  fresh,
   loadEarlier,
   replyApproval,
   stopTask,
@@ -685,6 +708,7 @@ export default function Conversation({
   onQuote,
   sideQuoteAvailable = false,
   adjustableWidth = false,
+  resume,
 }: {
   projectControl?: ReactNode;
   session: Session | undefined;
@@ -694,13 +718,16 @@ export default function Conversation({
   onQuote?: (messageId: string, text: string, destination: QuoteDestination) => void;
   sideQuoteAvailable?: boolean;
   adjustableWidth?: boolean;
+  // Takes up the latest turn again, offered while it stands stopped or failed.
+  resume?: () => void;
   events: SessionEvent[];
   history: HistoryState | undefined;
   connected: boolean;
   native: boolean;
   ownsRun: boolean;
   busy: boolean;
-  newSession: () => void;
+  // Nothing has been said in the session yet (App.tsx): it greets, and the input box stands under the greeting.
+  fresh: boolean;
   loadEarlier: () => Promise<void>;
   findRequest: number;
   // Ends one background task of the run, or the run with all of them.
@@ -728,6 +755,19 @@ export default function Conversation({
     steps
       .flatMap((step) => (step.kind === 'work' ? step.items : []))
       .some((item) => item.kind === 'tool' && item.state === 'running');
+  // A card in the latest turn asks for an approval or an answer this window can give (see `canApprove` below).
+  const cardAsks =
+    connected &&
+    ownsRun &&
+    steps
+      .flatMap((step) => (step.kind === 'work' ? step.items : []))
+      .some(
+        (item) =>
+          item.kind === 'tool' &&
+          item.runId === session?.activeRun?.id &&
+          !item.resolved &&
+          !!item.approvalId,
+      );
   // A task has been waited for since the run first listed it.
   const listedAt = (taskId: string) =>
     Date.parse(
@@ -903,8 +943,10 @@ export default function Conversation({
   const scroll = useRef<HTMLDivElement>(null);
   // The view follows new output until the reader moves up from the end, and again once they come back down to it.
   const follow = useRef(true);
-  // Shown while not following, as the way back to the end.
+  // Shown while not following, as the way back to the end — and only while the end is out of sight: a reader who
+  // left a short conversation (opening the find box does) has nowhere to come back down from.
   const [away, setAway] = useState(false);
+  const [atEnd, setAtEnd] = useState(true);
   // Earlier history is inserted above; the anchor keeps the lines being read where they were.
   const prependAnchor = useRef<{
     sessionId: string;
@@ -988,20 +1030,14 @@ export default function Conversation({
     if (!scroll.current || !transcriptRoot.current) return;
     const observer = new ResizeObserver(() => {
       if (follow.current && !findOpen && !prependAnchor.current) toEnd();
+      if (scroll.current) setAtEnd(fromEnd(scroll.current) < 40);
     });
     observer.observe(scroll.current);
     observer.observe(transcriptRoot.current);
     return () => observer.disconnect();
   }, [session?.id, findOpen]);
 
-  const showGreeting =
-    !!session &&
-    history?.loaded === true &&
-    turns.length === 0 &&
-    !history.loading &&
-    !history.hasEarlier &&
-    !loadError &&
-    !session.activeRun;
+  const showGreeting = fresh && !loadError;
   return (
     <QuoteActionsContext.Provider
       value={
@@ -1168,6 +1204,7 @@ export default function Conversation({
                 anchor.top = top;
               }
               const end = fromEnd(scroll.current) < 40;
+              setAtEnd(end);
               // Coming down to the end follows again; only moving down does, so a slow wheel or a flick upwards is not
               // pulled back while output comes in fast. Moving up away from it leaves, by touch as well: heights that
               // settle or shrink keep the view at the end, where the reader never is after scrolling up.
@@ -1215,18 +1252,9 @@ export default function Conversation({
             }}
           >
             {!session ? (
-              <div className="empty-state">
-                <MessageSquare />
-                <h2>新会话</h2>
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={!connected}
-                  onClick={newSession}
-                >
-                  <Plus />
-                  新建会话
-                </button>
+              // The home page is the new session not yet made: the same greeting, over its input box (App.tsx).
+              <div className="transcript is-empty">
+                <Greeting />
               </div>
             ) : (
               <div className={`transcript${showGreeting ? ' is-empty' : ''}`} ref={transcriptRoot}>
@@ -1251,12 +1279,7 @@ export default function Conversation({
                     同步会话
                   </div>
                 )}
-                {showGreeting && (
-                  <div className="empty-greeting">
-                    <Spark className="empty-greeting-mark" />
-                    <h2 lang="en">You’re here!</h2>
-                  </div>
-                )}
+                {showGreeting && <Greeting />}
                 <LinkPlace.Provider value={place}>
                   {turns.map((turn, index) => (
                     <TurnView
@@ -1266,6 +1289,7 @@ export default function Conversation({
                       live={live}
                       latest={index === turns.length - 1}
                       held={heldOpen(turns, index)}
+                      resume={index === turns.length - 1 ? resume : undefined}
                     />
                   ))}
                 </LinkPlace.Provider>
@@ -1319,7 +1343,9 @@ export default function Conversation({
                 )}
                 {session.activeRun &&
                   !background &&
-                  (session.activeRun.status !== 'awaiting_approval' ? (
+                  // Waiting for the user, the card that asks is the status; a line stands in only where no card
+                  // here can answer.
+                  !(session.activeRun.status === 'awaiting_approval' && cardAsks) && (
                     <RunStatus
                       tool={toolAtWork}
                       since={Math.max(
@@ -1328,32 +1354,35 @@ export default function Conversation({
                       )}
                       clock={clock}
                       connected={connected}
+                      waiting={
+                        session.activeRun.status === 'awaiting_approval'
+                          ? session.activeRun.waiting === 'question'
+                            ? 'question'
+                            : 'approval'
+                          : undefined
+                      }
                       suffix={ownsRun ? '' : ' · 所在设备不在线'}
                     />
-                  ) : (
-                    <div className="run-indicator" role="status">
-                      <span className="running-dot" />
-                      {session.activeRun.waiting === 'question' ? '等待回答' : '等待审批'}
-                      {!ownsRun && ' · 所在设备不在线'}
-                    </div>
-                  ))}
-              </div>
-            )}
-            {session && away && (
-              <div className="to-end">
-                <IconButton
-                  title="回到底部"
-                  className="to-end-button"
-                  onClick={() => {
-                    rejoin();
-                    toEnd();
-                  }}
-                >
-                  <ArrowDown />
-                </IconButton>
+                  )}
               </div>
             )}
           </div>
+          {/* Over the foot of the conversation, just above the input box, not inside the scrolling text where a
+              short conversation would carry it up to its top. */}
+          {session && away && !atEnd && (
+            <div className="to-end">
+              <IconButton
+                title="回到底部"
+                className="to-end-button"
+                onClick={() => {
+                  rejoin();
+                  toEnd();
+                }}
+              >
+                <ArrowDown />
+              </IconButton>
+            </div>
+          )}
           {session && adjustableWidth && (
             <ConversationWidthControls
               key={`width:${session.id}`}

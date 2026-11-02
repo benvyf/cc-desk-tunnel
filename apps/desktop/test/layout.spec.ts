@@ -53,9 +53,12 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await shot(page, '01-会话');
 
   // A pinned session moves under its own heading; a project gets a local name and a pin of its own.
+  // A session row offers one action, "…"; pinning is in its menu.
   const row = page.locator('.session-row.selected');
   await row.hover();
-  await row.getByRole('button', { name: '置顶', exact: true }).click();
+  await expect(row.getByRole('button', { name: '置顶', exact: true })).toBeHidden();
+  await row.getByRole('button', { name: '会话操作', exact: true }).click();
+  await page.getByRole('menuitem', { name: '置顶', exact: true }).click();
   await expect(page.locator('.list-heading').first()).toHaveText('置顶');
   await page.getByRole('button', { name: `项目操作 · ${project}`, exact: true }).click();
   await shot(page, '02-项目菜单');
@@ -170,7 +173,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await done.click();
 
   // With the window out of sight, a run that waits for an answer and one that ends are both noted.
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page.evaluate(() => {
     document.hasFocus = () => false;
   });
@@ -226,7 +229,11 @@ test('a project lists its latest five sessions until it is listed in full', asyn
     await expect(group.locator('.session-row.selected')).toHaveCount(1);
     await expect(rows).toHaveCount(Math.min(count, 5));
   }
-  await group.getByRole('button', { name: '展开显示（还有 7 个）', exact: true }).click();
+  // "Show all" names the whole count, and lines up with the session titles above it.
+  const more = group.getByRole('button', { name: '显示全部 (12)', exact: true });
+  const titleLeft = (await rows.first().locator('strong').boundingBox())!.x;
+  expect(Math.abs((await more.boundingBox())!.x - titleLeft)).toBeLessThanOrEqual(1);
+  await more.click();
   await expect(rows).toHaveCount(12);
   const list = page.getByRole('navigation', { name: '会话列表', exact: true });
   const scroll = await list.evaluate((node) => {
@@ -245,9 +252,7 @@ test('a project lists its latest five sessions until it is listed in full', asyn
   await group.getByRole('button', { name: '收起', exact: true }).click();
   await expect(rows).toHaveCount(6);
   await expect(rows.last()).toContainText(oldest!);
-  await expect(
-    group.getByRole('button', { name: '展开显示（还有 6 个）', exact: true }),
-  ).toBeVisible();
+  await expect(group.getByRole('button', { name: '显示全部 (12)', exact: true })).toBeVisible();
   await rows.first().locator('.session-select').click();
   await expect(rows).toHaveCount(5);
   // A search lists every session it finds.
@@ -599,7 +604,7 @@ test('approval modes are described where they are chosen, and models sit behind 
     .getByRole('button', { name: '常规', exact: true })
     .click();
   await page.getByRole('switch', { name: '允许绕过权限', exact: true }).click();
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await trigger.click();
   await expect(menu.getByRole('menuitemradio')).toHaveCount(5);
   await menu.getByRole('menuitemradio', { name: '绕过权限', exact: true }).click();
@@ -629,7 +634,9 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
   });
   try {
     const page = await application.firstWindow();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     await login(page);
     // This repository stands in for the user's project.
     const repository = resolve('.');
@@ -712,8 +719,8 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
     const notes = page.getByRole('dialog');
     await expect(notes.getByRole('heading', { name: /的更新内容$/ })).toBeVisible();
     await expect(notes).toContainText('升级说明');
-    // A link into the repository goes to that file on GitHub (see notes-quota.test.mjs), and from there to the
-    // user's browser: whatever this version's notes link to, no link is left relative to the program's page.
+    // A link into the repository or to GitHub keeps only its words (see notes-quota.test.mjs): whatever this
+    // version's notes link to, no link is left relative to the program's page, and none goes to GitHub.
     expect(
       await notes
         .locator('.release-notes a')

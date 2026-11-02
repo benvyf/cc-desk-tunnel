@@ -63,3 +63,13 @@ test('the quota beside the message box is the five hours and the fullest week', 
     { label: '每周', used: 0, resetsAt: null },
   ]);
 });
+
+test('in-app notes keep the words of repository and GitHub links, and other links', async () => {
+  const { withoutRepositoryLinks } = await import('../src/notes.ts');
+  assert.equal(
+    withoutRepositoryLinks(
+      '见[议题](https://github.com/a/b/issues)、[文档](docs/x.md)、[站点](https://example.com)、[锚](#a)',
+    ),
+    '见议题、文档、[站点](https://example.com)、[锚](#a)',
+  );
+});

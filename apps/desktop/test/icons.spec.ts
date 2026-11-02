@@ -7,6 +7,8 @@ test('page and settings navigation use bold selected glyphs and restore regular 
 }) => {
   await page.goto('/');
   await login(page);
+  // The pages are on the rail, which is the side column folded.
+  await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
   const rail = page.getByRole('navigation', { name: '页面', exact: true });
   const chat = rail.getByRole('button', { name: '会话', exact: true });
   const schedules = rail.getByRole('button', { name: '定时任务', exact: true });
@@ -23,6 +25,7 @@ test('page and settings navigation use bold selected glyphs and restore regular 
   await expect(schedules.locator('svg')).toHaveAttribute('data-weight', 'regular');
   await rail.getByRole('button', { name: '设置与账号', exact: true }).click();
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
   const categories = page.getByRole('navigation', { name: '设置分类', exact: true });
   const general = categories.getByRole('button', { name: '常规', exact: true });
   const shortcuts = categories.getByRole('button', { name: '快捷键', exact: true });
@@ -62,7 +65,7 @@ test('glyph scales, baseline, spinner and keyboard copy feedback survive the mig
     const copyPath = '/src/copy.tsx';
     const React = (await import(reactPath)).default;
     const { createRoot } = (await import(domPath)).default;
-    const { Search, Spark, LoaderCircle, ArrowRight } = await import(iconsPath);
+    const { Search, Spark, LoaderCircle, ArrowUp } = await import(iconsPath);
     const { CopyButton } = await import(copyPath);
     const root = document.createElement('main');
     document.body.replaceChildren(root);
@@ -89,7 +92,7 @@ test('glyph scales, baseline, spinner and keyboard copy feedback survive the mig
         React.createElement(
           'button',
           { className: 'send-button', 'aria-label': '发送消息' },
-          React.createElement(ArrowRight),
+          React.createElement(ArrowUp),
         ),
         React.createElement(CopyButton, { text: '图标复制验证', label: '复制内容' }),
       ),
@@ -111,6 +114,9 @@ test('glyph scales, baseline, spinner and keyboard copy feedback survive the mig
     await expect(glyph).toHaveAttribute('data-weight', 'regular');
   }
   await expect(page.getByTestId('spark').locator('svg')).toHaveAttribute('viewBox', '0 0 256 256');
+  // The send glyph is drawn pointing up; the stylesheet does not turn it.
+  await expect(page.locator('.send-button svg')).toHaveCSS('rotate', 'none');
+  await expect(page.locator('.send-button svg')).toHaveCSS('transform', 'none');
   await expect(page.getByTestId('spinner').locator('svg')).toHaveCSS('animation-name', 'spin');
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await expect(page.getByTestId('spinner').locator('svg')).toHaveCSS('animation-name', 'none');

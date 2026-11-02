@@ -1,5 +1,5 @@
 import { expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { mkdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -64,4 +64,39 @@ export async function send(page: Page, text: string, scenario = 'chat') {
 export async function settled(page: Page) {
   await expect(page.getByRole('textbox', { name: '消息' })).toBeEnabled();
   await expect(page.getByRole('button', { name: '停止运行', exact: true })).not.toBeVisible();
+}
+// Text contrast against what is actually painted behind it: translucent fills (hover, selection, ink washes)
+// are composited over the first opaque surface underneath, once colour transitions (a theme change) settle.
+export async function contrast(control: Locator) {
+  return control.evaluate(async (element) => {
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+        .map((animation) => animation.finished.catch(() => {})),
+    );
+    const channels = (color: string) => color.match(/[\d.]+/g)!.map(Number);
+    // Hover and selection fills are translucent ink: composite them over the first opaque surface behind.
+    const layers: number[][] = [];
+    for (let node: Element | null = element; node; node = node.parentElement) {
+      const [r, g, b, alpha = 1] = channels(getComputedStyle(node).backgroundColor);
+      if (alpha > 0) layers.unshift([r, g, b, alpha]);
+      if (alpha >= 1) break;
+    }
+    const backdrop = layers.reduce(
+      (below, [r, g, b, alpha]) =>
+        [r, g, b].map((channel, i) => channel * alpha + below[i] * (1 - alpha)),
+      [255, 255, 255],
+    );
+    const luminance = ([r, g, b]: number[]) =>
+      [r, g, b]
+        .map((channel) => {
+          const value = channel / 255;
+          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+        })
+        .reduce((sum, value, i) => sum + value * [0.2126, 0.7152, 0.0722][i], 0);
+    const text = luminance(channels(getComputedStyle(element).color)),
+      background = luminance(backdrop);
+    return (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05);
+  });
 }

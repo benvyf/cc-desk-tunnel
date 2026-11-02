@@ -39,7 +39,9 @@ test('Electron: a second connection is a window of its own and shares what is th
     );
   try {
     const page = await first.firstWindow();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     await login(page);
     // One connection has no name to show.
     await expect(page.locator('.brand-connection')).toHaveCount(0);
@@ -70,7 +72,9 @@ test('Electron: a second connection is a window of its own and shares what is th
     // The same connection under Playwright's eye: its own profile and sign-in, the computer's identity.
     second = await _electron.launch({ args: [...args, `--connection=${id}`], env });
     const other = await second.firstWindow();
-    await expect(other.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      other.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     await expect(other.locator('.brand-connection')).toHaveText('工作');
     expect(await title(second)).toBe('CC SPACE · 工作');
     expect(await second.evaluate(({ app }) => app.getPath('userData'))).toBe(own);

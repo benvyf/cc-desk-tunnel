@@ -37,7 +37,8 @@ test('CC SPACE login and sidebar branding adapt to themes, narrow windows and in
   await login(page);
   await page.setViewportSize({ width: 1280, height: 900 });
   await expect(page.locator('.sidebar-brand .brand-name')).toHaveText('CC SPACE');
-  await expect(page.locator('.sidebar-brand .brand-mark')).toHaveCSS('height', '28px');
+  // The brand is no longer the heaviest thing in the side column: a 22px mark beside a 15px name.
+  await expect(page.locator('.sidebar-brand .brand-mark')).toHaveCSS('height', '22px');
   await expect(page.locator('.shell')).not.toHaveClass(/side-closed/);
   await page.screenshot({
     path: resolve('.local/screenshots/cc-space-desktop-dark.png'),
@@ -102,7 +103,9 @@ test('Electron uses CC SPACE while retaining an explicit profile and recognizing
   });
   try {
     const page = await application.firstWindow();
-    await expect(page.getByRole('heading', { name: '连接代理服务', exact: true })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
+    ).toBeVisible();
     expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
     expect(await application.evaluate(({ app }) => app.getPath('userData'))).toBe(profile);
     expect(await page.evaluate(() => window.desktop!.windowSettings())).toEqual({

@@ -1,7 +1,7 @@
 import Presence from './Presence.tsx';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { ReactNode } from 'react';
-import { ChevronRight, Copy, ExternalLink, RotateCcw, Trash2 } from './icons.tsx';
+import { ChevronRight, CircleAlert, Copy, ExternalLink, RotateCcw, Trash2 } from './icons.tsx';
 import type {
   WebCertificateState,
   WebProof,
@@ -291,13 +291,19 @@ export default function WebAccessSettings({
                     values.totpEnabled ? '登录时需要验证器动态码。' : '建议开启验证器两步验证。'
                   }
                 >
-                  <button
-                    className="button"
-                    disabled={busy}
-                    onClick={() => setDialog(values.totpEnabled ? 'disable' : 'totp')}
-                  >
-                    {values.totpEnabled ? '关闭' : '设置'}
-                  </button>
+                  {/* The state, then what can be done about it: not a lone “关闭” that reads as either. */}
+                  <div className="web-row-actions">
+                    <span className={`web-state${values.totpEnabled ? ' on' : ''}`}>
+                      {values.totpEnabled ? '已开启' : '未开启'}
+                    </span>
+                    <button
+                      className="button"
+                      disabled={busy}
+                      onClick={() => setDialog(values.totpEnabled ? 'disable' : 'totp')}
+                    >
+                      {values.totpEnabled ? '关闭两步验证' : '开启两步验证'}
+                    </button>
+                  </div>
                 </Row>
                 <details className="web-sessions">
                   <summary>
@@ -395,8 +401,9 @@ export default function WebAccessSettings({
           </>
         )}
         {error && (
-          <p className="error" role="alert">
-            {error}
+          <p className="inline-alert" role="alert">
+            <CircleAlert />
+            <span>{error}</span>
           </p>
         )}
       </div>

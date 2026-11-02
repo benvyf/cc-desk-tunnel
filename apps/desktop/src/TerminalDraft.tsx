@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import type { TerminalHandle, TerminalPhase } from './NativeTerminal.tsx';
-import { Button } from './ui.tsx';
+import { Button, IconButton } from './ui.tsx';
+import { Copy, Ellipsis, Plus, Trash2 } from './icons.tsx';
 import AttachmentTiles from './AttachmentTiles.tsx';
 import {
   attachmentKind,
@@ -28,6 +29,18 @@ export default function TerminalDraft({
   const [draft, setDraft] = useState('');
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const [message, setMessage] = useState('');
+  // The "…" list of the box's other actions; it closes on a press anywhere else in its window.
+  const [more, setMore] = useState(false);
+  const moreBox = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!more) return;
+    const owner = moreBox.current?.ownerDocument ?? document;
+    const outside = (event: PointerEvent) => {
+      if (!moreBox.current?.contains(event.target as Node)) setMore(false);
+    };
+    owner.addEventListener('pointerdown', outside, true);
+    return () => owner.removeEventListener('pointerdown', outside, true);
+  }, [more]);
   const mounted = useRef(false);
   const preparation = useRef(0);
   const composing = useRef(false);
@@ -119,6 +132,19 @@ export default function TerminalDraft({
       }
     }
   }
+  const paste = () => {
+    if (composing.current) return;
+    try {
+      const target = handle();
+      if (!target) throw new Error('终端尚未准备好。');
+      target.paste(payload);
+      setMessage('已粘贴，请在终端检查后自行按 Enter；草稿已保留。');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '粘贴失败，草稿已保留。');
+    }
+  };
+  // A small input box (audit G3): the text on a rounded card, attachments at its lower left, "paste into the
+  // terminal" as the one main action at its lower right, and copying and clearing behind "…".
   return (
     <section className="terminal-draft" aria-label="终端输入草稿">
       <div className="terminal-draft-actions">
@@ -127,76 +153,21 @@ export default function TerminalDraft({
           aria-expanded={expanded}
           onClick={() => {
             setExpanded(!expanded);
+            setMore(false);
             if (!expanded) requestAnimationFrame(() => input.current?.focus());
           }}
         >
           {expanded ? '收起编辑' : '编辑输入'}
         </Button>
-        {expanded && (
-          <>
-            <Button
-              size="sm"
-              disabled={!ready || !text.trim()}
-              onClick={() => {
-                if (composing.current) return;
-                try {
-                  const target = handle();
-                  if (!target) throw new Error('终端尚未准备好。');
-                  target.paste(payload);
-                  setMessage('已粘贴，请在终端检查后自行按 Enter；草稿已保留。');
-                } catch (error) {
-                  setMessage(error instanceof Error ? error.message : '粘贴失败，草稿已保留。');
-                }
-              }}
-            >
-              粘贴到终端
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                void (
-                  window.desktop?.copyText(payload) ?? navigator.clipboard.writeText(payload)
-                ).then(
-                  () => setMessage('已复制，请手动粘贴并检查。'),
-                  () => setMessage('无法访问剪贴板，草稿已保留。'),
-                );
-              }}
-            >
-              复制文本
-            </Button>
-            <Button
-              size="sm"
-              disabled={!attachmentsAllowed}
-              onClick={() => {
-                const generation = preparation.current;
-                void window.desktop!.chooseFiles().then(
-                  (paths) => add(paths, generation),
-                  () => {
-                    if (mounted.current && generation === preparation.current)
-                      setMessage('选择附件失败。');
-                  },
-                );
-              }}
-            >
-              添加附件
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => {
-                preparation.current++;
-                setDraft('');
-                setAttachments([]);
-                setMessage('');
-              }}
-            >
-              清空
-            </Button>
-          </>
+        {expanded && message && (
+          <p className="terminal-draft-message" role="status">
+            {message}
+          </p>
         )}
       </div>
       {expanded && (
         <div
-          className="terminal-draft-body"
+          className="terminal-draft-card"
           onDragOver={(event) => event.preventDefault()}
           onDrop={(event) => {
             event.preventDefault();
@@ -227,8 +198,86 @@ export default function TerminalDraft({
               }
             }}
           />
-          {!attachmentsAllowed && <small>当前项目不在本机，暂不支持添加本机附件。</small>}
-          {message && <p role="status">{message}</p>}
+          <div className="terminal-draft-toolbar">
+            <IconButton
+              title="添加附件"
+              size="sm"
+              disabled={!attachmentsAllowed}
+              onClick={() => {
+                const generation = preparation.current;
+                void window.desktop!.chooseFiles().then(
+                  (paths) => add(paths, generation),
+                  () => {
+                    if (mounted.current && generation === preparation.current)
+                      setMessage('选择附件失败。');
+                  },
+                );
+              }}
+            >
+              <Plus />
+            </IconButton>
+            {!attachmentsAllowed && <small>当前项目不在本机，暂不支持添加本机附件。</small>}
+            <span className="toolbar-space" />
+            <span className="terminal-draft-more" ref={moreBox}>
+              <IconButton
+                title="更多操作"
+                size="sm"
+                aria-haspopup="menu"
+                aria-expanded={more}
+                onClick={() => setMore(!more)}
+              >
+                <Ellipsis />
+              </IconButton>
+              {more && (
+                <div
+                  className="terminal-draft-menu"
+                  role="menu"
+                  aria-label="草稿操作"
+                  onKeyDown={(event) => {
+                    if (event.key === 'Escape') {
+                      event.stopPropagation();
+                      setMore(false);
+                    }
+                  }}
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setMore(false);
+                      void (
+                        window.desktop?.copyText(payload) ?? navigator.clipboard.writeText(payload)
+                      ).then(
+                        () => setMessage('已复制，请手动粘贴并检查。'),
+                        () => setMessage('无法访问剪贴板，草稿已保留。'),
+                      );
+                    }}
+                  >
+                    <Copy />
+                    复制文本
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      setMore(false);
+                      preparation.current++;
+                      setDraft('');
+                      setAttachments([]);
+                      setMessage('');
+                    }}
+                  >
+                    <Trash2 />
+                    清空
+                  </button>
+                </div>
+              )}
+            </span>
+            <Button size="sm" variant="primary" disabled={!ready || !text.trim()} onClick={paste}>
+              粘贴到终端
+            </Button>
+          </div>
         </div>
       )}
     </section>

@@ -32,12 +32,12 @@
 .preview-code-error {
   margin: 4px 8px;
   color: var(--code-error);
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 .preview-code-body {
   position: relative;
   min-width: 0;
-  font-family: Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--code-font-size, 13px);
   line-height: 1.6;
 }
@@ -73,7 +73,7 @@
   bottom: 0;
   left: 0;
   width: calc((var(--preview-line-digits) + 2) * 1ch + 4px);
-  font-family: Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: inherit;
   color: var(--faint);
   user-select: none;

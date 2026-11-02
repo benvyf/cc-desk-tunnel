@@ -8,10 +8,14 @@ export function changeLevels(levels: Effort[]) {
   replaceLevels(levels);
 }
 
-export function mount() {
+// `effort` is the level the session starts with (null: none known); `bare` leaves the model and its catalogue unknown.
+export function mount({
+  effort: initial = 'high',
+  bare = false,
+}: { effort?: Effort | null; bare?: boolean } = {}) {
   document.body.innerHTML = '<main style="position:fixed;bottom:32px;right:32px"></main>';
   function Demo() {
-    const [effort, setEffort] = useState<Effort | null>('high');
+    const [effort, setEffort] = useState<Effort | null>(initial);
     const [calls, setCalls] = useState<(Effort | null)[]>([]);
     const [disabled, setDisabled] = useState(false);
     const [fail, setFail] = useState(false);
@@ -20,23 +24,27 @@ export function mount() {
     return (
       <>
         <ComposerControls
-          model="opus"
+          model={bare ? null : 'opus'}
           effort={effort}
-          capabilities={{
-            type: 'native.capabilities',
-            account: {},
-            commands: [],
-            models: [
-              {
-                value: 'opus',
-                displayName: 'Opus',
-                resolvedModel: 'claude-opus-5-5',
-                description: '',
-                source: 'native',
-                supportedEffortLevels: levels,
-              },
-            ],
-          }}
+          capabilities={
+            bare
+              ? null
+              : {
+                  type: 'native.capabilities',
+                  account: {},
+                  commands: [],
+                  models: [
+                    {
+                      value: 'opus',
+                      displayName: 'Opus',
+                      resolvedModel: 'claude-opus-5-5',
+                      description: '',
+                      source: 'native',
+                      supportedEffortLevels: levels,
+                    },
+                  ],
+                }
+          }
           nativeSession={null}
           metrics={null}
           openAccount={() => {}}

@@ -7,11 +7,13 @@ import './style.css';
 
 // For what the stylesheet lays out differently by system: the window buttons' side of the title bar.
 document.documentElement.dataset.platform = window.desktop?.platform ?? 'browser';
-// The colours chosen in the settings, set before the page first draws.
+// The colours and the faces chosen in the settings, set before the page first draws.
 const showAppearance = () => {
-  const { theme, fontSizes } = getPrefs();
+  const { theme, replyFont, fontSizes } = getPrefs();
   if (document.documentElement.dataset.theme !== theme)
     document.documentElement.dataset.theme = theme;
+  if (document.documentElement.dataset.replyFont !== replyFont)
+    document.documentElement.dataset.replyFont = replyFont;
   for (const [key, value] of Object.entries(fontSizes)) {
     const property = `--${key}-font-size`;
     if (document.documentElement.style.getPropertyValue(property) !== `${value}px`)

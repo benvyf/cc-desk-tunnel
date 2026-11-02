@@ -93,12 +93,17 @@ export default function TerminalFile({
     };
   }, [client, session.id, raw, state.connectionId, state.status, here]);
   return (
-    <Modal
-      title={windows ? `项目设备：${session.device?.name ?? '未知'}` : `节点：${nodeName}`}
-      onClose={onClose}
-    >
+    // Named by the file, as a preview is; where it lives (this computer's project device, or the node) under it.
+    <Modal title={path.split(/[\\/]/).filter(Boolean).pop() || path} onClose={onClose}>
+      <p className="terminal-file-where">
+        {windows ? (session.device?.name ?? '项目设备') : nodeName}
+      </p>
       <p className="terminal-file-path">{path}</p>
-      {error && <p role="alert">{error}</p>}
+      {error && (
+        <p className="error-text" role="alert">
+          {error}
+        </p>
+      )}
       {preview &&
         accessible &&
         (preview.mime.startsWith('image/') ? (

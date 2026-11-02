@@ -55,7 +55,11 @@ export default function ShortcutSettings() {
                 500 毫秒内连按两次，仅停止焦点所在会话；菜单、输入法和终端中的 Esc 保持原用途。
               </small>
             </span>
-            <kbd>Esc · Esc</kbd>
+            {/* Keycaps, as the combinations below are shown. */}
+            <span className="key-combo" aria-label="Esc 连按两次">
+              <kbd className="keycap">Esc</kbd>
+              <kbd className="keycap">Esc</kbd>
+            </span>
           </div>
         </div>
         <h2 className="page-heading">组合键</h2>
@@ -117,6 +121,7 @@ export default function ShortcutSettings() {
         </div>
         <Button
           variant="ghost"
+          className="page-link-button"
           onClick={() => {
             stop();
             setPrefs((value) => ({ ...value, shortcuts: { ...value.shortcuts, keys: {} } }));

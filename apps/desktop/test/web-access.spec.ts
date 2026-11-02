@@ -160,7 +160,19 @@ test('production browser logs in with TOTP, sends no desktop identity, and expos
   page,
 }) => {
   const fixture = await browserFixture(page);
-  await expect(page.getByRole('heading', { name: 'CC SPACE', exact: true })).toBeVisible();
+  // The gate is laid out as the client's sign-in: the brand, a serif title, a full-width ink button.
+  await expect(page.getByRole('heading', { name: '登录网页版', exact: true })).toBeVisible();
+  await expect(page.locator('.web-login .login-card')).toHaveCSS('box-shadow', 'none');
+  const [gateCard, gateButton] = await Promise.all([
+    page.locator('.web-login form').boundingBox(),
+    page.getByRole('button', { name: '登录', exact: true }).boundingBox(),
+  ]);
+  expect(Math.abs(gateButton!.width - gateCard!.width)).toBeLessThanOrEqual(1);
+  expect(
+    await page
+      .getByRole('heading', { name: '登录网页版' })
+      .evaluate((node) => getComputedStyle(node).fontFamily),
+  ).toContain('CC Serif');
   expect(
     await page
       .locator('.web-login-body .brand')
@@ -253,34 +265,35 @@ test('mainline themes and browser access settings coexist and retain the chosen 
   }
   await openSettings();
   await page.getByRole('radio', { name: '浅色', exact: true }).click();
+  // Settings are flat rows on the page; the rail and side column share the frame, the page rests on it.
   await expect(page.locator('.web-access-settings')).toHaveCSS(
     'background-color',
-    'rgb(255, 255, 255)',
+    'rgba(0, 0, 0, 0)',
   );
-  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(245, 245, 243)');
-  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(238, 237, 233)');
-  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(252, 252, 251)');
+  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(245, 244, 237)');
+  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(245, 244, 237)');
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(250, 249, 245)');
   await expect(page.locator('[data-preview="dark"] .theme-preview-side')).toHaveCSS(
     'background-color',
-    'rgb(17, 17, 16)',
+    'rgb(31, 30, 29)',
   );
   await page.screenshot({ path: resolve(webScreenshots, 'theme-light-desktop.png') });
   await page.getByRole('radio', { name: '浅色', exact: true }).press('ArrowRight');
   await expect(page.getByRole('radio', { name: '深色', exact: true })).toBeFocused();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
-  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(17, 17, 16)');
-  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(11, 11, 10)');
-  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(21, 21, 21)');
+  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(31, 30, 29)');
+  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(31, 30, 29)');
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await expect(page.locator('[data-preview="light"] .theme-preview-side')).toHaveCSS(
     'background-color',
-    'rgb(245, 245, 243)',
+    'rgb(245, 244, 237)',
   );
   await expect(page.locator('.web-access-settings')).toHaveCSS(
     'background-color',
-    'rgb(26, 26, 25)',
+    'rgba(0, 0, 0, 0)',
   );
-  await expect(page.getByRole('note')).toHaveCSS('background-color', 'rgb(26, 26, 25)');
-  await expect(page.getByRole('note')).toHaveCSS('color', 'rgb(222, 220, 214)');
+  await expect(page.getByRole('note')).toHaveCSS('background-color', 'rgb(48, 48, 46)');
+  await expect(page.getByRole('note')).toHaveCSS('color', 'rgb(250, 249, 245)');
   await page.screenshot({ path: resolve(webScreenshots, 'theme-dark-desktop.png') });
   for (const width of [320, 390, 720]) {
     await page.setViewportSize({ width, height: 844 });
@@ -318,7 +331,7 @@ test('mainline themes and browser access settings coexist and retain the chosen 
     .filter({ hasText: '访问设置' })
     .getByRole('button', { name: '设置', exact: true })
     .click();
-  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(32, 32, 30)');
+  await expect(page.getByRole('dialog')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await expect(page.getByLabel('服务端访问路径', { exact: false })).toHaveValue('web-fixture');
   await page.screenshot({ path: resolve(webScreenshots, 'browser-settings-dark-desktop.png') });
   await page.setViewportSize({ width: 390, height: 844 });
@@ -332,29 +345,21 @@ test('mainline themes and browser access settings coexist and retain the chosen 
     'aria-checked',
     'true',
   );
-  await expect(page.locator('.web-access-settings')).toHaveCSS(
-    'background-color',
-    'rgb(26, 26, 25)',
-  );
+  // The settings sit flat on the page, so the page itself shows which theme applies.
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await page.getByRole('radio', { name: '跟随系统', exact: true }).click();
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect(page.locator('.web-access-settings')).toHaveCSS(
-    'background-color',
-    'rgb(255, 255, 255)',
-  );
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(250, 249, 245)');
   await page.emulateMedia({ colorScheme: 'dark' });
-  await expect(page.locator('.web-access-settings')).toHaveCSS(
-    'background-color',
-    'rgb(26, 26, 25)',
-  );
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await expect(page.locator('[data-preview="system"] .theme-preview-side')).toHaveCSS(
     'background-color',
-    'rgb(17, 17, 16)',
+    'rgb(31, 30, 29)',
   );
   await page.getByRole('radio', { name: '浅色', exact: true }).click();
   await expect(page.locator('[data-preview="system"] .theme-preview-side')).toHaveCSS(
     'background-color',
-    'rgb(17, 17, 16)',
+    'rgb(31, 30, 29)',
   );
 });
 
@@ -547,7 +552,7 @@ for (const browser of [false, true])
     await page
       .locator('.setting-row')
       .filter({ hasText: '两步验证' })
-      .getByRole('button', { name: '设置', exact: true })
+      .getByRole('button', { name: '开启两步验证', exact: true })
       .click();
     if (browser) {
       await expect(page.getByRole('img', { name: '验证器二维码' })).toHaveCount(0);
@@ -642,11 +647,10 @@ for (const browser of [false, true])
     }
     await page.getByRole('button', { name: '取消', exact: true }).click();
     await expect(page.locator('.web-totp-secret')).toHaveCount(0);
-    await page
-      .locator('.setting-row')
-      .filter({ hasText: '两步验证' })
-      .getByRole('button', { name: '设置', exact: true })
-      .click();
+    // The row says the state, then offers what changes it.
+    const totpRow = page.locator('.setting-row').filter({ hasText: '两步验证' });
+    await expect(totpRow.locator('.web-state')).toHaveText('未开启');
+    await totpRow.getByRole('button', { name: '开启两步验证', exact: true }).click();
     if (browser) {
       await expect(page.getByLabel('服务凭据', { exact: true })).toHaveValue('');
       await page.getByLabel('服务凭据', { exact: true }).fill('test-password');
@@ -663,8 +667,9 @@ for (const browser of [false, true])
       page
         .locator('.setting-row')
         .filter({ hasText: '两步验证' })
-        .getByRole('button', { name: '关闭', exact: true }),
+        .getByRole('button', { name: '关闭两步验证', exact: true }),
     ).toBeVisible();
+    await expect(totpRow.locator('.web-state.on')).toHaveText('已开启');
     const calls = await page.evaluate(() =>
       (
         window as unknown as { settingsFixture: { calls: Record<string, unknown>[] } }
@@ -697,7 +702,7 @@ test('desktop TOTP setup retries errors and discards a pending result on disconn
     page
       .locator('.setting-row')
       .filter({ hasText: '两步验证' })
-      .getByRole('button', { name: '设置', exact: true })
+      .getByRole('button', { name: '开启两步验证', exact: true })
       .click();
   await open();
   await expect(page.getByRole('alert')).toContainText('生成失败');

@@ -34,6 +34,8 @@ for (const theme of ['light', 'dark'])
         await page.getByRole('button', { name: button, exact: true }).click();
         const pane = page.getByRole('complementary', { name: '文件与网站预览' });
         await expect(pane).toBeVisible();
+        // Narrow windows slide the preview in over the page; measure where it comes to rest.
+        await pane.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
         if (name === 'error' || name === 'website')
           await expect(pane.getByRole('alert')).toBeVisible();
         if (name === 'loading') {
@@ -46,12 +48,15 @@ for (const theme of ['light', 'dark'])
             await pane
               .locator('.code-block')
               .evaluate((el) => getComputedStyle(el).backgroundColor),
-          ).toBe('rgb(23, 23, 22)');
+          ).toBe('rgb(29, 28, 26)');
         }
         const geometry = await pane.evaluate((el) => {
           const pane = el.getBoundingClientRect();
+          // The preview / source switch is one 28px control; its two buttons sit inside it.
           const controls = [
-            ...el.querySelectorAll('.preview-heading button,.preview-toolbar button'),
+            ...el.querySelectorAll(
+              '.preview-heading button,.preview-toolbar button:not(.segmented button),.preview-toolbar .segmented',
+            ),
           ].map((button) => button.getBoundingClientRect());
           return {
             left: pane.left,

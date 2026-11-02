@@ -121,47 +121,83 @@ export default function ComposerControls({
           }}
         >
           <span>{label}</span>
-          <small>{effort ? effortNames[effort] : actual ? effortNames[actual] : '默认'}</small>
+          {/* An unknown effort is left out rather than called “默认” next to a model that may be “默认模型”. */}
+          {(effort ?? actual) && <small>{effortNames[(effort ?? actual)!]}</small>}
           <ChevronDown />
         </button>
         <Presence>
           {open && (
             <div className="model-menu" role="dialog" aria-label="模型与推理强度">
-              <div className="effort-view" hidden={choosing}>
+              {/* The level, shown or being chosen, colours the slider, its title and its tick (style.css). */}
+              {/* With no level known (spec §5.10) the menu says the model decides, without the level colours
+                  of style.css, and offers the levels as plain choices instead of an empty track. */}
+              <div
+                className="effort-view"
+                hidden={choosing}
+                data-effort={shownEffort ?? undefined}
+                data-effort-unknown={shownEffort ? undefined : ''}
+              >
                 <div className="effort-heading">
-                  <strong>{shownEffort ? effortNames[shownEffort] : '原生默认'}</strong>
-                  <IconButton
-                    title="恢复默认推理强度"
-                    disabled={disabled}
-                    onClick={() => {
-                      setPreview(null);
-                      void configure({ effort: null });
-                    }}
-                  >
-                    <RotateCcw />
-                  </IconButton>
+                  <strong>{shownEffort ? effortNames[shownEffort] : '推理强度：跟随模型'}</strong>
+                  {shownEffort && (
+                    <IconButton
+                      title="恢复默认推理强度"
+                      disabled={disabled}
+                      onClick={() => {
+                        setPreview(null);
+                        void configure({ effort: null });
+                      }}
+                    >
+                      <RotateCcw />
+                    </IconButton>
+                  )}
                 </div>
                 <button type="button" className="model-current" onClick={() => setChoosing(true)}>
                   {label}
                   <ChevronRight />
                 </button>
-                {levels.length > 0 && (
-                  <EffortSlider
-                    key={model ?? 'default'}
-                    levels={levels}
-                    value={effort ?? actual ?? null}
-                    disabled={disabled}
-                    onPreview={setPreview}
-                    onCommit={(value) => configure({ effort: value })}
-                  />
+                {levels.length > 0 && shownEffort && (
+                  // The track and, at the top level, what it gives off: embers rising from the fill and a
+                  // ring turning round the handle (style.css). Both are decoration only.
+                  <div
+                    className="effort-track"
+                    style={
+                      {
+                        '--at':
+                          Math.max(0, levels.indexOf(shownEffort ?? 'high')) /
+                          Math.max(1, levels.length - 1),
+                      } as CSSProperties
+                    }
+                  >
+                    <EffortSlider
+                      key={model ?? 'default'}
+                      levels={levels}
+                      value={effort ?? actual ?? null}
+                      disabled={disabled}
+                      onPreview={setPreview}
+                      onCommit={(value) => configure({ effort: value })}
+                    />
+                    {shownEffort === 'max' && (
+                      <span className="effort-flare" aria-hidden="true">
+                        <span className="effort-ring" />
+                        {[0.08, 0.22, 0.37, 0.5, 0.63, 0.76, 0.9].map((x, index) => (
+                          <i key={x} style={{ '--x': x, '--i': index } as CSSProperties} />
+                        ))}
+                      </span>
+                    )}
+                  </div>
                 )}
                 {levels.length > 0 && (
-                  <div className="effort-ticks">
+                  <div
+                    className="effort-ticks"
+                    role={shownEffort ? undefined : 'group'}
+                    aria-label={shownEffort ? undefined : '选择推理强度'}
+                  >
                     {levels.map((level, index) => (
                       <button
                         key={level}
                         type="button"
-                        tabIndex={-1}
+                        tabIndex={shownEffort ? -1 : undefined}
                         disabled={disabled}
                         className={level === shownEffort ? 'current' : undefined}
                         style={

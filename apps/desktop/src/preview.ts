@@ -18,7 +18,7 @@ import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
 import { createPreviewPersistence } from './previewPersistence.ts';
 import type { PreviewReading } from './previewViewState.ts';
 export type { PreviewTab, PreviewPane, FloatRect } from './previewLayout.ts';
-export { previewWebsite } from './previewLayout.ts';
+export { previewSpan, previewTreeWidth, previewWebsite } from './previewLayout.ts';
 
 export type PreviewSurface = 'main' | 'terminal' | 'inline-terminal';
 export type PreviewBounds = { x: number; y: number; width: number; height: number };

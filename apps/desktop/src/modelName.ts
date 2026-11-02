@@ -30,5 +30,6 @@ export function modelName(model?: Model, fallback?: string | null): string {
     if (family) return parsed.label + suffix;
     if (!name || model?.value === 'default' || name === id) return parsed.label;
   }
-  return name || fallback || model?.value || '原生默认';
+  // Nothing known about the model: the session runs whatever Claude Code defaults to (spec §5.10).
+  return name || fallback || model?.value || '默认模型';
 }

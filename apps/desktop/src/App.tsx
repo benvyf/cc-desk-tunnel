@@ -8,7 +8,7 @@ import {
   useState,
   useSyncExternalStore,
 } from 'react';
-import { productName } from './Brand.tsx';
+import { BrandMark, productName } from './Brand.tsx';
 import type { CSSProperties } from 'react';
 import {
   CircleHelp,
@@ -31,7 +31,6 @@ import {
   SquareTerminal,
   Trash2,
   Unplug,
-  UserRound,
   X,
 } from './icons.tsx';
 import { GithubMark, openProject, project } from './project.tsx';
@@ -42,7 +41,8 @@ import { CertificateWarning } from './WebGate.tsx';
 import { hostCapabilities } from './host-capabilities.ts';
 import AccountPanel from './AccountPanel.tsx';
 import { ProxyClient, RequestInterruptedError } from './client.ts';
-import Composer from './Composer.tsx';
+import Composer, { NewSessionComposer } from './Composer.tsx';
+import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
 import SideConversation from './SideConversation.tsx';
 import { latest } from './nativeState.ts';
@@ -65,11 +65,12 @@ import { exportSession } from './exportSession.ts';
 import { onSharedChange, saveShared, shared, useShared } from './shared.ts';
 import { useNotifications } from './notifications.ts';
 import { folderName, isInside, isNewer, pathKey, withProject } from './paths.ts';
-import { getPrefs, setPrefs, toggled, usePrefs } from './prefs.ts';
+import { getPrefs, pageMinWidth, setPrefs, toggled, usePrefs } from './prefs.ts';
 import { sessionDefaultOptions } from './modelDefaults.ts';
 import { actions, comboOf, keyFor, show as comboText } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
 import Rail from './Rail.tsx';
+import { AccountArea } from './SidebarShell.tsx';
 import type { Page } from './Rail.tsx';
 import {
   AddProjectDialog,
@@ -87,11 +88,10 @@ import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
-import { RunSummary } from './RunStatus.tsx';
 import { FollowUps } from './followUps.ts';
 import FollowUpQueue from './FollowUpQueue.tsx';
 import PreviewSidebar from './PreviewSidebar.tsx';
-import { usePreviewWorkspace } from './preview.ts';
+import { previewSpan, usePreviewWorkspace } from './preview.ts';
 
 import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
 
@@ -111,7 +111,9 @@ type OpenMenu = MenuPosition &
     | { kind: 'update' }
     | { kind: 'bar'; label: string }
   );
-const narrow = () => matchMedia('(max-width: 700px)').matches;
+// A window too narrow for the side column and the room the page keeps folds the column away; opened, it is then
+// laid over the page.
+const overlaid = (sidebarWidth: number) => innerWidth < sidebarWidth + pageMinWidth;
 // The computer's projects, which the windows of its connections share (see shared.ts).
 function savedProjects(value: unknown = shared('projects')): string[] {
   try {
@@ -212,18 +214,31 @@ export function App({
   const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
-  // The side column is shown beside the page on a wide window and laid over it on a narrow one.
-  const [sideOpen, setSideOpen] = useState(() => !narrow());
+  // The side column is shown beside the page on a wide window and laid over it on a narrow one: narrower than
+  // the column and the 600px the page keeps (spec §4.3, §6.6).
+  const [overlay, setOverlay] = useState(() => overlaid(getPrefs().sidebarWidth));
+  const overlayNow = useRef(overlay);
+  const [sideOpen, setSideOpen] = useState(() => !overlayNow.current);
   const closeSide = useCallback(() => {
-    if (narrow()) setSideOpen(false);
+    if (overlayNow.current) setSideOpen(false);
   }, []);
-  // Crossing between the two layouts starts from each one's usual state.
+  // Asked to open the conversations' search (the shortcut, the folded column); the side column says when it has.
+  const [searchAsked, setSearchAsked] = useState(false);
+  const searchDone = useCallback(() => setSearchAsked(false), []);
+  // Crossing between the two layouts starts from each one's usual state: open beside the page, folded over it.
+  const sidebarWidth = usePrefs().sidebarWidth;
   useEffect(() => {
-    const query = matchMedia('(max-width: 700px)');
-    const follow = () => setSideOpen(!query.matches);
-    query.addEventListener('change', follow);
-    return () => query.removeEventListener('change', follow);
-  }, []);
+    const follow = () => {
+      const next = overlaid(sidebarWidth);
+      if (next === overlayNow.current) return;
+      overlayNow.current = next;
+      setOverlay(next);
+      setSideOpen(!next);
+    };
+    follow();
+    window.addEventListener('resize', follow);
+    return () => window.removeEventListener('resize', follow);
+  }, [sidebarWidth]);
   const [place, setPlace] = useState<Place>({
     page: 'chat',
     section: browser ? 'general' : 'account',
@@ -352,6 +367,16 @@ export function App({
     [selected?.id, recorded, unfinished],
   );
   const history = selected ? state.history[selected.id] : undefined;
+  // A session nothing has been said in yet, and the home page with none open, show the new-session layout: the
+  // greeting and the input box together in the upper middle of the page (spec §4.2, §5.10).
+  const blank = useMemo(() => isBlank(events), [events]);
+  const fresh = selected
+    ? !selected.activeRun &&
+      history?.loaded === true &&
+      !history.loading &&
+      !history.hasEarlier &&
+      blank
+    : true;
   const nativeSession = latest(events, 'native.session');
   // Each turn's report is a reason to ask for the session's figures again.
   const turnReports = useMemo(
@@ -955,6 +980,7 @@ export function App({
   async function createSession(projectPath: string) {
     const response = await client.request({ type: 'session.create', title: '新会话', projectPath });
     if (response.sessionId) await initializeSession(response.sessionId);
+    return response.sessionId;
   }
   async function initializeSession(sessionId: string) {
     const options = sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models);
@@ -978,7 +1004,11 @@ export function App({
     show(sessionId);
   }
   async function createInProject(path: string) {
-    await act(() => createSession(path));
+    let created: string | undefined;
+    await act(async () => {
+      created = await createSession(path);
+    });
+    return created;
   }
   async function addProject() {
     if (!window.desktop?.chooseProject) {
@@ -991,30 +1021,45 @@ export function App({
     });
   }
   // The desktop gives an ordinary session a local directory; the browser creates one on the server.
-  async function newSession() {
+  // Makes a session where a new one goes, and tells which, once it is made and open.
+  async function newSession(): Promise<string | undefined> {
+    let created: string | undefined;
     if (browser) {
       await act(async () => {
         const response = await client.request({ type: 'server.session.create', title: '新会话' });
         if (response.sessionId) await initializeSession(response.sessionId);
+        created = response.sessionId;
       });
-      return;
+      return created;
     }
     if (window.desktop) {
       await act(async () => {
         const directory = await window.desktop!.createWorkspace();
         try {
-          await createSession(directory);
+          created = await createSession(directory);
         } catch (error) {
           await window.desktop!.removeWorkspace(directory);
           throw error;
         }
       });
-      return;
+      return created;
     }
     const path =
       (away ? undefined : selected?.projectPath) ?? projects[0] ?? sessions[0]?.projectPath;
-    if (path) await createInProject(path);
-    else await addProject();
+    if (path) return createInProject(path);
+    await addProject();
+  }
+  // The home page is a new session not yet made (spec §5.11): its first message makes it, then goes to it. The
+  // words stay in the box until the session exists, so nothing written is lost if making it fails.
+  const [homeDraft, setHomeDraft] = useState('');
+  async function startSession(text: string) {
+    const sessionId = await newSession();
+    if (!sessionId) return;
+    setHomeDraft('');
+    setFocusDraftSession(sessionId);
+    await act(async () => {
+      await client.request({ type: 'message.send', sessionId, text, scenario });
+    });
   }
   // A due task is an ordinary message: to its session once that is idle, or to a session made for it. It is
   // never queued into a run, and waits while this window's native terminal is open.
@@ -1486,12 +1531,16 @@ export function App({
           run: openServerUpgrade,
         }
       : undefined;
-  // The rail shows its button only for an update that exists, not for the standing offer to look for one.
+  // The update button shows only for an update that exists, not for the standing offer to look for one.
   const pendingUpdate = upgrade
     ? `客户端可升级到 ${upgrade}`
     : update && ['available', 'manual', 'installing', 'restarting'].includes(update.state)
       ? (serviceUpdate?.label ?? null)
       : null;
+  const updateLabel = host.serviceManagement ? (managedNotice ?? pendingUpdate) : null;
+  const openUpdate = (position: MenuPosition) =>
+    managedNotice ? setManagedUpdateOpen(true) : setMenu({ kind: 'update', ...position });
+  const openAccount = (position: MenuPosition) => setMenu({ kind: 'settings', ...position });
   // What a menu shows beside an item that has a shortcut.
   const hint = (action: Action) =>
     (prefs.shortcuts.enabled && comboText(keyFor(prefs, action))) || undefined;
@@ -1499,8 +1548,14 @@ export function App({
     ...(host.accountManagement
       ? [
           {
-            label: `账号 · ${accountName}`,
-            icon: <UserRound />,
+            // The account as at the column's foot: the S mark, the account number, the plan.
+            label: accountName,
+            name: accountName === '账号' ? '账号' : `账号 ${accountName}`,
+            icon: (
+              <span className="side-avatar menu-avatar">
+                <BrandMark className="account-mark" />
+              </span>
+            ),
             detail: signedOut
               ? '请在 Ubuntu 服务端登录 Claude Code'
               : (state.account?.subscriptionType ??
@@ -1530,6 +1585,12 @@ export function App({
     },
   ];
   const toggleSide = () => setSideOpen((value) => !value);
+  // The search lives in the conversations' side column: go there, open the column, then the field.
+  const openSearch = () => {
+    if (place.page !== 'chat') open('chat');
+    setSideOpen(true);
+    setSearchAsked(true);
+  };
   const openTerminal = () => {
     if (terminalSessionId) {
       terminalWorkspace.current?.show(selected?.id);
@@ -1667,6 +1728,7 @@ export function App({
       forward: !terminalsActive && (() => step(1)),
       toggleSide,
       newSession: canCreate && (() => void newSession()),
+      search: openSearch,
       settings: () => open('settings'),
       find:
         !!selected &&
@@ -1879,6 +1941,24 @@ export function App({
                     label: menu.label,
                     items: barMenus.find((item) => item.label === menu.label)?.items ?? [],
                   };
+  // The account at the foot of every page's side column; it also tells whether the connection holds.
+  const accountArea = (
+    <AccountArea
+      name={accountName}
+      plan={
+        signedOut
+          ? undefined
+          : (state.account?.subscriptionType ?? capabilities?.account.subscriptionType)
+      }
+      connected={connected}
+      adapter={adapterName}
+      current={place.page === 'settings'}
+      openMenu={openAccount}
+      update={updateLabel}
+      updatePopup={managedNotice ? 'dialog' : 'menu'}
+      openUpdate={openUpdate}
+    />
+  );
   const sectionNames: Record<Section, string> = {
     account: '账号与额度',
     claude: 'Claude Code 设置',
@@ -1890,11 +1970,12 @@ export function App({
   };
   return (
     <div
-      className={`shell ${sideOpen ? '' : 'side-closed'} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''} ${previewShown ? 'has-preview' : ''}`}
+      className={`shell ${sideOpen ? '' : 'side-closed'} ${overlay ? 'side-overlay' : ''} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''} ${previewShown ? 'has-preview' : ''}`}
       style={
         {
           '--sidebar-width': `${prefs.sidebarWidth}px`,
-          '--preview-width': `${preview.width}px`,
+          // The tree, when shown, is a column of its own beside the panes (previewLayout.ts).
+          '--preview-width': `${previewSpan(preview.width, preview.tree && previewAvailable && !!selected?.projectPath)}px`,
         } as CSSProperties
       }
     >
@@ -1917,8 +1998,6 @@ export function App({
         terminalOpen={terminalsActive}
         terminalRefreshing={refreshing}
         openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
-        connected={connected}
-        adapterName={adapterName}
         togglePreview={sidebarAvailable && place.page === 'chat' ? preview.toggle : undefined}
         previewOpen={previewShown}
       />
@@ -1948,15 +2027,19 @@ export function App({
         page={place.page}
         go={(page) => open(page)}
         schedules={host.schedules}
-        update={host.serviceManagement ? (managedNotice ?? pendingUpdate) : null}
+        newSession={() => {
+          void newSession();
+        }}
+        canCreate={canCreate}
+        search={openSearch}
+        connected={connected}
+        update={updateLabel}
         updatePopup={managedNotice ? 'dialog' : 'menu'}
-        openUpdate={(position) =>
-          managedNotice ? setManagedUpdateOpen(true) : setMenu({ kind: 'update', ...position })
-        }
-        openSettings={(position) => setMenu({ kind: 'settings', ...position })}
+        openUpdate={openUpdate}
+        openAccount={openAccount}
       />
       <Presence kind="shade">
-        {sideOpen && (
+        {overlay && sideOpen && (
           <button
             className="sidebar-shade"
             aria-label="收起侧栏"
@@ -1967,6 +2050,7 @@ export function App({
       {place.page === 'settings' ? (
         <SettingsPage
           sideOpen={sideOpen}
+          checkUpdate={window.desktop?.managedUpdate ? () => setManagedUpdateOpen(true) : undefined}
           client={client}
           capabilities={signedOut ? null : capabilities}
           browser={!!browser}
@@ -1983,6 +2067,8 @@ export function App({
           }}
           version={version}
           service={state.service}
+          backToChat={() => open('chat')}
+          footer={accountArea}
           account={
             <AccountPanel
               client={client}
@@ -2005,6 +2091,8 @@ export function App({
           sessions={sessions}
           projects={projects}
           capabilities={capabilities}
+          back={() => open('chat')}
+          footer={accountArea}
         />
       ) : (
         <>
@@ -2021,6 +2109,7 @@ export function App({
             busy={busy}
             refreshing={refreshing}
             terminalOpen={terminalsActive}
+            showTerminal={openTerminal}
             notifications={notifications}
             select={show}
             newSession={() => {
@@ -2036,8 +2125,17 @@ export function App({
               setMenu({ kind: 'session', sessionId: session.id, ...position })
             }
             projectMenu={(path, position) => setMenu({ kind: 'project', path, ...position })}
+            schedules={host.schedules}
+            openSchedules={() => open('schedules')}
+            searchHint={hint('search')}
+            searchAsked={searchAsked}
+            searchDone={searchDone}
+            footer={accountArea}
           />
-          <main className="workspace chat-workspace" ref={stopScope}>
+          <main
+            className={`workspace chat-workspace${fresh && !terminalsActive ? ' new-session' : ''}`}
+            ref={stopScope}
+          >
             {currentError && (
               <div className="error-banner" role="alert">
                 <span>{currentError}</span>
@@ -2107,6 +2205,9 @@ export function App({
                   : undefined
               }
               sideQuoteAvailable={connected && state.sideConversations}
+              resume={
+                stopped && !inputDisabled && !terminalsActive ? () => void resume() : undefined
+              }
               events={events}
               history={history}
               connected={connected}
@@ -2115,9 +2216,7 @@ export function App({
               clock={clock}
               progress={selected ? state.progress[selected.id] : undefined}
               busy={busy}
-              newSession={() => {
-                void newSession();
-              }}
+              fresh={fresh}
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={
                 controlsDisabled || away
@@ -2238,18 +2337,10 @@ export function App({
                 <p>设备“{selected.device?.name ?? '未知设备'}”未连接，当前只能查看会话。</p>
               </div>
             )}
-            {selected && (!away || remote) && !terminalsActive && !history?.loading && (
-              <RunSummary
-                session={selected}
-                events={state.events[selected.id] ?? []}
-                clock={clock}
-                connected={connected}
-                resume={stopped && !inputDisabled ? () => void resume() : undefined}
-              />
-            )}
 
             {selected && (!away || remote) && !terminalsActive && (
               <Composer
+                mascot={prefs.mascot}
                 queuedMessages={
                   <FollowUpQueue
                     key={selected.id}
@@ -2307,7 +2398,17 @@ export function App({
                 stop={stopRun}
               />
             )}
-            {selected && (!away || (browser && remote)) && !terminalsActive && (
+            {!selected && !terminalsActive && (
+              <NewSessionComposer
+                draft={homeDraft}
+                setDraft={setHomeDraft}
+                disabled={!canCreate}
+                start={(text) => {
+                  void startSession(text);
+                }}
+              />
+            )}
+            {selected && !fresh && (!away || (browser && remote)) && !terminalsActive && (
               <SessionBar
                 client={client}
                 sessionId={selected.id}
@@ -2329,6 +2430,7 @@ export function App({
             x={menu.x}
             y={menu.y}
             above={menu.above}
+            width={menu.width}
             onClose={closeMenu}
             items={openMenu.items}
           />

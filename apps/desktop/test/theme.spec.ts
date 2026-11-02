@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
-import type { Locator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { resolve } from 'node:path';
-import { createSession, login, screenshots, sessionAction } from './helpers.ts';
+import { contrast, createSession, login, screenshots, sessionAction } from './helpers.ts';
 
 async function interfaceSize(page: Page, size: number) {
   await page.evaluate(async (size) => {
@@ -13,26 +13,6 @@ async function interfaceSize(page: Page, size: number) {
     }));
   }, size);
   await expect(page.locator('html')).toHaveCSS('font-size', `${size}px`);
-}
-
-async function contrast(control: Locator) {
-  return control.evaluate((element) => {
-    const style = getComputedStyle(element);
-    const luminance = (color: string) => {
-      const [r, g, b] = color
-        .match(/\d+/g)!
-        .slice(0, 3)
-        .map(Number)
-        .map((channel) => {
-          const value = channel / 255;
-          return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
-        });
-      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
-    };
-    const text = luminance(style.color),
-      background = luminance(style.backgroundColor);
-    return (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05);
-  });
 }
 
 test('theme previews fit narrow windows and preserve radio keyboard navigation', async ({
@@ -132,8 +112,8 @@ test('terminal close and update icons remain readable in both themes without a r
     expect
       .soft(await contrast(close), `terminal close hover in ${theme}`)
       .toBeGreaterThanOrEqual(3);
-    await expect.soft(close).toHaveCSS('color', 'rgb(222, 220, 214)');
-    await expect.soft(close).toHaveCSS('background-color', 'rgb(32, 32, 30)');
+    await expect.soft(close).toHaveCSS('color', 'rgb(250, 249, 245)');
+    await expect.soft(close).toHaveCSS('background-color', 'rgba(250, 249, 245, 0.07)');
     await update.hover();
     expect.soft(await contrast(update), `update hover in ${theme}`).toBeGreaterThanOrEqual(3);
   }
@@ -191,32 +171,38 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
           .map((animation) => animation.finished),
       );
     });
+    // The rail and side column are one frame; the page is a sheet of a different tone resting on it.
     const palette = await colors();
-    expect(new Set(palette).size).toBe(3);
+    expect(palette[1]).toBe(palette[0]);
+    expect(palette[2]).not.toBe(palette[0]);
     for (const button of [
       page.getByRole('button', { name: '收起侧栏', exact: true }),
-      page.getByRole('button', { name: '会话', exact: true }),
+      page.getByRole('button', { name: '返回会话', exact: true }),
     ]) {
       await button.hover();
       expect
         .soft(await button.evaluate((element) => getComputedStyle(element).backgroundColor), name)
         .not.toBe(palette[0]);
     }
-    await expect.soft(page.locator('.sidebar')).toHaveCSS('border-top-left-radius', '14px');
-    for (const destination of ['会话', '定时任务']) {
+    await expect.soft(page.locator('.sidebar')).toHaveCSS('border-top-left-radius', '0px');
+    await expect.soft(page.locator('.workspace')).toHaveCSS('border-top-left-radius', '12px');
+    // Back to the conversations from the settings' column, then on to the schedules from theirs.
+    for (const destination of ['返回会话', '定时任务']) {
       await page.getByRole('button', { name: destination, exact: true }).click();
       expect(await colors()).toEqual(palette);
       await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
       await expect(page.locator('.sidebar')).toBeHidden();
-      await expect(page.locator('.workspace')).toHaveCSS('border-top-left-radius', '14px');
+      await expect(page.locator('.workspace')).toHaveCSS('border-top-left-radius', '12px');
       await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
     }
     await page.setViewportSize({ width: 390, height: 600 });
     await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
     await expect(page.locator('.sidebar')).toBeVisible();
-    await expect.poll(async () => (await page.locator('.sidebar').boundingBox())?.x).toBe(44);
+    // Open on a narrow window, the column is laid over the page from the edge, over the rail.
+    await expect.poll(async () => (await page.locator('.sidebar').boundingBox())?.x).toBe(0);
+    await expect(page.locator('.rail')).toBeHidden();
     const panel = (await page.locator('.sidebar').boundingBox())!;
-    expect(panel.x).toBe(44);
+    expect(panel.x).toBe(0);
     expect(panel.y).toBe(40);
     expect(panel.x + panel.width).toBeLessThanOrEqual(390);
     await page.screenshot({ path: resolve(screenshots, `theme-drawer-${name}.png`) });

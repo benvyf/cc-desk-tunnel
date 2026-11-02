@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
-import { usePreviewWorkspace } from '../../src/preview.ts';
+import { previewSpan, usePreviewWorkspace } from '../../src/preview.ts';
 import { linkTarget } from '../../src/links.ts';
 import type { PreviewBrowserState, PreviewFile } from '../../src/preview.ts';
 import { Button } from '../../src/ui.tsx';
@@ -401,7 +401,7 @@ function Fixture() {
   ) : (
     <div
       className={`shell side-closed ${board.expanded ? 'has-preview' : ''}`}
-      style={{ '--preview-width': `${board.width}px` } as CSSProperties}
+      style={{ '--preview-width': `${previewSpan(board.width, board.tree)}px` } as CSSProperties}
     >
       <header className="titlebar">
         <Button data-preview-toggle onClick={board.toggle}>

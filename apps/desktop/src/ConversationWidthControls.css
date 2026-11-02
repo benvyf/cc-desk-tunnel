@@ -23,10 +23,10 @@
   outline: none;
 }
 .chat-width-handle[data-chat-width-handle='left'] {
-  right: calc(50% + var(--chat-content-width, 820px) / 2 + 12px);
+  right: calc(50% + var(--chat-content-width, 768px) / 2 + 12px);
 }
 .chat-width-handle[data-chat-width-handle='right'] {
-  left: calc(50% + var(--chat-content-width, 820px) / 2 + 12px);
+  left: calc(50% + var(--chat-content-width, 768px) / 2 + 12px);
 }
 .chat-width-handle::after {
   content: '';

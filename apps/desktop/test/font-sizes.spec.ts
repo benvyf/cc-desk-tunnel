@@ -8,6 +8,9 @@ async function settings(page: Page) {
   await page.keyboard.press('Control+Comma');
 }
 
+// The user's words (bubble and composer) are a step above body text: 15px at the default 14px interface size.
+const user = (size: number) => `${+((size * 15) / 14).toFixed(4)}px`;
+
 async function samples(page: Page) {
   await page.evaluate(async () => {
     const path = '/test/fixtures/font-samples.tsx';
@@ -27,16 +30,16 @@ test('interface and code sizes update independently, survive reload, reject unfi
   const prose = page.locator('.font-size-samples .message.user p');
   const block = page.locator('.font-size-samples .code-block pre');
   const inline = page.locator('.font-size-samples p code');
-  const input = page.locator('.font-size-samples .tool-input');
-  await expect(prose).toHaveCSS('font-size', '14px');
+  const input = page.locator('.font-size-samples .tool-input .tool-command');
+  await expect(prose).toHaveCSS('font-size', user(14));
   await expect(block).toHaveCSS('font-size', '13px');
   await ui.fill('18');
-  await expect(prose).toHaveCSS('font-size', '18px');
+  await expect(prose).toHaveCSS('font-size', user(18));
   await expect(block).toHaveCSS('font-size', '13px');
   await code.fill('16');
   for (const content of [block, inline, input])
     await expect(content).toHaveCSS('font-size', '16px');
-  await expect(prose).toHaveCSS('font-size', '18px');
+  await expect(prose).toHaveCSS('font-size', user(18));
   await ui.fill('');
   await code.focus();
   await expect(ui).toHaveValue('18');
@@ -58,12 +61,12 @@ test('interface and code sizes update independently, survive reload, reject unfi
   await expect(ui).toHaveValue('18');
   await expect(code).toHaveValue('16');
   await samples(page);
-  await expect(prose).toHaveCSS('font-size', '18px');
+  await expect(prose).toHaveCSS('font-size', user(18));
   await expect(block).toHaveCSS('font-size', '16px');
   await page.getByRole('button', { name: '恢复默认字号', exact: true }).click();
   await expect(ui).toHaveValue('14');
   await expect(code).toHaveValue('13');
-  await expect(prose).toHaveCSS('font-size', '14px');
+  await expect(prose).toHaveCSS('font-size', user(14));
   await expect(block).toHaveCSS('font-size', '13px');
 });
 
@@ -86,7 +89,7 @@ test('saved font values validate independently and maximum code does not widen a
   );
   await samples(page);
   await page.setViewportSize({ width: 320, height: 800 });
-  await expect(page.locator('.font-size-samples .message.user p')).toHaveCSS('font-size', '14px');
+  await expect(page.locator('.font-size-samples .message.user p')).toHaveCSS('font-size', user(14));
   await expect(page.locator('.font-size-samples .code-block pre')).toHaveCSS('font-size', '24px');
   const copy = page
     .locator('.font-size-samples')
@@ -133,7 +136,7 @@ test('a live interface size change refits a mounted draft without typing or resi
       fontSizes: { ...prefs.fontSizes, interface: 20 },
     }));
   });
-  await expect(draft).toHaveCSS('font-size', '20px');
+  await expect(draft).toHaveCSS('font-size', user(20));
   await expect.poll(() => draft.evaluate((box) => box.clientHeight)).toBeGreaterThan(before);
   expect(await draft.evaluate((box) => box.scrollHeight - box.clientHeight)).toBeLessThanOrEqual(1);
   await page.evaluate(async () => {
@@ -145,4 +148,64 @@ test('a live interface size change refits a mounted draft without typing or resi
     }));
   });
   await expect.poll(() => draft.evaluate((box) => box.clientHeight)).toBe(before);
+});
+
+test('the reply face is chosen in Appearance, ships its Chinese serif, survives reload and leaves titles serif', async ({
+  page,
+}) => {
+  await settings(page);
+  const faces = page.getByRole('radiogroup', { name: '回复字体', exact: true });
+  const face = (name: string) => faces.getByRole('radio', { name, exact: true });
+  await expect(face('衬线')).toHaveAttribute('aria-checked', 'true');
+  await samples(page);
+  const reply = page.locator('.font-size-samples .message.assistant p');
+  const title = page.locator('.page-title');
+  const family = (target: typeof reply) =>
+    target.evaluate((node) => getComputedStyle(node).fontFamily);
+  expect(await family(reply)).toMatch(/^"CC Serif", .*"CC Serif SC"/);
+  // The bundled Chinese serif loads, in both of its weights, and holds the characters of a reply.
+  const loaded = await page.evaluate(async () =>
+    Promise.all(
+      ['400', '600'].map(async (weight) => {
+        const fonts = await document.fonts.load(`${weight} 16px "CC Serif SC"`, '回复字体');
+        return fonts.map((font) => `${font.weight} ${font.status}`).join();
+      }),
+    ),
+  );
+  expect(loaded).toEqual(['400 loaded', '600 loaded']);
+  expect(
+    await page.evaluate(() => document.fonts.check('16px "CC Serif SC"', '这是简体中文回复')),
+  ).toBe(true);
+
+  await face('混排').click();
+  await expect(page.locator('html')).toHaveAttribute('data-reply-font', 'mixed');
+  await expect(faces.locator('xpath=../span/small')).toHaveText('英文 Newsreader，中文与界面相同');
+  expect(await family(reply)).toMatch(/^"CC Serif", "Microsoft YaHei UI"/);
+  expect(await family(reply)).not.toContain('CC Serif SC');
+  // Titles and the greeting keep the serif whatever replies use.
+  expect(await family(title)).toContain('CC Serif SC');
+
+  await face('混排').press('ArrowRight');
+  await expect(face('与界面一致')).toBeFocused();
+  await expect(face('与界面一致')).toHaveAttribute('aria-checked', 'true');
+  expect(await family(reply)).toBe(
+    await page.locator('body').evaluate((node) => getComputedStyle(node).fontFamily),
+  );
+  expect(await family(title)).toContain('CC Serif SC');
+  expect(await page.evaluate(() => JSON.parse(localStorage['proxy-prefs']).replyFont)).toBe('ui');
+
+  await settings(page);
+  await expect(face('与界面一致')).toHaveAttribute('aria-checked', 'true');
+  await expect(page.locator('html')).toHaveAttribute('data-reply-font', 'ui');
+  await face('与界面一致').press('End');
+  await face('与界面一致').press('Home');
+  await expect(face('衬线')).toBeFocused();
+  await expect(page.locator('html')).toHaveAttribute('data-reply-font', 'serif');
+  // An unknown saved value falls back to the serif.
+  await page.evaluate(() => {
+    const prefs = JSON.parse(localStorage['proxy-prefs']);
+    localStorage['proxy-prefs'] = JSON.stringify({ ...prefs, replyFont: 'comic' });
+  });
+  await settings(page);
+  await expect(face('衬线')).toHaveAttribute('aria-checked', 'true');
 });

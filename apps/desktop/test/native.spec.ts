@@ -116,7 +116,7 @@ test('official subscription: account metrics, Windows execution, running input, 
     await expect(account.locator('.quota-row')).not.toHaveCount(0);
     await expect(account.locator('.quota-row').first()).toContainText('重置');
     await page.screenshot({ path: resolve('.local/screenshots/subscription-account.png') });
-    await page.getByRole('button', { name: '会话', exact: true }).click();
+    await page.getByRole('button', { name: '返回会话', exact: true }).click();
 
     await page.getByRole('button', { name: '模型与推理强度', exact: true }).click();
     await page.locator('.model-current').click();

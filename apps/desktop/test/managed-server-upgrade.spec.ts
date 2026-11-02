@@ -214,7 +214,20 @@ test('legacy management failure shows concise text and spaced footer buttons', a
   const a = (await reconnect.boundingBox())!;
   const b = (await manager.boundingBox())!;
   expect(Math.abs(a.y - b.y)).toBeLessThan(1);
-  expect(b.x - a.x - a.width).toBeCloseTo(8, 0);
+  // The main action (重新连接) last, at the right (spec §5.5), the buttons 8px apart.
+  await expect(dialog.locator('.setting-actions button').last()).toHaveText('重新连接');
+  expect(a.x).toBeGreaterThan(b.x + b.width);
+  const gaps = await dialog
+    .locator('.setting-actions button')
+    .evaluateAll((nodes) =>
+      nodes
+        .slice(1)
+        .map(
+          (node, index) =>
+            node.getBoundingClientRect().left - nodes[index].getBoundingClientRect().right,
+        ),
+    );
+  for (const gap of gaps) expect(gap).toBeCloseTo(8, 0);
   await dialog.screenshot({ path: testInfo.outputPath('server-update-missing-credential.png') });
   await page.setViewportSize({ width: 320, height: 560 });
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);

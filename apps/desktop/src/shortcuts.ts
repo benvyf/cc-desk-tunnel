@@ -8,6 +8,7 @@ export type Action =
   | 'forward'
   | 'toggleSide'
   | 'newSession'
+  | 'search'
   | 'settings'
   | 'find'
   | 'zoomIn'
@@ -19,6 +20,7 @@ export const actions: { id: Action; name: string; desktop?: boolean }[] = [
   { id: 'forward', name: '前进' },
   { id: 'toggleSide', name: '收起或展开侧栏' },
   { id: 'newSession', name: '新建会话' },
+  { id: 'search', name: '搜索会话' },
   { id: 'settings', name: '打开设置' },
   { id: 'find', name: '查找对话内容' },
   { id: 'zoomIn', name: '放大界面', desktop: true },
@@ -30,6 +32,7 @@ const defaults: Record<Action, string> = {
   forward: 'Alt+ArrowRight',
   toggleSide: 'Ctrl+KeyB',
   newSession: 'Ctrl+KeyN',
+  search: 'Ctrl+KeyK',
   settings: 'Ctrl+Comma',
   find: 'Ctrl+KeyF',
   zoomIn: 'Ctrl+Equal',

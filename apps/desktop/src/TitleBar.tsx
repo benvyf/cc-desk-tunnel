@@ -5,7 +5,8 @@ import type { MenuItem, MenuPosition } from './ui.tsx';
 export type BarMenu = { label: string; items: MenuItem[] };
 
 // The window's own top edge: it is the drag handle of the frameless desktop window, and carries the way back,
-// the side column's switch, the menus and the state of the connection.
+// the side column's switch and the menus. The state of the connection is told by the account at the foot of the
+// side column.
 export default function TitleBar({
   title,
   back,
@@ -14,8 +15,6 @@ export default function TitleBar({
   toggleSide,
   menus,
   openMenu,
-  connected,
-  adapterName,
   openTerminal,
   terminalAvailable = false,
   terminalOpen = false,
@@ -31,8 +30,6 @@ export default function TitleBar({
   toggleSide: () => void;
   menus: BarMenu[];
   openMenu: (menu: BarMenu, position: MenuPosition) => void;
-  connected: boolean;
-  adapterName: string;
   openTerminal?: () => void;
   terminalAvailable?: boolean;
   terminalOpen?: boolean;
@@ -91,11 +88,6 @@ export default function TitleBar({
         </IconButton>
       )}
       <h1>{title}</h1>
-      <span className="connection-status" title={adapterName}>
-        <span className={`connection-dot ${connected ? 'online' : ''}`} />
-        <span>{connected ? '已连接' : '重连中'}</span>
-        <small>{adapterName}</small>
-      </span>
     </header>
   );
 }

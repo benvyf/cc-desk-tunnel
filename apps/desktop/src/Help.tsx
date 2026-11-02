@@ -92,9 +92,27 @@ export default function Help() {
     <section className="page" aria-label="帮助">
       <div className="page-body">
         <h1 className="page-title">帮助</h1>
-        {topics.map((topic) => (
+        {/* Eight topics and the keys run long; their titles first, each going to its part of the page. */}
+        <nav className="help-toc" aria-label="帮助目录">
+          {[...topics.map((topic) => topic.title), '按键'].map((title, index) => (
+            <button
+              type="button"
+              key={title}
+              onClick={() =>
+                document
+                  .getElementById(`help-${index}`)
+                  ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+              }
+            >
+              {title}
+            </button>
+          ))}
+        </nav>
+        {topics.map((topic, index) => (
           <div key={topic.title}>
-            <h2 className="page-heading">{topic.title}</h2>
+            <h2 className="page-heading" id={`help-${index}`}>
+              {topic.title}
+            </h2>
             <div className="card help-text">
               {topic.lines.map((line) => (
                 <p key={line}>{line}</p>
@@ -102,7 +120,9 @@ export default function Help() {
             </div>
           </div>
         ))}
-        <h2 className="page-heading">按键</h2>
+        <h2 className="page-heading" id={`help-${topics.length}`}>
+          按键
+        </h2>
         <dl className="card key-list">
           {keys.map(([key, use]) => (
             <div key={key}>

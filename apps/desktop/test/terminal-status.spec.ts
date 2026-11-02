@@ -107,9 +107,10 @@ test('terminal entry waits for status reading and does not start another read on
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
   await expect(page.locator('.native-terminal')).toBeVisible();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   await page.getByRole('button', { name: '定时任务', exact: true }).click();
   await expect(page.locator('.native-terminal')).toBeVisible();
-  await page.getByRole('button', { name: '会话', exact: true }).click();
+  await page.getByRole('button', { name: '返回会话', exact: true }).click();
   expect(commands.filter((c) => c.type === 'terminal.open')).toHaveLength(1);
   expect(commands.filter((c) => c.type === 'terminal.close')).toHaveLength(0);
   endTerminal();

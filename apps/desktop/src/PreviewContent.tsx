@@ -8,6 +8,7 @@ import {
   RefreshCw,
 } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
+import { SegmentedControl } from './SegmentedControl.tsx';
 import RichText from './RichText.tsx';
 import PreviewCode from './PreviewCode.tsx';
 import { CopyButton } from './copy.tsx';
@@ -325,6 +326,14 @@ export default function PreviewContent({
     };
   }, [tab.id, tab.kind, watchPath, watchRoot, surface]);
   const native = tab.kind === 'web' || (file?.kind === 'html' && !source);
+  // The path row names the file: inside the workspace it is relative to it, and the folders give way before the
+  // file's name does; the whole path stays in the tip and in what is copied.
+  const fullPath = file?.path ?? tab.target;
+  const shownPath =
+    tab.root && isInside(fullPath, [tab.root])
+      ? fullPath.slice(tab.root.replace(/[\\/]+$/, '').length + 1)
+      : fullPath;
+  const nameAt = Math.max(shownPath.lastIndexOf('/'), shownPath.lastIndexOf('\\')) + 1;
   const switchable =
     tab.kind === 'file' &&
     (file
@@ -388,32 +397,25 @@ export default function PreviewContent({
             </form>
           </>
         ) : (
-          <span className="preview-path" title={file?.path ?? tab.target}>
-            {file?.path ?? tab.target}
+          <span className="preview-path" title={fullPath}>
+            {nameAt > 0 && (
+              <span className="preview-path-folder">{shownPath.slice(0, nameAt)}</span>
+            )}
+            <span className="preview-path-name">{shownPath.slice(nameAt)}</span>
           </span>
         )}
-        <IconButton
-          title="刷新预览"
-          size="sm"
-          onClick={() =>
-            tab.kind === 'web' ? action('reload') : setRevision((value) => value + 1)
-          }
-        >
-          <RefreshCw className={browser?.loading && native ? 'spinning' : ''} />
-        </IconButton>
-        <CopyButton
-          label={tab.kind === 'web' ? '复制网站地址' : '复制文件路径'}
-          text={() =>
-            tab.kind === 'web' ? browser?.url || tab.target : (file?.path ?? tab.target)
-          }
-        />
+        {/* Preview or source, as Claude's artifacts offer it: a two-way control, before the row's icons. */}
         {switchable && (
-          <Button
-            size="sm"
-            variant="ghost"
-            title={source ? '切换到预览' : '查看源码'}
-            disabled={!file}
-            onClick={() => {
+          <SegmentedControl
+            label="显示方式"
+            className="preview-mode"
+            value={source ? 'source' : 'preview'}
+            options={[
+              { value: 'preview', label: '预览', disabled: !file },
+              { value: 'source', label: '源码', disabled: !file },
+            ]}
+            onChange={(value) => {
+              if ((value === 'source') === source) return;
               captureReading();
               if (navigation) workspace.navigated.mark(tab.id, navigation.id);
               workspace.sourceMode.set(tab.id, !source);
@@ -432,10 +434,23 @@ export default function PreviewContent({
               }
               setSource(!source);
             }}
-          >
-            {source ? '预览' : '源码'}
-          </Button>
+          />
         )}
+        <IconButton
+          title="刷新预览"
+          size="sm"
+          onClick={() =>
+            tab.kind === 'web' ? action('reload') : setRevision((value) => value + 1)
+          }
+        >
+          <RefreshCw className={browser?.loading && native ? 'spinning' : ''} />
+        </IconButton>
+        <CopyButton
+          label={tab.kind === 'web' ? '复制网站地址' : '复制文件路径'}
+          text={() =>
+            tab.kind === 'web' ? browser?.url || tab.target : (file?.path ?? tab.target)
+          }
+        />
         <IconButton
           title="在系统应用中打开"
           size="sm"

@@ -381,6 +381,58 @@ test('native terminal focuses keyboard input and acknowledges rendered output', 
   await expect.poll(() => page.evaluate(() => window.terminalFixture.closed)).toBe(1);
 });
 
+test('the canvas and its ANSI colours come from the terminal tokens of the stylesheet', async ({
+  page,
+}) => {
+  await mount(page);
+  await page.evaluate(() =>
+    window.terminalFixture.receive({
+      type: 'terminal.data',
+      data: '\x1b[31mred\x1b[0m \x1b[92mgreen\x1b[0m plain\r\n',
+      bytes: 32,
+    }),
+  );
+  await expect(page.locator('.xterm-rows')).toContainText('plain');
+  const token = (name: string) =>
+    page.evaluate((name) => {
+      const probe = document.createElement('i');
+      probe.style.color = `var(${name})`;
+      document.body.append(probe);
+      const color = getComputedStyle(probe).color;
+      probe.remove();
+      return color;
+    }, name);
+  const colour = (text: string) =>
+    page
+      .locator('.xterm-rows span')
+      .filter({ hasText: new RegExp(`^${text}$`) })
+      .evaluate((node) => getComputedStyle(node).color);
+  // xterm paints its theme on the scrolling area; the viewport behind the inset takes the same token, and the
+  // terminal's own edge shows that colour rather than xterm.css's black.
+  const background = await token('--terminal-bg');
+  expect(
+    await page
+      .locator('.xterm-scrollable-element')
+      .evaluate((node: HTMLElement) => node.style.backgroundColor),
+  ).toBe(background);
+  expect(
+    await page
+      .locator('.xterm-viewport')
+      .evaluate((node) => getComputedStyle(node).backgroundColor),
+  ).toBe(background);
+  const edge = await page.evaluate(() => {
+    const box = document.querySelector('.terminal-host .xterm')!.getBoundingClientRect();
+    return getComputedStyle(document.elementFromPoint(box.left + 30, box.bottom - 2)!)
+      .backgroundColor;
+  });
+  expect(edge).toBe(background);
+  expect(await page.locator('.xterm-rows').evaluate((node) => getComputedStyle(node).color)).toBe(
+    await token('--terminal-fg'),
+  );
+  expect(await colour('red')).toBe(await token('--terminal-red'));
+  expect(await colour('green')).toBe(await token('--terminal-bright-green'));
+});
+
 test('native terminal closes a process whose open reply arrives after unmount', async ({
   page,
 }) => {

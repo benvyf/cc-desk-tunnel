@@ -1,77 +1,144 @@
 /* Every colour, corner and shadow the interface uses is named here, each colour with its light and its dark
-   value. The page follows the system's choice unless the settings make it always one (`theme` in prefs.ts). */
+   value. The page follows the system's choice unless the settings make it always one (`theme` in prefs.ts).
+   The palette is Claude's classic one: warm ivory paper on a slightly darker frame, warm charcoal at night. */
+/* Newsreader (OFL), Latin with optical sizes: the serif of replies, page titles and dialogs that are read. */
+@font-face {
+  font-family: 'CC Serif';
+  src: url('./fonts/newsreader-latin-opsz-normal.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: normal;
+  font-display: swap;
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC,
+    U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+@font-face {
+  font-family: 'CC Serif';
+  src: url('./fonts/newsreader-latin-opsz-italic.woff2') format('woff2');
+  font-weight: 200 800;
+  font-style: italic;
+  font-display: swap;
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F;
+}
+/* Noto Serif SC (Source Han Serif, OFL), cut down to the GB2312 characters: the Chinese of replies, page titles
+   and dialogs, regular and semibold. What it lacks falls to the interface's Chinese face. */
+@font-face {
+  font-family: 'CC Serif SC';
+  src: url('./fonts/noto-serif-sc-gb2312-400.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'CC Serif SC';
+  src: url('./fonts/noto-serif-sc-gb2312-600.woff2') format('woff2');
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+}
 :root,
 .theme-preview {
-  /* Four quiet surfaces: shell, page, cards, then inputs and floating content. */
-  --surface-0: light-dark(#f5f5f3, #0b0b0a);
-  --surface-1: light-dark(#fcfcfb, #151515);
-  --surface-2: light-dark(#ffffff, #1a1a19);
-  --surface-3: light-dark(#ffffff, #20201e);
-  /* Keep the navigation rail, sidebar and main page visibly separate. */
-  --chrome: light-dark(#eeede9, #0b0b0a);
-  --side: light-dark(#f5f5f3, #111110);
-  --line: light-dark(#e5e4df, #2c2c29);
-  --line-soft: light-dark(#eeede9, #242422);
+  /* The frame (title bar, rail and side column), the page that rests on it, then cards, inputs and popovers. */
+  --frame: light-dark(#f5f4ed, #1f1e1d);
+  --surface-0: var(--frame);
+  --surface-1: light-dark(#faf9f5, #262624);
+  --surface-2: light-dark(#ffffff, #30302e);
+  --surface-3: light-dark(#ffffff, #30302e);
+  --chrome: var(--frame);
+  --side: var(--frame);
+  /* Hairlines are translucent ink, so they sit right on every surface. */
+  --line: light-dark(rgb(31 30 29 / 15%), rgb(222 220 209 / 15%));
+  --line-soft: light-dark(rgb(31 30 29 / 8%), rgb(222 220 209 / 9%));
 }
 :root {
   color-scheme: light dark;
+  /* Controls and lists use the interface face; what Claude writes uses the serif; code is monospaced.
+     Replies follow the settings (`data-reply-font`, below): the serif, the Latin serif with the interface's
+     Chinese, or the interface face itself. Titles and the greeting keep the serif. */
+  --font-ui:
+    'Segoe UI Variable Text', 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC',
+    system-ui, sans-serif;
+  --font-reply-serif:
+    'CC Serif', 'Noto Serif SC', 'Source Han Serif SC', 'Noto Serif CJK SC', 'CC Serif SC',
+    'Songti SC', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', serif;
+  --font-reply-mixed:
+    'CC Serif', 'Microsoft YaHei UI', 'Microsoft YaHei', 'PingFang SC', system-ui, sans-serif;
+  --font-reply: var(--font-reply-serif);
+  --font-display: var(--font-reply-serif);
+  --font-mono: 'Cascadia Mono', 'JetBrains Mono', Consolas, 'Microsoft YaHei UI', monospace;
   --surface: var(--surface-2);
   /* What floats over the page: menus, dialogs and tips. */
   --raised: var(--surface-3);
-  --hover: light-dark(#eeede9, #292927);
-  --selected: light-dark(#e7e5df, #30302d);
-  --segmented-bg: light-dark(#e9e9e9, #252525);
-  --segmented-active: light-dark(#ffffff, #444444);
-  --segmented-shadow: 0 1px 3px light-dark(#00000012, #00000026);
-  --line-strong: light-dark(#c7c5be, #50504b);
-  --text: light-dark(#20201e, #dedcd6);
-  --text-2: light-dark(#373634, #c5c3bc);
-  --muted: light-dark(#6b6863, #a4a19b);
-  --faint: light-dark(#76736c, #94918a);
-  /* The solid buttons: sending, and a dialog's main answer. */
+  --popover: light-dark(#ffffff, #30302e);
+  --hover: light-dark(rgb(20 20 19 / 5%), rgb(250 249 245 / 6%));
+  --selected: light-dark(rgb(20 20 19 / 8%), rgb(250 249 245 / 10%));
+  --segmented-bg: light-dark(rgb(20 20 19 / 6%), rgb(0 0 0 / 22%));
+  --segmented-active: light-dark(#ffffff, #45443f);
+  --segmented-shadow:
+    0 1px 2px light-dark(rgb(0 0 0 / 8%), rgb(0 0 0 / 35%)), 0 0 0 0.5px var(--line);
+  --line-strong: light-dark(rgb(31 30 29 / 30%), rgb(222 220 209 / 28%));
+  --text: light-dark(#141413, #faf9f5);
+  --text-2: light-dark(#3d3d3a, #c2c0b6);
+  --muted: light-dark(#6b6a64, #9c9a92);
+  --faint: light-dark(#7a7871, #8e8c84);
+  /* Clay is the signature, not the paint: the brand, sending, a new session and what is running. */
   --clay: #d97757;
-  --clay-emphasized: #cc5a36;
-  --clay-light: #fbf3ef;
-  /* Solid clay retains 4.5:1 contrast with small, light button labels. */
-  --ink: #b75536;
-  --ink-hover: #a34427;
-  --ink-text: #ffffff;
-  --ink-off: light-dark(#c7c5be, #50504b);
+  --clay-emphasized: #c6613f;
+  --clay-light: #f9ede7;
+  --send: #c6613f;
+  --send-hover: #b4552f;
+  /* The solid buttons answer in ink, as in Claude: dark on the light page, ivory on the dark one. */
+  --ink: light-dark(#1f1e1d, #faf9f5);
+  --ink-hover: light-dark(#3d3d3a, #e8e6dc);
+  --ink-text: light-dark(#faf9f5, #1f1e1d);
+  --ink-off: light-dark(rgb(20 20 19 / 10%), rgb(250 249 245 / 12%));
   /* Small text uses a darker clay in light mode to retain readable contrast. */
-  --accent: light-dark(#a34427, #d97757);
-  --accent-strong: light-dark(#903b22, #e89576);
-  --accent-soft: light-dark(var(--clay-light), #30211b);
-  --danger: light-dark(#c23b47, #e5646f);
-  --danger-solid: #c23b47;
-  --danger-text: light-dark(#ac2b37, #f08a93);
-  --danger-soft: light-dark(#fff1f2, #3a2227);
-  --danger-line: light-dark(#f0d4d6, #5a2e34);
-  --warn: light-dark(#b98a1f, #d8a843);
-  --warn-text: light-dark(#87631d, #e0bd6a);
-  --warn-soft: light-dark(#fff9e9, #33291a);
-  --warn-line: light-dark(#eadbb0, #574627);
-  --ok: light-dark(#2f9a6d, #4cbb88);
-  --ok-text: light-dark(#417d65, #7cc4a4);
-  --ok-soft: light-dark(#edf3f0, #1f3229);
+  --accent: light-dark(#a9502c, #e08463);
+  --accent-strong: light-dark(#9a4526, #eba487);
+  --accent-soft: light-dark(#f9ede7, #3a2a22);
+  /* Keyboard focus is blue, apart from the brand, so it never reads as a state. */
+  --focus: light-dark(#2c84db, #61aaf2);
+  --focus-halo: light-dark(rgb(44 132 219 / 18%), rgb(97 170 242 / 24%));
+  --danger: light-dark(#b53333, #e06c6c);
+  --danger-solid: #b53333;
+  --danger-text: light-dark(#a02b2b, #f08a8a);
+  --danger-soft: light-dark(#fbeceb, #3a2322);
+  --danger-line: light-dark(#efcfcc, #5c302e);
+  /* Amber is for what waits on the user: an approval, a question, a quota running out. */
+  --warn: light-dark(#a9740f, #e0a43c);
+  --warn-text: light-dark(#8a5b0b, #e8bd6a);
+  --warn-soft: light-dark(#fbf3e2, #352a1a);
+  --warn-line: light-dark(#ecd9ad, #574627);
+  --ok: light-dark(#3f7d45, #7cbf86);
+  --ok-text: light-dark(#356b3b, #8fcb98);
+  --ok-soft: light-dark(#edf3ea, #22301f);
   /* A step that failed, and the lines a change adds and removes. */
-  --fail: light-dark(#b4532f, #e58a63);
-  --added: light-dark(#2c8a57, #5cc98e);
-  --tool-icon: light-dark(#658077, #8fa89f);
-  --tool-text: light-dark(#56635e, #a4b0ab);
-  --selection: light-dark(#f1d3c5, #633d2c);
-  --selection-text: light-dark(#373634, #fbf3ef);
-  --match: light-dark(#fff0a8, #6b5a1c);
-  --match-current: light-dark(#f5b95c, #a8691d);
-  --match-text: light-dark(#20201e, #ffffff);
-  --backdrop: light-dark(#20201e52, #00000099);
+  --fail: light-dark(#b53333, #e57b6e);
+  --added: light-dark(#3f7d45, #7cbf86);
+  --tool-icon: var(--muted);
+  --tool-text: var(--text-2);
+  --selection: light-dark(#f3d9cc, #5c3a2b);
+  --selection-text: var(--text);
+  --match: light-dark(#f6e3a3, #6b5a1c);
+  --match-current: light-dark(#eebd6a, #a8691d);
+  --match-text: var(--text);
+  --backdrop: light-dark(rgb(20 20 19 / 28%), rgb(0 0 0 / 55%));
   /* Rounded component tiers; miniature previews and chart marks keep their own scale. */
-  --radius-xs: 5px;
+  --radius-xs: 4px;
   --radius-sm: 6px;
   --radius-md: 8px;
-  --radius-lg: 10px;
-  --radius-xl: 14px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
   --radius-2xl: 20px;
   --radius-full: 999px;
+  /* Stacking tiers (spec §3): content, sticky headers, the side column, popovers, dialogs, toasts. Values between
+     the tiers order things inside one of them. */
+  --z-content: 1;
+  --z-sticky: 10;
+  --z-sidebar: 20;
+  --z-popover: 30;
+  --z-dialog: 40;
+  --z-toast: 50;
   /* Application glyph sizes; charts and formula SVGs keep their own geometry. */
   --icon-xs: 12px;
   --icon-sm: 16px;
@@ -97,40 +164,70 @@
   --control-compact: 28px;
   --control-md: 32px;
   --control-lg: 40px;
-  /* Quiet controls, independent cards, then floating content. */
-  --shadow-sm: 0 1px 2px light-dark(#0000000a, #0000003d);
-  --shadow-md:
-    0 2px 8px light-dark(#0000000f, #0000003d), 0 1px 3px light-dark(#0000000a, #00000029);
+  /* Depth comes from tone and hairlines; shadows stay soft: quiet controls, floating content, the composer. */
+  --shadow-sm: 0 1px 2px light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 30%));
+  --shadow-md: 0 1px 3px light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 25%));
   --shadow-popover:
-    0 8px 24px light-dark(#0000001f, #0000007a), 0 2px 6px light-dark(#0000000f, #0000003d);
-  --shadow-composer: 0 4px 20px light-dark(rgb(0 0 0 / 3.5%), #00000033);
-  --shadow-composer-focus: 0 4px 20px light-dark(#0000000f, #00000052);
+    0 0 0 0.5px var(--line), 0 8px 28px light-dark(rgb(0 0 0 / 8%), rgb(0 0 0 / 45%)),
+    0 2px 6px light-dark(rgb(0 0 0 / 4%), rgb(0 0 0 / 25%));
+  --shadow-composer: 0 4px 20px light-dark(rgb(0 0 0 / 3.5%), rgb(0 0 0 / 22%));
+  --shadow-composer-focus: 0 4px 20px light-dark(rgb(0 0 0 / 7.5%), rgb(0 0 0 / 38%));
   /* Button tiers are independent of switches, chips and menu rows. */
   --button-xs: 24px;
   --button-sm: 28px;
   --button-md: 32px;
   --button-lg: 40px;
-  --user-bubble: light-dark(#f0f0ef, #212121);
-  /* Code retains the reference's dark canvas in either app theme. */
-  --code-bg: #171716;
-  --code-header-bg: #0e0e0d;
-  --code-text: #efeee9;
-  --code-muted: #b5b3ad;
-  --code-line: #2c2c29;
-  --code-hover: #292927;
+  --user-bubble: light-dark(#f0eee6, #141413);
+  /* Code keeps a dark canvas in either app theme, on Claude's warm charcoal. */
+  --code-bg: #1d1c1a;
+  --code-header-bg: #161514;
+  --code-text: #f0eee6;
+  --code-muted: #a8a69e;
+  --code-line: #33322f;
+  --code-hover: #2b2a27;
   --code-success: #4ade80;
   --code-error: #f08a93;
-  --code-shadow: 0 2px 6px light-dark(#00000026, #00000000);
+  --code-inline-text: light-dark(#8e2626, #ec9a8a);
+  --code-inline-bg: light-dark(rgb(20 20 19 / 5%), rgb(250 249 245 / 7%));
+  --code-shadow: none;
+  /* The terminal is the same warm night in either app theme; NativeTerminal.tsx hands these to xterm. Every
+     colour but black reads at 4.5:1 or more on the canvas. */
+  --terminal-bg: #141413;
+  --terminal-fg: #faf9f5;
+  --terminal-cursor: #d97757;
+  --terminal-selection: #633d2c;
+  --terminal-black: #3d3c39;
+  --terminal-red: #e06c6c;
+  --terminal-green: #8fb573;
+  --terminal-yellow: #e0a43c;
+  --terminal-blue: #6a9bcc;
+  --terminal-magenta: #c48fb4;
+  --terminal-cyan: #6fb3a9;
+  --terminal-white: #c2c0b6;
+  --terminal-bright-black: #8e8c84;
+  --terminal-bright-red: #f08a8a;
+  --terminal-bright-green: #a9c98f;
+  --terminal-bright-yellow: #e8bd6a;
+  --terminal-bright-blue: #8fb5dc;
+  --terminal-bright-magenta: #d6a8c9;
+  --terminal-bright-cyan: #8fcbc1;
+  --terminal-bright-white: #faf9f5;
+  /* Chart series, from Anthropic's supporting colours; the usage trend puts input (sky) first. */
+  --series-1: #c6613f;
+  --series-2: #6a9bcc;
+  --series-3: #788c5d;
+  --series-4: #d4a27f;
+  --series-rate: #9a7fb8;
   --cds-copy-feedback: 2500ms;
   --bar: 40px;
   --font-body: var(--interface-font-size, 14px);
   --font-title: calc(16rem / 14);
   --font-caption: calc(12rem / 14);
   --font-caption-small: calc(11rem / 14);
-  --leading-body: 1.75;
+  --leading-body: 1.7;
   --leading-title: 1.5;
   --leading-caption: 1.6;
-  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-family: var(--font-ui);
   font-size: var(--font-body);
   color: var(--text);
   background: var(--surface-1);
@@ -147,22 +244,28 @@
 :root[data-theme='dark'] {
   color-scheme: dark;
 }
+:root[data-reply-font='mixed'] {
+  --font-reply: var(--font-reply-mixed);
+}
+:root[data-reply-font='ui'] {
+  --font-reply: var(--font-ui);
+}
 .native-terminal {
-  /* ANSI output keeps a dark canvas; its controls must use the same palette in either app theme. */
-  --text: #dedcd6;
-  --muted: #a4a19b;
-  --hover: #20201e;
+  /* ANSI output keeps a warm dark canvas; its controls must use the same palette in either app theme. */
+  --text: #faf9f5;
+  --muted: #9c9a92;
+  --hover: rgb(250 249 245 / 7%);
   --accent: #d97757;
-  --line-strong: #50504b;
+  --line-strong: rgb(222 220 209 / 28%);
   color-scheme: dark;
   flex: 0 0 min(58dvh, 600px);
   min-height: 230px;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: #0b0b0a;
+  background: var(--terminal-bg);
   color: var(--text);
-  border-bottom: 1px solid #2c2c29;
+  border-bottom: 0;
 }
 .native-terminal > header {
   display: flex;
@@ -180,7 +283,7 @@
 .native-terminal > p {
   margin: 0;
   padding: 5px 12px;
-  color: #f2979e;
+  color: #f08a8a;
   font-size: calc(12rem / 14);
 }
 .terminal-host {
@@ -190,8 +293,16 @@
   overflow: hidden;
   padding: 5px 8px;
 }
+/* The rest of the 10px / 12px inset sits on the terminal element itself: the fit addon subtracts the
+   terminal's own padding from the space it measures, but not its parent's. */
 .terminal-host .xterm {
   height: 100%;
+  padding: 5px 4px;
+}
+/* xterm paints its theme (NativeTerminal.tsx) on the scrolling area only; the viewport behind that inset would
+   keep xterm.css's black, so it takes the same token. */
+.terminal-host .xterm .xterm-viewport {
+  background-color: var(--terminal-bg);
 }
 .message.thinking {
   color: var(--muted);
@@ -239,12 +350,18 @@ select {
 }
 button:focus-visible,
 a:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
 select:focus-visible,
 summary:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* A field shows focus on its own border and a soft halo, so autofocus does not draw a heavy ring.
+   The focused border wins over every field's resting border. */
+input:focus-visible,
+textarea:focus-visible {
+  outline: none;
+  border-color: var(--focus) !important;
+  box-shadow: 0 0 0 3px var(--focus-halo);
 }
 .app-icon {
   width: var(--icon-sm);
@@ -277,12 +394,16 @@ h2 {
   font-weight: 600;
 }
 a {
-  color: var(--accent);
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
 }
 pre,
 code,
 .empty-project {
-  font-family: Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
 }
 input {
   width: 100%;
@@ -292,6 +413,9 @@ input {
   background: var(--surface-3);
   color: var(--text);
   min-width: 0;
+  transition:
+    border-color var(--cds-dur-snap) var(--cds-ease-out),
+    box-shadow var(--cds-dur-snap) var(--cds-ease-out);
 }
 input:where(:not([type='checkbox']):not([type='radio']):not([type='range'])),
 select {
@@ -299,12 +423,69 @@ select {
   min-height: var(--control-md);
   line-height: 20px;
 }
+input:hover:not(:focus):not(:disabled),
+select:hover:not(:disabled),
+textarea:hover:not(:focus):not(:disabled) {
+  border-color: var(--line-strong);
+}
+/* A native select reads as a dropdown button: a field with a chevron on the right. Contextual rules set only
+   its background colour, so the chevron stays. */
+select {
+  -webkit-appearance: none;
+  appearance: none;
+  padding: 0 30px 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-3)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2373726c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
+    no-repeat right 9px center / 14px;
+  color: var(--text);
+  font-size: calc(13.5rem / 14);
+}
 label {
   display: flex;
   flex-direction: column;
   gap: 7px;
   font-size: calc(13rem / 14);
   font-weight: 500;
+}
+/* A checkbox is a 16px rounded square, ink when checked. Older contextual input widths must not stretch it. */
+input[type='checkbox'] {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  width: 16px !important;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-xs);
+  background: var(--surface-3);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+}
+input[type='checkbox']:checked {
+  border-color: var(--ink);
+  background: var(--ink)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E")
+    center / 12px no-repeat;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) input[type='checkbox']:checked {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f1e1d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+  }
+}
+:root[data-theme='dark'] input[type='checkbox']:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%231f1e1d' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6 9 17l-5-5'/%3E%3C/svg%3E");
+}
+/* A checkbox sits on the line of its own label. */
+label:has(> input[type='checkbox']) {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-weight: 400;
 }
 .button {
   --button-height: var(--button-md);
@@ -330,9 +511,10 @@ label {
 }
 .button:hover:not(:disabled) {
   background: var(--hover);
+  border-color: var(--line-strong);
 }
 .button.primary {
-  font-weight: 600;
+  font-weight: 500;
   background: var(--ink);
   color: var(--ink-text);
   border-color: var(--ink);
@@ -345,9 +527,10 @@ label {
   background: var(--danger-solid);
   color: white;
   border-color: var(--danger-solid);
+  font-weight: 500;
 }
 .button.danger:hover:not(:disabled) {
-  background: #a52f3a;
+  background: #9c2a2a;
 }
 .button.ghost {
   color: var(--muted);
@@ -389,7 +572,7 @@ label {
   flex-shrink: 0;
   padding: 0;
   border: 0;
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--muted);
 }
@@ -406,8 +589,8 @@ label {
 .switch {
   position: relative;
   flex: none;
-  width: 40px;
-  height: var(--control-sm);
+  width: 36px;
+  height: 20px;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
@@ -417,20 +600,32 @@ label {
 .switch::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
   background: white;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 20%);
   transition: transform var(--cds-dur-snap) var(--cds-ease-overshoot);
 }
 .switch[aria-checked='true'] {
-  background: var(--accent);
+  background: var(--clay-emphasized);
 }
 .switch[aria-checked='true']::after {
   transform: translateX(16px);
+}
+/* A list row's switch (a scheduled task): 28×16, its knob 12px. */
+.switch.small {
+  width: 28px;
+  height: 16px;
+}
+.switch.small::after {
+  width: 12px;
+  height: 12px;
+}
+.switch.small[aria-checked='true']::after {
+  transform: translateX(12px);
 }
 .chip {
   display: inline-flex;
@@ -538,8 +733,8 @@ button.chip.danger:hover:not(:disabled) {
   display: inline-flex;
   align-items: center;
   white-space: nowrap;
-  padding: 1px 7px;
-  border-radius: var(--radius-xs);
+  padding: 0 8px;
+  border-radius: var(--radius-full);
   font-size: calc(11rem / 14);
   font-weight: 500;
   border: 1px solid;
@@ -569,6 +764,7 @@ button.chip.danger:hover:not(:disabled) {
   align-items: start;
   /* Keep the brand and fields anchored while advanced options grow below them. */
   padding: clamp(calc(var(--bar) + 36px), 18dvh, 168px) 20px 56px;
+  background: var(--surface-1);
 }
 .login-content {
   width: 100%;
@@ -599,16 +795,15 @@ button.chip.danger:hover:not(:disabled) {
 }
 .login-card {
   min-width: 0;
-  padding: 32px;
-  border: 1px solid var(--line);
+  padding: 8px 4px;
+  border: 0;
   border-radius: var(--radius-2xl);
-  background: var(--surface-2);
-  box-shadow: var(--shadow-sm);
+  background: transparent;
+  box-shadow: none;
 }
 /* The installed client's only sign-in surface. Connection details come from the management center. */
 .email-login-page {
   padding-top: clamp(calc(var(--bar) + 28px), 15dvh, 140px);
-  background: radial-gradient(ellipse at 50% 0%, var(--accent-soft), transparent 65%);
 }
 .email-login-page .login-content {
   max-width: 448px;
@@ -616,17 +811,22 @@ button.chip.danger:hover:not(:disabled) {
 .email-login-page .login-content > .brand {
   margin-bottom: 24px;
 }
+/* Like the connection sign-in: the fields stand on the page, without a card (F1). */
 .email-login-card {
-  padding: 32px;
-  box-shadow: var(--shadow-md);
+  padding: 8px 4px;
+  box-shadow: none;
 }
+/* Left-aligned like the connection sign-in's title (LoginPage). */
 .email-login-heading {
   margin-bottom: 28px;
-  text-align: center;
+  text-align: left;
 }
 .email-login-heading h1 {
-  font-size: calc(22rem / 14);
+  font-size: calc(30rem / 14);
   line-height: 1.4;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 .email-login-heading p {
   margin: 8px 0 0;
@@ -722,7 +922,7 @@ button.chip.danger:hover:not(:disabled) {
 }
 .settings-only {
   display: grid;
-  grid-template-columns: 284px minmax(0, 1fr);
+  grid-template-columns: 288px minmax(0, 1fr);
   height: 100dvh;
   padding-top: var(--bar);
   background: var(--chrome);
@@ -742,9 +942,12 @@ button.chip.danger:hover:not(:disabled) {
   gap: 12px;
 }
 .login-title h1 {
-  font-size: calc(22rem / 14);
+  font-size: calc(30rem / 14);
   line-height: 1.4;
   text-wrap: pretty;
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
 }
 .login-subtitle {
   margin-bottom: 28px;
@@ -830,6 +1033,39 @@ button.chip.danger:hover:not(:disabled) {
 .login-advanced[open] > summary .app-icon {
   transform: rotate(90deg);
 }
+/* Development builds: how this window connects, a quiet line under the button (F1). */
+.login-mode-line {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: -6px 0 0;
+  color: var(--faint);
+  font-size: var(--font-caption);
+}
+.login-mode-line span {
+  margin-right: 4px;
+}
+.login-mode-line button {
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--line-strong);
+}
+.login-mode-line button:hover {
+  color: var(--text);
+}
+.login-mode-line button[aria-pressed='true'] {
+  color: var(--text-2);
+  text-decoration: none;
+  cursor: default;
+}
 .login-hint {
   margin: 8px 0 0;
   color: var(--muted);
@@ -879,24 +1115,48 @@ button.chip.danger:hover:not(:disabled) {
   min-height: var(--control-lg);
   padding-block: 9px;
 }
+.login-submit {
+  border-radius: var(--radius-md);
+}
 .connection-form input:not([type='checkbox']),
 .web-login-body input {
   min-height: var(--control-lg);
   padding-block: 9px;
 }
-/* The window: a title bar across the top, then the rail of pages, the side column and the page itself. */
+/* The window: a title bar across the top, then the side column and the page itself. The side column has two
+   forms: open, it is the full column and the rail's track is empty; closed, it folds to the 52px rail. A window
+   narrower than the column and the 600px the page keeps (App.tsx) folds it on its own (`side-overlay`): opened
+   then, it is laid over the page instead of beside it, and below 600px even the rail gives way. */
 .shell {
-  --sidebar-max-width: max(264px, min(420px, calc(100vw - 452px)));
-  --sidebar-size: clamp(264px, var(--sidebar-width, 284px), var(--sidebar-max-width));
+  --sidebar-max-width: max(240px, min(420px, calc(100vw - 600px)));
+  --sidebar-size: clamp(240px, var(--sidebar-width, 288px), var(--sidebar-max-width));
+  --rail-size: 0px;
+  --sidebar-track: var(--sidebar-size);
   display: grid;
-  grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr);
+  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
   grid-template-rows: var(--bar) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
-  background: var(--chrome);
+  background: var(--frame);
 }
-.shell.side-closed {
-  grid-template-columns: 52px 0 minmax(0, 1fr);
+.shell.side-closed,
+.shell.side-overlay {
+  --rail-size: 52px;
+  --sidebar-track: 0px;
+}
+@media (max-width: 599px) {
+  .shell.side-overlay {
+    --rail-size: 0px;
+  }
+  .shell.side-overlay > .rail {
+    visibility: hidden;
+  }
+}
+/* The rail is the closed column: while the column is open it is out of sight, of focus and of the
+   accessibility tree. */
+.shell:not(.side-closed) > .rail {
+  visibility: hidden;
+  overflow: hidden;
 }
 .shell > .sidebar {
   width: var(--sidebar-size);
@@ -924,7 +1184,7 @@ button.chip.danger:hover:not(:disabled) {
 }
 .titlebar,
 .rail {
-  --hover: light-dark(#e1dfd8, #20201e);
+  --hover: light-dark(rgb(20 20 19 / 6%), rgb(250 249 245 / 7%));
 }
 .rail {
   position: relative;
@@ -968,7 +1228,7 @@ html[data-platform='darwin'] .titlebar {
   border-radius: var(--radius-sm);
   background: transparent;
   font-size: calc(13rem / 14);
-  color: var(--muted);
+  color: var(--text-2);
   line-height: 20px;
 }
 .titlebar-menus button:hover {
@@ -981,23 +1241,11 @@ html[data-platform='darwin'] .titlebar {
   margin: 0 14px;
   font-size: calc(13rem / 14);
   font-weight: 500;
-  color: var(--muted);
+  color: var(--text-2);
   text-align: center;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.connection-status {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: calc(12rem / 14);
-  color: var(--muted);
-  white-space: nowrap;
-}
-.connection-status small {
-  color: var(--faint);
-  font-size: calc(11rem / 14);
 }
 .connection-dot,
 .running-dot {
@@ -1093,18 +1341,19 @@ dialog:has(.release-notes) {
   background: var(--ok);
 }
 .running-dot {
-  background: var(--accent);
+  background: var(--clay);
 }
 .rail {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 6px 0 12px;
+  gap: 4px;
+  padding: 8px 0 12px;
   min-height: 0;
-  background: var(--chrome);
+  background: var(--frame);
 }
 .rail button {
+  position: relative;
   display: grid;
   place-items: center;
   width: var(--control-md);
@@ -1120,8 +1369,8 @@ dialog:has(.release-notes) {
   color: var(--text);
 }
 .rail button[aria-current='page'] {
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--selected);
+  color: var(--text);
 }
 .rail svg.app-icon {
   width: var(--icon-md);
@@ -1130,17 +1379,81 @@ dialog:has(.release-notes) {
 .rail-space {
   flex: 1;
 }
+/* "New session" keeps its clay circle when the column is folded. */
+.rail .rail-new {
+  margin-bottom: 4px;
+  border-radius: 50%;
+  background: var(--clay-emphasized);
+  color: #ffffff;
+  transition:
+    background-color var(--cds-dur-fast) var(--cds-ease-out),
+    scale var(--cds-dur-fast) var(--cds-ease-out);
+}
+.rail .rail-new:hover:not(:disabled) {
+  background: var(--send-hover);
+  color: #ffffff;
+  scale: 1.06;
+}
+/* Disabled (a native terminal has the window), it stays the same circle, only faded. */
+.rail .rail-new:disabled {
+  background: var(--clay-emphasized);
+  color: #ffffff;
+}
+.rail .rail-new svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+/* The account, folded to its mark; the dot tells whether the connection holds. */
+.rail .rail-avatar,
+.side-avatar {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.rail .rail-avatar:hover:not(:disabled) {
+  background: var(--ink-hover);
+}
+.rail .rail-avatar[aria-current='page'] {
+  background: var(--ink);
+  box-shadow:
+    0 0 0 2px var(--frame),
+    0 0 0 4px var(--line);
+}
+.account-mark {
+  width: auto;
+  height: 16px;
+  aspect-ratio: 116 / 237.21;
+}
+/* Ink is near-black in light and ivory in dark: the mark's dark stroke turns to ivory on it, and back. */
+.account-mark path:first-child {
+  fill: light-dark(#faf9f5, #b65d41);
+}
+.account-mark path:last-child {
+  fill: #d97757;
+}
+.rail-avatar > .connection-dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 2px var(--frame);
+}
 .rail .rail-update,
 .login-update-button {
   width: var(--control-compact);
   height: var(--control-compact);
   border-radius: 50%;
-  background: #0a84ff;
+  background: var(--clay-emphasized);
   color: #ffffff;
 }
 .rail .rail-update:hover,
 .login-update-button:hover {
-  background: #0071e3;
+  background: var(--send-hover);
   color: #ffffff;
 }
 .rail .rail-update svg.app-icon,
@@ -1154,8 +1467,8 @@ dialog:has(.release-notes) {
   flex-direction: column;
   min-height: 0;
   min-width: 0;
-  background: var(--side);
-  border-radius: var(--radius-xl) 0 0 0;
+  background: var(--frame);
+  border-radius: 0;
 }
 .sidebar-resize {
   position: absolute;
@@ -1175,7 +1488,7 @@ dialog:has(.release-notes) {
 }
 .sidebar-resize:is(:hover, :focus-visible)::after,
 .shell[data-sidebar-resizing] .sidebar-resize::after {
-  background: var(--line-strong);
+  background: var(--focus);
 }
 .shell[data-sidebar-resizing],
 .shell[data-sidebar-resizing] * {
@@ -1186,19 +1499,50 @@ dialog:has(.release-notes) {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 14px 12px 8px 18px;
-  min-height: 56px;
+  padding: 10px 8px 4px 14px;
+  min-height: 48px;
+}
+/* Schedules and settings open with the way back to the conversations, above their heading. */
+.sidebar-back {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: calc(100% - 20px);
+  margin: 10px 10px 0;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--muted);
+  font-size: calc(13rem / 14);
+  line-height: 20px;
+  text-align: left;
+}
+.sidebar-back:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.sidebar-back svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+.sidebar-back + .sidebar-brand {
+  min-height: 40px;
+  padding-top: 4px;
+  /* The page's name lines up with the arrow above it and the rows' icons below. */
+  padding-left: 20px;
 }
 .sidebar-brand .brand {
   flex: 1;
   min-width: 0;
-  font-size: calc(18rem / 14);
+  font-size: calc(15rem / 14);
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.03em;
 }
 .sidebar-brand .brand-mark {
-  height: 28px;
+  height: 22px;
 }
 .side-action {
   display: flex;
@@ -1210,9 +1554,9 @@ dialog:has(.release-notes) {
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  font-size: calc(13.5rem / 14);
+  font-size: 1rem;
   text-align: left;
-  min-height: var(--control-md);
+  min-height: 34px;
   line-height: 20px;
 }
 .side-action svg.app-icon {
@@ -1226,10 +1570,88 @@ dialog:has(.release-notes) {
 .side-action[aria-current='page'] {
   background: var(--selected);
 }
+/* "New session" carries a clay circle with a plus, Claude's New chat mark. */
+.side-action.new-session {
+  font-weight: 500;
+  padding-left: 7px;
+}
+.side-action.new-session > svg.app-icon {
+  display: none;
+}
+.side-action.new-session::before {
+  content: '';
+  flex: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--clay-emphasized)
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2.6' stroke-linecap='round'%3E%3Cpath d='M12 5v14M5 12h14'/%3E%3C/svg%3E")
+    center / 12px no-repeat;
+  transition:
+    background-color var(--cds-dur-fast) var(--cds-ease-out),
+    scale var(--cds-dur-fast) var(--cds-ease-out);
+}
+.side-action.new-session:hover:not(:disabled)::before {
+  background-color: var(--send-hover);
+  scale: 1.06;
+}
+/* Search and the pages, as rows under "new session"; a hairline sets them apart from the list. */
+.side-nav {
+  display: flex;
+  flex-direction: column;
+}
+.side-nav::after {
+  content: '';
+  height: 1px;
+  margin: 4px 14px 2px;
+  background: var(--line-soft);
+}
+.side-action.nav-row > span {
+  flex: 1;
+  min-width: 0;
+}
+.side-action.nav-row > svg.app-icon {
+  color: var(--text-2);
+}
+.nav-row kbd {
+  font: inherit;
+  font-size: calc(11.5rem / 14);
+  color: var(--faint);
+  opacity: 0;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
+}
+.nav-row:is(:hover, :focus-visible) kbd {
+  opacity: 1;
+}
 .session-search {
   position: relative;
   display: block;
-  margin: 0 12px 8px;
+  margin: 2px 10px 8px;
+}
+/* In place of the search row: the same height, margins and icon and text positions, so nothing moves. */
+.side-nav > .session-search {
+  margin: 0 10px 2px;
+}
+.side-nav > .session-search > svg.app-icon {
+  left: 10px;
+}
+.side-nav > .session-search input {
+  padding-left: 36px;
+}
+.session-search.closable input {
+  padding-right: 34px;
+}
+.session-search > .session-search-close {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  translate: 0 -50%;
+  color: var(--faint);
+}
+.session-search > .session-search-close:hover {
+  color: var(--text);
 }
 .session-search > svg.app-icon {
   position: absolute;
@@ -1241,18 +1663,143 @@ dialog:has(.release-notes) {
   transform: translateY(-50%);
 }
 .session-search input {
-  height: var(--control-md);
+  width: 100%;
+  height: 34px;
   padding: 6px 12px 6px 34px;
   font-size: calc(13rem / 14);
-  border: 0;
-  border-radius: var(--radius-full);
-  background: var(--hover);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface-3);
 }
 .session-list {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 0 10px 20px;
+}
+/* While the native terminal has the window, the list stays readable and says why its rows do not open. */
+.side-terminal-note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 8px;
+  margin: 4px 10px 6px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  color: var(--text-2);
+  font-size: calc(12.5rem / 14);
+  line-height: 18px;
+}
+.side-terminal-note > button {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+}
+.side-terminal-note > button:hover {
+  text-decoration-color: currentColor;
+}
+.session-select[aria-disabled='true'] {
+  cursor: default;
+}
+/* "New session" waits while the terminal has the window, or the connection is not there; it stays legible, and
+   its tooltip says why. */
+.side-action.new-session:disabled {
+  opacity: 1;
+  color: var(--muted);
+}
+.side-action.new-session:disabled::before {
+  opacity: 0.45;
+}
+/* The account at the foot of the column: the mark, who is signed in, the plan and whether the connection holds. */
+.sidebar-account {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 56px;
+  padding: 0 8px;
+  border-top: 1px solid var(--line-soft);
+}
+.side-account-button {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  transition: background-color var(--cds-dur-snap) var(--cds-ease-out);
+}
+.side-account-button:hover,
+.side-account-button[aria-current='page'] {
+  background: var(--hover);
+}
+.side-account-who {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.side-account-who strong {
+  overflow: hidden;
+  font-size: calc(13.5rem / 14);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.connection-status > .connection-dot {
+  width: 6px;
+  height: 6px;
+}
+.side-account-chevron {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
+}
+.side-account-update {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--clay-emphasized);
+  color: #ffffff;
+  transition: background-color var(--cds-dur-fast) var(--cds-ease-out);
+}
+.side-account-update:hover {
+  background: var(--send-hover);
+}
+.side-account-update svg.app-icon {
+  width: 14px;
+  height: 14px;
 }
 .session-list .side-action {
   width: 100%;
@@ -1264,16 +1811,20 @@ dialog:has(.release-notes) {
   align-items: center;
   gap: 8px;
   min-height: 34px;
-  color: var(--faint);
-  padding: 12px 8px 4px;
-  font-size: calc(12.5rem / 14);
+  color: var(--muted);
+  padding: 14px 8px 4px 10px;
+  font-size: calc(12rem / 14);
+  font-weight: 500;
 }
 /* Whether another computer is connected, beside its name: its sessions can then be worked on from here. */
 .device-state {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: calc(11.5rem / 14);
+  font-size: calc(11rem / 14);
+  padding: 0 7px;
+  border-radius: var(--radius-full);
+  background: var(--hover);
 }
 .device-state::before {
   content: '';
@@ -1283,27 +1834,46 @@ dialog:has(.release-notes) {
   background: var(--line);
 }
 .device-state.online {
-  color: var(--ok);
+  color: var(--ok-text);
+  background: var(--ok-soft);
 }
 .device-state.online::before {
   background: var(--ok);
 }
-.elsewhere-project {
+/* A heading that folds its group, "other devices" or one of them: the words, then the folding arrow under the
+   pointer (or the keyboard's focus); folded, the count and the dot of the state that most needs the user. */
+.project-toggle.heading-toggle {
+  flex: 0 1 auto;
+  gap: 6px;
+  color: inherit;
+}
+.project-toggle.heading-toggle > span {
+  flex: 0 1 auto;
+}
+.heading-toggle > .fold-caret {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
+}
+:is(.list-heading, .device-heading):hover > .heading-toggle > .fold-caret,
+.heading-toggle:focus-visible > .fold-caret,
+.heading-toggle[aria-expanded='false'] > .fold-caret {
+  opacity: 1;
+}
+.list-heading:has(> .heading-toggle) {
+  justify-content: flex-start;
+}
+/* Each other computer: its name as a second-level heading, and whether it is online in a pill. */
+.device-heading {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 8px 2px 14px;
-  color: var(--muted);
+  gap: 8px;
+  min-height: 28px;
+  padding: 6px 8px 2px 10px;
+  color: var(--text-2);
   font-size: calc(12.5rem / 14);
-}
-.list-heading > .project-toggle,
-.elsewhere-project > .project-toggle {
-  gap: 6px;
-}
-.list-heading > .project-toggle > svg.app-icon,
-.elsewhere-project > .project-toggle > svg.app-icon {
-  width: var(--icon-sm);
-  height: var(--icon-sm);
+  font-weight: 500;
 }
 .list-heading .icon-button {
   width: var(--control-sm);
@@ -1318,12 +1888,13 @@ dialog:has(.release-notes) {
   display: flex;
   align-items: center;
   gap: 9px;
-  min-height: var(--control-md);
+  min-height: 32px;
   margin: 2px 0;
-  padding: 0 4px 0 9px;
+  padding: 0 4px 0 10px;
   border-radius: var(--radius-md);
-  font-size: calc(13.5rem / 14);
-  font-weight: 400;
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--text);
 }
 .project-group > h2:hover {
   background: var(--hover);
@@ -1350,16 +1921,37 @@ dialog:has(.release-notes) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.project-toggle > svg.app-icon {
+.project-toggle svg.app-icon {
   flex: none;
   width: var(--icon-sm);
   height: var(--icon-sm);
+  color: var(--faint);
+}
+/* A project's folder turns into the folding arrow under the pointer or the keyboard's focus. */
+.project-toggle > .fold-icon {
+  display: grid;
+  flex: none;
+}
+.fold-icon > svg.app-icon {
+  grid-area: 1 / 1;
+}
+.fold-icon > .fold-caret,
+.project-group > h2:is(:hover, :has(:focus-visible)) .fold-folder {
+  visibility: hidden;
+}
+.project-group > h2:is(:hover, :has(:focus-visible)) .fold-caret {
+  visibility: visible;
   color: var(--muted);
 }
 .project-toggle > small {
   flex: none;
   color: var(--faint);
   font-size: calc(12rem / 14);
+  min-width: 18px;
+  padding: 0 6px;
+  border-radius: var(--radius-full);
+  background: var(--hover);
+  text-align: center;
 }
 .project-group > h2 > .pin-mark {
   width: 12px;
@@ -1370,23 +1962,29 @@ dialog:has(.release-notes) {
   padding-left: 25px;
 }
 .project-empty {
-  margin: 4px 0 8px 34px;
+  margin: 2px 0 8px 10px;
   font-size: calc(12.5rem / 14);
   color: var(--faint);
 }
 .project-more {
   display: block;
-  margin: 2px 0 6px 34px;
-  padding: 2px 0;
+  margin: 0 0 6px 35px;
+  padding: 4px 0;
   border: 0;
   background: none;
-  color: var(--muted);
+  color: var(--faint);
   font: inherit;
   font-size: calc(12.5rem / 14);
   cursor: pointer;
 }
+.project-more.loose {
+  margin-left: 10px;
+}
 .project-more:hover {
-  color: inherit;
+  color: var(--text);
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
 }
 .list-empty {
   margin: 20px 10px;
@@ -1399,7 +1997,8 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-md);
   margin-bottom: 1px;
   min-width: 0;
-  padding-right: 3px;
+  padding-right: 4px;
+  min-height: 32px;
 }
 .session-row:hover {
   background: var(--hover);
@@ -1410,11 +2009,11 @@ dialog:has(.release-notes) {
 .session-select {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   flex: 1;
-  height: var(--control-md);
-  padding: 0 6px 0 9px;
+  height: 32px;
+  padding: 0 6px 0 10px;
   border: 0;
   background: transparent;
   text-align: left;
@@ -1427,15 +2026,19 @@ dialog:has(.release-notes) {
   overflow: hidden;
   text-overflow: ellipsis;
   font-weight: 400;
-  font-size: calc(13.5rem / 14);
+  font-size: 1rem;
+  color: var(--text-2);
 }
 .session-select small {
   flex: none;
   color: var(--faint);
-  font-size: calc(11.5rem / 14);
+  font-size: calc(12rem / 14);
 }
 .session-row.selected .session-select small {
   color: var(--text-2);
+}
+.session-row.selected .session-select strong {
+  color: var(--text);
 }
 .row-action {
   width: var(--control-sm);
@@ -1445,6 +2048,11 @@ dialog:has(.release-notes) {
 .row-action svg.app-icon {
   width: var(--icon-sm);
   height: var(--icon-sm);
+}
+.session-row .row-action {
+  width: 26px;
+  height: 26px;
+  border-radius: var(--radius-sm);
 }
 .session-row:hover .row-action,
 .session-row:focus-within .row-action {
@@ -1463,16 +2071,50 @@ dialog:has(.release-notes) {
 .session-row:focus-within .session-select small {
   display: none;
 }
+/* A state stays readable under the pointer: only the time gives way to the row's action. */
+.session-row[data-state]:hover .session-select small,
+.session-row[data-state]:focus-within .session-select small {
+  display: inline;
+}
+/* Each row names its state in `data-state` (Sidebar.tsx), as does a folded list for the one that most needs
+   the user; the dot and the word take their colour from it. Running breathes in clay. Waiting for the user (an
+   approval or a question) is amber and still, with a halo. What goes on after Claude's turn (background tasks)
+   or outside the conversation (the native terminal) is grey. A failure is red until the session is opened. */
+.session-row[data-state='running'] .session-select small {
+  color: var(--accent);
+}
+:is(.session-row, .project-toggle):is([data-state='approval'], [data-state='question'])
+  .running-dot {
+  background: var(--warn);
+  box-shadow: 0 0 0 3px light-dark(rgb(169 116 15 / 16%), rgb(224 164 60 / 18%));
+}
+.session-row:is([data-state='approval'], [data-state='question']) .session-select small {
+  color: var(--warn-text);
+  font-weight: 500;
+}
+:is(.session-row, .project-toggle):is([data-state='background'], [data-state='terminal'])
+  .running-dot {
+  background: var(--faint);
+}
+.session-row:is([data-state='background'], [data-state='terminal']) .session-select small {
+  color: var(--muted);
+}
+:is(.session-row, .project-toggle)[data-state='failed'] .running-dot {
+  background: var(--danger);
+}
+.session-row[data-state='failed'] .session-select small {
+  color: var(--danger-text);
+}
 .session-card {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   display: grid;
-  gap: 6px;
-  width: 300px;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
+  gap: 4px;
+  width: 280px;
+  padding: 10px 12px;
+  border: 0;
   border-radius: var(--radius-lg);
-  background: var(--raised);
+  background: var(--popover);
   box-shadow: var(--shadow-popover);
   font-size: calc(12.5rem / 14);
   pointer-events: none;
@@ -1511,18 +2153,21 @@ dialog:has(.release-notes) {
   font-size: calc(10rem / 14);
   line-height: 15px;
 }
+/* Opens under the bell, its left edge in line with it, over the page rather than back over the column's own
+   actions (spec §5.4). */
 .notice-list {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   top: calc(100% + 6px);
-  left: -120px;
-  width: 300px;
+  left: 0;
+  width: 320px;
+  max-width: calc(100vw - 16px);
   max-height: min(420px, 70dvh);
   overflow-y: auto;
   padding: 6px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-lg);
-  background: var(--raised);
+  background: var(--popover);
   box-shadow: var(--shadow-popover);
 }
 .notice-list header {
@@ -1533,12 +2178,37 @@ dialog:has(.release-notes) {
 }
 .notice-list header button {
   border: 0;
+  border-radius: var(--radius-sm);
   background: none;
-  color: var(--accent);
+  color: var(--muted);
   font-size: calc(12rem / 14);
   min-height: var(--control-xs);
   line-height: 16px;
   padding: 2px 6px;
+}
+.notice-list header button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.notice-empty {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 18px 16px 22px;
+  text-align: center;
+  font-size: calc(12.5rem / 14);
+  color: var(--muted);
+}
+.notice-empty svg.app-icon {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 4px;
+  color: var(--faint);
+}
+.notice-empty strong {
+  font-size: calc(13.5rem / 14);
+  font-weight: 500;
+  color: var(--text);
 }
 .notice {
   display: grid;
@@ -1577,12 +2247,12 @@ dialog:has(.release-notes) {
 }
 .menu,
 .permission-menu {
-  z-index: 30;
+  z-index: var(--z-popover);
   min-width: 190px;
-  padding: 6px;
-  border: 1px solid var(--line);
+  padding: 4px;
+  border: 0;
   border-radius: var(--radius-lg);
-  background: var(--raised);
+  background: var(--popover);
   box-shadow: var(--shadow-popover);
 }
 /* A long menu, such as the projects a session can move to, scrolls inside the window. */
@@ -1592,9 +2262,9 @@ dialog:has(.release-notes) {
   overflow-y: auto;
 }
 .menu hr {
-  margin: 5px 6px;
+  margin: 4px 6px;
   border: 0;
-  border-top: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line);
 }
 .menu-heading {
   margin: 0;
@@ -1612,7 +2282,7 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-md);
   padding: 6px 10px;
   background: transparent;
-  font-size: calc(13rem / 14);
+  font-size: calc(13.5rem / 14);
   text-align: left;
   color: var(--text);
   min-height: var(--control-md);
@@ -1671,6 +2341,15 @@ dialog:has(.release-notes) {
   flex: 1;
   min-width: 0;
 }
+/* The account at the head of its menu wears the column's avatar, a little smaller. */
+.menu button > .menu-avatar {
+  width: 24px;
+  height: 24px;
+  margin-left: -4px;
+}
+.menu-avatar .account-mark {
+  height: 13px;
+}
 .menu-label small {
   display: block;
   margin-top: 1px;
@@ -1696,9 +2375,13 @@ dialog:has(.release-notes) {
   display: flex;
   flex-direction: column;
   background: var(--surface-1);
+  border-top-left-radius: var(--radius-lg);
+  box-shadow:
+    inset 0.5px 0.5px 0 var(--line),
+    0 0 0 0.5px var(--line-soft);
 }
 .side-closed .workspace {
-  border-radius: var(--radius-xl) 0 0 0;
+  border-radius: var(--radius-lg) 0 0 0;
 }
 /* A page other than the conversation: one centred column of headings and cards. */
 .page {
@@ -1707,9 +2390,9 @@ dialog:has(.release-notes) {
   overflow-y: auto;
 }
 .page-body {
-  max-width: 820px;
+  max-width: 760px;
   margin: 0 auto;
-  padding: 40px 36px 60px;
+  padding: 44px 40px 72px;
 }
 .page-body.page-center {
   min-height: 100%;
@@ -1718,37 +2401,39 @@ dialog:has(.release-notes) {
   justify-content: center;
 }
 .page-title {
-  font-size: calc(26rem / 14);
-  font-weight: 600;
-  margin: 0 0 22px;
+  font-size: calc(28rem / 14);
+  font-weight: 500;
+  margin: 0 0 18px;
+  font-family: var(--font-display);
+  letter-spacing: -0.005em;
 }
 .page-heading {
-  font-size: var(--font-title);
+  font-size: calc(15rem / 14);
   font-weight: 600;
-  margin: 30px 0 12px;
+  margin: 36px 0 6px;
+}
+.page-body > .muted:first-of-type,
+.page > .page-body > p.muted {
+  font-size: calc(13.5rem / 14);
 }
 .page-body > .button {
   margin-top: 18px;
-}
-.page-notes {
-  margin: 8px auto 0;
-  max-width: 520px;
-  padding-left: 18px;
-  line-height: 1.8;
-}
-.page-notes code {
-  overflow-wrap: anywhere;
 }
 .text-link {
   padding: 0;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: inherit;
   font: inherit;
   cursor: pointer;
-}
-.text-link:hover {
   text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+a:hover,
+.text-link:hover {
+  text-decoration-color: currentColor;
 }
 .card {
   border: 1px solid var(--line);
@@ -1759,6 +2444,20 @@ dialog:has(.release-notes) {
 .card:has(> form) {
   padding: 20px;
 }
+/* On a page, settings are flat rows divided by hairlines; only a form keeps its card. */
+.page .card {
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-radius: 0;
+  padding: 0;
+  background: transparent;
+}
+.page .card:has(> form) {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--surface-2);
+}
 .setting-row,
 .settings-list label {
   display: flex;
@@ -1766,7 +2465,7 @@ dialog:has(.release-notes) {
   align-items: center;
   justify-content: space-between;
   gap: 18px;
-  padding: 15px 0;
+  padding: 14px 0;
   border-bottom: 1px solid var(--line-soft);
   font-size: 1rem;
 }
@@ -1813,7 +2512,7 @@ dialog:has(.release-notes) {
   border-radius: var(--radius-md);
   background: var(--surface-3);
   color: var(--text);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: calc(13rem / 14);
   line-height: 1.55;
   resize: vertical;
@@ -1837,8 +2536,13 @@ dialog:has(.release-notes) {
   padding: 5px 10px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--surface-3);
+  background-color: var(--surface-3);
   color: var(--text);
+}
+.setting-row > select,
+.settings-list select,
+.session-defaults select {
+  padding: 0 30px 0 12px;
 }
 .session-defaults select {
   width: 180px;
@@ -1848,6 +2552,49 @@ dialog:has(.release-notes) {
 }
 .help-text {
   padding: 14px 20px;
+}
+/* The help page's contents: its topics as a two-column list of links under the title. */
+.help-toc {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+  margin: 0 0 8px;
+  padding: 10px 0 14px;
+  border-bottom: 1px solid var(--line-soft);
+}
+.help-toc button {
+  justify-self: start;
+  max-width: 100%;
+  min-height: var(--control-sm);
+  padding: 3px 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--text-2);
+  font-size: calc(13.5rem / 14);
+  text-align: left;
+}
+.help-toc button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.page .page-heading[id^='help-'] {
+  scroll-margin-top: 20px;
+}
+/* Two keys pressed one after the other, each in its keycap. */
+.key-combo {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+/* A ghost button standing alone under a list (“恢复默认组合键”): its words in line with the rows' titles. */
+.page-body > .button.ghost.page-link-button {
+  margin-left: calc(-1 * var(--button-padding) - 1px);
+}
+/* A note under a group of rows keeps its distance from the last row (E2). */
+.page-body .card + p.muted {
+  margin-top: 12px;
 }
 .help-text p {
   margin: 0 0 8px;
@@ -1877,7 +2624,8 @@ kbd {
   font-family: inherit;
   font-size: calc(12.5rem / 14);
 }
-.key-list kbd {
+.key-list kbd,
+.keycap {
   padding: 2px 8px;
   border: 1px solid var(--line);
   border-radius: var(--radius-sm);
@@ -1906,30 +2654,38 @@ kbd {
 .schedule-row {
   display: flex;
   align-items: flex-start;
-  gap: 9px;
-  padding: 9px;
+  gap: 10px;
+  padding: 8px 10px;
   border-radius: var(--radius-md);
+  position: relative;
 }
 .schedule-row:hover,
 .schedule-row.selected {
   background: var(--hover);
 }
-.schedule-row > input {
-  flex: none;
-  width: auto;
-  margin-top: 4px;
+.schedule-row.selected {
+  background: var(--selected);
+}
+.schedule-row > .switch {
+  margin-top: 2px;
 }
 .schedule-row > span {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   flex: 1 1 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+}
+.schedule-row strong,
+.schedule-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .schedule-row strong {
   font-weight: 500;
-  font-size: calc(13.5rem / 14);
+  font-size: 1rem;
+  line-height: 20px;
 }
 .schedule-row small {
   color: var(--muted);
@@ -1939,7 +2695,19 @@ kbd {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin: 2px 0 0 -6px;
+  margin: 0;
+  position: absolute;
+  top: 5px;
+  right: 6px;
+  padding: 2px;
+  border-radius: var(--radius-md);
+  background: var(--frame);
+  box-shadow:
+    0 0 0 0.5px var(--line),
+    0 2px 6px light-dark(rgb(0 0 0 / 6%), rgb(0 0 0 / 30%));
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
 }
 .schedule-row-actions .icon-button {
   width: var(--control-sm);
@@ -1951,6 +2719,13 @@ kbd {
 }
 .schedule-row-actions .button {
   flex-shrink: 0;
+}
+/* A task's actions appear on hover or focus, and stay while a deletion waits for confirmation. */
+.schedule-row:hover .schedule-row-actions,
+.schedule-row-actions:focus-within,
+.schedule-row-actions:has(.button.danger) {
+  opacity: 1;
+  pointer-events: auto;
 }
 .history-load {
   display: flex;
@@ -2061,12 +2836,12 @@ kbd {
   max-height: min(120px, 100%);
   padding: 10px 12px;
   border: 1px solid var(--line-soft);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--raised);
   color: var(--text);
   box-shadow: var(--shadow-sm);
   pointer-events: auto;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
 }
 /* Bridge the gap so the preview's bookmark remains reachable by the pointer. */
 .turn-preview::after {
@@ -2116,8 +2891,9 @@ kbd {
 }
 /* Kept to the bottom of the view while it is scrolled up, taking no room at the end of the conversation. */
 .to-end {
-  position: sticky;
-  bottom: 0;
+  position: absolute;
+  z-index: 6;
+  inset: auto 0 0;
   height: 0;
   display: flex;
   justify-content: center;
@@ -2125,10 +2901,10 @@ kbd {
 }
 .to-end-button {
   transform: translateY(calc(-100% - 12px));
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 50%;
-  background: var(--surface);
-  box-shadow: var(--shadow-sm);
+  background: var(--surface-2);
+  box-shadow: var(--shadow-popover);
   pointer-events: auto;
 }
 .conversation-tools {
@@ -2136,7 +2912,7 @@ kbd {
   align-items: center;
   justify-content: flex-end;
   min-height: var(--control-md);
-  padding: 0 20px;
+  padding: 0 14px;
   color: var(--muted);
   font-size: calc(12rem / 14);
 }
@@ -2153,19 +2929,36 @@ kbd {
 .session-project > svg.app-icon {
   flex-shrink: 0;
 }
+/* A small find box floating at the top right of the conversation column, as in Claude and the browsers. */
 .conversation-find {
+  position: absolute;
+  z-index: 8;
+  top: calc(var(--control-md) + 4px);
+  right: max(14px, calc((100% - var(--chat-content-width, 768px)) / 2));
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--side);
+  gap: 2px;
+  width: min(360px, calc(100% - 28px));
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
 }
 .conversation-find input {
   flex: 1;
-  min-width: 90px;
-  width: 90px;
+  min-width: 60px;
+  width: 60px;
+  min-height: var(--control-compact);
+  height: var(--control-compact);
+  padding-block: 0;
+}
+.conversation-find .find-count {
+  padding: 0 4px;
+}
+.conversation-find .icon-button {
+  flex: none;
+  width: var(--control-sm);
+  height: var(--control-sm);
 }
 .find-count {
   font-size: calc(11rem / 14);
@@ -2177,6 +2970,7 @@ kbd {
 }
 .conversation {
   user-select: text;
+  padding-top: 20px;
 }
 .conversation ::selection {
   background: var(--selection);
@@ -2232,10 +3026,14 @@ kbd {
   margin: 12px 0;
   overflow: hidden;
   border: 1px solid var(--code-line);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--code-bg);
   color: var(--code-text);
   box-shadow: var(--code-shadow);
+}
+.code-block pre,
+.code-block code {
+  font-family: var(--font-mono);
 }
 .code-header {
   display: flex;
@@ -2248,7 +3046,7 @@ kbd {
   border-bottom: 1px solid var(--code-line);
   background: var(--code-header-bg);
   color: var(--code-muted);
-  font-family: Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-ui);
   font-size: calc(12rem / 14);
   line-height: 20px;
 }
@@ -2374,30 +3172,30 @@ a.link-elsewhere {
 /* Where a link leads, beside it; after a click, what came of it. */
 .link-card {
   position: fixed;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   display: grid;
   gap: 5px;
   max-width: 360px;
   padding: 9px 12px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  background: var(--raised);
-  box-shadow: var(--shadow);
-  font-size: 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+  font-size: calc(12rem / 14);
   pointer-events: none;
 }
 .link-card.above {
   transform: translateY(-100%);
 }
 .link-card-target {
-  font-family: Consolas, 'Cascadia Code', monospace;
-  font-size: 11.5px;
+  font-family: var(--font-mono);
+  font-size: calc(11.5rem / 14);
   color: var(--text-2);
   overflow-wrap: anywhere;
 }
 .link-card small {
   color: var(--muted);
-  font-size: 11.5px;
+  font-size: calc(11.5rem / 14);
 }
 .link-card small.link-card-warn {
   color: var(--warn-text);
@@ -2412,7 +3210,7 @@ a.link-elsewhere {
   margin: 4px 0;
   padding: 0;
   border: 1px solid var(--line-soft);
-  border-radius: var(--radius-s);
+  border-radius: var(--radius-sm);
   background: none;
   vertical-align: top;
   cursor: zoom-in;
@@ -2464,12 +3262,12 @@ dialog:has(.picture-view) {
   background: var(--code-bg);
   color: var(--code-text);
   color-scheme: dark;
-  font-family: Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: var(--code-font-size, 13px);
   line-height: 1.5;
 }
 .transcript {
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto;
   min-width: 0;
 }
@@ -2489,9 +3287,11 @@ dialog:has(.picture-view) {
 }
 .empty-state h2 {
   margin: 0;
-  font-size: calc(20rem / 14);
+  font-size: calc(24rem / 14);
   overflow-wrap: anywhere;
   text-align: center;
+  font-family: var(--font-display);
+  font-weight: 500;
 }
 /* A session with nothing sent yet greets from the middle of the conversation pane. */
 .transcript.is-empty {
@@ -2513,9 +3313,9 @@ dialog:has(.picture-view) {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: calc(10rem / 14);
-  padding-bottom: 6vh;
-  font-size: min(calc(40rem / 14), 13cqi);
+  gap: 0.32em;
+  padding-bottom: 0;
+  font-size: min(calc(38rem / 14), 12cqi);
 }
 .empty-greeting > svg.empty-greeting-mark {
   flex: none;
@@ -2526,7 +3326,7 @@ dialog:has(.picture-view) {
 .empty-greeting h2 {
   min-width: 0;
   margin: 0;
-  font-family: 'CC Greeting', Georgia, serif;
+  font-family: 'CC Greeting', var(--font-display);
   font-size: 1em;
   font-weight: 400;
   line-height: 1.2;
@@ -2534,6 +3334,25 @@ dialog:has(.picture-view) {
   text-align: center;
   color: var(--text);
   overflow-wrap: anywhere;
+}
+/* A new session, and the home page with none open (App.tsx gives the page `new-session`): the greeting and the
+   input box are one group in the upper middle of the page, as Claude's new chat. */
+.chat-workspace.new-session .conversation-frame {
+  flex: 0 0 auto;
+  margin-top: max(18vh, 96px);
+}
+.chat-workspace.new-session .conversation {
+  overflow: visible;
+  padding-bottom: 28px;
+}
+.chat-workspace.new-session .composer-area {
+  flex: 1;
+  justify-content: flex-start;
+}
+.new-session-note {
+  padding-left: 4px;
+  color: var(--faint);
+  font-size: calc(12rem / 14);
 }
 .empty-project {
   color: var(--faint);
@@ -2544,7 +3363,7 @@ dialog:has(.picture-view) {
   text-align: center;
 }
 .message {
-  margin-bottom: 27px;
+  margin-bottom: 30px;
   min-width: 0;
 }
 .message-label {
@@ -2566,7 +3385,7 @@ dialog:has(.picture-view) {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  margin-left: 12%;
+  margin-left: 18%;
 }
 .user .message-content {
   max-width: 100%;
@@ -2596,9 +3415,12 @@ dialog:has(.picture-view) {
 }
 .user .message-content {
   background: var(--user-bubble);
-  box-shadow: var(--shadow-sm);
-  border-radius: var(--radius-2xl);
-  padding: 12px 16px;
+  box-shadow: none;
+  border-radius: var(--radius-xl);
+  padding: 10px 16px;
+  font-family: var(--font-ui);
+  font-size: calc(15rem / 14);
+  line-height: 1.6;
 }
 .user .message-content p {
   white-space: pre-wrap;
@@ -2609,10 +3431,17 @@ dialog:has(.picture-view) {
   overflow-wrap: anywhere;
   word-break: normal;
   min-width: 0;
+  font-size: calc(16rem / 14);
+}
+/* Claude speaks in the serif; the user's own words stay in the interface face. */
+.message.assistant .message-content,
+.turn-process > .message .message-content {
+  font-family: var(--font-reply);
+  font-variation-settings: 'opsz' 16;
+  color: var(--text);
 }
 .message-content :is(p, li),
 .help-text p,
-.page-notes,
 .run-notice-text {
   text-wrap: pretty;
 }
@@ -2631,15 +3460,30 @@ dialog:has(.picture-view) {
 .message-content > :last-child {
   margin-bottom: 0;
 }
-.message-content h1,
-.message-content h2,
+.message-content :is(h1, h2, h3, h4) {
+  font-family: var(--font-reply);
+  font-weight: 600;
+  line-height: 1.4;
+  margin: 1.2em 0 0.5em;
+}
+.message-content h1 {
+  font-size: 1.35em;
+}
+.message-content h2 {
+  font-size: 1.2em;
+}
 .message-content h3 {
-  font-size: var(--font-title);
-  margin-top: 16px;
+  font-size: 1.08em;
 }
 .message-content ul,
 .message-content ol {
   padding-left: 22px;
+}
+.message-content :is(p, ul, ol) {
+  margin: 0 0 0.85em;
+}
+.message-content li + li {
+  margin-top: 0.25em;
 }
 .message-content pre {
   background: var(--surface-2);
@@ -2651,22 +3495,49 @@ dialog:has(.picture-view) {
   line-height: 1.6;
 }
 .message-content :not(pre) > code {
-  background: var(--hover);
-  border-radius: 3px;
-  padding: 2px 4px;
+  background: var(--code-inline-bg);
+  border-radius: 5px;
+  padding: 1px 5px;
+  /* Inline code follows the code size setting, like code blocks and tool input. */
   font-size: var(--code-font-size, 13px);
+  font-family: var(--font-mono);
+  color: var(--code-inline-text);
+  border: 0.5px solid var(--line);
+}
+.message-content strong {
+  font-weight: 650;
+}
+.message-content blockquote {
+  margin: 0 0 0.85em;
+  padding: 2px 0 2px 16px;
+  border-left: 3px solid var(--line-strong);
+  color: var(--text-2);
+}
+.message-content hr {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 1.4em 0;
 }
 .message-content table {
   display: block;
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
-  font-size: calc(12rem / 14);
+  font-size: calc(13.5rem / 14);
+  margin: 0.4em 0 1em;
+  font-family: var(--font-ui);
+  line-height: 1.5;
 }
 .message-content th,
 .message-content td {
-  border: 1px solid var(--line);
-  padding: 6px 10px;
+  border: 0;
+  padding: 8px 14px 8px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+}
+.message-content th {
+  font-weight: 600;
+  border-bottom-color: var(--line-strong);
 }
 .schedule-form {
   display: flex;
@@ -2684,15 +3555,21 @@ dialog:has(.picture-view) {
   padding: 7px 9px;
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
-  background: var(--surface-3);
+  background-color: var(--surface-3);
   color: inherit;
   font: inherit;
   min-width: 0;
+  transition:
+    border-color var(--cds-dur-snap) var(--cds-ease-out),
+    box-shadow var(--cds-dur-snap) var(--cds-ease-out);
 }
 .schedule-form input:not([type='checkbox']),
 .schedule-form select {
   padding: 5px 9px;
   line-height: 20px;
+}
+.schedule-form select {
+  padding: 0 30px 0 12px;
 }
 .schedule-form textarea {
   resize: vertical;
@@ -2706,14 +3583,67 @@ dialog:has(.picture-view) {
 .schedule-days {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 16px;
+  gap: 6px;
 }
-.schedule-days label {
-  flex-direction: row;
+/* Weekdays are pills that are on or off (`aria-pressed`); the chosen ones are ink (spec §5.3). */
+.day-pill {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: calc(13rem / 14);
+  transition:
+    background-color var(--cds-dur-snap) var(--cds-ease-out),
+    border-color var(--cds-dur-snap) var(--cds-ease-out);
+}
+.day-pill:hover {
+  border-color: var(--line-strong);
+  background: var(--hover);
+}
+.day-pill[aria-pressed='true'] {
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+.day-pill[aria-pressed='true']:hover {
+  background: var(--ink-hover);
+}
+/* A time is chosen as hours and minutes, 24-hour (SchedulePanel.tsx). */
+.schedule-time {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: calc(13rem / 14);
+  color: var(--muted);
+}
+.time-field {
+  display: flex;
   align-items: center;
+  gap: 6px;
+  color: var(--text-2);
 }
-.schedule-days input {
-  width: auto;
+.schedule-form .time-field select {
+  width: 72px;
+  padding: 0 26px 0 12px;
+  font-variant-numeric: tabular-nums;
+}
+/* What holds for every task, under the form, in small print. */
+.schedule-notes {
+  padding-top: 14px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: calc(12.5rem / 14);
+  line-height: 1.7;
+}
+.schedule-notes p {
+  margin: 0 0 4px;
+  text-wrap: pretty;
+}
+.schedule-notes code {
+  overflow-wrap: anywhere;
 }
 .schedule-warning {
   margin: 0;
@@ -2722,6 +3652,7 @@ dialog:has(.picture-view) {
   background: var(--warn-soft);
   color: var(--warn-text);
   font-size: calc(13rem / 14);
+  border: 1px solid var(--warn-line);
 }
 .schedule-actions {
   display: flex;
@@ -2732,8 +3663,9 @@ dialog:has(.picture-view) {
 .turn-process,
 .work,
 .tool {
-  font-size: calc(12rem / 14);
+  font-size: calc(13rem / 14);
   color: var(--muted);
+  font-family: var(--font-ui);
 }
 .turn-process > summary,
 .work > summary,
@@ -2743,10 +3675,11 @@ dialog:has(.picture-view) {
   gap: 6px;
   width: fit-content;
   max-width: 100%;
-  padding: 3px 6px 3px 0;
+  padding: 3px 8px 3px 4px;
   border-radius: var(--radius-md);
   cursor: pointer;
   list-style: none;
+  margin-left: -4px;
 }
 .turn-process > summary::-webkit-details-marker,
 .work > summary::-webkit-details-marker,
@@ -2757,6 +3690,7 @@ dialog:has(.picture-view) {
 .work > summary:hover,
 .tool > summary:hover {
   color: var(--text);
+  background: var(--hover);
 }
 .turn-process > .message {
   font-size: 1rem;
@@ -2799,8 +3733,8 @@ details[open] > summary > .fold-chevron {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  margin-top: 2px;
+  gap: 2px;
+  margin-top: 6px;
   font-size: calc(12rem / 14);
   color: var(--muted);
 }
@@ -2875,6 +3809,24 @@ details[open] > summary > .fold-chevron {
 .message-footer .message-time {
   padding: 0 4px;
 }
+/* Reply actions are quiet, icon-sized ghost buttons. */
+.message-footer .copy-button,
+.message-footer .message-action,
+.message-footer .answer-quote-actions .button,
+.turn-stats > button {
+  min-height: 28px;
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-family: var(--font-ui);
+}
+.message-footer .copy-button {
+  width: 28px;
+  justify-content: center;
+}
+.message-footer .copy-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
 /* The line is always there to take its room, shown or not, so a reply makes up for it in the space below: replies one
    after the other stay as close as they were, and the latest keeps the room it had for the figures. */
 .message:has(> .message-footer) {
@@ -2925,11 +3877,11 @@ details[open] > summary > .fold-chevron {
   gap: 0 6px;
   box-sizing: border-box;
   width: 100%;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: -16px auto 0;
   padding: 0 28px 8px;
   font-size: calc(12rem / 14);
-  color: var(--muted);
+  color: var(--faint);
 }
 /* Each card opens above its own button, its left edge in line with it. */
 .session-bar-part {
@@ -2948,14 +3900,14 @@ details[open] > summary > .fold-chevron {
 }
 .turn-stats-card {
   position: absolute;
-  z-index: 20;
+  z-index: var(--z-sidebar);
   bottom: calc(100% + 6px);
   left: 0;
   width: min(280px, 90vw);
   padding: 12px 16px 14px;
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-lg);
-  background: var(--raised);
+  background: var(--popover);
   box-shadow: var(--shadow-popover);
   color: var(--muted);
 }
@@ -3051,22 +4003,22 @@ details[open] > summary > .fold-chevron {
   background: var(--faint);
 }
 .context-breakdown .part-0 {
-  background: #98a1b3;
+  background: #b0aea5;
 }
 .context-breakdown .part-1 {
-  background: #a78bfa;
+  background: #c46686;
 }
 .context-breakdown .part-2 {
-  background: #4f8df5;
+  background: #6a9bcc;
 }
 .context-breakdown .part-3 {
-  background: #2fb5a2;
+  background: #788c5d;
 }
 .context-breakdown .part-4 {
-  background: #e8a33d;
+  background: #d4a27f;
 }
 .context-breakdown .part-5 {
-  background: #e06c8b;
+  background: #cc785c;
 }
 .work {
   margin: -6px 0 18px;
@@ -3112,12 +4064,14 @@ details[open] > summary > .fold-chevron {
   margin: 6px 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface-1);
+  background: transparent;
   color: var(--muted);
   overflow: clip;
+  box-shadow: none;
 }
 .thinking-block > summary {
   width: 100%;
+  margin-left: 0;
   padding: 9px 12px;
   border-radius: inherit;
   justify-content: space-between;
@@ -3250,7 +4204,7 @@ details[open] > summary > .fold-chevron {
 .tool-task-actions .button {
   min-height: 0;
   padding: 1px 8px;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
 }
 .tool-heading > svg.app-icon {
   color: var(--tool-icon);
@@ -3264,14 +4218,14 @@ details[open] > summary > .fold-chevron {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-2);
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: calc(11.5rem / 14);
+  font-family: var(--font-mono);
+  font-size: calc(12rem / 14);
 }
 .tool-diff {
   display: flex;
   gap: 5px;
-  font-family: ui-monospace, 'Cascadia Mono', Consolas, monospace;
-  font-size: calc(11rem / 14);
+  font-family: var(--font-mono);
+  font-size: calc(12rem / 14);
 }
 .tool-diff ins {
   color: var(--added);
@@ -3282,13 +4236,13 @@ details[open] > summary > .fold-chevron {
   text-decoration: none;
 }
 .tool-detail {
-  margin: 4px 0 8px 19px;
+  margin: 6px 0 10px 19px;
   max-width: 640px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   overflow: hidden;
   background: var(--surface-2);
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
 }
 .tool-detail.message-content {
   padding: 8px 12px;
@@ -3296,35 +4250,190 @@ details[open] > summary > .fold-chevron {
   overflow: auto;
   font-size: calc(12rem / 14);
 }
-.tool-input,
+/* Inside a step, "input" and "output" head their parts of the card; copy shows beside them under the pointer.
+   The input is shown in the shape its tool reads (ToolInput.tsx); the output sits on a faint wash. */
+.tool-section + .tool-section {
+  border-top: 1px solid var(--line-soft);
+}
+.tool-section.tool-results {
+  background: light-dark(rgb(20 20 19 / 2.5%), rgb(0 0 0 / 12%));
+}
+.tool-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 6px 8px 0 14px;
+  color: var(--faint);
+  font-size: calc(11.5rem / 14);
+}
+.tool-section-head > small {
+  font-size: inherit;
+}
+.tool-section-head > .copy-button {
+  margin-left: auto;
+  min-height: 22px;
+  padding: 0 6px;
+  color: var(--faint);
+  font-size: inherit;
+  opacity: 0;
+  transition: opacity var(--cds-dur-snap) var(--cds-ease-out);
+}
+.tool-section-head > .copy-button svg.app-icon {
+  width: 13px;
+  height: 13px;
+}
+.tool-section:hover > .tool-section-head > .copy-button,
+.tool-section-head > .copy-button:focus-visible,
+.tool-section-head > .copy-button[data-status] {
+  opacity: 1;
+}
+.tool-section-head > .copy-button:hover {
+  color: var(--text);
+}
+.tool-command,
+.tool-input-json,
+.tool-input-prose,
+.tool-diff-view,
 .tool-output {
   margin: 0;
-  padding: 8px 10px;
+  padding: 4px 14px 10px;
   max-height: 200px;
   overflow: auto;
   font-size: var(--code-font-size, 13px);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  color: var(--text-2);
 }
 .tool-output {
-  border-top: 1px solid var(--line-soft);
   color: var(--tool-text);
+}
+.tool-command {
+  color: var(--text);
+}
+.tool-input-prose {
+  font-family: var(--font-ui);
+  font-size: calc(13rem / 14);
+}
+.tool-input-note,
+.tool-input-path,
+.tool-input-meta {
+  margin: 0;
+  padding: 2px 14px 4px;
+  overflow-wrap: anywhere;
+}
+.tool-input-note {
+  color: var(--text-2);
+  font-size: calc(13rem / 14);
+}
+.tool-input-note > small {
+  margin-left: 8px;
+  color: var(--faint);
+  font-size: calc(12rem / 14);
+}
+.tool-input-path {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 10px;
+  font-family: var(--font-mono);
+  font-size: calc(12.5rem / 14);
+  color: var(--text);
+}
+.tool-input-path > small,
+.tool-input-meta {
+  color: var(--faint);
+  font-family: var(--font-ui);
+  font-size: calc(12rem / 14);
+}
+.tool-input-path:last-child,
+.tool-input-meta:last-child {
+  padding-bottom: 10px;
+}
+/* A change to a file: what went out on red, what came in on green, the lines around them plain. */
+.tool-diff-view {
+  max-height: 320px;
+  padding: 2px 0 10px;
+  white-space: normal;
+}
+.tool-diff-view + .tool-diff-view {
+  border-top: 1px dashed var(--line-soft);
+  padding-top: 8px;
+}
+.tool-diff-view > span {
+  display: block;
+  padding-right: 14px;
+  white-space: pre-wrap;
+}
+.tool-diff-view > span > i {
+  display: inline-block;
+  width: 26px;
+  font-style: normal;
+  text-align: center;
+  color: var(--faint);
+  user-select: none;
+}
+.tool-diff-view > .added {
+  background: light-dark(rgb(63 125 69 / 10%), rgb(124 191 134 / 12%));
+}
+.tool-diff-view > .added > i {
+  color: var(--added);
+}
+.tool-diff-view > .removed {
+  background: light-dark(rgb(181 51 51 / 8%), rgb(224 108 108 / 12%));
+}
+.tool-diff-view > .removed > i {
+  color: var(--fail);
+}
+.tool-input-todos {
+  margin: 0;
+  padding: 2px 14px 10px;
+  list-style: none;
+  font-size: calc(13rem / 14);
+  color: var(--text-2);
+}
+.tool-input-todos li {
+  display: flex;
+  gap: 8px;
+}
+.tool-input-todos i {
+  flex: none;
+  width: 12px;
+  font-style: normal;
+  color: var(--faint);
+}
+.tool-input-todos [data-status='completed'] {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+/* An approval says in words what it allows, over the call it is about. */
+.approval-title {
+  margin: 0;
+  padding: 10px 14px 4px;
+  font-size: calc(14rem / 14);
+  font-weight: 600;
+  color: var(--text);
 }
 .approval-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 9px;
-  padding: 11px 14px;
+  gap: 8px;
+  padding: 10px 12px;
   border-top: 1px solid var(--line-soft);
+  background: var(--surface-2);
 }
 .approval-actions .button {
   min-height: var(--control-md);
   font-size: calc(12rem / 14);
 }
 .run-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   color: var(--faint);
-  border-left: 2px solid var(--line-strong);
+  border-left: 3px solid var(--line-strong);
   padding: 5px 12px;
   font-size: var(--font-caption);
   line-height: var(--leading-caption);
@@ -3332,6 +4441,7 @@ details[open] > summary > .fold-chevron {
   overflow-wrap: anywhere;
   word-break: normal;
   margin: 0 0 24px;
+  border-radius: 0;
 }
 .run-notice-text {
   white-space: pre-wrap;
@@ -3348,7 +4458,7 @@ details[open] > summary > .fold-chevron {
   margin: 5px 0 0;
   padding: 2px 4px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--muted);
   font-size: var(--font-caption-small);
@@ -3357,9 +4467,43 @@ details[open] > summary > .fold-chevron {
   background: var(--hover);
   color: var(--text);
 }
+.run-notice-body {
+  flex: 1;
+  min-width: 0;
+}
+.run-notice > .button {
+  flex: none;
+  gap: 6px;
+  margin: -2px 0;
+  font-size: calc(12.5rem / 14);
+}
+.run-notice > .button svg.app-icon {
+  width: 14px;
+  height: 14px;
+}
+/* A failure is one red bar where the turn ends, with the way to take the turn up again in it. */
 .run-notice.failed {
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid light-dark(rgb(181 51 51 / 22%), rgb(224 108 108 / 28%));
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
   color: var(--danger-text);
-  border-color: var(--danger);
+  font-size: calc(13rem / 14);
+  line-height: 1.5;
+}
+.run-notice.failed > .run-notice-mark {
+  flex: none;
+  align-self: flex-start;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  color: var(--danger);
+}
+.run-notice.failed > .button {
+  border-color: light-dark(rgb(181 51 51 / 30%), rgb(224 108 108 / 35%));
+  background: var(--surface-2);
+  color: var(--text);
 }
 /* A compaction divides the work before it from the work after it. */
 .compact-mark {
@@ -3367,8 +4511,9 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   gap: 10px;
   margin: -4px 0 18px;
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   color: var(--muted);
+  font-family: var(--font-ui);
 }
 .compact-mark::before,
 .compact-mark::after {
@@ -3398,79 +4543,67 @@ details[open] > summary > .fold-chevron {
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: calc(12rem / 14);
+  font-size: calc(13rem / 14);
   color: var(--muted);
 }
-.run-summary {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  align-self: center;
-  width: calc(100% - 56px);
-  max-width: var(--chat-content-width, 820px);
-  min-height: 24px;
-  gap: 8px;
-  margin: 0 0 4px;
-  padding: 2px 0;
-  color: var(--muted);
-  font-size: calc(12rem / 14);
+/* A run at work: Claude's spark breathing in clay, and "正在执行…" with a light passing over it (spec §5.9). */
+.run-indicator > .run-spark {
+  flex: none;
+  width: 16px;
+  height: 16px;
+  color: var(--clay);
 }
-.run-summary-copy {
-  display: flex;
-  flex: 1;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 2px 8px;
-  min-width: 0;
+.run-indicator > .run-spark.breathing {
+  animation: breathe 2.4s ease-in-out infinite;
 }
-.run-summary strong {
-  font-weight: 500;
-  overflow-wrap: anywhere;
+.run-shimmer {
+  color: transparent;
+  background: linear-gradient(
+      90deg,
+      var(--muted) 0%,
+      var(--muted) 40%,
+      var(--text) 50%,
+      var(--muted) 60%,
+      var(--muted) 100%
+    )
+    0 0 / 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: run-shimmer 3s linear infinite;
 }
-.run-summary-detail {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  color: var(--muted);
-  overflow-wrap: anywhere;
-}
-.run-summary > .running-dot {
-  width: 6px;
-  height: 6px;
-  background: currentColor;
-}
-.run-summary.running > .running-dot,
-.run-summary.waiting {
-  color: var(--accent);
-}
-.run-summary.completed > .running-dot {
-  color: var(--added);
-}
-.run-summary.failed strong,
-.run-summary.failed > .running-dot {
-  color: var(--danger);
-}
-.run-summary.waiting strong,
-.run-summary.cancelled strong {
-  color: var(--accent);
-}
-.run-summary button {
-  flex-shrink: 0;
-  padding: 3px 6px;
-  border-color: transparent;
-  background: transparent;
-  color: var(--muted);
-  font-size: inherit;
-}
-.run-summary button:hover:not(:disabled) {
-  background: var(--hover);
-  color: var(--text);
-}
-@media (max-width: 700px) {
-  .run-summary {
-    width: calc(100% - 24px);
+@keyframes run-shimmer {
+  from {
+    background-position: 100% 0;
   }
+  to {
+    background-position: 0% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .run-indicator > .run-spark.breathing,
+  .run-shimmer {
+    animation: none;
+  }
+  .run-shimmer {
+    color: var(--muted);
+    background: none;
+  }
+}
+@media (forced-colors: active) {
+  .run-shimmer {
+    color: CanvasText;
+    background: none;
+  }
+}
+/* Waiting on an answer no card here can give is amber, and still; with the connection gone, nothing is known. */
+.run-indicator.waiting {
+  color: var(--warn-text);
+}
+.run-indicator.waiting > .running-dot {
+  background: var(--warn);
+}
+.run-indicator.uncertain > .running-dot {
+  background: var(--faint);
 }
 .run-indicator .running-dot {
   margin-top: 0;
@@ -3539,7 +4672,7 @@ details[open] > summary > .fold-chevron {
 }
 .composer-area {
   position: relative;
-  padding: 6px 28px 22px;
+  padding: 4px 24px 18px;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -3548,7 +4681,7 @@ details[open] > summary > .fold-chevron {
 .composer-context {
   display: flex;
   gap: 6px;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto 8px;
   min-width: 0;
   align-items: center;
@@ -3560,19 +4693,19 @@ details[open] > summary > .fold-chevron {
 }
 .composer {
   position: relative;
-  z-index: 1;
+  z-index: var(--z-content);
   display: flex;
   flex-direction: column;
   width: 100%;
   min-height: 0;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: var(--radius-2xl);
-  background: var(--raised);
+  background: var(--popover);
   box-shadow:
     var(--shadow-composer),
-    inset 0 0 0 1px var(--line);
+    0 0 0 0.5px var(--line-strong);
   transition:
     box-shadow var(--cds-dur-base) var(--cds-ease-out),
     background-color var(--cds-dur-snap) var(--cds-ease-out);
@@ -3580,7 +4713,7 @@ details[open] > summary > .fold-chevron {
 .composer:focus-within {
   box-shadow:
     var(--shadow-composer-focus),
-    inset 0 0 0 2px var(--line-strong);
+    0 0 0 0.5px light-dark(rgb(31 30 29 / 45%), rgb(222 220 209 / 40%));
 }
 .composer.dropping {
   background: var(--accent-soft);
@@ -3620,7 +4753,7 @@ details[open] > summary > .fold-chevron {
   height: 96px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
   background: var(--surface-2);
   color: var(--text);
 }
@@ -3641,10 +4774,10 @@ details[open] > summary > .fold-chevron {
   max-width: 82px;
   height: 20px;
   padding: 2px 4px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-1);
   color: var(--muted);
-  font-family: Consolas, 'Cascadia Code', monospace;
+  font-family: var(--font-mono);
   font-size: calc(10rem / 14);
   line-height: 16px;
 }
@@ -3768,19 +4901,24 @@ details[open] > summary > .fold-chevron {
   border: 0;
   resize: none;
   outline: none;
-  padding: 15px 18px 4px;
+  padding: 16px 18px 6px;
   min-height: 56px;
   max-height: min(46vh, 420px);
   overflow-y: auto;
   /* Clip text and native scrollbars to the ring and corners without changing auto-sizing. */
   clip-path: inset(2px 0 0 round var(--radius-2xl) var(--radius-2xl) 0 0);
-  line-height: 1.7;
+  line-height: 1.6;
   background: transparent;
   border-radius: var(--radius-2xl) var(--radius-2xl) 0 0;
   color: var(--text);
+  font-size: calc(15rem / 14);
 }
 .composer textarea:focus-visible {
   outline: none;
+  box-shadow: none;
+}
+.composer textarea::placeholder {
+  color: var(--faint);
 }
 @media (forced-colors: active) {
   .composer:focus-within {
@@ -3795,24 +4933,25 @@ details[open] > summary > .fold-chevron {
 .composer-toolbar {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   flex-wrap: wrap;
   min-height: 48px;
-  padding: 4px 9px 8px 10px;
+  padding: 4px 10px 10px 12px;
   flex-shrink: 0;
 }
 .follow-up-queue {
   width: calc(100% - 28px);
-  max-width: calc(var(--chat-content-width, 820px) - 28px);
+  max-width: calc(var(--chat-content-width, 768px) - 28px);
   min-width: 0;
   flex-shrink: 0;
   margin: 0 auto -14px;
   padding: 2px 8px 14px;
   border: 1px solid var(--line);
   border-bottom: 0;
-  border-radius: 16px 16px 0 0;
-  background: var(--hover);
-  font-size: 12px;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+  background: var(--surface-2);
+  font-size: calc(12rem / 14);
+  box-shadow: var(--shadow-sm);
 }
 .follow-up-queue header {
   display: flex;
@@ -3829,7 +4968,7 @@ details[open] > summary > .fold-chevron {
   white-space: nowrap;
 }
 .follow-up-queue header .button {
-  font-size: 12px;
+  font-size: calc(12rem / 14);
   padding: 4px 8px;
   flex-shrink: 0;
 }
@@ -3882,14 +5021,26 @@ details[open] > summary > .fold-chevron {
   max-height: 100px;
   font: inherit;
 }
-.busy-send-mode {
-  width: auto;
-  max-width: 106px;
-  padding: 4px;
-  font-size: 12px;
-  color: var(--muted);
+/* While a run is going, how a message is sent is chosen from a small menu beside the send button (spec §5.10). */
+.send-mode-button {
+  width: 20px;
+  height: var(--control-md);
+  /* 2px from the send button (toolbar gap 6 + its margin 4 − 8): the two read as one control. */
+  margin-right: -8px;
+  padding: 0;
   border: 0;
+  border-radius: var(--radius-sm);
   background: transparent;
+  color: var(--muted);
+}
+.send-mode-button:hover,
+.send-mode-button[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--text);
+}
+.send-mode-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 @media (max-width: 700px) {
   .turn-navigation {
@@ -3900,8 +5051,17 @@ details[open] > summary > .fold-chevron {
   flex: 1;
 }
 .attach-button {
-  border-radius: 50%;
-  color: var(--text);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  border: 1px solid var(--line);
+}
+.composer-toolbar button.chip,
+.permission-control > button.chip {
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  color: var(--text-2);
+  font-size: calc(13rem / 14);
 }
 .composer-controls {
   display: flex;
@@ -3954,8 +5114,8 @@ details[open] > summary > .fold-chevron {
 .permission-menu {
   position: absolute;
   z-index: 5;
-  border: 1px solid var(--line);
-  background: var(--raised);
+  border: 0;
+  background: var(--popover);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-popover);
 }
@@ -3993,8 +5153,9 @@ details[open] > summary > .fold-chevron {
   background: transparent;
   border: 0;
   border-radius: var(--radius-md);
-  font-size: calc(12.5rem / 14);
+  font-size: calc(13.5rem / 14);
   line-height: 20px;
+  color: var(--text-2);
 }
 .model-trigger:hover:not(:disabled) {
   background: var(--hover);
@@ -4028,7 +5189,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   min-height: var(--control-compact);
   font-size: calc(15rem / 14);
-  color: var(--accent);
+  color: var(--effort-text, var(--accent));
 }
 .effort-heading .icon-button {
   position: absolute;
@@ -4083,12 +5244,24 @@ details[open] > summary > .fold-chevron {
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
-  background: linear-gradient(
-    to right,
-    var(--accent) 0 max(15px, var(--fill, 50%)),
-    var(--hover) max(15px, var(--fill, 50%)) 100%
-  );
+  /* A light sweeping over the filled part, then the fill (a warm gradient up to the level's colour), then the
+     empty track. The sweep is sized to the fill, so its stops run along the filled part only. */
+  background:
+    linear-gradient(
+        100deg,
+        transparent calc(var(--shine) - 18%),
+        rgb(255 255 255 / var(--effort-glint, 0.28)) var(--shine),
+        transparent calc(var(--shine) + 18%)
+      )
+      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+    linear-gradient(
+      to right,
+      var(--effort-from, var(--accent)) 0,
+      var(--effort-fill, var(--accent)) max(15px, var(--fill, 50%)),
+      var(--hover) max(15px, var(--fill, 50%)) 100%
+    );
   cursor: pointer;
+  animation: effort-sweep var(--effort-pace, 2.2s) linear infinite;
 }
 .model-menu input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -4099,15 +5272,21 @@ details[open] > summary > .fold-chevron {
   background: white;
   box-shadow: var(--shadow-sm);
 }
+/* At the top level the handle breathes a halo in the level's colour, like a running dot (2.4s). */
+.effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb {
+  animation: effort-halo 2.4s ease-in-out infinite;
+}
 .model-menu .effort-slider {
   touch-action: none;
 }
 .model-menu input[type='range']:disabled {
   opacity: 0.6;
+  animation: none;
 }
 /* No level known yet: no fill and no handle, so nothing claims a value; picking one brings the handle back. */
 .model-menu input[type='range'][data-unset] {
   background: var(--hover);
+  animation: none;
 }
 .model-menu input[type='range'][data-unset]::-webkit-slider-thumb {
   opacity: 0;
@@ -4134,8 +5313,258 @@ details[open] > summary > .fold-chevron {
   line-height: 18px;
 }
 .effort-ticks button.current {
-  color: var(--text);
+  color: var(--effort-text, var(--text));
   font-weight: 600;
+}
+/* No level known (spec §5.10): the heading is plain text in the body colour rather than a level's, and the levels are
+   a row of choices instead of names under a track. */
+.effort-view[data-effort-unknown] .effort-heading {
+  color: var(--text-2);
+  font-size: calc(14rem / 14);
+}
+.effort-view[data-effort-unknown] .effort-heading strong {
+  font-weight: 500;
+}
+.effort-view[data-effort-unknown] .effort-ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  height: auto;
+  margin-top: 0;
+}
+.effort-view[data-effort-unknown] .effort-ticks button {
+  position: static;
+  transform: none;
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  color: var(--text-2);
+}
+.effort-view[data-effort-unknown] .effort-ticks button:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+/* Effort as heat: each level has its fill (a gradient from a lighter tint), the colour of its title and tick, and
+   the pace of the sweep, quicker the harder Claude thinks. Light themes deepen towards the top level, dark themes
+   brighten; 高 keeps the accent it had. Text colours are at least 4.5:1 on the menu. */
+.effort-view {
+  --effort-text: var(--accent);
+}
+.effort-view[data-effort='low'] {
+  --effort-from: light-dark(#f2d3c3, #5e4136);
+  --effort-fill: light-dark(#e3a387, #a8725b);
+  --effort-text: light-dark(#9b6650, #c59a86);
+  --effort-pace: 3.4s;
+  --effort-glint: 0.2;
+}
+.effort-view[data-effort='medium'] {
+  --effort-from: light-dark(#efc5ae, #6a4232);
+  --effort-fill: light-dark(#d98762, #c27a5a);
+  --effort-text: light-dark(#a85a38, #d08f70);
+  --effort-pace: 2.8s;
+  --effort-glint: 0.24;
+}
+.effort-view[data-effort='high'] {
+  --effort-from: light-dark(#e9b296, #74412c);
+  --effort-fill: light-dark(#a9502c, #e08463);
+  --effort-text: light-dark(#a9502c, #e08463);
+  --effort-pace: 2.2s;
+  --effort-glint: 0.28;
+}
+.effort-view[data-effort='xhigh'] {
+  --effort-from: light-dark(#e3a080, #803e26);
+  --effort-fill: light-dark(#9c3f1f, #ec9061);
+  --effort-text: light-dark(#9c3f1f, #ec9061);
+  --effort-pace: 1.7s;
+  --effort-glint: 0.32;
+}
+.effort-view[data-effort='max'] {
+  --effort-from: light-dark(#df8f68, #8c3a1f);
+  --effort-fill: light-dark(#8c2f12, #f8a066);
+  --effort-text: light-dark(#8c2f12, #f8a066);
+  --effort-pace: 1.25s;
+  --effort-glint: 0.36;
+}
+@property --shine {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: -30%;
+}
+/* The top level burns: the fill flows like molten metal under the sweep, embers rise from it, a ring of fire turns
+   round the handle and the title glows in flowing gold and red. Reduced motion keeps the colours, stills the flow
+   and the ring, and drops the embers. */
+.effort-track {
+  position: relative;
+}
+@property --flow {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: 0%;
+}
+.effort-view[data-effort='max'] {
+  --effort-gold: light-dark(#e98a2c, #fcd34d);
+  --effort-ember: light-dark(#c2410c, #f97316);
+  /* The title's gradient keeps to colours readable as text (at least 4.5:1 on the menu). */
+  --effort-title-ember: light-dark(#b4400e, #f97316);
+  --effort-title-gold: light-dark(#b45309, #fcd34d);
+}
+.effort-view[data-effort='max'] input[type='range'] {
+  background:
+    linear-gradient(
+        100deg,
+        transparent calc(var(--shine) - 14%),
+        rgb(255 255 255 / var(--effort-glint, 0.36)) var(--shine),
+        transparent calc(var(--shine) + 14%)
+      )
+      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+    linear-gradient(
+        90deg,
+        var(--effort-fill) calc(var(--flow) - 100%),
+        var(--effort-gold) calc(var(--flow) - 75%),
+        var(--effort-ember) calc(var(--flow) - 50%),
+        var(--effort-fill) calc(var(--flow) - 25%),
+        var(--effort-fill) var(--flow),
+        var(--effort-gold) calc(var(--flow) + 25%),
+        var(--effort-ember) calc(var(--flow) + 50%),
+        var(--effort-fill) calc(var(--flow) + 75%),
+        var(--effort-fill) calc(var(--flow) + 100%)
+      )
+      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+    var(--hover);
+  box-shadow: 0 0 14px -2px color-mix(in srgb, var(--effort-ember) 55%, transparent);
+}
+.effort-view[data-effort='max'] input[type='range']:enabled {
+  animation:
+    effort-sweep var(--effort-pace, 1.25s) linear infinite,
+    effort-flow 2.6s linear infinite;
+}
+@keyframes effort-flow {
+  to {
+    --flow: 100%;
+  }
+}
+.effort-flare {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+/* A ring of fire round the handle: a turning conic gradient, hollowed to a 3px band just outside it. */
+.effort-ring {
+  position: absolute;
+  top: 50%;
+  left: calc(15px + (100% - 30px) * var(--at, 1));
+  width: 38px;
+  height: 38px;
+  margin: -19px 0 0 -19px;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0 15%,
+    var(--effort-gold) 35%,
+    var(--effort-ember) 55%,
+    transparent 75% 100%
+  );
+  -webkit-mask: radial-gradient(
+    closest-side,
+    transparent calc(100% - 3.5px),
+    #000 calc(100% - 3px)
+  );
+  mask: radial-gradient(closest-side, transparent calc(100% - 3.5px), #000 calc(100% - 3px));
+  animation: effort-spin 1.4s linear infinite;
+}
+@keyframes effort-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+/* Embers: small square sparks, gold and red, rising from the fill and going out. */
+.effort-flare > i {
+  position: absolute;
+  bottom: 40%;
+  left: calc(15px + (100% - 30px) * var(--x));
+  width: 4px;
+  height: 4px;
+  background: var(--effort-gold);
+  box-shadow: 0 0 5px var(--effort-ember);
+  opacity: 0;
+  animation: effort-ember 1.9s ease-out infinite;
+  animation-delay: calc(var(--i) * -0.27s);
+}
+.effort-flare > i:nth-child(odd) {
+  background: var(--effort-ember);
+  animation-duration: 2.3s;
+}
+@keyframes effort-ember {
+  0% {
+    opacity: 0;
+    translate: 0 0;
+    scale: 1;
+  }
+  15% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    translate: calc((var(--i) - 3) * 2px) -30px;
+    scale: 0.4;
+  }
+}
+/* The title in flowing gold and red, with a glow. */
+.effort-view[data-effort='max'] .effort-heading strong {
+  background: linear-gradient(
+      90deg,
+      var(--effort-text),
+      var(--effort-title-ember),
+      var(--effort-title-gold),
+      var(--effort-title-ember),
+      var(--effort-text)
+    )
+    0 0 / 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--effort-ember) 45%, transparent));
+  animation: effort-title 2.6s linear infinite;
+}
+@keyframes effort-title {
+  to {
+    background-position: 200% 0;
+  }
+}
+@keyframes effort-sweep {
+  from {
+    --shine: -30%;
+  }
+  to {
+    --shine: 130%;
+  }
+}
+@keyframes effort-halo {
+  0%,
+  100% {
+    box-shadow:
+      var(--shadow-sm),
+      0 0 0 0 color-mix(in srgb, var(--effort-fill) 0%, transparent);
+  }
+  50% {
+    box-shadow:
+      var(--shadow-sm),
+      0 0 0 6px color-mix(in srgb, var(--effort-fill) 28%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-menu input[type='range'],
+  .effort-view[data-effort='max'] input[type='range']:enabled,
+  .effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb,
+  .effort-view[data-effort='max'] .effort-heading strong,
+  .effort-ring {
+    animation: none;
+  }
+  .effort-flare > i {
+    display: none;
+  }
 }
 .model-options {
   max-height: min(320px, 40dvh);
@@ -4178,7 +5607,7 @@ details[open] > summary > .fold-chevron {
 }
 .slash-menu {
   bottom: calc(100% - 44px);
-  left: max(28px, calc((100% - 820px) / 2));
+  left: max(28px, calc((100% - var(--chat-content-width, 768px)) / 2));
   width: 340px;
   max-width: calc(100vw - 40px);
   max-height: min(340px, 50vh);
@@ -4224,10 +5653,11 @@ details[open] > summary > .fold-chevron {
   padding-left: 6px;
 }
 .scenario-label select {
-  background: transparent;
+  background-color: transparent;
+  background-position: right 4px center;
   color: var(--muted);
   border: 0;
-  padding: 2px 4px;
+  padding: 2px 24px 2px 6px;
   font-size: calc(12.5rem / 14);
   min-height: var(--control-sm);
 }
@@ -4235,29 +5665,33 @@ details[open] > summary > .fold-chevron {
 .stop-button {
   width: var(--control-md);
   height: var(--control-md);
-  border-radius: 50%;
+  border-radius: var(--radius-md);
   margin-left: 4px;
 }
 .send-button {
-  background: var(--ink);
-  color: var(--ink-text);
+  background: var(--send);
+  color: #fff;
 }
 .icon-button.send-button:hover:not(:disabled) {
-  background: var(--ink-hover);
-  color: var(--ink-text);
+  background: var(--send-hover);
+  color: #fff;
 }
 .send-button:disabled {
-  background: var(--ink-off);
-  color: var(--muted);
-  opacity: 1;
+  background: var(--send);
+  color: #fff;
+  opacity: 0.4;
 }
 .stop-button {
-  background: var(--hover);
-  color: var(--text);
+  background: var(--ink);
+  color: var(--ink-text);
 }
 .stop-button svg.app-icon {
   width: var(--icon-xs);
   height: var(--icon-xs);
+}
+.stop-button:hover:not(:disabled) {
+  background: var(--ink-hover);
+  color: var(--ink-text);
 }
 .account-page {
   display: flex;
@@ -4289,19 +5723,60 @@ details[open] > summary > .fold-chevron {
   gap: 14px;
   margin-bottom: 25px;
 }
-.account-avatar {
-  display: grid;
-  place-items: center;
+/* The account page is a settings page like the others: the same column, its refresh button in the title's row. */
+.account-page.page {
+  display: block;
+}
+.page-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.page-title-row .page-title {
+  margin: 0;
+}
+/* The column's avatar (S mark on ink), at the size of a page's identity. */
+.side-avatar.account-avatar {
   width: 48px;
   height: 48px;
-  flex-shrink: 0;
-  border-radius: var(--radius-full);
-  background: var(--ok-soft);
-  color: var(--ok-text);
 }
-.account-avatar svg.app-icon {
-  width: var(--icon-lg);
-  height: var(--icon-lg);
+.account-avatar .account-mark {
+  height: 24px;
+}
+.account-none {
+  color: var(--faint);
+}
+/* Values still being read (AccountPanel): grey bars that breathe, still when motion is reduced. */
+.skeleton {
+  display: inline-block;
+  max-width: 100%;
+  height: 0.9em;
+  vertical-align: -0.1em;
+  border-radius: var(--radius-xs);
+  background: var(--hover);
+  animation: skeleton-pulse 1.6s ease-in-out infinite;
+}
+.skeleton-bar {
+  display: block;
+  width: 100%;
+  height: 6px;
+  margin: 10px 0 7px;
+  border-radius: var(--radius-full);
+}
+.quota-pending > div {
+  align-items: center;
+}
+@keyframes skeleton-pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }
 .account-identity > div {
   min-width: 0;
@@ -4418,7 +5893,7 @@ details[open] > summary > .fold-chevron {
   width: 100%;
   height: 6px;
   display: block;
-  accent-color: #3c9279;
+  accent-color: var(--clay-emphasized);
   margin: 10px 0 7px;
 }
 .quota-row small,
@@ -4462,6 +5937,21 @@ details[open] > summary > .fold-chevron {
   border-radius: var(--radius-md);
   font-size: calc(12rem / 14);
 }
+.usage-filters select {
+  padding: 0 30px 0 12px;
+}
+/* Five ranges fit the control whole; the quota's periods are a list beside it, quiet until one is chosen. */
+.usage-filters .segmented {
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.usage-filters select[aria-label='额度周期']:not(.chosen) {
+  color: var(--muted);
+}
+.usage-filters select.chosen {
+  border-color: var(--line-strong);
+  background-color: var(--selected);
+}
 .usage-custom {
   display: flex;
   flex-wrap: wrap;
@@ -4477,7 +5967,7 @@ details[open] > summary > .fold-chevron {
   max-width: 100%;
   min-width: 0;
   height: 36px;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-md);
   background: var(--segmented-bg);
   overflow-x: auto;
   scrollbar-width: none;
@@ -4501,7 +5991,8 @@ details[open] > summary > .fold-chevron {
   inset-block: 2px;
   inset-inline-start: 2px;
   width: calc((100% - 4px) / var(--segmented-count));
-  border-radius: var(--radius-full);
+  /* Nested 2px inside the 8px track. */
+  border-radius: var(--radius-sm);
   background: var(--segmented-active);
   box-shadow: var(--segmented-shadow);
   transform: translateX(calc(var(--segmented-index) * 100% * var(--segmented-direction, 1)));
@@ -4520,7 +6011,7 @@ details[open] > summary > .fold-chevron {
   height: 32px;
   min-height: 0;
   border: 0;
-  border-radius: var(--radius-full);
+  border-radius: var(--radius-sm);
   padding: 0 clamp(6px, 2cqw, 12px);
   background: transparent;
   font-size: var(--font-caption);
@@ -4591,10 +6082,11 @@ details[open] > summary > .fold-chevron {
   margin-bottom: 18px;
 }
 .usage-tiles > div {
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: var(--radius-lg);
   padding: 12px 14px;
   min-width: 0;
+  background: var(--surface-2);
 }
 .usage-tiles span {
   display: block;
@@ -4616,8 +6108,8 @@ details[open] > summary > .fold-chevron {
 }
 .usage-chart {
   margin: 0 0 22px;
-  border: 1px solid var(--line-soft);
-  border-radius: var(--radius-xl);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
   padding: 12px 14px 10px;
 }
 .usage-chart figcaption {
@@ -4665,8 +6157,13 @@ details[open] > summary > .fold-chevron {
   display: block;
   width: 100%;
   max-width: 28px;
-  border-radius: 4px 4px 0 0;
+  border-radius: var(--radius-xs) var(--radius-xs) 0 0;
   background: var(--accent);
+}
+.usage-bars > div > i,
+.usage-bars > div > span,
+.usage-bars b {
+  background: var(--series-1);
 }
 .usage-tip {
   position: absolute;
@@ -4734,11 +6231,11 @@ details[open] > summary > .fold-chevron {
   margin-top: 14px;
 }
 .usage-trend {
-  --series-1: #2a78d6;
-  --series-2: #eb6834;
-  --series-3: #1baf7a;
-  --series-4: #eda100;
-  --series-rate: #4a3aa7;
+  --series-1: #6a9bcc;
+  --series-2: #c6613f;
+  --series-3: #788c5d;
+  --series-4: #d4a27f;
+  --series-rate: #9a7fb8;
 }
 .usage-trend i.series-1,
 .usage-trend .usage-point.series-1 {
@@ -4954,6 +6451,34 @@ details[open] > summary > .fold-chevron {
 .error-banner span {
   overflow-wrap: anywhere;
 }
+/* An error inside a page: a tinted bar with its icon, not a bare line of text. */
+.inline-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 9px 12px;
+  border: 1px solid var(--danger-line);
+  border-radius: var(--radius-md);
+  background: var(--danger-soft);
+  color: var(--danger-text);
+  font-size: calc(13rem / 14);
+  overflow-wrap: anywhere;
+}
+.inline-alert svg.app-icon {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  margin-top: 2px;
+}
+/* A setting's state in words beside the action that changes it (web access, two-step verification). */
+.web-state {
+  font-size: calc(12.5rem / 14);
+  color: var(--muted);
+}
+.web-state.on {
+  color: var(--ok-text);
+}
 .connection-banner {
   background: var(--warn-soft);
   color: var(--warn-text);
@@ -4965,7 +6490,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   flex-wrap: wrap;
   gap: 10px;
-  max-width: var(--chat-content-width, 820px);
+  max-width: var(--chat-content-width, 768px);
   margin: 0 auto 18px;
   padding: 12px 14px;
   border: 1px solid var(--line);
@@ -4987,17 +6512,19 @@ details[open] > summary > .fold-chevron {
   overflow-wrap: anywhere;
 }
 dialog {
-  border: 1px solid var(--line);
+  border: 0;
   border-radius: var(--radius-xl);
   width: min(460px, calc(100vw - 32px));
   /* Keep the same bounds when a closed dialog finishes its visual exit outside the top layer. */
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
   overflow: auto;
-  padding: 24px;
+  padding: 22px 24px 20px;
   color: var(--text);
-  background: var(--raised);
-  box-shadow: var(--shadow-popover);
+  background: var(--surface-1);
+  box-shadow:
+    0 0 0 0.5px var(--line-strong),
+    0 24px 64px light-dark(rgb(0 0 0 / 14%), rgb(0 0 0 / 55%));
 }
 dialog::backdrop {
   background: var(--backdrop);
@@ -5007,31 +6534,57 @@ dialog::backdrop {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  margin-bottom: 23px;
+  margin-bottom: 16px;
 }
 .dialog-heading h2 {
   margin: 0;
+  font-size: calc(17rem / 14);
+  font-weight: 600;
 }
 .managed-server-upgrade {
   overflow-wrap: anywhere;
 }
+.managed-server-upgrade > .setting-actions {
+  margin-top: 22px;
+}
 .dialog-form {
   display: flex;
   flex-direction: column;
-  gap: 19px;
+  gap: 16px;
 }
 .dialog-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 10px;
-  margin-top: 10px;
+  gap: 8px;
+  margin-top: 22px;
 }
 .delete-question {
   overflow-wrap: anywhere;
   margin-bottom: 10px;
 }
-.sidebar-shade {
+/* Folded on its own by a narrow window, the column opens over the page from the window's edge, over the rail it
+   unfolds from, with a shade over the rest. */
+.shell.side-overlay > .sidebar {
+  position: fixed;
+  left: 0;
+  top: var(--bar);
+  bottom: 0;
+  width: min(clamp(240px, var(--sidebar-width, 288px), 420px), calc(100vw - 48px));
+  z-index: 12;
+  box-shadow: var(--shadow-popover);
+}
+.shell.side-overlay .sidebar-resize {
   display: none;
+}
+.shell.side-overlay.side-closed > .sidebar {
+  translate: -100% 0;
+}
+.sidebar-shade {
+  position: fixed;
+  inset: var(--bar) 0 0 0;
+  z-index: 11;
+  border: 0;
+  background: var(--backdrop);
 }
 @media (max-width: 700px) {
   .sidebar-brand,
@@ -5074,38 +6627,10 @@ dialog::backdrop {
   .settings-only .workspace {
     flex: 1;
   }
-  .shell,
-  .shell.side-closed {
-    grid-template-columns: 44px 0 minmax(0, 1fr);
-  }
-  .shell > .sidebar {
-    position: fixed;
-    left: 44px;
-    top: var(--bar);
-    bottom: 0;
-    width: min(284px, calc(100vw - 60px));
-    z-index: 12;
-    box-shadow: var(--shadow-popover);
-  }
-  .sidebar-resize {
-    display: none;
-  }
-  .shell.side-closed > .sidebar {
-    translate: -100% 0;
-  }
-  .sidebar-shade {
-    display: block;
-    position: fixed;
-    inset: var(--bar) 0 0 44px;
-    z-index: 11;
-    border: 0;
-    background: var(--backdrop);
-  }
   .workspace {
     border-radius: var(--radius-xl) 0 0 0;
   }
-  .titlebar-menus button[aria-haspopup],
-  .connection-status small {
+  .titlebar-menus button[aria-haspopup] {
     display: none;
   }
   .titlebar h1 {
@@ -5204,7 +6729,7 @@ dialog::backdrop {
 /* Scrolling areas show a thin bar that keeps out of the way. */
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--line-strong) transparent;
+  scrollbar-color: light-dark(rgb(31 30 29 / 22%), rgb(222 220 209 / 22%)) transparent;
 }
 .account-heading {
   min-height: 0;
@@ -5212,7 +6737,11 @@ dialog::backdrop {
   border-bottom: 0;
 }
 .account-heading h1 {
-  font-size: calc(26rem / 14);
+  font-size: calc(28rem / 14);
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  margin-bottom: 18px;
 }
 .account-heading h1 > svg.app-icon {
   display: none;
@@ -5229,10 +6758,10 @@ dialog::backdrop {
   max-width: 640px;
   margin: 6px 0 10px;
   border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   overflow: hidden;
-  box-shadow: var(--shadow-md);
+  box-shadow: none;
 }
 .question-card fieldset {
   display: grid;
@@ -5309,6 +6838,8 @@ dialog::backdrop {
 }
 .menu-heading {
   max-width: 300px;
+  font-size: calc(12rem / 14);
+  padding: 8px 10px 6px;
 }
 .menu-label small {
   overflow-wrap: anywhere;
@@ -5338,9 +6869,9 @@ dialog::backdrop {
 }
 .stat-chip[aria-pressed='true'],
 .stat-chip[aria-checked='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  color: var(--accent);
+  border-color: var(--text);
+  background: var(--hover);
+  color: var(--text);
 }
 .stat-chip:disabled {
   opacity: 0.5;
@@ -5362,15 +6893,16 @@ dialog::backdrop {
   padding: 6px;
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: transparent;
   text-align: left;
 }
 .theme-option:hover {
   border-color: var(--line-strong);
 }
 .theme-option[aria-checked='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  border-color: var(--text);
+  background: transparent;
+  box-shadow: 0 0 0 1px var(--text);
 }
 .theme-preview {
   display: flex;
@@ -5406,7 +6938,7 @@ dialog::backdrop {
 .theme-preview-message {
   width: 58%;
   height: 13px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--surface-2);
 }
 .theme-preview-composer {
@@ -5415,6 +6947,29 @@ dialog::backdrop {
   border: 1px solid var(--line);
   border-radius: 5px;
   background: var(--surface-3);
+}
+/* Each reply face shows itself, on the page's paper. */
+.font-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 72px;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  background: var(--surface-1);
+  color: var(--text);
+  font-size: calc(24rem / 14);
+  line-height: 1;
+  white-space: nowrap;
+}
+.font-preview[data-preview='serif'] {
+  font-family: var(--font-reply-serif);
+}
+.font-preview[data-preview='mixed'] {
+  font-family: var(--font-reply-mixed);
+}
+.font-preview[data-preview='ui'] {
+  font-family: var(--font-ui);
 }
 .theme-option-label {
   display: flex;
@@ -5440,36 +6995,28 @@ dialog::backdrop {
     align-items: center;
     gap: 10px;
   }
-  .theme-preview {
+  .theme-preview,
+  .font-preview {
     height: 56px;
   }
 }
 
 /* Browser access uses the workbench's existing rows and dialogs, not a second shell. */
-.web-login {
-  min-height: 100dvh;
-  display: grid;
-  place-items: center;
-  padding: 24px;
+/* The browser's sign-in is laid out by .login-page (LoginPage); the gate's certificate note sits under the title. */
+.web-login .web-trust-warning {
+  margin: 0 0 20px;
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-md);
+  background: var(--warn-soft);
 }
-.web-login-body {
-  width: min(100%, 400px);
-}
-.web-login-body h1 {
-  margin: 0 0 8px;
-  font-size: calc(26rem / 14);
-}
-.web-login-body form,
 .web-settings-form fieldset {
   display: grid;
   gap: 18px;
 }
-.web-login-body label,
 .web-settings-form label {
   display: grid;
   gap: 6px;
 }
-.web-login-body input,
 .web-settings-form input,
 .web-settings-form textarea {
   width: 100%;
@@ -5566,7 +7113,7 @@ dialog:has(.web-settings-form) {
 }
 .web-settings-form textarea {
   resize: vertical;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: calc(12rem / 14);
 }
 .web-settings-form .dialog-actions {
@@ -5737,7 +7284,7 @@ dialog:has(.web-settings-form) {
   display: block;
   position: fixed;
   inset: 0;
-  z-index: 40;
+  z-index: var(--z-dialog);
   animation: motion-dialog-out var(--cds-dur-base) var(--cds-ease-out) both;
 }
 .motion-presence[data-kind='dialog'][data-state='exit']::before {
@@ -5892,6 +7439,22 @@ dialog:has(.web-settings-form) {
 
 /* The popup and inline fallback share the same terminal workspace. */
 .terminal-workspace {
+  /* One warm dark frame in either app theme: the tabs, the canvas and the footer read as a single window. */
+  --text: #faf9f5;
+  --text-2: #c2c0b6;
+  --muted: #9c9a92;
+  --faint: #8e8c84;
+  --hover: rgb(250 249 245 / 7%);
+  --selected: rgb(250 249 245 / 11%);
+  --line: rgb(222 220 209 / 14%);
+  --line-soft: rgb(222 220 209 / 8%);
+  --surface: #262624;
+  --surface-1: #1f1e1d;
+  --surface-2: #30302e;
+  --surface-3: #30302e;
+  --popover: #30302e;
+  --raised: #30302e;
+  color-scheme: dark;
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -5899,7 +7462,7 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   position: relative;
   overflow: hidden;
-  background: var(--surface);
+  background: #1f1e1d;
   color: var(--text);
 }
 .workspace > .terminal-workspace {
@@ -5909,12 +7472,13 @@ dialog:has(.web-settings-form) {
 .terminal-tabs-header {
   display: flex;
   align-items: center;
-  gap: 3px;
-  height: 36px;
+  gap: 4px;
+  height: 40px;
   flex-shrink: 0;
-  padding: 0 6px;
-  border-bottom: 1px solid var(--line);
+  padding: 0 8px;
+  border-bottom: 0;
   -webkit-app-region: drag;
+  background: #1f1e1d;
 }
 .terminal-tabs-header button,
 .terminal-tab {
@@ -5926,10 +7490,10 @@ dialog:has(.web-settings-form) {
 }
 .terminal-tabs {
   display: flex;
-  gap: 3px;
+  gap: 2px;
   flex: 0 1 auto;
   align-self: stretch;
-  align-items: flex-end;
+  align-items: center;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: thin;
@@ -5938,14 +7502,20 @@ dialog:has(.web-settings-form) {
   display: flex;
   flex: 0 0 auto;
   max-width: 230px;
-  min-width: 110px;
+  min-width: 120px;
   align-items: center;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  border-bottom: 2px solid transparent;
+  border: 0;
+  border-radius: var(--radius-md);
 }
 .terminal-tab.active {
-  border-bottom-color: var(--clay);
-  background: var(--hover);
+  background: #30302e;
+  box-shadow: inset 0 0 0 0.5px var(--line);
+}
+@media (forced-colors: active) {
+  .terminal-tab.active {
+    outline: 1px solid Highlight;
+    outline-offset: -1px;
+  }
 }
 .terminal-tab > button[role='tab'] {
   display: flex;
@@ -5962,18 +7532,19 @@ dialog:has(.web-settings-form) {
 }
 .terminal-tab > button[role='tab']::before {
   content: '';
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
   flex-shrink: 0;
-  border: 1px solid var(--muted);
+  border: 0;
   border-radius: var(--radius-full);
+  background: #5e5d59;
 }
 .terminal-tab[data-phase='running'] > button[role='tab']::before {
-  background: var(--muted);
+  background: var(--clay);
 }
 .terminal-tab-ended {
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   flex-shrink: 0;
 }
 .terminal-tab span,
@@ -5993,8 +7564,8 @@ dialog:has(.web-settings-form) {
 }
 .terminal-list {
   position: absolute;
-  z-index: 10;
-  top: 36px;
+  z-index: var(--z-sticky);
+  top: 40px;
   right: 5px;
   width: min(360px, calc(100% - 10px));
   max-height: 60%;
@@ -6003,16 +7574,42 @@ dialog:has(.web-settings-form) {
   flex-direction: column;
   align-items: stretch;
   padding: 6px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--surface);
-  box-shadow: 0 5px 18px #0004;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
 }
-.terminal-list button {
-  overflow-wrap: anywhere;
-  white-space: normal;
-  text-align: left;
-  justify-content: flex-start;
+/* The open terminals as a menu (audit G2): the search inside its top, one row per terminal with its state's
+   dot and where it runs under the name, then the actions under a rule, as menu rows. */
+.terminal-list-search {
+  position: relative;
+  display: block;
+  margin: 0 0 4px;
+}
+.terminal-list-search > svg.app-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
+  translate: 0 -50%;
+}
+.terminal-list-search > input {
+  width: 100%;
+  height: 32px;
+  padding: 0 10px 0 32px;
+  border: 0;
+  border-bottom: 1px solid var(--line-soft);
+  border-radius: var(--radius-md) var(--radius-md) 0 0;
+  background: transparent;
+  font-size: calc(13rem / 14);
+  box-shadow: none;
+}
+.terminal-list-search > input:focus-visible {
+  outline: none;
+  box-shadow: none;
+  border-bottom-color: var(--focus);
 }
 .terminal-list [role='listbox'] {
   display: flex;
@@ -6020,24 +7617,79 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   overflow: auto;
 }
-.terminal-list [role='option'] {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
+.terminal-list [role='listbox'] > p {
+  margin: 6px 10px;
+  color: var(--faint);
+  font-size: calc(12.5rem / 14);
 }
-.terminal-list [role='option'][aria-selected='true'] {
+.terminal-list-row,
+.terminal-list-action {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: calc(13.5rem / 14);
+  text-align: left;
+}
+.terminal-list-row {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  column-gap: 10px;
+  align-items: center;
+}
+.terminal-list-row::before {
+  content: '';
+  grid-row: 1;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #5e5d59;
+}
+.terminal-list-row[data-phase='running']::before {
+  background: var(--clay);
+}
+.terminal-list-row > span,
+.terminal-list-row > small {
+  grid-column: 2;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.terminal-list-row > small,
+.terminal-list-name > small {
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+.terminal-list-row[aria-selected='true'] {
   background: var(--selected);
 }
-.terminal-list small {
+.terminal-list-row:hover,
+.terminal-list-action:hover:not(:disabled) {
+  background: var(--hover);
+}
+.terminal-list > hr {
+  width: calc(100% - 12px);
+  margin: 4px 6px;
+  border: 0;
+  border-top: 1px solid var(--line);
+}
+.terminal-list-action > svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
   color: var(--muted);
-  font-size: 11px;
 }
 .terminal-panels {
   display: flex;
   flex-direction: column;
   flex: 1;
   min-height: 0;
-  background: #0b0b0a;
+  background: var(--terminal-bg);
 }
 .terminal-panel {
   display: flex;
@@ -6054,7 +7706,7 @@ dialog:has(.web-settings-form) {
   border: 0;
 }
 .terminal-create-status {
-  color: #dedcd6;
+  color: var(--text);
   padding: 16px;
   overflow-wrap: anywhere;
 }
@@ -6062,10 +7714,11 @@ dialog:has(.web-settings-form) {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 3px 8px;
-  font-size: 11px;
-  color: var(--muted);
-  border-top: 1px solid var(--line);
+  padding: 5px 12px;
+  font-size: calc(11rem / 14);
+  color: var(--faint);
+  border-top: 1px solid var(--line-soft);
+  background: #1f1e1d;
 }
 .terminal-workspace-footer span {
   max-width: 100%;
@@ -6081,6 +7734,16 @@ dialog:has(.web-settings-form) {
   margin: 0;
   padding: 5px 8px;
   color: var(--danger, #d44);
+}
+/* In the terminal window, the main action is the clay one and dialogs sit on its warm charcoal. */
+.terminal-workspace .button.primary {
+  background: var(--clay-emphasized);
+  border-color: var(--clay-emphasized);
+  color: #fff;
+}
+.terminal-workspace dialog {
+  background: #262624;
+  color: var(--text);
 }
 @media (max-width: 600px) {
   .terminal-tab {
@@ -6137,8 +7800,16 @@ dialog:has(.web-settings-form) {
 .shell.web-self-signed.has-terminal-workspace > .workspace {
   grid-row: 4;
 }
+.terminal-file-where {
+  margin: -6px 0 2px;
+  color: var(--muted);
+  font-size: calc(12.5rem / 14);
+}
 .terminal-file-path {
   overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+  font-size: calc(12.5rem / 14);
+  color: var(--text-2);
 }
 .terminal-file-image {
   display: block;
@@ -6146,25 +7817,25 @@ dialog:has(.web-settings-form) {
   max-height: 45vh;
   object-fit: contain;
 }
+/* The file's text on a quiet panel, like a code block's body. */
 .terminal-file-text {
   max-height: 45vh;
   overflow: auto;
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-md);
+  background: var(--surface-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 
 /* File and website previews use the existing session layout; the native browser only covers its viewport. */
 .shell.has-preview {
-  --preview-offset: var(--sidebar-size);
   --preview-size: min(
     var(--preview-width, 440px),
-    max(320px, calc(100vw - 52px - var(--preview-offset) - 360px))
+    max(320px, calc(100vw - var(--rail-size) - var(--sidebar-track) - 360px))
   );
-  grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr) var(--preview-size);
-}
-.shell.side-closed.has-preview {
-  --preview-offset: 0px;
-  grid-template-columns: 52px 0 minmax(0, 1fr) var(--preview-size);
+  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr) var(--preview-size);
 }
 .shell.has-preview > .terminal-workspace-slot {
   grid-column: 2 / 4;
@@ -6186,15 +7857,21 @@ dialog:has(.web-settings-form) {
   display: flex;
   align-items: center;
   gap: 3px;
-  padding: 6px 10px;
-  min-height: var(--control-lg);
+  padding: 6px 10px 6px 14px;
+  min-height: 44px;
   flex: none;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
 }
 .preview-heading strong {
   margin-right: auto;
-  font-size: 1rem;
+  font-size: calc(13rem / 14);
   font-weight: 500;
+  color: var(--text-2);
+}
+/* Holding only the name, the heading is needed only as the terminal window's strip under Windows' window
+   buttons (below); elsewhere the tab row carries the controls and the heading goes. */
+.preview-heading.preview-title-only {
+  display: none;
 }
 .preview-heading-actions {
   display: flex;
@@ -6205,30 +7882,30 @@ dialog:has(.web-settings-form) {
 .preview-tabs {
   display: flex;
   flex: none;
-  gap: 3px;
-  align-items: flex-end;
+  gap: 2px;
+  align-items: center;
   min-height: 36px;
   overflow-x: auto;
-  padding: 0 8px;
+  padding: 0 6px;
   overflow-y: hidden;
   border-bottom: 1px solid var(--line-soft);
 }
+/* Tabs are the side column's rows laid side by side: 8px corners, the hover fill, the selected fill for the
+   open one. Clay is kept for sending, new sessions, the brand and running (spec §1.3), so no clay underline. */
 .preview-tab {
   display: flex;
   align-items: center;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md);
   flex: none;
   max-width: 220px;
   min-width: 0;
-  height: var(--control-md);
+  height: var(--control-compact);
 }
 .preview-tab:hover {
   background: var(--hover);
 }
 .preview-tab.active {
-  background: var(--hover);
-  border-bottom-color: var(--clay);
+  background: var(--selected);
 }
 .preview-tab > button[role='tab'] {
   display: flex;
@@ -6240,7 +7917,8 @@ dialog:has(.web-settings-form) {
   line-height: 20px;
   background: none;
   border: 0;
-  padding: 0 5px 0 8px;
+  border-radius: var(--radius-md);
+  padding: 0 4px 0 10px;
   color: var(--muted);
   text-overflow: ellipsis;
   overflow: hidden;
@@ -6261,6 +7939,11 @@ dialog:has(.web-settings-form) {
 }
 .preview-tab > .icon-button {
   flex: none;
+  margin-right: 2px;
+}
+/* A tab's close button shows on the open tab, under the pointer and with the keyboard on the tab. */
+.preview-tab:not(.active, :hover, :focus-within) > .icon-button {
+  opacity: 0;
 }
 .preview-tabs button:focus-visible {
   outline-offset: -2px;
@@ -6306,14 +7989,44 @@ dialog:has(.web-settings-form) {
   display: none;
 }
 .preview-path {
+  display: flex;
   flex: 1;
   min-width: 0;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--muted);
   font-size: var(--font-caption);
-  padding-inline: 5px;
+  padding-inline: 6px;
+}
+/* The folders give way first; the file's name keeps its place and only shortens when it alone is too long. */
+.preview-path-folder {
+  flex: 0 1 auto;
+  min-width: 1.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--faint);
+}
+.preview-path-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+/* Preview or source: the shared segmented control at the toolbar's 28px, sized to its two words. */
+.preview-toolbar > .segmented.preview-mode {
+  /* Sized by its words rather than as a container, so it neither collapses nor scrolls. */
+  container-type: normal;
+  flex: none;
+  width: auto;
+  height: var(--control-compact);
+  margin-right: 4px;
+}
+.preview-mode .segmented-track {
+  height: var(--control-compact);
+}
+.preview-mode button {
+  height: calc(var(--control-compact) - 4px);
+  padding: 0 10px;
 }
 .preview-native {
   flex: 1;
@@ -6352,7 +8065,7 @@ dialog:has(.web-settings-form) {
   top: -16px;
   background: var(--surface);
   padding: 8px 0;
-  z-index: 1;
+  z-index: var(--z-content);
   display: flex;
   gap: 4px;
   margin-bottom: 12px;
@@ -6430,23 +8143,41 @@ dialog:has(.web-settings-form) {
 .preview-empty-actions > .button {
   white-space: nowrap;
 }
+/* The same divider as the side column's: an 8px target whose middle shows a 2px blue line under the pointer,
+   with the keyboard on it and while dragging. */
 .preview-resize {
   position: absolute;
   inset: 0 auto 0 -4px;
   width: 8px;
   cursor: col-resize;
   touch-action: none;
-  z-index: 1;
+  z-index: var(--z-content);
 }
-.preview-resize:hover {
-  background: var(--accent);
-  opacity: 0.3;
+.preview-resize::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms ease-out;
+}
+.preview-resize:is(:hover, :focus-visible)::after,
+.preview-sidebar[data-preview-resizing] > .preview-resize::after {
+  background: var(--focus);
+}
+.preview-resize:focus-visible {
+  outline: 0;
+}
+.preview-sidebar[data-preview-resizing],
+.preview-sidebar[data-preview-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 .preview-full {
   position: fixed;
-  inset: var(--bar) 0 0 52px;
+  inset: var(--bar) 0 0 var(--rail-size, 0px);
   width: auto !important;
-  z-index: 20;
+  z-index: var(--z-sidebar);
 }
 .terminal-preview-layout {
   display: flex;
@@ -6507,26 +8238,48 @@ dialog:has(.web-settings-form) {
     border-top: 1px solid var(--line-soft);
   }
 }
+/* The shade under a preview laid over the page; only a narrow main window has one. */
+.preview-shade {
+  display: none;
+}
+@keyframes preview-slide-in {
+  from {
+    translate: 100% 0;
+  }
+}
+@keyframes preview-shade-in {
+  from {
+    opacity: 0;
+  }
+}
 @media (max-width: 1050px) {
   .shell.has-preview {
-    grid-template-columns: 52px var(--sidebar-size) minmax(0, 1fr);
-  }
-  .shell.side-closed.has-preview {
-    grid-template-columns: 52px 0 minmax(0, 1fr);
+    grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
   }
   .shell.has-preview > .terminal-workspace-slot {
     grid-column: 2 / -1;
   }
+  /* Too narrow to stand beside the page, the preview is laid over it like the folded side column's overlay:
+     it slides in from the window's edge over a shade, and a click on the shade puts it away. */
   .shell > .preview-sidebar {
     position: absolute;
     top: var(--bar);
     right: 0;
     bottom: 0;
-    width: min(var(--preview-width, 440px), calc(100% - 52px));
+    width: min(var(--preview-width, 440px), calc(100% - var(--rail-size)));
     box-shadow: var(--shadow-popover);
+    animation: preview-slide-in var(--cds-dur-sheet) var(--cds-ease-snap);
+  }
+  .shell > .preview-shade {
+    display: block;
+    position: fixed;
+    inset: var(--bar) 0 0 0;
+    z-index: 14;
+    background: var(--backdrop);
+    animation: preview-shade-in var(--cds-dur-sheet) var(--cds-ease-out);
   }
   .shell > .preview-full {
-    left: 52px;
+    left: var(--rail-size);
     width: auto;
   }
   .preview-resize {
@@ -6534,15 +8287,8 @@ dialog:has(.web-settings-form) {
   }
 }
 @media (max-width: 700px) {
-  .shell.has-preview,
-  .shell.side-closed.has-preview {
-    grid-template-columns: 44px 0 minmax(0, 1fr);
-  }
   .shell > .preview-sidebar {
-    width: calc(100% - 44px);
-  }
-  .shell > .preview-full {
-    left: 44px;
+    width: calc(100% - var(--rail-size));
   }
   .preview-heading {
     padding-inline: 6px;
@@ -6558,8 +8304,9 @@ dialog:has(.web-settings-form) {
   max-height: 33vh;
   min-height: 28px;
   overflow: auto;
-  padding: 2px 8px;
-  background: var(--surface-1);
+  padding: 10px 12px;
+  background: #1f1e1d;
+  border-top: 1px solid var(--line-soft);
 }
 .terminal-draft-actions {
   display: flex;
@@ -6567,41 +8314,143 @@ dialog:has(.web-settings-form) {
   gap: 4px;
   flex-wrap: wrap;
 }
-.terminal-draft-body {
+.terminal-draft-actions .button {
+  --button-height: 28px;
+  border: 0;
+  color: var(--text-2);
+}
+/* The draft is a small input box (audit G3): one rounded card holding the text, and under it attachments on the
+   left and "paste into the terminal" on the right, the rest behind "…". */
+.terminal-draft-card {
   display: grid;
-  gap: 4px;
-  padding: 4px 0;
+  gap: 2px;
+  margin-top: 6px;
+  padding: 4px 6px 6px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-lg);
+  background: #262624;
+  transition: border-color var(--cds-dur-snap) var(--cds-ease-out);
+}
+.terminal-draft-card:focus-within {
+  border-color: var(--focus);
 }
 .terminal-draft textarea {
   min-height: 44px;
   height: 70px;
   width: 100%;
-  resize: vertical;
+  resize: none;
   max-height: 14vh;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: var(--font-mono);
   font-size: var(--code-font-size, 13px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text);
+  padding: 6px 6px 2px;
+  outline: none;
+  box-shadow: none;
+}
+.terminal-draft textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.terminal-draft-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.terminal-draft-toolbar .button.primary {
+  --button-height: 28px;
 }
 .terminal-draft p,
 .terminal-draft small {
   margin: 0;
-  font-size: 11px;
+  font-size: calc(11rem / 14);
   color: var(--muted);
 }
+.terminal-draft-message {
+  min-width: 0;
+}
+.terminal-draft-more {
+  position: relative;
+}
+.terminal-draft-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  z-index: 5;
+  display: grid;
+  min-width: 140px;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+}
+.terminal-draft-menu > button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font-size: calc(13rem / 14);
+  text-align: left;
+}
+.terminal-draft-menu > button:hover {
+  background: var(--hover);
+}
+.terminal-draft-menu > button.danger {
+  color: var(--danger-text);
+}
+.terminal-draft-menu svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+}
+/* The histories as list rows (G4): title and date on the left, “继续” at the row's end; rows like menu rows. */
 .terminal-history-list {
   display: grid;
-  gap: 8px;
+  gap: 2px;
   max-height: 40vh;
   overflow: auto;
-  padding: 8px 0;
+  margin: 12px -10px 0;
 }
 .terminal-history-list > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+}
+.terminal-history-list > div:hover {
+  background: var(--hover);
+}
+.terminal-history-title {
   display: grid;
-  gap: 4px;
-  border-bottom: 1px solid var(--line);
-  padding: 8px 0;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.terminal-history-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
 }
 .terminal-history-list small {
   color: var(--muted);
+}
+.terminal-history-note {
+  margin: 0 0 12px;
+}
+.terminal-history-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(13rem / 14);
 }
 .terminal-workspace[data-native-controls='true'] .terminal-tabs-header {
   padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 6px);
@@ -6632,28 +8481,51 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   background: var(--surface);
 }
+/* A pane's one heading row (audit H1): its tabs, scrolling sideways when many, then its controls as icons, and
+   on the first docked pane the preview's own controls after a hairline. */
 .preview-pane-heading {
   display: flex;
   align-items: center;
   gap: 2px;
-  padding: 3px 8px;
-  min-height: 32px;
+  padding: 0 6px 0 0;
+  min-height: 40px;
   border-bottom: 1px solid var(--line-soft);
   flex: none;
 }
-.preview-pane-heading > span {
+.preview-pane-heading > .preview-tabs {
   flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  border-bottom: 0;
+}
+.preview-pane-grip {
+  flex: none;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 6px 0 12px;
   color: var(--muted);
   font-size: var(--font-caption);
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
-.preview-pane.is-focused > .preview-pane-heading > span {
-  color: var(--text);
+.preview-pane-actions,
+.preview-pane-heading > .preview-heading-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 2px;
+}
+.preview-pane-heading > .preview-heading-actions {
+  margin-left: 4px;
+  padding-left: 6px;
+  border-left: 1px solid var(--line-soft);
+}
+/* With several panes, the one the keyboard and new files go to keeps the full selected fill. */
+.preview-pane:not(.is-focused) .preview-tab.active {
+  background: var(--hover);
 }
 .preview-pane[data-drop] {
-  outline: 2px solid var(--clay);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 .preview-pane-floating {
@@ -6682,21 +8554,23 @@ dialog:has(.web-settings-form) {
   border-bottom: 3px solid var(--muted);
 }
 .preview-tree {
-  width: 180px;
+  width: 200px;
   min-width: 120px;
-  max-width: 38%;
+  max-width: 45%;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line-soft);
   background: var(--surface);
 }
+/* As tall as the tab row beside it, so their hairlines meet; the folder's name reads as a group heading. The
+   column's 200px is `previewTreeWidth` (previewLayout.ts), which widens the preview by as much. */
 .preview-tree > header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: 2px;
+  padding: 0 6px 0 14px;
   border-bottom: 1px solid var(--line-soft);
-  min-height: 32px;
+  min-height: 40px;
   flex: none;
 }
 .preview-tree > header > span {
@@ -6705,51 +8579,61 @@ dialog:has(.web-settings-form) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--font-caption);
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  font-weight: 500;
 }
 .preview-tree > [role='tree'] {
   overflow: auto;
-  padding: 6px 3px;
+  padding: 6px;
   flex: 1;
   min-height: 0;
 }
+/* The side column's rows (spec §6.3): 32px, 8px corners, 14px names in the second text colour; the hover and
+   selected fills cover the whole row and only the content moves in, 16px a level. */
 .preview-tree-item {
+  --tree-indent: calc(var(--tree-depth, 0) * 16px);
   display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 28px;
+  gap: 6px;
+  min-height: 32px;
   width: 100%;
+  margin-bottom: 1px;
   border: 0;
   background: transparent;
-  color: var(--text);
+  color: var(--text-2);
   text-align: left;
-  font-size: var(--font-caption);
-  padding: 3px 5px;
-  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  line-height: 20px;
+  padding: 0 8px 0 calc(8px + var(--tree-indent));
+  border-radius: var(--radius-md);
 }
 .preview-tree-item > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .preview-tree-item > svg {
   flex: none;
-  color: var(--muted);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
 }
 .preview-tree-item:hover {
   background: var(--hover);
 }
 .preview-tree-item[aria-selected='true'] {
-  background: var(--hover);
-  color: var(--clay);
+  background: var(--selected);
+  color: var(--text);
 }
-.preview-tree-group {
-  padding-left: 12px;
+.preview-tree-item:focus-visible {
+  outline-offset: -2px;
 }
 .preview-tree-notice {
-  padding: 6px;
-  color: var(--muted);
-  font-size: var(--font-caption);
+  padding: 6px 8px 6px calc(30px + var(--tree-depth, 0) * 16px);
+  color: var(--faint);
+  font-size: calc(12rem / 14);
   overflow-wrap: anywhere;
   margin: 0;
 }
@@ -6769,10 +8653,7 @@ dialog:has(.web-settings-form) {
     width: 130px;
   }
   .preview-pane-heading {
-    padding-inline: 4px;
-  }
-  .preview-pane-heading > span {
-    display: none;
+    padding-inline: 0 4px;
   }
 }
 
@@ -6831,6 +8712,12 @@ dialog:has(.web-settings-form) {
   align-items: center;
   gap: 2px;
   flex: none;
+}
+.answer-quote-actions .button {
+  --button-height: 28px;
+  padding-inline: 8px;
+  border: 0;
+  font-weight: 400;
 }
 .message-footer:has(.answer-quote-actions) {
   flex-wrap: wrap;
@@ -6908,6 +8795,7 @@ dialog:has(.web-settings-form) {
   white-space: normal;
 }
 .side-conversation {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -6917,36 +8805,44 @@ dialog:has(.web-settings-form) {
   overflow-y: auto;
   background: var(--surface);
 }
+/* One 36px line under the tab (which names the conversation): where it branched from. The conversation's find
+   button is laid at the end of it instead of taking a row of its own. */
 .side-conversation-source {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 12px;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 44px 0 14px;
   border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: calc(12rem / 14);
   flex: none;
 }
-.side-conversation-source strong {
-  font-size: var(--font-caption);
-  font-weight: 500;
+.side-conversation-source > svg {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
+}
+.side-conversation-source > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.side-conversation-source span {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--font-caption-small);
-  line-height: 1.5;
-}
 .side-conversation .conversation-tools {
-  padding: 4px 8px;
-  flex: none;
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-height: 32px;
+  padding: 0;
+}
+.side-conversation .conversation-tools .icon-button {
+  width: var(--control-compact);
+  height: var(--control-compact);
 }
 .side-conversation .conversation {
-  padding: 12px;
+  padding: 16px;
 }
 .side-conversation .conversation-frame {
   min-height: 80px;
@@ -6958,7 +8854,7 @@ dialog:has(.web-settings-form) {
 .side-conversation .composer-area {
   flex: none;
   min-width: 0;
-  padding: 8px;
+  padding: 0 12px 12px;
 }
 .side-conversation .composer {
   width: 100%;
@@ -6969,4 +8865,32 @@ dialog:has(.web-settings-form) {
 }
 .follow-up-queue .quote-references {
   flex: none;
+}
+
+/* Clawd on the message box (Clawd.tsx): his feet on the box's top edge (or on the queue's, when there is one),
+   near the right. Pixel units scale with the interface font size; he never takes the pointer. */
+.clawd {
+  --clawd-unit: calc(2rem / 14);
+  position: absolute;
+  right: 18px;
+  bottom: 100%;
+  width: calc(var(--clawd-unit) * 20);
+  height: calc(var(--clawd-unit) * 11);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+/* The queue tray and the message box as one stack (Composer.tsx), the place Clawd stands on. */
+.composer-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--chat-content-width, 768px);
+  min-height: 0;
+  flex-shrink: 1;
+  margin: 0 auto;
+}
+.side-conversation .composer-stack {
+  max-width: none;
 }

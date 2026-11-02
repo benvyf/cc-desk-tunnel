@@ -2,7 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { PROTOCOL_VERSION, type Session, type SessionEvent } from '@cc-desk-tunnel/protocol';
-import { screenshots } from './helpers.ts';
+import { contrast, screenshots } from './helpers.ts';
 
 const thought =
   '**检查需求**\n正在检查工程目录和主题适配。\n\n[思考唯一链接](https://example.com)\n\n' +
@@ -458,21 +458,7 @@ for (const theme of ['light', 'dark']) {
     await open(page, theme);
     const summary = page.locator('.thinking-block > summary');
     await summary.hover();
-    const ratio = await summary.locator('.thinking-preview').evaluate((el) => {
-      const luminance = (value: string) => {
-        const c = value
-          .match(/[\d.]+/g)!
-          .slice(0, 3)
-          .map(Number)
-          .map((v) => v / 255)
-          .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-      };
-      const text = luminance(getComputedStyle(el).color);
-      const background = luminance(getComputedStyle(el.closest('summary')!).backgroundColor);
-      return (Math.max(text, background) + 0.05) / (Math.min(text, background) + 0.05);
-    });
-    expect(ratio).toBeGreaterThanOrEqual(4.5);
+    expect(await contrast(summary.locator('.thinking-preview'))).toBeGreaterThanOrEqual(4.5);
   });
 }
 
@@ -525,26 +511,7 @@ for (const theme of ['light', 'dark', 'system']) {
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(
           true,
         );
-        const colour = await label.evaluate((el) => {
-          const background = getComputedStyle(el.closest('.thinking-block')!).backgroundColor;
-          const luminance = (value: string) => {
-            const c = value
-              .match(/[\d.]+/g)!
-              .slice(0, 3)
-              .map(Number)
-              .map((v) => v / 255)
-              .map((v) => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
-            return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
-          };
-          const a = luminance(getComputedStyle(el).color),
-            b = luminance(background);
-          return {
-            text: getComputedStyle(el).color,
-            background,
-            ratio: (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05),
-          };
-        });
-        expect(colour.ratio).toBeGreaterThanOrEqual(4.5);
+        expect(await contrast(label)).toBeGreaterThanOrEqual(4.5);
         expect(await block.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
       }
       return label.evaluate((el) => getComputedStyle(el).color);

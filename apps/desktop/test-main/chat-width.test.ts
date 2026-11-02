@@ -3,7 +3,7 @@ import test from 'node:test';
 import { resolveChatWidth, readChatWidth, saveChatWidth, chatWidthKey } from '../src/chatWidth.ts';
 
 test('preferred width fits a changing column without overwriting the larger preference', () => {
-  assert.equal(resolveChatWidth(1600, null), 820);
+  assert.equal(resolveChatWidth(1600, null), 768);
   assert.equal(resolveChatWidth(1000, 1200), 880);
   assert.equal(resolveChatWidth(1600, 1200), 1200);
   assert.equal(resolveChatWidth(800, 300), 640);
