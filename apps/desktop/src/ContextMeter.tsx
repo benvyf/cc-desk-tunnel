@@ -136,10 +136,10 @@ export default function ContextMeter({
                     ))}
                   </dl>
                   <ContextBreakdown context={context} />
-                  <p>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} · 原生摘要</p>
+                  <p>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} 更新</p>
                 </>
               ) : (
-                <p>{metrics?.errors?.context ?? '等待原生状态'}</p>
+                <p>{metrics?.errors?.context ?? '正在读取…'}</p>
               )}
             </div>
           )}
@@ -181,10 +181,10 @@ export default function ContextMeter({
                   {context.usedTokens.toLocaleString()} / {context.windowTokens.toLocaleString()}{' '}
                   tokens
                 </span>
-                <small>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} · 原生摘要</small>
+                <small>{new Date(context.measuredAt).toLocaleTimeString('zh-CN')} 更新</small>
               </>
             ) : (
-              <span>{metrics?.errors?.context ?? '等待原生状态'}</span>
+              <span>{metrics?.errors?.context ?? '正在读取…'}</span>
             )}
           </div>
         )}

@@ -7,8 +7,10 @@ import { attachmentMessage, fileName, messageLimit } from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowUp,
+  ChevronDown,
   GitBranch,
   Play,
   Plus,
@@ -28,7 +30,8 @@ import type {
 import { slashCommands } from './commands.ts';
 import ComposerControls from './ComposerControls.tsx';
 import PermissionMenu from './PermissionMenu.tsx';
-import { IconButton } from './ui.tsx';
+import { IconButton, Menu } from './ui.tsx';
+import type { MenuPosition } from './ui.tsx';
 import { setPrefs, usePrefs } from './prefs.ts';
 import { isMac } from './platform.ts';
 import Clawd from './Clawd.tsx';
@@ -152,6 +155,16 @@ export default function Composer({
   } = usePrefs();
   const following = !!session.activeRun && native;
   const sendLabel = following ? (busyEnter === 'queue' ? '排队发送' : '插话发送') : '发送消息';
+  const [sendMenu, setSendMenu] = useState<MenuPosition | null>(null);
+  const sendMenuOpenAtPress = useRef(false);
+  const sendMenuClosedAt = useRef(0);
+  const sendMenuOpen = useRef(false);
+  const alternateKey = `${isMac ? 'Cmd' : 'Ctrl'}+Enter`;
+  useEffect(() => {
+    if (following) return;
+    sendMenuOpen.current = false;
+    setSendMenu(null);
+  }, [following]);
   const branch = useBranch(session.projectPath, !!session.activeRun);
   const [dropping, setDropping] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
@@ -603,21 +616,71 @@ export default function Composer({
             ) : (
               (!session.activeRun || native) && (
                 <>
+                  {/* The menu is fixed above the button, in the page's own layer so Clawd and the input box's stack
+                      do not cover it; it comes first so the send button stays the toolbar's last child. */}
+                  {createPortal(
+                    <Presence>
+                      {following && sendMenu && (
+                        <Menu
+                          label="发送方式"
+                          heading="按 Enter 时"
+                          {...sendMenu}
+                          onClose={() => {
+                            // The menu fading out still hears presses outside it; only a real close counts.
+                            if (sendMenuOpen.current) sendMenuClosedAt.current = performance.now();
+                            sendMenuOpen.current = false;
+                            setSendMenu(null);
+                          }}
+                          items={(
+                            [
+                              ['queue', '排队发送', '等这一轮结束后再发给 Claude'],
+                              ['steer', '插话发送', '立即发给正在运行的 Claude'],
+                            ] as const
+                          ).map(([value, label, detail]) => ({
+                            label,
+                            detail,
+                            checked: busyEnter === value,
+                            hint: busyEnter === value ? 'Enter' : alternateKey,
+                            run: () => setPrefs((prefs) => ({ ...prefs, busyEnter: value })),
+                          }))}
+                        />
+                      )}
+                    </Presence>,
+                    document.body,
+                  )}
+                  {/* While a run is going, Enter queues or steers as chosen in the small menu beside the send button
+                      (spec §5.10); Ctrl/Cmd+Enter sends the other way. */}
                   {following && (
-                    <select
-                      className="busy-send-mode"
-                      aria-label="繁忙时的发送行为"
-                      value={busyEnter}
-                      onChange={(event) =>
-                        setPrefs((prefs) => ({
-                          ...prefs,
-                          busyEnter: event.target.value === 'steer' ? 'steer' : 'queue',
-                        }))
+                    <button
+                      type="button"
+                      className="send-mode-button"
+                      aria-label="发送方式"
+                      title="发送方式"
+                      aria-haspopup="menu"
+                      aria-expanded={!!sendMenu}
+                      // A press on this button while the menu is open closes it (the menu's outside press) and
+                      // does not open it again.
+                      onPointerDown={() =>
+                        (sendMenuOpenAtPress.current =
+                          performance.now() - sendMenuClosedAt.current < 50)
                       }
+                      onClick={(event) => {
+                        if (sendMenuOpenAtPress.current) {
+                          sendMenuOpenAtPress.current = false;
+                          return;
+                        }
+                        const box = event.currentTarget.parentElement!.getBoundingClientRect();
+                        sendMenuOpen.current = true;
+                        setSendMenu({
+                          x: box.right - 272,
+                          y: event.currentTarget.getBoundingClientRect().top - 6,
+                          above: true,
+                          width: 272,
+                        });
+                      }}
                     >
-                      <option value="queue">排队发送</option>
-                      <option value="steer">插话发送</option>
-                    </select>
+                      <ChevronDown />
+                    </button>
                   )}
                   <button
                     type="submit"

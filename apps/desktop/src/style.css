@@ -4880,20 +4880,26 @@ details[open] > summary > .fold-chevron {
   max-height: 100px;
   font: inherit;
 }
-.busy-send-mode {
-  width: auto;
-  max-width: 106px;
-  padding: 0 22px 0 8px;
-  font-size: calc(12rem / 14);
-  color: var(--text-2);
+/* While a run is going, how a message is sent is chosen from a small menu beside the send button (spec §5.10). */
+.send-mode-button {
+  width: 20px;
+  height: var(--control-md);
+  /* 2px from the send button (toolbar gap 6 + its margin 4 − 8): the two read as one control. */
+  margin-right: -8px;
+  padding: 0;
   border: 0;
-  background: transparent
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2373726c' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E")
-    no-repeat right 4px center / 13px;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--muted);
 }
-.busy-send-mode:hover {
-  background-color: var(--hover);
+.send-mode-button:hover,
+.send-mode-button[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--text);
+}
+.send-mode-button svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
 }
 @media (max-width: 700px) {
   .turn-navigation {
@@ -5168,6 +5174,36 @@ details[open] > summary > .fold-chevron {
 .effort-ticks button.current {
   color: var(--effort-text, var(--text));
   font-weight: 600;
+}
+/* No level known (spec §5.10): the heading is plain text in the body colour rather than a level's, and the levels are
+   a row of choices instead of names under a track. */
+.effort-view[data-effort-unknown] .effort-heading {
+  color: var(--text-2);
+  font-size: calc(14rem / 14);
+}
+.effort-view[data-effort-unknown] .effort-heading strong {
+  font-weight: 500;
+}
+.effort-view[data-effort-unknown] .effort-ticks {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  height: auto;
+  margin-top: 0;
+}
+.effort-view[data-effort-unknown] .effort-ticks button {
+  position: static;
+  transform: none;
+  flex: 1;
+  padding: 4px 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-full);
+  color: var(--text-2);
+}
+.effort-view[data-effort-unknown] .effort-ticks button:hover:not(:disabled) {
+  background: var(--hover);
+  border-color: var(--line-strong);
+  color: var(--text);
 }
 /* Effort as heat: each level has its fill (a gradient from a lighter tint), the colour of its title and tick, and
    the pace of the sweep, quicker the harder Claude thinks. Light themes deepen towards the top level, dark themes

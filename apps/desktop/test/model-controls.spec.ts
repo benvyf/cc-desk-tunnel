@@ -265,3 +265,63 @@ test('each effort level has its own colour and sweep; the top level burns; reduc
   await expect(flare.locator('i').first()).toBeHidden();
   expect(await aboveHandleMoves()).toBe(false);
 });
+
+// Spec §5.10: with nothing known the button names the default model and no level, and the menu says the model
+// decides instead of showing an empty track; the levels are plain choices, and choosing one brings the slider.
+test('an unknown model and effort read as the defaults, and the levels can still be chosen', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const path = '/test/fixtures/model-controls.tsx';
+    (await import(path)).mount({ effort: null, bare: true });
+  });
+  const trigger = page.getByRole('button', { name: '模型与推理强度', exact: true });
+  await expect(trigger).toHaveText('默认模型');
+  await expect(trigger.locator('small')).toHaveCount(0);
+  await page.getByRole('button', { name: '上下文窗口', exact: true }).hover();
+  await expect(page.getByRole('tooltip')).toHaveText('上下文窗口正在读取…');
+  await trigger.click();
+  await expect(page.locator('.effort-heading')).toHaveText('推理强度：跟随模型');
+  await expect(page.locator('.effort-ticks')).toHaveCount(0);
+  await expect(page.getByRole('slider', { name: '推理强度', exact: true })).toHaveCount(0);
+
+  await page.evaluate(async () => {
+    const path = '/test/fixtures/model-controls.tsx';
+    (await import(path)).mount({ effort: null });
+  });
+  await expect(trigger).toHaveText('Opus 5.5');
+  await trigger.click();
+  const heading = page.locator('.effort-heading');
+  await expect(heading).toHaveText('推理强度：跟随模型');
+  const colours = await page.evaluate(() => {
+    const probe = document.createElement('span');
+    document.body.append(probe);
+    const read = (name: string) => {
+      probe.style.color = `var(${name})`;
+      return getComputedStyle(probe).color;
+    };
+    const result = { text: read('--text-2'), accent: read('--accent') };
+    probe.remove();
+    return result;
+  });
+  await expect(heading).toHaveCSS('color', colours.text);
+  await expect(page.getByRole('slider', { name: '推理强度', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '恢复默认推理强度' })).toHaveCount(0);
+  const choices = page.getByRole('group', { name: '选择推理强度' }).getByRole('button');
+  await expect(choices).toHaveText(['低', '中', '高', '极高', '最高']);
+  // One row, reachable with Tab.
+  const rows = await choices.evaluateAll(
+    (nodes) => new Set(nodes.map((node) => Math.round(node.getBoundingClientRect().top))).size,
+  );
+  expect(rows).toBe(1);
+  await choices.nth(3).focus();
+  await expect(choices.nth(3)).toBeFocused();
+  await choices.nth(3).click();
+  await expect(page.getByLabel('已提交')).toHaveText('["xhigh"]');
+  const slider = page.getByRole('slider', { name: '推理强度', exact: true });
+  await expect(slider).toHaveAttribute('aria-valuetext', '极高');
+  await expect(heading).toHaveText('极高');
+  await expect(heading).not.toHaveCSS('color', colours.text);
+  await expect(trigger.locator('small')).toHaveText('极高');
+});

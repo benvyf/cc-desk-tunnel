@@ -295,6 +295,16 @@ test('the strip is one centred row with the context ring, which leaves the toolb
   const card = context.getByRole('dialog', { name: '上下文窗口' });
   await expect(card.locator('header')).toHaveText('上下文窗口8%');
   await expect(card.locator('dt')).toHaveText(['已用', '窗口', '剩余', '模型']);
+  // The card stays over the input box: its right edge is the input box's, not past the conversation column.
+  await card.evaluate((node) => Promise.all(node.getAnimations().map((item) => item.finished)));
+  const [cardBox, composerBox] = await Promise.all([
+    card.boundingBox(),
+    page.locator('.composer').boundingBox(),
+  ]);
+  expect(
+    Math.abs(cardBox!.x + cardBox!.width - (composerBox!.x + composerBox!.width)),
+  ).toBeLessThanOrEqual(1);
+  await expect(card.locator('p').last()).toHaveText(/ 更新$/);
   await expect(card.locator('dd')).toHaveText([
     '16,000 tok',
     '200,000 tok',
