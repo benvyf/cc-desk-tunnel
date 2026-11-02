@@ -943,8 +943,10 @@ export default function Conversation({
   const scroll = useRef<HTMLDivElement>(null);
   // The view follows new output until the reader moves up from the end, and again once they come back down to it.
   const follow = useRef(true);
-  // Shown while not following, as the way back to the end.
+  // Shown while not following, as the way back to the end — and only while the end is out of sight: a reader who
+  // left a short conversation (opening the find box does) has nowhere to come back down from.
   const [away, setAway] = useState(false);
+  const [atEnd, setAtEnd] = useState(true);
   // Earlier history is inserted above; the anchor keeps the lines being read where they were.
   const prependAnchor = useRef<{
     sessionId: string;
@@ -1028,6 +1030,7 @@ export default function Conversation({
     if (!scroll.current || !transcriptRoot.current) return;
     const observer = new ResizeObserver(() => {
       if (follow.current && !findOpen && !prependAnchor.current) toEnd();
+      if (scroll.current) setAtEnd(fromEnd(scroll.current) < 40);
     });
     observer.observe(scroll.current);
     observer.observe(transcriptRoot.current);
@@ -1201,6 +1204,7 @@ export default function Conversation({
                 anchor.top = top;
               }
               const end = fromEnd(scroll.current) < 40;
+              setAtEnd(end);
               // Coming down to the end follows again; only moving down does, so a slow wheel or a flick upwards is not
               // pulled back while output comes in fast. Moving up away from it leaves, by touch as well: heights that
               // settle or shrink keep the view at the end, where the reader never is after scrolling up.
@@ -1362,21 +1366,23 @@ export default function Conversation({
                   )}
               </div>
             )}
-            {session && away && (
-              <div className="to-end">
-                <IconButton
-                  title="回到底部"
-                  className="to-end-button"
-                  onClick={() => {
-                    rejoin();
-                    toEnd();
-                  }}
-                >
-                  <ArrowDown />
-                </IconButton>
-              </div>
-            )}
           </div>
+          {/* Over the foot of the conversation, just above the input box, not inside the scrolling text where a
+              short conversation would carry it up to its top. */}
+          {session && away && !atEnd && (
+            <div className="to-end">
+              <IconButton
+                title="回到底部"
+                className="to-end-button"
+                onClick={() => {
+                  rejoin();
+                  toEnd();
+                }}
+              >
+                <ArrowDown />
+              </IconButton>
+            </div>
+          )}
           {session && adjustableWidth && (
             <ConversationWidthControls
               key={`width:${session.id}`}

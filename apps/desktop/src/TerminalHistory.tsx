@@ -54,9 +54,14 @@ export default function TerminalHistory({
       <p className="terminal-file-path">
         {source.device?.name} · {source.projectPath}
       </p>
-      <p>只列出 CC 启动时建立准确关联的历史。旧终端请使用官方 CLI 的历史选择器。</p>
-      <p>会新开终端继续，不恢复原进程、不重放输入。外部 CLI 占用以官方提示为准，不会强制接管。</p>
-      <label>
+      {/* One sentence (G4); the details are in the help text of the button and the checkbox. */}
+      <p
+        className="muted terminal-history-note"
+        title="只列出 CC 启动时建立准确关联的历史；旧终端请用官方 CLI 的历史选择器。外部 CLI 占用以官方提示为准，不会强制接管。"
+      >
+        在新终端里接着这段官方历史继续，原来的进程不会恢复。
+      </p>
+      <label className="terminal-history-confirm">
         <input
           type="checkbox"
           checked={confirmed}
@@ -66,15 +71,22 @@ export default function TerminalHistory({
       </label>
       {loading && <p role="status">正在读取历史元数据…</p>}
       {error && <p role="alert">{error}</p>}
-      {!loading && !error && !items.length && <p>暂无关联的官方历史。</p>}
-      <div className="terminal-history-list">
+      {!loading && !error && !items.length && <p className="muted">暂无关联的官方历史。</p>}
+      {/* Each history is a row: its title and when, and “继续” at the end. */}
+      <div className="terminal-history-list" role="list">
         {items.map((item) => (
-          <div key={item.nativeId}>
-            <span title={item.nativeId}>{item.title}</span>
-            <small>{item.updatedAt}</small>
-            {item.reason && <small>{item.reason}</small>}
+          <div key={item.nativeId} role="listitem">
+            <span className="terminal-history-title">
+              <strong title={item.nativeId}>{item.title}</strong>
+              <small>
+                {item.updatedAt}
+                {item.reason ? ` · ${item.reason}` : ''}
+              </small>
+            </span>
             <Button
               size="sm"
+              aria-label={`新开终端继续 ${item.title}`}
+              title="新开终端继续这段历史"
               disabled={
                 loading ||
                 !!error ||
@@ -91,7 +103,7 @@ export default function TerminalHistory({
                   onContinue(item.sessionId);
               }}
             >
-              新开终端继续
+              继续
             </Button>
           </div>
         ))}

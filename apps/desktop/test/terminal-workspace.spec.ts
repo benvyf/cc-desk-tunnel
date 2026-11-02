@@ -136,6 +136,12 @@ test('history refresh failure and changed connection invalidate results and conf
   await page.getByRole('button', { name: '全部终端', exact: true }).click();
   await page.getByRole('button', { name: '继续官方历史', exact: true }).click();
   const dialog = page.getByRole('dialog');
+  // One sentence of explanation, and each history a row ending in “继续” (G4); the status bar says only the
+  // project's path and its computer (G5).
+  await expect(dialog.locator('p.terminal-history-note')).toHaveCount(1);
+  await expect(dialog.getByRole('listitem')).toHaveCount(1);
+  await expect(dialog.getByRole('listitem').getByRole('button')).toHaveText('继续');
+  await expect(page.locator('.terminal-workspace-footer')).not.toContainText(/节点|项目设备|CLI/);
   await dialog.getByRole('checkbox').check();
   await expect(dialog.getByRole('button', { name: '新开终端继续' })).toBeEnabled();
   await page.evaluate(() => (window as any).terminalTest.update({ historyError: true }));

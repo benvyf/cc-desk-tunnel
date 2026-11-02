@@ -2883,8 +2883,9 @@ kbd {
 }
 /* Kept to the bottom of the view while it is scrolled up, taking no room at the end of the conversation. */
 .to-end {
-  position: sticky;
-  bottom: 0;
+  position: absolute;
+  z-index: 6;
+  inset: auto 0 0;
   height: 0;
   display: flex;
   justify-content: center;
@@ -2920,19 +2921,36 @@ kbd {
 .session-project > svg.app-icon {
   flex-shrink: 0;
 }
+/* A small find box floating at the top right of the conversation column, as in Claude and the browsers. */
 .conversation-find {
+  position: absolute;
+  z-index: 8;
+  top: calc(var(--control-md) + 4px);
+  right: max(14px, calc((100% - var(--chat-content-width, 768px)) / 2));
   display: flex;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--line-soft);
-  background: var(--side);
+  gap: 2px;
+  width: min(360px, calc(100% - 28px));
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
 }
 .conversation-find input {
   flex: 1;
-  min-width: 90px;
-  width: 90px;
+  min-width: 60px;
+  width: 60px;
+  min-height: var(--control-compact);
+  height: var(--control-compact);
+  padding-block: 0;
+}
+.conversation-find .find-count {
+  padding: 0 4px;
+}
+.conversation-find .icon-button {
+  flex: none;
+  width: var(--control-sm);
+  height: var(--control-sm);
 }
 .find-count {
   font-size: calc(11rem / 14);
@@ -8367,21 +8385,48 @@ dialog:has(.web-settings-form) {
   width: var(--icon-sm);
   height: var(--icon-sm);
 }
+/* The histories as list rows (G4): title and date on the left, “继续” at the row's end; rows like menu rows. */
 .terminal-history-list {
   display: grid;
-  gap: 8px;
+  gap: 2px;
   max-height: 40vh;
   overflow: auto;
-  padding: 8px 0;
+  margin: 12px -10px 0;
 }
 .terminal-history-list > div {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 6px 10px;
+  border-radius: var(--radius-md);
+}
+.terminal-history-list > div:hover {
+  background: var(--hover);
+}
+.terminal-history-title {
   display: grid;
-  gap: 4px;
-  border-bottom: 1px solid var(--line-soft);
-  padding: 8px 0;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+.terminal-history-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
 }
 .terminal-history-list small {
   color: var(--muted);
+}
+.terminal-history-note {
+  margin: 0 0 12px;
+}
+.terminal-history-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(13rem / 14);
 }
 .terminal-workspace[data-native-controls='true'] .terminal-tabs-header {
   padding-right: calc(100vw - env(titlebar-area-width, 100vw) - env(titlebar-area-x, 0px) + 6px);

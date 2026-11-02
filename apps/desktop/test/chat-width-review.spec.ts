@@ -19,7 +19,7 @@ async function begin(page: Page) {
   return { x: x + 35, y: y + 20 };
 }
 
-test('a captured indicator stays under the pointer when the conversation header grows', async ({
+test('a captured indicator stays under the pointer when the find box opens over the conversation', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1700, height: 950 });
@@ -28,8 +28,9 @@ test('a captured indicator stays under the pointer when the conversation header 
   const before = (await handle(page).boundingBox())!;
   await page.keyboard.press('Control+f');
   await expect(page.locator('.conversation-find')).toBeVisible();
+  // The find box floats over the conversation (phase 3n), so the column below it does not move.
   const after = (await handle(page).boundingBox())!;
-  expect(after.y).toBeGreaterThan(before.y);
+  expect(after.y).toBe(before.y);
   await expect
     .poll(() =>
       handle(page).evaluate(

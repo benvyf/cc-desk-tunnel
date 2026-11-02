@@ -685,11 +685,13 @@ export default function TerminalWindow({
           </div>
         ))}
       </div>
-      <footer className="terminal-workspace-footer" title={active?.source.projectPath}>
-        <span>项目：{active?.source.projectPath}</span>
-        <span>节点：{nodeName}</span>
-        <span>项目设备：{active?.source.device?.name ?? '未知'}</span>
-        <span>CLI 工作区以终端实际显示为准</span>
+      {/* Where this terminal works, as plainly as a status bar says it: the project's path and its computer (G5). */}
+      <footer
+        className="terminal-workspace-footer"
+        title={`${active?.source.projectPath ?? ''} · ${nodeName}`}
+      >
+        <span>{active?.source.projectPath}</span>
+        {active?.source.device?.name && <span>{active.source.device.name}</span>}
       </footer>
       {linkError && <p role="alert">{linkError}</p>}
       {historySource && (

@@ -1190,7 +1190,8 @@ test('double Escape fixed shortcut is explained with the existing settings contr
   await page.getByRole('button', { name: '快捷键', exact: true }).click();
   const settings = page.getByRole('region', { name: '快捷键', exact: true });
   await expect(settings).toContainText('停止当前回答');
-  await expect(settings.locator('kbd')).toHaveText('Esc · Esc');
+  // Two keycaps since phase 3l.
+  await expect(settings.locator('.key-combo kbd')).toHaveText(['Esc', 'Esc']);
   await page.screenshot({
     path: info.outputPath('double-escape-shortcut-settings.png'),
     animations: 'disabled',
