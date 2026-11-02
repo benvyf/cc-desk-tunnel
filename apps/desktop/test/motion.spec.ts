@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { createSession, login, send, settled } from './helpers.ts';
 
 test('narrow standalone settings remain interactive while connected settings follow the sidebar toggle', async ({
@@ -403,4 +404,112 @@ test('the session card fades in and out instead of popping', async ({ page }) =>
   await page.mouse.move(900, 400);
   await expect(page.locator('.motion-presence[data-state="exit"] > .session-card')).toHaveCount(1);
   await expect(page.locator('.session-card')).toHaveCount(0);
+});
+
+// Motion pass M2 (2026-11-02): the window's columns glide instead of jumping, the preview slides in and out, folds
+// grow to their height, and the conversation fades back in after the settings.
+const columnTransition = (page: Page) =>
+  page.locator('.shell').evaluate((shell) =>
+    shell
+      .getAnimations()
+      .filter(
+        (animation): animation is CSSTransition =>
+          animation instanceof CSSTransition &&
+          animation.transitionProperty === 'grid-template-columns',
+      )
+      .map((animation) => animation.effect?.getTiming().duration),
+  );
+
+test('folding the side column glides the page over instead of jumping', async ({ page }) => {
+  await page.goto('/');
+  await login(page);
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty('--cds-dur-sheet', '1200ms'),
+  );
+  const workspace = page.locator('main.workspace');
+  const start = (await workspace.boundingBox())!.x;
+  await page.getByRole('banner').getByRole('button', { name: '收起侧栏', exact: true }).click();
+  expect(await columnTransition(page)).toEqual([1200]);
+  // Part of the way: neither where it was nor where it is going.
+  await page.waitForTimeout(150);
+  const during = (await workspace.boundingBox())!.x;
+  expect(during).toBeLessThan(start - 4);
+  expect(during).toBeGreaterThan(56);
+  await page
+    .locator('.shell')
+    .evaluate((shell) => Promise.all(shell.getAnimations().map((animation) => animation.finished)));
+  expect(Math.round((await workspace.boundingBox())!.x)).toBe(52);
+  // Dragging the column's edge follows the pointer at once.
+  await page.getByRole('button', { name: '展开会话列表', exact: true }).first().click();
+  await page
+    .locator('.shell')
+    .evaluate((shell) => Promise.all(shell.getAnimations().map((animation) => animation.finished)));
+  await page.locator('.shell').evaluate((shell) => shell.setAttribute('data-sidebar-resizing', ''));
+  await page.evaluate(() => document.documentElement.style.setProperty('--sidebar-width', '320px'));
+  expect(await columnTransition(page)).toEqual([]);
+});
+
+test('the preview slides in at its own width and slides out before it goes', async ({ page }) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty('--cds-dur-sheet', '1200ms'),
+  );
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  const pane = page.getByRole('complementary', { name: '文件与网站预览' });
+  await expect(pane).toBeVisible();
+  expect(await columnTransition(page)).toEqual([1200]);
+  await page.waitForTimeout(150);
+  const during = (await pane.boundingBox())!;
+  // Already as wide as it will be, coming in from beyond the right edge.
+  expect(during.x + during.width).toBeGreaterThan(1280 + 4);
+  await page
+    .locator('.shell')
+    .evaluate((shell) => Promise.all(shell.getAnimations().map((animation) => animation.finished)));
+  const rest = (await pane.boundingBox())!;
+  expect(Math.round(rest.width)).toBe(Math.round(during.width));
+  expect(Math.round(rest.x + rest.width)).toBe(1280);
+  await page.getByRole('button', { name: '预览开关', exact: true }).click();
+  // Leaving: still there, inert, going out the right edge; then gone.
+  const leaving = page.locator('.preview-sidebar[data-leaving]');
+  await expect(leaving).toHaveAttribute('inert', '');
+  await expect(page.getByRole('complementary', { name: '文件与网站预览' })).toHaveCount(0);
+  await expect(page.locator('.preview-sidebar')).toHaveCount(0);
+});
+
+test('a fold of steps grows to its height and the conversation fades back after the settings', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  await createSession(page, '折叠动效');
+  await send(page, '查看工具', 'tool');
+  await page.getByRole('button', { name: '允许', exact: true }).click();
+  await settled(page);
+  const fold = page.locator('.turn-process');
+  await expect(fold).not.toHaveAttribute('open');
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty('--cds-dur-sheet', '1200ms'),
+  );
+  await fold.locator(':scope > summary').click();
+  await expect(fold).toHaveAttribute('open', '');
+  // (Chromium does not list ::details-content transitions in getAnimations(); the height tells.)
+  const height = () => fold.evaluate((details) => details.getBoundingClientRect().height);
+  await page.waitForTimeout(100);
+  const opening = await height();
+  await page.waitForTimeout(1300);
+  const opened = await height();
+  expect(opened - opening).toBeGreaterThan(8);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await expect(page.locator('.page-title')).toBeVisible();
+  await page
+    .getByRole('button', { name: /返回会话/ })
+    .first()
+    .click();
+  const names = await page
+    .locator('main.workspace')
+    .evaluate((main) =>
+      main.getAnimations().map((animation) => (animation as CSSAnimation).animationName),
+    );
+  expect(names).toContain('motion-fade-in');
 });

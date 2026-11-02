@@ -1134,8 +1134,15 @@ button.chip.danger:hover:not(:disabled) {
   --sidebar-size: clamp(240px, var(--sidebar-width, 288px), var(--sidebar-max-width));
   --rail-size: 0px;
   --sidebar-track: var(--sidebar-size);
+  --preview-size: min(
+    var(--preview-width, 440px),
+    max(320px, calc(100vw - var(--rail-size) - var(--sidebar-track) - 360px))
+  );
+  /* The preview's column is always there, 0 wide until a preview is open: the tracks then change in width only,
+     and the page glides instead of jumping when the side column or the preview opens or closes. */
+  --preview-track: 0px;
   display: grid;
-  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
+  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr) var(--preview-track);
   grid-template-rows: var(--bar) minmax(0, 1fr);
   height: 100dvh;
   overflow: hidden;
@@ -1179,7 +1186,16 @@ button.chip.danger:hover:not(:disabled) {
   visibility: hidden;
   pointer-events: none;
 }
-.shell,
+.shell {
+  transition:
+    grid-template-columns var(--cds-dur-sheet) var(--cds-ease-snap),
+    background-color var(--cds-dur-slow) var(--cds-ease-out);
+}
+/* Dragging a width or the window follows the pointer at once. */
+.shell:is([data-sidebar-resizing], [data-window-resizing]),
+.shell:has(> .preview-sidebar[data-preview-resizing]) {
+  transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
+}
 .workspace,
 .titlebar {
   transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
@@ -4146,6 +4162,23 @@ details[open] > summary > .fold-chevron {
 }
 .thinking-block::details-content {
   transition: content-visibility var(--cds-dur-sheet) allow-discrete;
+}
+/* The steps of a turn, a tool's details and a run of work open like the thinking block, growing to their height;
+   they fold up at once, as before (their content is unmounted on closing, Conversation.tsx Fold). Not while
+   searching: the find box scrolls to a match in a fold it opens, and needs the fold's final height at once. */
+details:is(.turn-process, .work, .tool):not(.thinking-block) {
+  interpolate-size: allow-keywords;
+}
+details:is(.turn-process, .work, .tool):not(.thinking-block)::details-content {
+  block-size: 0;
+  overflow: clip;
+}
+details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-content {
+  block-size: auto;
+  transition: block-size var(--cds-dur-sheet) var(--cds-ease-snap);
+}
+.searching details:is(.turn-process, .work, .tool)::details-content {
+  transition: none;
 }
 .thinking-grid {
   display: grid;
@@ -7348,6 +7381,10 @@ dialog:has(.web-settings-form) {
 .settings-workspace {
   animation: motion-fade-in var(--cds-dur-sheet) var(--cds-ease-snap);
 }
+/* Coming back from the settings, the conversation fades in as the settings did. */
+.shell > main.workspace:not(.settings-workspace) {
+  animation: motion-fade-in var(--cds-dur-base) var(--cds-ease-out);
+}
 .stream-grapheme {
   animation: motion-stream-in var(--cds-stream-reveal) var(--cds-ease-out) both;
   animation-delay: calc(min(var(--stream-index), 6) * var(--cds-stream-stagger));
@@ -7879,11 +7916,12 @@ dialog:has(.web-settings-form) {
 
 /* File and website previews use the existing session layout; the native browser only covers its viewport. */
 .shell.has-preview {
-  --preview-size: min(
-    var(--preview-width, 440px),
-    max(320px, calc(100vw - var(--rail-size) - var(--sidebar-track) - 360px))
-  );
-  grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr) var(--preview-size);
+  --preview-track: var(--preview-size);
+}
+/* As wide as the preview from the start: while its column opens, it comes in from the window's right edge, and
+   while the column closes (data-leaving, Presence.tsx useLeaving) it goes out the same way. */
+.shell > .preview-sidebar {
+  width: var(--preview-size);
 }
 .shell.has-preview > .terminal-workspace-slot {
   grid-column: 2 / 4;
@@ -8295,6 +8333,11 @@ dialog:has(.web-settings-form) {
     translate: 100% 0;
   }
 }
+@keyframes preview-slide-out {
+  to {
+    translate: 100% 0;
+  }
+}
 @keyframes preview-shade-in {
   from {
     opacity: 0;
@@ -8302,7 +8345,7 @@ dialog:has(.web-settings-form) {
 }
 @media (max-width: 1050px) {
   .shell.has-preview {
-    grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
+    --preview-track: 0px;
   }
   .shell.has-preview > .terminal-workspace-slot {
     grid-column: 2 / -1;
@@ -8325,6 +8368,13 @@ dialog:has(.web-settings-form) {
     z-index: 14;
     background: var(--backdrop);
     animation: preview-shade-in var(--cds-dur-sheet) var(--cds-ease-out);
+  }
+  .shell > .preview-sidebar[data-leaving] {
+    animation: preview-slide-out var(--cds-dur-sheet) var(--cds-ease-snap) forwards;
+  }
+  .shell > .preview-shade[data-leaving] {
+    animation: motion-fade-out var(--cds-dur-sheet) var(--cds-ease-out) forwards;
+    pointer-events: none;
   }
   .shell > .preview-full {
     left: var(--rail-size);

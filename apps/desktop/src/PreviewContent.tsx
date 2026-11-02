@@ -35,6 +35,19 @@ const PreviewPdf = lazy(() => import('./PreviewPdf.tsx'));
 const previewOverlays =
   'dialog[open], .menu, .terminal-list, .sidebar-shade, .preview-full, .preview-pane-floating, .quote-selection-toolbar, [role="dialog"], [role="alertdialog"], [role="menu"]';
 
+// Whether the window's column layout is in the middle of its transition (getAnimations brings styles up to date, so
+// a change made in the same task already counts).
+const columnsMoving = (element: Element) =>
+  !!element
+    .closest('.shell')
+    ?.getAnimations()
+    .some(
+      (animation) =>
+        animation instanceof CSSTransition &&
+        animation.transitionProperty === 'grid-template-columns' &&
+        animation.playState === 'running',
+    );
+
 function NativePreview({
   tab,
   url,
@@ -69,6 +82,9 @@ function NativePreview({
       knownOverlays = new WeakSet(overlays);
       const covered =
         !!doc.querySelector('[data-preview-resizing], [data-sidebar-resizing]') ||
+        // While the window's columns glide (the side column or this preview opening or closing, style.css .shell)
+        // the native view would trail the page; it is shown again where the page comes to rest.
+        columnsMoving(element) ||
         overlays.some((overlay) => {
           if (overlay.contains(element)) return false;
           const ownFloat = element.closest('.preview-pane-floating');
@@ -141,6 +157,11 @@ function NativePreview({
     changes.observe(doc.body, { subtree: true, attributes: true, childList: true });
     win.addEventListener('resize', schedule);
     doc.addEventListener('scroll', schedule, true);
+    const columns = (event: TransitionEvent) => {
+      if (event.propertyName === 'grid-template-columns') schedule();
+    };
+    for (const type of ['transitionrun', 'transitionend', 'transitioncancel'] as const)
+      doc.addEventListener(type, columns);
     update();
     return () => {
       disposed = true;
@@ -149,6 +170,8 @@ function NativePreview({
       changes.disconnect();
       win.removeEventListener('resize', schedule);
       doc.removeEventListener('scroll', schedule, true);
+      for (const type of ['transitionrun', 'transitionend', 'transitioncancel'] as const)
+        doc.removeEventListener(type, columns);
       void window.desktop?.preview.hide(surface, pane).catch(() => {});
     };
   }, [tab.id, url, surface, pane]);

@@ -6,6 +6,17 @@ test('native previews ignore unrelated transcript mutations but still hide under
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.getByRole('button', { name: '网站错误', exact: true }).click();
   await expect(page.locator('.preview-native')).toBeVisible();
+  // The preview's column opens with a transition; the counts below start once it is at rest and the view has
+  // been put where it came to rest (on transitionend, a few frames after the transition has finished).
+  await page.evaluate(async () => {
+    await Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+        .map((a) => a.finished),
+    );
+    for (let i = 0; i < 4; i++) await new Promise((resolve) => requestAnimationFrame(resolve));
+  });
   const result = await page.evaluate(async () => {
     const native = document.querySelector('.preview-native')!;
     const original = native.getBoundingClientRect.bind(native);

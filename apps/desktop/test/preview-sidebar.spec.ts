@@ -34,8 +34,16 @@ for (const theme of ['light', 'dark'])
         await page.getByRole('button', { name: button, exact: true }).click();
         const pane = page.getByRole('complementary', { name: '文件与网站预览' });
         await expect(pane).toBeVisible();
-        // Narrow windows slide the preview in over the page; measure where it comes to rest.
-        await pane.evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
+        // Narrow windows slide the preview in over the page, wide ones open its column (the shell's transition);
+        // measure where it comes to rest.
+        await pane.evaluate(() =>
+          Promise.all(
+            document
+              .getAnimations()
+              .filter((a) => a.effect?.getTiming().iterations !== Infinity)
+              .map((a) => a.finished),
+          ),
+        );
         if (name === 'error' || name === 'website')
           await expect(pane.getByRole('alert')).toBeVisible();
         if (name === 'loading') {
