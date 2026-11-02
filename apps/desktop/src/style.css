@@ -7373,8 +7373,14 @@ dialog:has(.web-settings-form) {
 }
 .preview-heading strong {
   margin-right: auto;
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: calc(13rem / 14);
+  font-weight: 500;
+  color: var(--text-2);
+}
+/* Holding only the name, the heading is needed only as the terminal window's strip under Windows' window
+   buttons (below); elsewhere the tab row carries the controls and the heading goes. */
+.preview-heading.preview-title-only {
+  display: none;
 }
 .preview-heading-actions {
   display: flex;
@@ -7385,33 +7391,30 @@ dialog:has(.web-settings-form) {
 .preview-tabs {
   display: flex;
   flex: none;
-  gap: 3px;
-  align-items: flex-end;
+  gap: 2px;
+  align-items: center;
   min-height: 36px;
   overflow-x: auto;
-  padding: 0 8px;
+  padding: 0 6px;
   overflow-y: hidden;
   border-bottom: 1px solid var(--line-soft);
 }
-.preview-tabs [role='tab'] {
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-}
+/* Tabs are the side column's rows laid side by side: 8px corners, the hover fill, the selected fill for the
+   open one. Clay is kept for sending, new sessions, the brand and running (spec §1.3), so no clay underline. */
 .preview-tab {
   display: flex;
   align-items: center;
-  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
-  border-bottom: 2px solid transparent;
+  border-radius: var(--radius-md);
   flex: none;
   max-width: 220px;
   min-width: 0;
-  height: var(--control-md);
+  height: var(--control-compact);
 }
 .preview-tab:hover {
   background: var(--hover);
 }
 .preview-tab.active {
-  background: var(--hover);
-  border-bottom-color: var(--clay);
+  background: var(--selected);
 }
 .preview-tab > button[role='tab'] {
   display: flex;
@@ -7423,7 +7426,8 @@ dialog:has(.web-settings-form) {
   line-height: 20px;
   background: none;
   border: 0;
-  padding: 0 5px 0 8px;
+  border-radius: var(--radius-md);
+  padding: 0 4px 0 10px;
   color: var(--muted);
   text-overflow: ellipsis;
   overflow: hidden;
@@ -7444,6 +7448,11 @@ dialog:has(.web-settings-form) {
 }
 .preview-tab > .icon-button {
   flex: none;
+  margin-right: 2px;
+}
+/* A tab's close button shows on the open tab, under the pointer and with the keyboard on the tab. */
+.preview-tab:not(.active, :hover, :focus-within) > .icon-button {
+  opacity: 0;
 }
 .preview-tabs button:focus-visible {
   outline-offset: -2px;
@@ -7489,14 +7498,44 @@ dialog:has(.web-settings-form) {
   display: none;
 }
 .preview-path {
+  display: flex;
   flex: 1;
   min-width: 0;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   color: var(--muted);
   font-size: var(--font-caption);
-  padding-inline: 5px;
+  padding-inline: 6px;
+}
+/* The folders give way first; the file's name keeps its place and only shortens when it alone is too long. */
+.preview-path-folder {
+  flex: 0 1 auto;
+  min-width: 1.5em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--faint);
+}
+.preview-path-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+}
+/* Preview or source: the shared segmented control at the toolbar's 28px, sized to its two words. */
+.preview-toolbar > .segmented.preview-mode {
+  /* Sized by its words rather than as a container, so it neither collapses nor scrolls. */
+  container-type: normal;
+  flex: none;
+  width: auto;
+  height: var(--control-compact);
+  margin-right: 4px;
+}
+.preview-mode .segmented-track {
+  height: var(--control-compact);
+}
+.preview-mode button {
+  height: calc(var(--control-compact) - 4px);
+  padding: 0 10px;
 }
 .preview-native {
   flex: 1;
@@ -7574,6 +7613,7 @@ dialog:has(.web-settings-form) {
   width: var(--icon-lg);
   height: var(--icon-lg);
 }
+/* An empty place says one sentence, without a large icon (spec §5.11); its one action is a word in it. */
 .preview-empty {
   display: flex;
   flex-direction: column;
@@ -7586,23 +7626,29 @@ dialog:has(.web-settings-form) {
   min-height: 0;
   overflow: auto;
 }
-.preview-empty > svg {
-  color: var(--muted);
-  width: var(--icon-xl);
-  height: var(--icon-xl);
-}
-.preview-empty h2,
 .preview-empty p {
   margin: 0;
-}
-.preview-empty p {
+  max-width: 36ch;
   color: var(--muted);
-  font-size: var(--font-caption);
-  line-height: var(--leading-caption);
+  font-size: calc(13rem / 14);
+  line-height: 1.6;
 }
-.preview-empty h2 {
-  font-size: var(--font-title);
-  font-weight: 500;
+.preview-empty-link {
+  display: inline;
+  min-height: 0;
+  margin: 0 0.15em;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line-strong);
+  text-underline-offset: 3px;
+  cursor: pointer;
+}
+.preview-empty-link:hover {
+  text-decoration-color: currentColor;
 }
 .preview-empty-actions {
   display: flex;
@@ -7613,6 +7659,8 @@ dialog:has(.web-settings-form) {
 .preview-empty-actions > .button {
   white-space: nowrap;
 }
+/* The same divider as the side column's: an 8px target whose middle shows a 2px blue line under the pointer,
+   with the keyboard on it and while dragging. */
 .preview-resize {
   position: absolute;
   inset: 0 auto 0 -4px;
@@ -7621,9 +7669,25 @@ dialog:has(.web-settings-form) {
   touch-action: none;
   z-index: 1;
 }
-.preview-resize:hover {
-  background: var(--accent);
-  opacity: 0.3;
+.preview-resize::after {
+  content: '';
+  position: absolute;
+  inset: 0 3px;
+  border-radius: 1px;
+  background: transparent;
+  transition: background-color 120ms ease-out;
+}
+.preview-resize:is(:hover, :focus-visible)::after,
+.preview-sidebar[data-preview-resizing] > .preview-resize::after {
+  background: var(--focus);
+}
+.preview-resize:focus-visible {
+  outline: 0;
+}
+.preview-sidebar[data-preview-resizing],
+.preview-sidebar[data-preview-resizing] * {
+  cursor: col-resize !important;
+  user-select: none !important;
 }
 .preview-full {
   position: fixed;
@@ -7690,6 +7754,20 @@ dialog:has(.web-settings-form) {
     border-top: 1px solid var(--line-soft);
   }
 }
+/* The shade under a preview laid over the page; only a narrow main window has one. */
+.preview-shade {
+  display: none;
+}
+@keyframes preview-slide-in {
+  from {
+    translate: 100% 0;
+  }
+}
+@keyframes preview-shade-in {
+  from {
+    opacity: 0;
+  }
+}
 @media (max-width: 1050px) {
   .shell.has-preview {
     grid-template-columns: var(--rail-size) var(--sidebar-track) minmax(0, 1fr);
@@ -7697,6 +7775,8 @@ dialog:has(.web-settings-form) {
   .shell.has-preview > .terminal-workspace-slot {
     grid-column: 2 / -1;
   }
+  /* Too narrow to stand beside the page, the preview is laid over it like the folded side column's overlay:
+     it slides in from the window's edge over a shade, and a click on the shade puts it away. */
   .shell > .preview-sidebar {
     position: absolute;
     top: var(--bar);
@@ -7704,6 +7784,15 @@ dialog:has(.web-settings-form) {
     bottom: 0;
     width: min(var(--preview-width, 440px), calc(100% - var(--rail-size)));
     box-shadow: var(--shadow-popover);
+    animation: preview-slide-in var(--cds-dur-sheet) var(--cds-ease-snap);
+  }
+  .shell > .preview-shade {
+    display: block;
+    position: fixed;
+    inset: var(--bar) 0 0 0;
+    z-index: 14;
+    background: var(--backdrop);
+    animation: preview-shade-in var(--cds-dur-sheet) var(--cds-ease-out);
   }
   .shell > .preview-full {
     left: var(--rail-size);
@@ -7920,11 +8009,12 @@ dialog:has(.web-settings-form) {
   padding-left: 6px;
   border-left: 1px solid var(--line-soft);
 }
+/* With several panes, the one the keyboard and new files go to keeps the full selected fill. */
 .preview-pane:not(.is-focused) .preview-tab.active {
-  border-bottom-color: var(--line-strong);
+  background: var(--hover);
 }
 .preview-pane[data-drop] {
-  outline: 2px solid var(--clay);
+  outline: 2px solid var(--focus);
   outline-offset: -2px;
 }
 .preview-pane-floating {
@@ -7953,21 +8043,23 @@ dialog:has(.web-settings-form) {
   border-bottom: 3px solid var(--muted);
 }
 .preview-tree {
-  width: 180px;
+  width: 200px;
   min-width: 120px;
-  max-width: 38%;
+  max-width: 45%;
   display: flex;
   flex-direction: column;
   border-right: 1px solid var(--line-soft);
   background: var(--surface);
 }
+/* As tall as the tab row beside it, so their hairlines meet; the folder's name reads as a group heading. The
+   column's 200px is `previewTreeWidth` (previewLayout.ts), which widens the preview by as much. */
 .preview-tree > header {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 6px;
+  gap: 2px;
+  padding: 0 6px 0 14px;
   border-bottom: 1px solid var(--line-soft);
-  min-height: 32px;
+  min-height: 40px;
   flex: none;
 }
 .preview-tree > header > span {
@@ -7976,51 +8068,61 @@ dialog:has(.web-settings-form) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: var(--font-caption);
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  font-weight: 500;
 }
 .preview-tree > [role='tree'] {
   overflow: auto;
-  padding: 6px 3px;
+  padding: 6px;
   flex: 1;
   min-height: 0;
 }
+/* The side column's rows (spec §6.3): 32px, 8px corners, 14px names in the second text colour; the hover and
+   selected fills cover the whole row and only the content moves in, 16px a level. */
 .preview-tree-item {
+  --tree-indent: calc(var(--tree-depth, 0) * 16px);
   display: flex;
   align-items: center;
-  gap: 5px;
-  min-height: 28px;
+  gap: 6px;
+  min-height: 32px;
   width: 100%;
+  margin-bottom: 1px;
   border: 0;
   background: transparent;
-  color: var(--text);
+  color: var(--text-2);
   text-align: left;
-  font-size: var(--font-caption);
-  padding: 3px 5px;
-  border-radius: var(--radius-sm);
+  font-size: 1rem;
+  line-height: 20px;
+  padding: 0 8px 0 calc(8px + var(--tree-indent));
+  border-radius: var(--radius-md);
 }
 .preview-tree-item > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .preview-tree-item > svg {
   flex: none;
-  color: var(--muted);
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
 }
 .preview-tree-item:hover {
   background: var(--hover);
 }
 .preview-tree-item[aria-selected='true'] {
-  background: var(--hover);
-  color: var(--clay);
+  background: var(--selected);
+  color: var(--text);
 }
-.preview-tree-group {
-  padding-left: 12px;
+.preview-tree-item:focus-visible {
+  outline-offset: -2px;
 }
 .preview-tree-notice {
-  padding: 6px;
-  color: var(--muted);
-  font-size: var(--font-caption);
+  padding: 6px 8px 6px calc(30px + var(--tree-depth, 0) * 16px);
+  color: var(--faint);
+  font-size: calc(12rem / 14);
   overflow-wrap: anywhere;
   margin: 0;
 }
@@ -8182,6 +8284,7 @@ dialog:has(.web-settings-form) {
   white-space: normal;
 }
 .side-conversation {
+  position: relative;
   display: flex;
   flex: 1;
   min-width: 0;
@@ -8191,36 +8294,44 @@ dialog:has(.web-settings-form) {
   overflow-y: auto;
   background: var(--surface);
 }
+/* One 36px line under the tab (which names the conversation): where it branched from. The conversation's find
+   button is laid at the end of it instead of taking a row of its own. */
 .side-conversation-source {
   display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 8px 12px;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0 44px 0 14px;
   border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: calc(12rem / 14);
   flex: none;
 }
-.side-conversation-source strong {
-  font-size: var(--font-caption);
-  font-weight: 500;
+.side-conversation-source > svg {
+  flex: none;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
+}
+.side-conversation-source > span {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.side-conversation-source span {
-  display: -webkit-box;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: var(--font-caption-small);
-  line-height: 1.5;
-}
 .side-conversation .conversation-tools {
-  padding: 4px 8px;
-  flex: none;
+  position: absolute;
+  top: 2px;
+  right: 6px;
+  min-height: 32px;
+  padding: 0;
+}
+.side-conversation .conversation-tools .icon-button {
+  width: var(--control-compact);
+  height: var(--control-compact);
 }
 .side-conversation .conversation {
-  padding: 12px;
+  padding: 16px;
 }
 .side-conversation .conversation-frame {
   min-height: 80px;
@@ -8232,7 +8343,7 @@ dialog:has(.web-settings-form) {
 .side-conversation .composer-area {
   flex: none;
   min-width: 0;
-  padding: 8px;
+  padding: 0 12px 12px;
 }
 .side-conversation .composer {
   width: 100%;

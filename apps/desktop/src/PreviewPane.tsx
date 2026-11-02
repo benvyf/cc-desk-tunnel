@@ -1,7 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, IconButton } from './ui.tsx';
+import { IconButton } from './ui.tsx';
 import {
   ArrowLeftRight,
   Columns2,
@@ -287,9 +287,16 @@ export default function PreviewPaneView({
             <p className="preview-empty">此文件预览需要项目所在设备。</p>
           ) : workspace.pending.has(active.id) ? (
             <div className="preview-empty">
-              <FileText />
-              <p>已恢复标签。点击后加载此预览。</p>
-              <Button onClick={() => workspace.activate(active.id)}>加载此预览</Button>
+              <p>
+                已恢复标签。
+                <button
+                  type="button"
+                  className="preview-empty-link"
+                  onClick={() => workspace.activate(active.id)}
+                >
+                  加载此预览
+                </button>
+              </p>
             </div>
           ) : (
             <PreviewContent

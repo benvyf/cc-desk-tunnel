@@ -20,6 +20,10 @@ export type PreviewBoard = {
   expanded: boolean;
   tree: boolean;
 };
+// The workspace tree is a column of its own: opening it widens the preview by this much, so the file keeps its
+// width (the width the user drags is the panes').
+export const previewTreeWidth = 200;
+export const previewSpan = (width: number, tree: boolean) => width + (tree ? previewTreeWidth : 0);
 export const emptyBoard = (): PreviewBoard => ({
   tabs: [],
   panes: [{ id: 'primary', tabs: [], active: '' }],

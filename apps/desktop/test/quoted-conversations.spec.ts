@@ -387,6 +387,31 @@ test('selected quote opens an independent side conversation with explicit send a
   await expect(mainBox).toHaveValue('主会话草稿保持原样');
 });
 
+test('a side conversation names its source in one line that also holds its find button', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  const source = side.locator('.side-conversation-source');
+  await expect(source).toContainText(`继承“${f.parent.title}”的快照`);
+  await expect(source).toHaveAttribute('title', /后续追问独立保存/);
+  const line = (await source.boundingBox())!;
+  expect(line.height).toBeLessThanOrEqual(40);
+  const find = (await side
+    .getByRole('button', { name: '打开对话查找', exact: true })
+    .boundingBox())!;
+  expect(find.y).toBeGreaterThanOrEqual(line.y);
+  expect(find.y + find.height).toBeLessThanOrEqual(line.y + line.height);
+  // The conversation starts right under that line.
+  const conversation = (await side.locator('.conversation').boundingBox())!;
+  expect(Math.round(conversation.y)).toBe(Math.round(line.y + line.height));
+});
+
 test('a running main conversation is not stopped or sent to when stopping a side answer', async ({
   page,
 }) => {

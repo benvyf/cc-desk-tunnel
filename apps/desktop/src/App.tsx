@@ -92,7 +92,7 @@ import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
 import { FollowUps } from './followUps.ts';
 import FollowUpQueue from './FollowUpQueue.tsx';
 import PreviewSidebar from './PreviewSidebar.tsx';
-import { usePreviewWorkspace } from './preview.ts';
+import { previewSpan, usePreviewWorkspace } from './preview.ts';
 
 import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
 
@@ -1969,7 +1969,8 @@ export function App({
       style={
         {
           '--sidebar-width': `${prefs.sidebarWidth}px`,
-          '--preview-width': `${preview.width}px`,
+          // The tree, when shown, is a column of its own beside the panes (previewLayout.ts).
+          '--preview-width': `${previewSpan(preview.width, preview.tree && previewAvailable && !!selected?.projectPath)}px`,
         } as CSSProperties
       }
     >

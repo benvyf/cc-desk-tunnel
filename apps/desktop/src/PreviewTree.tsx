@@ -1,14 +1,18 @@
 import { useEffect, useId, useRef, useState } from 'react';
+import type { CSSProperties } from 'react';
 import { Button, IconButton } from './ui.tsx';
-import { ChevronDown, ChevronRight, FileText, FolderOpen, RefreshCw } from './icons.tsx';
+import { ChevronDown, ChevronRight, Crosshair, FileText, RefreshCw } from './icons.tsx';
 import type { PreviewSurface } from './preview.ts';
 import { pathKey } from './paths.ts';
 type Entry = { name: string; path: string; kind: 'file' | 'directory' };
 const keyOf = (path: string) => pathKey(path).replaceAll('\\', '/').replace(/\/$/, '');
 
+// Rows are the side column's (32px, 8px corners, hover and selected fills across the whole row); the depth only
+// moves the row's content, so nested rows are not narrower targets.
 function Directory({
   root,
   path,
+  depth,
   active,
   open,
   surface,
@@ -16,6 +20,7 @@ function Directory({
 }: {
   root: string;
   path: string;
+  depth: number;
   active?: string;
   open: (path: string) => void;
   surface: PreviewSurface;
@@ -74,27 +79,34 @@ function Directory({
       void window.desktop?.preview.unwatch(key);
     };
   }, [root, path, id, surface]);
+  const indent = { '--tree-depth': depth } as CSSProperties;
   return (
     <>
       {loading && (
-        <p className="preview-tree-notice" role="status">
+        <p className="preview-tree-notice" role="status" style={indent}>
           正在读取目录…
         </p>
       )}
       {error && (
-        <div className="preview-tree-notice" role="alert">
+        <div className="preview-tree-notice" role="alert" style={indent}>
           {error}
           <Button size="sm" onClick={() => setRevision((n) => n + 1)}>
             重试
           </Button>
         </div>
       )}
-      {!loading && !error && !entries.length && <p className="preview-tree-notice">空文件夹</p>}
+      {!loading && !error && !entries.length && (
+        <p className="preview-tree-notice" style={indent}>
+          空文件夹
+        </p>
+      )}
       {entries.map((entry) => (
         <div key={entry.path}>
           <button
             role="treeitem"
             className="preview-tree-item"
+            style={indent}
+            aria-level={depth + 1}
             aria-label={entry.name}
             aria-selected={keyOf(active ?? '') === keyOf(entry.path)}
             aria-expanded={entry.kind === 'directory' ? expanded.has(entry.path) : undefined}
@@ -143,12 +155,12 @@ function Directory({
           >
             {entry.kind === 'directory' ? (
               expanded.has(entry.path) ? (
-                <ChevronDown scale="xs" />
+                <ChevronDown />
               ) : (
-                <ChevronRight scale="xs" />
+                <ChevronRight />
               )
             ) : (
-              <FileText scale="xs" />
+              <FileText />
             )}
             <span>{entry.name}</span>
           </button>
@@ -157,6 +169,7 @@ function Directory({
               <Directory
                 root={root}
                 path={entry.path}
+                depth={depth + 1}
                 active={active}
                 open={open}
                 surface={surface}
@@ -192,8 +205,8 @@ export default function PreviewTree({
   );
   return (
     <section className="preview-tree" aria-label="工作区目录">
+      {/* As tall as the tab row beside it, so the two hairlines meet; the folder's name is a group heading. */}
       <header>
-        <FolderOpen scale="sm" />
         <span title={root}>{root.split(/[\\/]/).filter(Boolean).at(-1)}</span>
         <IconButton
           title="定位当前文件"
@@ -217,7 +230,7 @@ export default function PreviewTree({
             }
           }}
         >
-          <FileText />
+          <Crosshair />
         </IconButton>
         <IconButton title="刷新目录" size="xs" onClick={() => setRevision((n) => n + 1)}>
           <RefreshCw />
@@ -228,6 +241,7 @@ export default function PreviewTree({
           key={`${root}:${revision}`}
           root={root}
           path={root}
+          depth={0}
           active={active}
           open={open}
           surface={surface}
