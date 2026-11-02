@@ -5042,7 +5042,7 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   min-height: var(--control-compact);
   font-size: calc(15rem / 14);
-  color: var(--accent);
+  color: var(--effort-text, var(--accent));
 }
 .effort-heading .icon-button {
   position: absolute;
@@ -5097,12 +5097,24 @@ details[open] > summary > .fold-chevron {
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
-  background: linear-gradient(
-    to right,
-    var(--accent) 0 max(15px, var(--fill, 50%)),
-    var(--hover) max(15px, var(--fill, 50%)) 100%
-  );
+  /* A light sweeping over the filled part, then the fill (a warm gradient up to the level's colour), then the
+     empty track. The sweep is sized to the fill, so its stops run along the filled part only. */
+  background:
+    linear-gradient(
+        100deg,
+        transparent calc(var(--shine) - 18%),
+        rgb(255 255 255 / var(--effort-glint, 0.28)) var(--shine),
+        transparent calc(var(--shine) + 18%)
+      )
+      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+    linear-gradient(
+      to right,
+      var(--effort-from, var(--accent)) 0,
+      var(--effort-fill, var(--accent)) max(15px, var(--fill, 50%)),
+      var(--hover) max(15px, var(--fill, 50%)) 100%
+    );
   cursor: pointer;
+  animation: effort-sweep var(--effort-pace, 2.2s) linear infinite;
 }
 .model-menu input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -5113,15 +5125,21 @@ details[open] > summary > .fold-chevron {
   background: white;
   box-shadow: var(--shadow-sm);
 }
+/* At the top level the handle breathes a halo in the level's colour, like a running dot (2.4s). */
+.effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb {
+  animation: effort-halo 2.4s ease-in-out infinite;
+}
 .model-menu .effort-slider {
   touch-action: none;
 }
 .model-menu input[type='range']:disabled {
   opacity: 0.6;
+  animation: none;
 }
 /* No level known yet: no fill and no handle, so nothing claims a value; picking one brings the handle back. */
 .model-menu input[type='range'][data-unset] {
   background: var(--hover);
+  animation: none;
 }
 .model-menu input[type='range'][data-unset]::-webkit-slider-thumb {
   opacity: 0;
@@ -5148,8 +5166,81 @@ details[open] > summary > .fold-chevron {
   line-height: 18px;
 }
 .effort-ticks button.current {
-  color: var(--text);
+  color: var(--effort-text, var(--text));
   font-weight: 600;
+}
+/* Effort as heat: each level has its fill (a gradient from a lighter tint), the colour of its title and tick, and
+   the pace of the sweep, quicker the harder Claude thinks. Light themes deepen towards the top level, dark themes
+   brighten; 高 keeps the accent it had. Text colours are at least 4.5:1 on the menu. */
+.effort-view {
+  --effort-text: var(--accent);
+}
+.effort-view[data-effort='low'] {
+  --effort-from: light-dark(#f2d3c3, #5e4136);
+  --effort-fill: light-dark(#e3a387, #a8725b);
+  --effort-text: light-dark(#9b6650, #c59a86);
+  --effort-pace: 3.4s;
+  --effort-glint: 0.2;
+}
+.effort-view[data-effort='medium'] {
+  --effort-from: light-dark(#efc5ae, #6a4232);
+  --effort-fill: light-dark(#d98762, #c27a5a);
+  --effort-text: light-dark(#a85a38, #d08f70);
+  --effort-pace: 2.8s;
+  --effort-glint: 0.24;
+}
+.effort-view[data-effort='high'] {
+  --effort-from: light-dark(#e9b296, #74412c);
+  --effort-fill: light-dark(#a9502c, #e08463);
+  --effort-text: light-dark(#a9502c, #e08463);
+  --effort-pace: 2.2s;
+  --effort-glint: 0.28;
+}
+.effort-view[data-effort='xhigh'] {
+  --effort-from: light-dark(#e3a080, #803e26);
+  --effort-fill: light-dark(#9c3f1f, #ec9061);
+  --effort-text: light-dark(#9c3f1f, #ec9061);
+  --effort-pace: 1.7s;
+  --effort-glint: 0.32;
+}
+.effort-view[data-effort='max'] {
+  --effort-from: light-dark(#df8f68, #8c3a1f);
+  --effort-fill: light-dark(#8c2f12, #f8a066);
+  --effort-text: light-dark(#8c2f12, #f8a066);
+  --effort-pace: 1.25s;
+  --effort-glint: 0.36;
+}
+@property --shine {
+  syntax: '<percentage>';
+  inherits: false;
+  initial-value: -30%;
+}
+@keyframes effort-sweep {
+  from {
+    --shine: -30%;
+  }
+  to {
+    --shine: 130%;
+  }
+}
+@keyframes effort-halo {
+  0%,
+  100% {
+    box-shadow:
+      var(--shadow-sm),
+      0 0 0 0 color-mix(in srgb, var(--effort-fill) 0%, transparent);
+  }
+  50% {
+    box-shadow:
+      var(--shadow-sm),
+      0 0 0 6px color-mix(in srgb, var(--effort-fill) 28%, transparent);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .model-menu input[type='range'],
+  .effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb {
+    animation: none;
+  }
 }
 .model-options {
   max-height: min(320px, 40dvh);

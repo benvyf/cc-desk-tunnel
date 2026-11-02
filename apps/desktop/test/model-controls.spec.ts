@@ -155,3 +155,82 @@ test('keyboard preview can be cancelled and the slider fits both themes with red
   await page.locator('.model-current').click();
   await expect(page.getByRole('option').filter({ hasText: 'Opus 5.5' })).toBeVisible();
 });
+
+// Effort as heat (style.css): each level colours the slider, its title and tick, and sets how fast a light
+// sweeps along the fill; the top level's handle breathes a halo. Reduced motion keeps the colours only.
+test('each effort level has its own colour and sweep, and reduced motion stills them', async ({
+  page,
+}) => {
+  const slider = await fixture(page);
+  const view = page.locator('.effort-view');
+  const heading = page.locator('.effort-heading strong');
+  const motion = () =>
+    page.evaluate(() =>
+      document.getAnimations().map((a) => ({
+        name: (a as CSSAnimation).animationName,
+        duration: a.effect!.getTiming().duration,
+      })),
+    );
+  const haloMoves = async () => {
+    const box = (await slider.boundingBox())!;
+    const at = Number(await slider.inputValue()) / Number(await slider.getAttribute('max'));
+    const x = box.x + 15 + (box.width - 30) * at;
+    const shots = new Set<string>();
+    for (let i = 0; i < 4; i++) {
+      shots.add(
+        (
+          await page.screenshot({ clip: { x: x - 20, y: box.y - 6, width: 40, height: 5 } })
+        ).toString('base64'),
+      );
+      await page.waitForTimeout(300);
+    }
+    return shots.size > 1;
+  };
+  const pick = async (name: string, level: string) => {
+    await page.locator('.effort-ticks').getByRole('button', { name, exact: true }).click();
+    await expect(view).toHaveAttribute('data-effort', level);
+    await expect(slider).toBeEnabled();
+  };
+  await expect(view).toHaveAttribute('data-effort', 'high');
+  const colours: Record<string, string> = {};
+  const sweeps: Record<string, number> = {};
+  for (const [name, level] of [
+    ['低', 'low'],
+    ['中', 'medium'],
+    ['高', 'high'],
+    ['极高', 'xhigh'],
+    ['最高', 'max'],
+  ]) {
+    await pick(name, level);
+    colours[level] = await heading.evaluate((el) => getComputedStyle(el).color);
+    const running = await motion();
+    sweeps[level] = Number(running.find((a) => a.name === 'effort-sweep')!.duration);
+    // The handle's halo is drawn on its pseudo-element, which the animation list does not include: watch
+    // the strip just above the handle instead, which only the halo reaches.
+    expect(await haloMoves()).toBe(level === 'max');
+    await expect(page.locator('.effort-ticks button.current')).toHaveCSS('color', colours[level]);
+  }
+  expect(new Set(Object.values(colours)).size).toBe(5);
+  // The harder Claude thinks, the quicker the sweep.
+  expect(sweeps.low).toBeGreaterThan(sweeps.medium);
+  expect(sweeps.medium).toBeGreaterThan(sweeps.high);
+  expect(sweeps.high).toBeGreaterThan(sweeps.xhigh);
+  expect(sweeps.xhigh).toBeGreaterThan(sweeps.max);
+  // 高 keeps the accent the title had before.
+  await pick('高', 'high');
+  expect(await heading.evaluate((el) => getComputedStyle(el).color)).toBe(
+    await page.evaluate(() => {
+      const probe = document.createElement('i');
+      probe.style.color = 'var(--accent)';
+      document.body.append(probe);
+      const value = getComputedStyle(probe).color;
+      probe.remove();
+      return value;
+    }),
+  );
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await pick('最高', 'max');
+  expect((await motion()).filter((a) => a.name === 'effort-sweep')).toEqual([]);
+  expect(await haloMoves()).toBe(false);
+  expect(await heading.evaluate((el) => getComputedStyle(el).color)).toBe(colours.max);
+});

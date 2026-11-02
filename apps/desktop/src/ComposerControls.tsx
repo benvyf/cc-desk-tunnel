@@ -127,7 +127,8 @@ export default function ComposerControls({
         <Presence>
           {open && (
             <div className="model-menu" role="dialog" aria-label="模型与推理强度">
-              <div className="effort-view" hidden={choosing}>
+              {/* The level, shown or being chosen, colours the slider, its title and its tick (style.css). */}
+              <div className="effort-view" hidden={choosing} data-effort={shownEffort ?? undefined}>
                 <div className="effort-heading">
                   <strong>{shownEffort ? effortNames[shownEffort] : '原生默认'}</strong>
                   <IconButton
