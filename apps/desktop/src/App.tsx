@@ -2334,6 +2334,7 @@ export function App({
 
             {selected && (!away || remote) && !terminalsActive && (
               <Composer
+                mascot={prefs.mascot}
                 queuedMessages={
                   <FollowUpQueue
                     key={selected.id}

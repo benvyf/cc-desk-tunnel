@@ -8348,3 +8348,31 @@ dialog:has(.web-settings-form) {
 .follow-up-queue .quote-references {
   flex: none;
 }
+
+/* Clawd on the message box (Clawd.tsx): his feet on the box's top edge (or on the queue's, when there is one),
+   near the right. Pixel units scale with the interface font size; he never takes the pointer. */
+.clawd {
+  --clawd-unit: calc(2rem / 14);
+  position: absolute;
+  right: 18px;
+  bottom: 100%;
+  width: calc(var(--clawd-unit) * 20);
+  height: calc(var(--clawd-unit) * 11);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 2;
+}
+/* The queue tray and the message box as one stack (Composer.tsx), the place Clawd stands on. */
+.composer-stack {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: var(--chat-content-width, 768px);
+  min-height: 0;
+  flex-shrink: 1;
+  margin: 0 auto;
+}
+.side-conversation .composer-stack {
+  max-width: none;
+}

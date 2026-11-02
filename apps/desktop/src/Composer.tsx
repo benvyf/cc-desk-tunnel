@@ -31,6 +31,8 @@ import PermissionMenu from './PermissionMenu.tsx';
 import { IconButton } from './ui.tsx';
 import { setPrefs, usePrefs } from './prefs.ts';
 import { isMac } from './platform.ts';
+import Clawd from './Clawd.tsx';
+import type { ClawdState } from './Clawd.tsx';
 
 export type Scenario = 'chat' | 'tool' | 'question' | 'error';
 // A draft that is only a slash and an optional command name opens the command menu.
@@ -98,8 +100,11 @@ export default function Composer({
   refresh,
   configure,
   stop,
+  mascot = false,
 }: {
   queuedMessages?: ReactNode;
+  // Clawd on the box's top edge (the session's own box, when the setting is on).
+  mascot?: boolean;
   session: Session;
   draft: string;
   focusDraft?: boolean;
@@ -366,6 +371,12 @@ export default function Composer({
       })();
     }
   }
+  const clawdState: ClawdState =
+    !session.activeRun || session.activeRun.waiting === 'background'
+      ? 'idle'
+      : session.activeRun.status === 'awaiting_approval'
+        ? 'waiting'
+        : 'working';
   return (
     <div className="composer-area">
       <Presence kind="popup">
@@ -401,232 +412,238 @@ export default function Composer({
           </span>
         </div>
       )}
-      {queuedMessages}
-      <form
-        className={`composer ${dropping ? 'dropping' : ''}`}
-        onSubmit={(event) => {
-          event.preventDefault();
-          submit();
-        }}
-        onDragOver={(event) => {
-          if (!window.desktop || inputDisabled || !event.dataTransfer.types.includes('Files'))
-            return;
-          event.preventDefault();
-          setDropping(true);
-        }}
-        onDragLeave={() => setDropping(false)}
-        onDrop={(event) => {
-          setDropping(false);
-          if (!window.desktop || inputDisabled || !event.dataTransfer.files.length) return;
-          event.preventDefault();
-          void paste([...event.dataTransfer.files]);
-        }}
-      >
-        <div className="composer-input">
-          <QuoteChips
-            quotes={quotes}
-            remove={
-              setQuotes
-                ? (id) => {
-                    setQuotes(session.id, (current) => current.filter((quote) => quote.id !== id));
-                    input.current?.focus();
-                  }
-                : undefined
-            }
-          />
-          <AttachmentTiles
-            items={attachments}
-            disabled={inputDisabled}
-            remove={(id) => {
-              const path = attachments.find((item) => item.id === id)?.path;
-              setAttachments?.(session.id, (current) =>
-                current.filter((item) => item.id !== id && (!path || item.path !== path)),
-              );
-              input.current?.focus();
-            }}
-          />
-          {attachmentError && (
-            <p className="attachment-error" role="alert">
-              {attachmentError}
-            </p>
-          )}
-          {messageTooLong && (
-            <p className="attachment-error" role="alert">
-              消息过长（含附件），请缩短正文或移除部分附件（最多 {messageLimit} 字符）。
-            </p>
-          )}
-          <textarea
-            ref={input}
-            aria-label="消息"
-            placeholder={quotes.length ? '输入关于引用内容的问题…' : '随心输入…'}
-            value={draft}
-            disabled={inputDisabled}
-            maxLength={messageLimit}
-            aria-invalid={messageTooLong || undefined}
-            rows={2}
-            onChange={(event) => {
-              setDraft(event.target.value);
-              setSlashOpen(native && slashDraft.test(event.target.value));
-              setPick(null);
-            }}
-            onPaste={(event) => {
-              // Pasted text is left to the browser, also when a program put a picture of it beside the text.
-              if (!window.desktop || inputDisabled || !event.clipboardData.files.length) return;
-              const files = [...event.clipboardData.files];
-              const text = event.clipboardData.getData('text/plain');
-              const usable = files.filter(
-                (file) =>
-                  (() => {
-                    try {
-                      return !!window.desktop!.pathForFile(file);
-                    } catch {
-                      return false;
+      {/* The queue and the box are one stack, so Clawd stands on whichever is on top. */}
+      <div className="composer-stack">
+        {mascot && <Clawd state={clawdState} />}
+        {queuedMessages}
+        <form
+          className={`composer ${dropping ? 'dropping' : ''}`}
+          onSubmit={(event) => {
+            event.preventDefault();
+            submit();
+          }}
+          onDragOver={(event) => {
+            if (!window.desktop || inputDisabled || !event.dataTransfer.types.includes('Files'))
+              return;
+            event.preventDefault();
+            setDropping(true);
+          }}
+          onDragLeave={() => setDropping(false)}
+          onDrop={(event) => {
+            setDropping(false);
+            if (!window.desktop || inputDisabled || !event.dataTransfer.files.length) return;
+            event.preventDefault();
+            void paste([...event.dataTransfer.files]);
+          }}
+        >
+          <div className="composer-input">
+            <QuoteChips
+              quotes={quotes}
+              remove={
+                setQuotes
+                  ? (id) => {
+                      setQuotes(session.id, (current) =>
+                        current.filter((quote) => quote.id !== id),
+                      );
+                      input.current?.focus();
                     }
-                  })() ||
-                  (!text && file.type.startsWith('image/')),
-              );
-              if (!usable.length) return;
-              event.preventDefault();
-              void paste(usable);
-            }}
-            onKeyDown={(event) => {
-              if (event.key === 'Escape') {
-                setSlashOpen(false);
-                return;
-              }
-              if (menuShown && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
-                event.preventDefault();
-                setPick((at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
-                return;
-              }
-              if (menuShown && event.key === 'Tab' && !event.shiftKey) {
-                event.preventDefault();
-                const command = items[at].fill;
-                if (command) fill(command);
-                return;
-              }
-              if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
-                event.preventDefault();
-                if (!menuShown) submit(isMac ? event.metaKey : event.ctrlKey);
-                else if (!items[at].disabled) items[at].run();
-              }
-            }}
-          />
-        </div>
-        <div className="composer-toolbar">
-          {window.desktop && (
-            <IconButton
-              title="添加附件"
-              className="attach-button"
-              disabled={inputDisabled}
-              onClick={() => void chooseFiles()}
-            >
-              <Plus />
-            </IconButton>
-          )}
-          {!native ? (
-            <label className="scenario-label">
-              场景
-              <select
-                aria-label="模拟场景"
-                value={scenario}
-                onChange={(event) => setScenario(event.target.value as Scenario)}
-                disabled={!!session.activeRun || busy}
-              >
-                <option value="chat">对话</option>
-                <option value="tool">工具审批</option>
-                <option value="question">提问</option>
-                <option value="error">上游错误</option>
-              </select>
-            </label>
-          ) : (
-            <PermissionMenu
-              mode={session.permissionMode}
-              disabled={controlsDisabled}
-              change={(permissionMode) => void configure({ permissionMode })}
-            />
-          )}
-          <span className="toolbar-space" />
-          {native && (
-            <ComposerControls
-              key={session.id}
-              model={session.model}
-              effort={session.effort}
-              capabilities={capabilities}
-              nativeSession={nativeSession}
-              metrics={metrics}
-              openAccount={openAccount}
-              disabled={controlsDisabled}
-              configure={configure}
-              refresh={refresh}
-              refreshing={refreshing}
-              canRefreshModels={canRefreshModels}
-            />
-          )}
-          {session.activeRun && session.activeRun.waiting !== 'background' && (
-            <IconButton
-              title="停止运行"
-              aria-description={
-                shortcutsEnabled &&
-                session.activeRun.status !== 'awaiting_approval' &&
-                session.activeRun.surface !== 'terminal'
-                  ? '在当前会话内，500 毫秒内连续按两次 Esc 可停止当前回答。'
                   : undefined
               }
-              className="stop-button"
-              disabled={!connected || !ownsRun || busy}
-              onClick={stop}
-            >
-              <Square />
-            </IconButton>
-          )}
-          {resume && !draft.trim() && !attachments.length && !quotes.length ? (
-            <IconButton title="接着上一轮继续" className="send-button" onClick={resume}>
-              <Play />
-            </IconButton>
-          ) : (
-            (!session.activeRun || native) && (
-              <>
-                {following && (
-                  <select
-                    className="busy-send-mode"
-                    aria-label="繁忙时的发送行为"
-                    value={busyEnter}
-                    onChange={(event) =>
-                      setPrefs((prefs) => ({
-                        ...prefs,
-                        busyEnter: event.target.value === 'steer' ? 'steer' : 'queue',
-                      }))
+            />
+            <AttachmentTiles
+              items={attachments}
+              disabled={inputDisabled}
+              remove={(id) => {
+                const path = attachments.find((item) => item.id === id)?.path;
+                setAttachments?.(session.id, (current) =>
+                  current.filter((item) => item.id !== id && (!path || item.path !== path)),
+                );
+                input.current?.focus();
+              }}
+            />
+            {attachmentError && (
+              <p className="attachment-error" role="alert">
+                {attachmentError}
+              </p>
+            )}
+            {messageTooLong && (
+              <p className="attachment-error" role="alert">
+                消息过长（含附件），请缩短正文或移除部分附件（最多 {messageLimit} 字符）。
+              </p>
+            )}
+            <textarea
+              ref={input}
+              aria-label="消息"
+              placeholder={quotes.length ? '输入关于引用内容的问题…' : '随心输入…'}
+              value={draft}
+              disabled={inputDisabled}
+              maxLength={messageLimit}
+              aria-invalid={messageTooLong || undefined}
+              rows={2}
+              onChange={(event) => {
+                setDraft(event.target.value);
+                setSlashOpen(native && slashDraft.test(event.target.value));
+                setPick(null);
+              }}
+              onPaste={(event) => {
+                // Pasted text is left to the browser, also when a program put a picture of it beside the text.
+                if (!window.desktop || inputDisabled || !event.clipboardData.files.length) return;
+                const files = [...event.clipboardData.files];
+                const text = event.clipboardData.getData('text/plain');
+                const usable = files.filter(
+                  (file) =>
+                    (() => {
+                      try {
+                        return !!window.desktop!.pathForFile(file);
+                      } catch {
+                        return false;
+                      }
+                    })() ||
+                    (!text && file.type.startsWith('image/')),
+                );
+                if (!usable.length) return;
+                event.preventDefault();
+                void paste(usable);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Escape') {
+                  setSlashOpen(false);
+                  return;
+                }
+                if (menuShown && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                  event.preventDefault();
+                  setPick((at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length);
+                  return;
+                }
+                if (menuShown && event.key === 'Tab' && !event.shiftKey) {
+                  event.preventDefault();
+                  const command = items[at].fill;
+                  if (command) fill(command);
+                  return;
+                }
+                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                  event.preventDefault();
+                  if (!menuShown) submit(isMac ? event.metaKey : event.ctrlKey);
+                  else if (!items[at].disabled) items[at].run();
+                }
+              }}
+            />
+          </div>
+          <div className="composer-toolbar">
+            {window.desktop && (
+              <IconButton
+                title="添加附件"
+                className="attach-button"
+                disabled={inputDisabled}
+                onClick={() => void chooseFiles()}
+              >
+                <Plus />
+              </IconButton>
+            )}
+            {!native ? (
+              <label className="scenario-label">
+                场景
+                <select
+                  aria-label="模拟场景"
+                  value={scenario}
+                  onChange={(event) => setScenario(event.target.value as Scenario)}
+                  disabled={!!session.activeRun || busy}
+                >
+                  <option value="chat">对话</option>
+                  <option value="tool">工具审批</option>
+                  <option value="question">提问</option>
+                  <option value="error">上游错误</option>
+                </select>
+              </label>
+            ) : (
+              <PermissionMenu
+                mode={session.permissionMode}
+                disabled={controlsDisabled}
+                change={(permissionMode) => void configure({ permissionMode })}
+              />
+            )}
+            <span className="toolbar-space" />
+            {native && (
+              <ComposerControls
+                key={session.id}
+                model={session.model}
+                effort={session.effort}
+                capabilities={capabilities}
+                nativeSession={nativeSession}
+                metrics={metrics}
+                openAccount={openAccount}
+                disabled={controlsDisabled}
+                configure={configure}
+                refresh={refresh}
+                refreshing={refreshing}
+                canRefreshModels={canRefreshModels}
+              />
+            )}
+            {session.activeRun && session.activeRun.waiting !== 'background' && (
+              <IconButton
+                title="停止运行"
+                aria-description={
+                  shortcutsEnabled &&
+                  session.activeRun.status !== 'awaiting_approval' &&
+                  session.activeRun.surface !== 'terminal'
+                    ? '在当前会话内，500 毫秒内连续按两次 Esc 可停止当前回答。'
+                    : undefined
+                }
+                className="stop-button"
+                disabled={!connected || !ownsRun || busy}
+                onClick={stop}
+              >
+                <Square />
+              </IconButton>
+            )}
+            {resume && !draft.trim() && !attachments.length && !quotes.length ? (
+              <IconButton title="接着上一轮继续" className="send-button" onClick={resume}>
+                <Play />
+              </IconButton>
+            ) : (
+              (!session.activeRun || native) && (
+                <>
+                  {following && (
+                    <select
+                      className="busy-send-mode"
+                      aria-label="繁忙时的发送行为"
+                      value={busyEnter}
+                      onChange={(event) =>
+                        setPrefs((prefs) => ({
+                          ...prefs,
+                          busyEnter: event.target.value === 'steer' ? 'steer' : 'queue',
+                        }))
+                      }
+                    >
+                      <option value="queue">排队发送</option>
+                      <option value="steer">插话发送</option>
+                    </select>
+                  )}
+                  <button
+                    type="submit"
+                    className="icon-button send-button"
+                    aria-label={sendLabel}
+                    title={
+                      following
+                        ? `${sendLabel} · ${isMac ? 'Cmd' : 'Ctrl'}+Enter ${busyEnter === 'queue' ? '插话发送' : '排队发送'}`
+                        : sendLabel
+                    }
+                    disabled={
+                      (!draft.trim() && !attachments.length) ||
+                      (!!quotes.length && !draft.trim()) ||
+                      inputDisabled ||
+                      attachmentBlocked ||
+                      messageTooLong
                     }
                   >
-                    <option value="queue">排队发送</option>
-                    <option value="steer">插话发送</option>
-                  </select>
-                )}
-                <button
-                  type="submit"
-                  className="icon-button send-button"
-                  aria-label={sendLabel}
-                  title={
-                    following
-                      ? `${sendLabel} · ${isMac ? 'Cmd' : 'Ctrl'}+Enter ${busyEnter === 'queue' ? '插话发送' : '排队发送'}`
-                      : sendLabel
-                  }
-                  disabled={
-                    (!draft.trim() && !attachments.length) ||
-                    (!!quotes.length && !draft.trim()) ||
-                    inputDisabled ||
-                    attachmentBlocked ||
-                    messageTooLong
-                  }
-                >
-                  <ArrowUp />
-                </button>
-              </>
-            )
-          )}
-        </div>
-      </form>
+                    <ArrowUp />
+                  </button>
+                </>
+              )
+            )}
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
