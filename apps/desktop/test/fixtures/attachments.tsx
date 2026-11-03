@@ -39,7 +39,7 @@ export function mount() {
   } as unknown as NonNullable<Window['desktop']>;
   function Demo() {
     const [id, setId] = useState('one');
-    const [drafts, setDraft, attachments, setAttachments] = useDrafts();
+    const [drafts, setDraft, attachments, setAttachments, , , draftsReady] = useDrafts();
     return (
       <>
         <button onClick={() => setId(id === 'one' ? 'two' : 'one')}>切换会话</button>
@@ -61,7 +61,9 @@ export function mount() {
         <Composer
           session={{ id, projectPath: 'C:\\项目', permissionMode: 'default' } as Session}
           draft={drafts[id] ?? ''}
-          setDraft={(text) => setDraft(id, text)}
+          history={new URL(location.href).searchParams.has('history') ? ['existing command'] : []}
+          historyReady={draftsReady}
+          setDraft={(text, expectedText) => setDraft(id, text, expectedText)}
           attachments={attachments[id] ?? []}
           setAttachments={setAttachments}
           native={false}

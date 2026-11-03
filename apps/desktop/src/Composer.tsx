@@ -36,6 +36,7 @@ import { setPrefs, usePrefs } from './prefs.ts';
 import { isMac } from './platform.ts';
 import Clawd from './Clawd.tsx';
 import type { ClawdState } from './Clawd.tsx';
+import { useInputHistory } from './useInputHistory.ts';
 
 export type Scenario = 'chat' | 'tool' | 'question' | 'error';
 // A draft that is only a slash and an optional command name opens the command menu.
@@ -73,6 +74,8 @@ export default function Composer({
   queuedMessages,
   session,
   draft,
+  history = [],
+  historyReady = true,
   focusDraft = false,
   onDraftFocusHandled,
   setDraft,
@@ -110,9 +113,11 @@ export default function Composer({
   mascot?: boolean;
   session: Session;
   draft: string;
+  history?: string[];
+  historyReady?: boolean;
   focusDraft?: boolean;
   onDraftFocusHandled?: () => void;
-  setDraft: (text: string) => void;
+  setDraft: (text: string, expectedText?: string) => void;
   quotes?: QuoteReference[];
   setQuotes?: SetQuotes;
   attachments?: Attachment[];
@@ -148,6 +153,11 @@ export default function Composer({
   stop: () => void;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
+  const recall = useInputHistory(session.id, historyReady ? history : [], draft, setDraft, input);
+  const composition = useRef({ active: false, until: 0 });
+  useLayoutEffect(() => {
+    composition.current = { active: false, until: 0 };
+  }, [session.id]);
   const {
     fontSizes: { interface: interfaceFontSize },
     busyEnter,
@@ -493,7 +503,16 @@ export default function Composer({
               maxLength={messageLimit}
               aria-invalid={messageTooLong || undefined}
               rows={2}
+              onCompositionStart={() => {
+                composition.current.active = true;
+              }}
+              onCompositionEnd={() => {
+                composition.current.active = false;
+                // Harness also guards late composition-closing keys for 10ms.
+                composition.current.until = performance.now() + 10;
+              }}
               onChange={(event) => {
+                recall.reset();
                 setDraft(event.target.value);
                 setSlashOpen(native && slashDraft.test(event.target.value));
                 setPick(null);
@@ -519,6 +538,19 @@ export default function Composer({
                 void paste(usable);
               }}
               onKeyDown={(event) => {
+                const composing =
+                  composition.current.active ||
+                  event.nativeEvent.isComposing ||
+                  event.nativeEvent.keyCode === 229;
+                if (composing || performance.now() < composition.current.until) {
+                  // The IME owns this key; global shortcuts must not count it.
+                  event.stopPropagation();
+                  // After composition has ended, textarea's default Enter would
+                  // insert a line. Preserve Shift+Enter and the IME's own defaults.
+                  if (!composing && event.key === 'Enter' && !event.shiftKey)
+                    event.preventDefault();
+                  return;
+                }
                 if (event.key === 'Escape') {
                   setSlashOpen(false);
                   return;
@@ -534,7 +566,12 @@ export default function Composer({
                   if (command) fill(command);
                   return;
                 }
-                if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (recall.onKeyDown(event)) {
+                  setSlashOpen(false);
+                  setPick(null);
+                  return;
+                }
+                if (event.key === 'Enter' && !event.shiftKey) {
                   event.preventDefault();
                   if (!menuShown) submit(isMac ? event.metaKey : event.ctrlKey);
                   else if (!items[at].disabled) items[at].run();

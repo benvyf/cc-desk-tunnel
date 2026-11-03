@@ -387,6 +387,33 @@ test('selected quote opens an independent side conversation with explicit send a
   await expect(mainBox).toHaveValue('主会话草稿保持原样');
 });
 
+test('side input history recalls only its own question and preserves main draft and quote state', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const mainBox = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await mainBox.fill('main unsent draft');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  const sideBox = side.getByRole('textbox', { name: '消息', exact: true });
+  await sideBox.fill('side question');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(sideBox).toHaveValue('');
+  await expect(side.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
+  await sideBox.press('ArrowUp');
+  await expect(sideBox).toHaveValue('side question');
+  await expect(side.locator('.quote-reference-list')).toHaveCount(0);
+  await expect(mainBox).toHaveValue('main unsent draft');
+  expect(f.messages()).toHaveLength(1);
+  expect(f.messages()[0].sessionId).toBe(f.created[0]);
+  await sideBox.press('ArrowDown');
+  await expect(sideBox).toHaveValue('');
+});
+
 test('a side conversation names its source in one line that also holds its find button', async ({
   page,
 }) => {
@@ -1055,7 +1082,7 @@ test('modified repeated composing locally consumed and unrelated keys reset Esca
       await page.keyboard.down('Escape');
       await page.keyboard.up('Escape');
     }
-    if (interaction === 'composition')
+    if (interaction === 'composition') {
       await box.evaluate((el) => {
         el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
         el.dispatchEvent(
@@ -1068,6 +1095,14 @@ test('modified repeated composing locally consumed and unrelated keys reset Esca
         );
         el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
       });
+      // Fresh shortcut presses belong after the composition-closing guard.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+    }
     if (interaction === 'prevented' || interaction === 'stopped') {
       await box.evaluate(
         (el, method) =>
@@ -1254,6 +1289,39 @@ test('active stop keyboard handlers remain stable while typing a follow-up', asy
   expect(after).toEqual(before);
 });
 
+test('a late IME-closing Escape cannot arm the global double-Escape stop shortcut', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  await box.evaluate((element) => {
+    const now = performance.now();
+    Object.defineProperty(performance, 'now', { configurable: true, value: () => now });
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    element.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    delete (performance as any).now;
+  });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await box.press('Escape');
+  expect(f.calls.filter((call) => call.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((call) => call.type === 'run.cancel').length).toBe(1);
+});
+
 test('IME composition owns Escape even when an event omits its composing flag', async ({
   page,
 }) => {
@@ -1270,6 +1338,12 @@ test('IME composition owns Escape even when an event omits its composing flag', 
       new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 229, bubbles: true }),
     );
   });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
   await box.press('Escape');
   expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
   await box.press('Escape');

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'reac
 import type { Effort, PermissionMode, NativeCapabilities } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import Composer from './Composer.tsx';
+import { inputHistory } from './inputHistory.ts';
 import type { Scenario } from './Composer.tsx';
 import Conversation from './Conversation.tsx';
 import FollowUpQueue from './FollowUpQueue.tsx';
@@ -21,6 +22,7 @@ export default function SideConversation({
   capabilities,
   sessionId,
   draft,
+  draftsReady = true,
   setDraft,
   quotes,
   setQuotes,
@@ -36,6 +38,7 @@ export default function SideConversation({
   client: ProxyClient;
   sessionId: string;
   draft: string;
+  draftsReady?: boolean;
   setDraft: (text: string, expectedText?: string) => void;
   quotes: QuoteReference[];
   setQuotes: SetQuotes;
@@ -61,6 +64,8 @@ export default function SideConversation({
     unfinished = state.live[sessionId];
   const events = useMemo(() => client.shown(sessionId), [client, sessionId, recorded, unfinished]);
   const history = state.history[sessionId];
+  const queuedInputs = queued.items[sessionId];
+  const recalledInputs = useMemo(() => inputHistory(events, queuedInputs), [events, queuedInputs]);
   // Nothing said in it yet: it greets (see App.tsx).
   const blank = useMemo(() => isBlank(events), [events]);
   const fresh =
@@ -245,6 +250,8 @@ export default function SideConversation({
       <Composer
         session={session}
         draft={draft}
+        history={recalledInputs}
+        historyReady={draftsReady}
         setDraft={setDraft}
         quotes={quotes}
         setQuotes={setQuotes}

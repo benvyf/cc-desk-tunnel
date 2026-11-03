@@ -197,5 +197,15 @@ export function useDrafts() {
     () => Object.fromEntries(Object.entries(entries).map(([id, entry]) => [id, entry.attachments])),
     [entries],
   );
-  return [drafts, setDraft, attachments, setAttachments, quotes, setQuotes] as const;
+  // History previews must wait for stored text; ordinary early edits still use
+  // the independent merge rules above.
+  return [
+    drafts,
+    setDraft,
+    attachments,
+    setAttachments,
+    quotes,
+    setQuotes,
+    loaded.current,
+  ] as const;
 }

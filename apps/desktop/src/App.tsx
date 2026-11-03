@@ -90,6 +90,7 @@ import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
 import { FollowUps } from './followUps.ts';
 import FollowUpQueue from './FollowUpQueue.tsx';
+import { inputHistory } from './inputHistory.ts';
 import PreviewSidebar from './PreviewSidebar.tsx';
 import { previewSpan, usePreviewWorkspace } from './preview.ts';
 
@@ -210,7 +211,8 @@ export function App({
   const [projects, setProjects] = useState(savedProjects);
   // The folders that hold sessions without a project; new ones are made in the first.
   const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
-  const [drafts, setDraft, attachmentDrafts, setAttachments, quoteDrafts, setQuotes] = useDrafts();
+  const [drafts, setDraft, attachmentDrafts, setAttachments, quoteDrafts, setQuotes, draftsReady] =
+    useDrafts();
   const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
   const [scenario, setScenario] = useState<Scenario>('chat');
   const [slashOpen, setSlashOpen] = useState(false);
@@ -402,6 +404,8 @@ export function App({
     [selected?.id, recorded, unfinished],
   );
   const history = selected ? state.history[selected.id] : undefined;
+  const queuedInputs = selected ? queued.items[selected.id] : undefined;
+  const recalledInputs = useMemo(() => inputHistory(events, queuedInputs), [events, queuedInputs]);
   // A session nothing has been said in yet, and the home page with none open, show the new-session layout: the
   // greeting and the input box together in the upper middle of the page (spec §4.2, §5.10).
   const blank = useMemo(() => isBlank(events), [events]);
@@ -2391,9 +2395,11 @@ export function App({
                 openAccount={() => open('settings', 'account')}
                 session={selected}
                 draft={draft}
+                history={recalledInputs}
+                historyReady={draftsReady}
                 focusDraft={focusDraftSession === selected.id}
                 onDraftFocusHandled={() => setFocusDraftSession(null)}
-                setDraft={(text) => setDraft(selected.id, text)}
+                setDraft={(text, expectedText) => setDraft(selected.id, text, expectedText)}
                 quotes={quoteDrafts[selected.id] ?? []}
                 setQuotes={setQuotes}
                 attachments={attachmentDrafts[selected.id] ?? []}
@@ -2480,6 +2486,7 @@ export function App({
                 client={client}
                 capabilities={capabilities}
                 sessionId={tab.target}
+                draftsReady={draftsReady}
                 draft={drafts[tab.target] ?? ''}
                 setDraft={(text, expectedText) => setDraft(tab.target, text, expectedText)}
                 quotes={quoteDrafts[tab.target] ?? []}

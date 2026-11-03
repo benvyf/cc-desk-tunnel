@@ -244,6 +244,49 @@ test('typing before disk loading completes preserves saved attachments, and addi
     .not.toContain('schema.json');
 });
 
+test('history cannot replace a saved draft before the native draft read completes', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('attachment-test-drafts', JSON.stringify({ one: 'saved original work' })),
+  );
+  await page.goto('/test/fixtures/attachments.html?loadDelay=1800&history=1');
+  const box = page.getByRole('textbox', { name: '消息', exact: true });
+  await box.press('ArrowUp');
+  await expect(box).toHaveValue('');
+  await expect(box).toHaveValue('saved original work');
+  await box.press('ArrowUp');
+  await expect(box).toHaveValue('existing command');
+  await box.press('ArrowDown');
+  await expect(box).toHaveValue('saved original work');
+});
+
+test('waiting for saved drafts does not disable ordinary typing or lose saved attachments', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'attachment-test-drafts',
+      JSON.stringify({
+        one: {
+          text: 'saved original work',
+          attachments: [{ id: 'file', name: 'saved.pdf', path: '/saved.pdf', status: 'ready' }],
+        },
+      }),
+    ),
+  );
+  await page.goto('/test/fixtures/attachments.html?loadDelay=1800&history=1');
+  const box = page.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('typed before load');
+  await box.press('ArrowUp');
+  await expect(box).toHaveValue('typed before load');
+  await expect(page.locator('.attachment-name')).toHaveText('saved.pdf');
+  await box.press('ArrowUp');
+  await expect(box).toHaveValue('existing command');
+  await box.press('ArrowDown');
+  await expect(box).toHaveValue('typed before load');
+});
+
 test('reference file tiles match both themes and forced colors retain readable controls', async ({
   page,
 }) => {
