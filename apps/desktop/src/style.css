@@ -3538,66 +3538,32 @@ dialog:has(.picture-view) {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
-/* What a question carried: pictures as themselves, other files as cards with name and kind. */
+/* What a question carried: the input box's small tiles, in rows at the right above the bubble, so that many pictures
+   take little room; a picture's tile opens it whole. */
 .message-attachments {
   display: flex;
-  flex-direction: column;
-  align-items: flex-end;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 8px;
   max-width: 100%;
 }
-.message-attachment {
-  max-width: 100%;
-  min-width: 0;
+.message-attachments .attachment-slot {
+  width: auto;
+  padding: 0;
+  animation: none;
 }
-.message-attachment .picture {
+.attachment-open {
   display: block;
-  margin: 0;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  overflow: hidden;
+  padding: 0;
+  font: inherit;
+  text-align: start;
+  cursor: zoom-in;
 }
-.message-attachment .picture img {
-  max-width: min(100%, 330px);
-  max-height: 330px;
-}
-.message-attachment-file {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 10px;
-  width: 112px;
-  min-height: 112px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--text);
-  font-size: calc(13rem / 14);
-  line-height: 17px;
-}
-.message-attachment-name {
-  display: -webkit-box;
-  overflow: hidden;
-  overflow-wrap: anywhere;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 4;
-}
-.message-attachment-kind {
-  align-self: flex-start;
-  max-width: 100%;
-  overflow: hidden;
-  padding: 1px 6px;
-  border-radius: var(--radius-xs);
-  background: var(--user-bubble);
-  color: var(--muted);
-  font-size: calc(11rem / 14);
-  line-height: 16px;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+.attachment-open:hover {
+  border-color: var(--line-strong);
 }
 @media (forced-colors: active) {
-  .user-bubble,
-  .message-attachment-file {
+  .user-bubble {
     border: 1px solid CanvasText;
   }
 }

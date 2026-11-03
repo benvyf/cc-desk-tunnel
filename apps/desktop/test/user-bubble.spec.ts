@@ -161,7 +161,7 @@ test('searching the conversation opens a folded question to its match', async ({
   await expect(text.getByText(/鹈鹕/)).toBeInViewport();
 });
 
-test('attached files stand above the bubble as cards; files alone have no bubble', async ({
+test('attached files stand above the bubble as small tiles; files alone have no bubble', async ({
   page,
 }) => {
   const users = await open(page);
@@ -169,8 +169,11 @@ test('attached files stand above the bubble as cards; files alone have no bubble
   const cards = withText.locator('.message-attachments [role="listitem"]');
   await expect(cards).toHaveCount(2);
   await expect(cards.first()).toContainText('配置指南.md');
-  await expect(cards.first().locator('.message-attachment-kind')).toHaveText('MD');
-  await expect(withText.locator('.user-bubble .message-attachment')).toHaveCount(0);
+  await expect(cards.first().locator('.attachment-kind')).toHaveText('MD');
+  // The input box's tiles: 128 × 96.
+  const tile = (await cards.first().locator('.attachment-tile').boundingBox())!;
+  expect([tile.width, tile.height]).toEqual([128, 96]);
+  await expect(withText.locator('.user-bubble .attachment-tile')).toHaveCount(0);
   const above = (await withText.locator('.message-attachments').boundingBox())!;
   const bubble = (await withText.locator('.user-bubble').boundingBox())!;
   expect(above.y + above.height).toBeLessThanOrEqual(bubble.y);
@@ -178,6 +181,30 @@ test('attached files stand above the bubble as cards; files alone have no bubble
   expect(Math.abs(above.x + above.width - (bubble.x + bubble.width))).toBeLessThanOrEqual(1);
   await expect(withText.locator('.user-bubble')).toHaveText('看看这两个文件');
   const alone = users.nth(4);
-  await expect(alone.locator('.message-attachment')).toHaveCount(1);
+  await expect(alone.locator('.attachment-tile')).toHaveCount(1);
   await expect(alone.locator('.user-bubble')).toHaveCount(0);
+});
+
+test('many pictures wrap into rows of small tiles at the right, and a click opens one whole', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/sent-attachments.html?pictures=9');
+  const tiles = page.locator('.message-attachments .attachment-tile');
+  await expect(tiles).toHaveCount(10);
+  await expect(page.locator('.attachment-open')).toHaveCount(9);
+  const row = (await page.locator('.message-attachments').boundingBox())!;
+  // Rows rather than one long strip: nothing wider than the message, no sideways scrolling.
+  expect(row.width).toBeLessThanOrEqual(600);
+  expect(row.height).toBeGreaterThan(96 * 2);
+  const last = (await tiles.last().boundingBox())!;
+  expect(Math.abs(last.x + last.width - (row.x + row.width))).toBeLessThanOrEqual(1);
+  // The file is not a picture: nothing to open.
+  await expect(tiles.last()).not.toHaveRole('button');
+  await page.getByRole('button', { name: /图1\.png/ }).click();
+  const dialog = page.getByRole('dialog', { name: '图1.png' });
+  await expect(dialog).toBeVisible();
+  // The whole picture cannot be read in a browser; the preview stands in for it.
+  await expect(dialog.locator('img')).toHaveAttribute('src', /^data:image\/png/);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
 });
