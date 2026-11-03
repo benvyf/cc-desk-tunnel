@@ -18,6 +18,108 @@ const confirmation = {
   clientProtocol: PROTOCOL_VERSION,
 };
 
+test('host maintenance rejects an external effective address forwarded over loopback', async (t) => {
+  let prepared = false;
+  const handler = managedServerHandler({
+    token,
+    address: () => '203.0.113.7',
+    admission: { enter: () => true, leave: () => {} },
+    backend: {
+      status: async () => ({ hostMaintenance: true }),
+      prepare: async () => {
+        prepared = true;
+      },
+      cancel: async () => {},
+      activate: () => {},
+    } as unknown as ManagedBackend,
+  });
+  const server = createServer((req, res) => {
+    if (!handler(req, res)) res.writeHead(404).end();
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => {
+    server.closeAllConnections();
+    server.close();
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const result = await fetch(`http://127.0.0.1:${address.port}/cc-managed/server/v1/host-install`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+      'x-real-ip': '203.0.113.7',
+    },
+    body: JSON.stringify(confirmation),
+  });
+  assert.equal(result.status, 403);
+  assert.equal(prepared, false);
+});
+
+test('ordinary and host installation requests share one preparation owner', async (t) => {
+  let finish!: () => void,
+    started!: () => void,
+    entered = 0,
+    preparations = 0;
+  const staging = new Promise<void>((r) => {
+      started = r;
+    }),
+    pending = new Promise<void>((r) => {
+      finish = r;
+    });
+  const handler = managedServerHandler({
+    token,
+    admission: {
+      enter: () => {
+        entered++;
+        return true;
+      },
+      leave: () => {},
+    },
+    backend: {
+      status: async () => ({ hostMaintenance: true }),
+      prepare: async () => {
+        preparations++;
+        started();
+        await pending;
+        throw new Error('failed preparation');
+      },
+      cancel: async () => {},
+      activate: () => {},
+    } as unknown as ManagedBackend,
+  });
+  const server = createServer((req, res) => {
+    if (!handler(req, res)) res.writeHead(404).end();
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => {
+    finish();
+    server.closeAllConnections();
+    server.close();
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const post = (route: string) =>
+    fetch(`http://127.0.0.1:${address.port}/cc-managed/server/v1/${route}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(confirmation),
+    });
+  const host = post('host-install');
+  await staging;
+  const strict = post('install');
+  const race = await Promise.race([
+    strict.then((result) => result.status),
+    new Promise<'blocked'>((r) => setTimeout(() => r('blocked'), 100)),
+  ]);
+  finish();
+  await host;
+  await strict;
+  assert.equal(race, 409);
+  assert.equal(entered, 0);
+  assert.equal(preparations, 1);
+});
+
 test('updated child under legacy supervisor cannot advertise host maintenance and exposes live serving', async (t) => {
   const dir = mkdtempSync(join(tmpdir(), 'host-legacy-'));
   let prepared = false;

@@ -103,6 +103,18 @@ def save(b, backup, record):
     b.durable_json(backup / 'record.json', record)
 
 
+def sync_file(path):
+    with path.open('rb+') as stream:
+        os.fsync(stream.fileno())
+
+
+def sync_directory(path):
+    if os.name == 'posix':
+        descriptor = os.open(path, os.O_RDONLY)
+        try: os.fsync(descriptor)
+        finally: os.close(descriptor)
+
+
 def rollback(b, backup):
     record = json.loads((backup / 'record.json').read_text())
     original = json.loads((backup / 'original.json').read_text())
@@ -195,6 +207,7 @@ def check_idle(b, original):
 
 
 def verify_cold_backup(path):
+    sync_file(path)
     expected = {'data'} | {'data/' + p.relative_to(DATA).as_posix() for p in DATA.rglob('*')}
     seen = set()
     with tarfile.open(path, 'r:gz') as archive:
@@ -235,10 +248,13 @@ def install(b, disconnect_clients=False):
     stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + os.urandom(4).hex()
     backup = ROOT / ('backup-' + stamp)
     backup.mkdir(mode=0o700)
+    sync_directory(ROOT)
     rollback_source = Path(__file__).read_text().replace("ROOT = Path('/var/lib/cc-space-037-upgrade')", 'ROOT = Path(' + repr(str(ROOT)) + ')')
     rollback_source = rollback_source.replace("NODE = 'ubuntu-cc'", 'NODE = ' + repr(NODE))
     (backup / 'rollback.py').write_text(rollback_source)
     shutil.copyfile(ROOT / 'helper.py', backup / 'helper.py')
+    sync_file(backup / 'rollback.py')
+    sync_file(backup / 'helper.py')
     b.durable_json(backup / 'original.json', original)
     record = {'phase': 'prepared', 'dataChanged': False, 'backup': str(backup)}
     save(b, backup, record)
@@ -247,6 +263,8 @@ def install(b, disconnect_clients=False):
     paused = False
     changed = False
     try:
+        record['phase'] = 'admission'
+        save(b, backup, record)
         engine.request('POST', '/containers/' + original['Id'] + '/pause')
         paused = True
         if busy(b, engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20pid,args')['Processes']):
@@ -259,6 +277,8 @@ def install(b, disconnect_clients=False):
             b.frozen_idle(original)
         # Freeze closes the race with task/data growth during preparation.
         check_space()
+        if getattr(b, 'validate_cutover', None):
+            b.validate_cutover(engine.request('GET', '/containers/' + original['Id'] + '/json'))
         changed = True
         record['phase'] = 'stopping'
         save(b, backup, record)
@@ -304,6 +324,9 @@ def install(b, disconnect_clients=False):
     except BaseException:
         if paused:
             engine.request('POST', '/containers/' + original['Id'] + '/unpause')
+            if not changed:
+                record['phase'] = 'prepared'
+                save(b, backup, record)
         if changed:
             print('Cutover did not complete; attempting rollback.', flush=True)
             rollback(b, backup)

@@ -2,6 +2,7 @@
 """One-time root host-channel enrollment; never queues or runs an application update."""
 import argparse
 import base64
+import ctypes
 import json
 import os
 from pathlib import Path
@@ -11,10 +12,37 @@ import subprocess
 import sys
 import tempfile
 import urllib.request
+import urllib.error
 import zlib
 from contextlib import contextmanager
 
 BUNDLE = '__HOST_BUNDLE__'
+
+
+def sync_directory(path):
+    if os.name == 'posix':
+        descriptor=os.open(path,os.O_RDONLY)
+        try:os.fsync(descriptor)
+        finally:os.close(descriptor)
+
+
+def write_staged(path,content,mode):
+    with path.open('xb') as stream:
+        os.chmod(path,mode);stream.write(content);stream.flush();os.fsync(stream.fileno())
+    sync_directory(path.parent)
+
+
+def exchange_program(current,staged):
+    # Ubuntu renameat2 exchanges two complete trees in one atomic operation:
+    # the systemd entry path is never absent, including on SIGKILL/reboot.
+    library=ctypes.CDLL(None,use_errno=True)
+    try:exchange=library.renameat2
+    except AttributeError:raise RuntimeError('Atomic host program exchange is unavailable')
+    exchange.argtypes=[ctypes.c_int,ctypes.c_char_p,ctypes.c_int,ctypes.c_char_p,ctypes.c_uint]
+    exchange.restype=ctypes.c_int
+    if exchange(-100,os.fsencode(current),-100,os.fsencode(staged),2):
+        reason=ctypes.get_errno()
+        raise OSError(reason,os.strerror(reason))
 
 
 @contextmanager
@@ -48,27 +76,32 @@ def install_locked(node,code,bundle,root,program):
     # Stage every byte before stopping the old channel or consuming the grant.
     stage=Path(tempfile.mkdtemp(prefix='.cc-host-updater-',dir=str(program.parent)))
     staged_program=stage/'program';staged_program.mkdir(mode=0o700)
+    probe_current=stage/'exchange-probe-current';probe_staged=stage/'exchange-probe-staged'
+    probe_current.mkdir();probe_staged.mkdir()
+    exchange_program(probe_current,probe_staged)
+    probe_current.rmdir();probe_staged.rmdir()
     for name,content in bundle['files'].items():
         parts=Path(name)
         if parts.is_absolute() or '..' in parts.parts:raise RuntimeError('Invalid updater file path')
         data=base64.b64decode(content)
         if name.endswith('.py'):compile(data,name,'exec')
         path=staged_program/name;path.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
-        with path.open('xb') as stream:
-            os.chmod(path,0o600);stream.write(data);stream.flush();os.fsync(stream.fileno())
+        write_staged(path,data,0o600)
+    for directory in sorted([staged_program]+[p for p in staged_program.rglob('*') if p.is_dir()],key=lambda p:len(p.parts),reverse=True):
+        sync_directory(directory)
+    sync_directory(stage);sync_directory(program.parent)
     nonce=stage.name.rsplit('-',1)[-1]
     next_config=root/('config.next-'+nonce)
     config={'nodeId':node,'origin':bundle['origin'],'keys':bundle['keys'],'token':'x'*43}
     reserved=json.dumps(config).encode()
-    with next_config.open('xb') as stream:
-        os.chmod(next_config,0o600);stream.write(reserved);stream.flush();os.fsync(stream.fileno())
+    write_staged(next_config,reserved,0o600)
     unit=Path('/etc/systemd/system/cc-host-updater.service')
     next_unit=unit.with_name(unit.name+'.next-'+nonce)
     previous_unit=unit.read_bytes() if unit.exists() else None
     previous_unit_path=unit.with_name(unit.name+'.previous-'+nonce)
     if previous_unit is not None:
-        previous_unit_path.write_bytes(previous_unit);previous_unit_path.chmod(0o644)
-    next_unit.write_text('''[Unit]
+        write_staged(previous_unit_path,previous_unit,0o644)
+    write_staged(next_unit,b'''[Unit]
 Description=CC signed host update channel
 Wants=network-online.target
 After=network-online.target docker.service
@@ -83,7 +116,7 @@ KillMode=mixed
 TimeoutStopSec=infinity
 [Install]
 WantedBy=multi-user.target
-''');next_unit.chmod(0o644)
+''',0o644)
     was_active=subprocess.run(['systemctl','is-active','--quiet','cc-host-updater.service'],capture_output=True,timeout=10).returncode==0
     stopped=subprocess.run(['systemctl','stop','cc-host-updater.service'],capture_output=True,timeout=20)
     if was_active and stopped.returncode:raise RuntimeError('Could not stop the existing host channel; no files or credentials changed')
@@ -94,11 +127,12 @@ WantedBy=multi-user.target
         with urllib.request.build_opener(NoRedirect).open(request,timeout=20) as response:
             enrolled=json.loads(response.read(4097))
         if not re.fullmatch('[A-Za-z0-9_-]{43}',enrolled.get('token','')):raise RuntimeError('Invalid enrollment response')
-    except Exception:
+    except Exception as error:
         # A rejected grant must not replace the working program or leave its service stopped.
         if was_active:subprocess.run(['systemctl','start','cc-host-updater.service'],capture_output=True,timeout=20)
-        raise
-    previous_program=stage/'previous-program'
+        if isinstance(error,urllib.error.HTTPError) and 400 <= error.code < 500:
+            raise
+        raise RuntimeError('Enrollment outcome unknown; previous program retained but credential may have rotated; reenrollment required') from error
     swapped=False
     credential_adopted=False
     try:
@@ -110,12 +144,12 @@ WantedBy=multi-user.target
             stream.write(content);stream.flush();os.fsync(stream.fileno())
         next_config.replace(root/'config.json')
         credential_adopted=True
-        program.rename(previous_program)
-        try:staged_program.rename(program)
-        except BaseException:
-            previous_program.rename(program);raise
+        sync_directory(root)
+        exchange_program(program,staged_program)
         swapped=True
+        sync_directory(program.parent);sync_directory(staged_program.parent)
         next_unit.replace(unit)
+        sync_directory(unit.parent)
         subprocess.run(['systemctl','daemon-reload'],check=True)
         subprocess.run(['systemctl','enable','--now','cc-host-updater.service'],check=True)
         subprocess.run(['systemctl','is-active','--quiet','cc-host-updater.service'],check=True)
@@ -125,11 +159,12 @@ WantedBy=multi-user.target
         stopped=subprocess.run(['systemctl','stop','cc-host-updater.service'],capture_output=True,timeout=20)
         if stopped.returncode:raise RuntimeError('Could not stop replacement host channel; recovery requires inspection of '+str(stage))
         if swapped:
-            program.rename(stage/'failed-program')
-            previous_program.rename(program)
+            exchange_program(program,staged_program)
+            sync_directory(program.parent);sync_directory(staged_program.parent)
         if previous_unit is not None:
             previous_unit_path.replace(unit)
         elif unit.exists():unit.unlink()
+        sync_directory(unit.parent)
         subprocess.run(['systemctl','daemon-reload'],capture_output=True,timeout=20)
         if was_active:
             restored=subprocess.run(['systemctl','start','cc-host-updater.service'],capture_output=True,timeout=20)

@@ -78,6 +78,13 @@ class CapacityTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError,'Cold backup'):
                 cutover.verify_cold_backup(archive)
 
+    def test_cold_backup_sync_failure_prevents_acceptance(self):
+        archive=self.root/'data.tar.gz'
+        with tarfile.open(archive,'w:gz') as tar:tar.add(self.data,arcname='data')
+        with patch.object(cutover,'DATA',self.data),patch.object(cutover.os,'fsync',side_effect=OSError('backup sync failed')):
+            with self.assertRaisesRegex(OSError,'backup sync failed'):
+                cutover.verify_cold_backup(archive)
+
     def test_incomplete_but_readable_cold_backup_is_rejected(self):
         archive=self.root/'missing.tar.gz'
         with tarfile.open(archive,'w:gz') as tar:tar.add(self.data,arcname='data',recursive=False)
@@ -86,6 +93,46 @@ class CapacityTests(unittest.TestCase):
 
 
 class PreparationTests(unittest.TestCase):
+    def test_uncertain_pause_leaves_an_explicit_recovery_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);data=root/'data';data.mkdir();(root/'helper.py').write_text('# fixture')
+            original={'Id':'original','Image':'base'}
+            def request(method,path,*args):
+                if path.startswith('/images/'):return {'Id':'candidate'}
+                if path.endswith('/pause'):raise RuntimeError('pause reply lost')
+                return original
+            b=SimpleNamespace(CONTAINER='service',Engine=lambda:SimpleNamespace(request=request),validate_runtime=lambda value:None,runtime_and_policy=lambda value:None,urllib=cutover.urllib,durable_json=lambda path,value:path.write_text(json.dumps(value)))
+            with patch.object(cutover,'ROOT',root),patch.object(cutover,'DATA',data),patch.object(cutover,'BASE','base'),patch.object(cutover.shutil,'disk_usage',return_value=SimpleNamespace(free=10*GIB)),patch.object(cutover.subprocess,'run'):
+                with self.assertRaisesRegex(RuntimeError,'pause reply lost'):cutover.install(b,disconnect_clients=True)
+            backup=next(root.glob('backup-*'))
+            self.assertEqual(json.loads((backup/'record.json').read_text())['phase'],'admission')
+            with patch.object(runtime,'ROOT',root),self.assertRaisesRegex(RuntimeError,'Unresolved cutover'):
+                runtime.check_recovery_records()
+
+    def test_final_configuration_validation_runs_before_disconnect_and_stop(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory);data=root/'data';(data/'state').mkdir(parents=True)
+            with closing(sqlite3.connect(data/'state/sessions.sqlite')) as db:
+                db.execute('CREATE TABLE sessions(metadata TEXT)');db.commit()
+            (root/'helper.py').write_text('# fixture')
+            original={'Id':'original','Image':'base','NetworkSettings':{'Networks':{'network':{}}}}
+            calls=[]
+            def request(method,path,*args):
+                calls.append(path)
+                if path.startswith('/images/'):return {'Id':'candidate'}
+                if '/top?' in path:return {'Processes':[]}
+                return original
+            def validate(value):
+                calls.append('validate-cutover')
+                raise RuntimeError('Administrator policy changed')
+            b=SimpleNamespace(CONTAINER='service',Engine=lambda:SimpleNamespace(request=request),validate_runtime=lambda value:None,runtime_and_policy=lambda value:None,busy=lambda rows:False,urllib=cutover.urllib,durable_json=lambda path,value:path.write_text(json.dumps(value)),validate_cutover=validate)
+            with patch.object(cutover,'ROOT',root),patch.object(cutover,'DATA',data),patch.object(cutover,'BASE','base'),patch.object(cutover.shutil,'disk_usage',return_value=SimpleNamespace(free=10*GIB)),patch.object(cutover.subprocess,'run'):
+                with self.assertRaisesRegex(RuntimeError,'Administrator policy changed'):
+                    cutover.install(b,disconnect_clients=True)
+            self.assertIn('validate-cutover',calls)
+            self.assertIn('/containers/original/unpause',calls)
+            self.assertFalse(any('/disconnect' in path or '/stop?' in path or '/update' in path for path in calls))
+
     @unittest.skipUnless(os.name=='posix','Real main entry uses Linux flock')
     def test_real_entry_reuses_candidate_and_rechecks_after_cleanup_before_install(self):
         for low_final_space in (False,True):

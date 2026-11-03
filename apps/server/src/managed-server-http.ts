@@ -73,6 +73,7 @@ export function managedServerHandler(options: {
   requireValue(options.token.length >= 24, 'Managed API requires existing strong service token');
   const expected = createHash('sha256').update(options.token).digest();
   const throttle = new Throttle();
+  let installPending = false;
   return (request: IncomingMessage, response: ServerResponse) => {
     if (!request.url?.startsWith(PREFIX)) return false;
     response.setHeader('Cache-Control', 'no-store');
@@ -130,7 +131,8 @@ export function managedServerHandler(options: {
       if (
         hostInstall &&
         (!serviceAuthorized ||
-          !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress ?? ''))
+          !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress ?? '') ||
+          !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address))
       ) {
         reply(403);
         return;
@@ -208,57 +210,69 @@ export function managedServerHandler(options: {
         reply(200, await options.backend.check(input.clientProtocol as number));
         return;
       }
-      if (hostInstall) {
-        // Stage with the old service available; only the final synchronous admission
-        // may disconnect idle peers. Busy or failed staging must leave them alone.
-        if (!options.backend.cancel || (await options.backend.status()).hostMaintenance !== true) {
-          reply(409, { error: 'host-maintenance-unavailable' });
-          return;
-        }
-        if (options.admission.busy?.()) {
-          reply(409, {
-            error: 'busy; finish tasks and close native terminals; original service left running',
-          });
-          return;
-        }
-        try {
-          await options.backend.prepare(input as InstallConfirmation);
-        } catch {
-          const status = await options.backend.status();
-          reply(409, {
-            error: `${status.error ?? 'preparation-failed'}; no cutover requested; inspect service status`,
-          });
-          return;
-        }
-        if (!options.admission.enter(true)) {
-          await options.backend.cancel();
-          reply(409, {
-            error: 'busy; finish tasks and close native terminals; original service left running',
-          });
-          return;
-        }
-      }
-      // enter() is synchronous: close every admission gate, then recheck all activity before any await.
-      if (!hostInstall && !options.admission.enter()) {
+      if (installPending) {
         reply(409, { error: 'busy' });
         return;
       }
+      installPending = true;
       try {
-        if (!hostInstall) await options.backend.prepare(input as InstallConfirmation);
-        let activated = false;
-        const activate = () => {
-          if (!activated) {
-            activated = true;
-            options.backend.activate();
+        if (hostInstall) {
+          // Stage with the old service available; only the final synchronous admission
+          // may disconnect idle peers. Busy or failed staging must leave them alone.
+          if (
+            !options.backend.cancel ||
+            (await options.backend.status()).hostMaintenance !== true
+          ) {
+            reply(409, { error: 'host-maintenance-unavailable' });
+            return;
           }
-        };
-        response.once('finish', activate);
-        response.once('close', activate);
-        if (response.destroyed) activate();
-        reply(202, { accepted: true, build: input.build, sha256: input.sha256 });
-      } catch {
-        options.admission.leave();
-        reply(409, { error: 'release-not-installable' });
+          if (options.admission.busy?.()) {
+            reply(409, {
+              error: 'busy; finish tasks and close native terminals; original service left running',
+            });
+            return;
+          }
+          try {
+            await options.backend.prepare(input as InstallConfirmation);
+          } catch {
+            const status = await options.backend.status();
+            reply(409, {
+              error: `${status.error ?? 'preparation-failed'}; no cutover requested; inspect service status`,
+            });
+            return;
+          }
+          if (!options.admission.enter(true)) {
+            await options.backend.cancel();
+            reply(409, {
+              error: 'busy; finish tasks and close native terminals; original service left running',
+            });
+            return;
+          }
+        }
+        // enter() is synchronous: close every admission gate, then recheck all activity before any await.
+        if (!hostInstall && !options.admission.enter()) {
+          reply(409, { error: 'busy' });
+          return;
+        }
+        try {
+          if (!hostInstall) await options.backend.prepare(input as InstallConfirmation);
+          let activated = false;
+          const activate = () => {
+            if (!activated) {
+              activated = true;
+              options.backend.activate();
+            }
+          };
+          response.once('finish', activate);
+          response.once('close', activate);
+          if (response.destroyed) activate();
+          reply(202, { accepted: true, build: input.build, sha256: input.sha256 });
+        } catch {
+          options.admission.leave();
+          reply(409, { error: 'release-not-installable' });
+        }
+      } finally {
+        installPending = false;
       }
     };
     void run()

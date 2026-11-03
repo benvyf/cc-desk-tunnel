@@ -264,10 +264,13 @@ def main():
         legacy.ROOT, legacy.NODE, legacy.BASE, legacy.IMAGE = ROOT, node, original['Image'], image
         legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': BUILD, 'protocol': PROTOCOL}
         clone = b.clone_config
-        def clone_candidate(current, target):
+        def validate_cutover(current):
             need(all(current[k] == original[k] for k in ('Id', 'Image', 'Config', 'HostConfig', 'Mounts')), 'Original configuration changed')
             now = {str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}
             need(now == source_hashes, 'Administrator policy changed; rollback required')
+        b.validate_cutover = validate_cutover
+        def clone_candidate(current, target):
+            validate_cutover(current)
             return review.with_policy(clone(current, target), policy)
         b.clone_config = clone_candidate
         print('3/4 Checking idle state, disconnecting clients, cold backup and image/policy cutover.', flush=True)
