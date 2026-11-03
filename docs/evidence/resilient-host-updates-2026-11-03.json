@@ -30,7 +30,20 @@
     "rollbackResumesAfterEachRenameAndLostPauseReply": "passed",
     "failedChannelStopBlocksEnrollmentAndRestartFailureIsReported": "passed"
   },
-  "productionDeployment": "not performed",
+  "productionDeployment": {
+    "status": "deployed-and-verified",
+    "sourceCommit": "cac8006e45d6d36ed0a6227130f27f0e040bae28",
+    "completedAtHongKong": "2026-11-04T00:24:00+08:00",
+    "configAndCredentialsUnchanged": true,
+    "signedIndexesAndArtifactsUnchanged": true,
+    "ubuntuHostChannelOnline": true,
+    "ubuntuCurrentBuild": 9,
+    "ubuntuCurrentProtocol": 22,
+    "publishedLinuxBuild": 10,
+    "publishedLinuxProtocol": 23,
+    "publishedWindowsPilotBuild": 24,
+    "publishedWindowsPilotProtocol": 22
+  },
   "nodeBusinessUpgrade": "not performed",
   "adoption": "Center release and Ubuntu re-enrollment required for host helpers; signed server/base release required for ordinary maintenance and supervisor changes."
 }
