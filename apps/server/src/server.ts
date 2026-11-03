@@ -1966,7 +1966,11 @@ export function createProxyServer(options: ServerOptions) {
       send(peer, {
         type: 'connection.error',
         code: 'version_mismatch',
-        message: `客户端与服务端（${version}）的版本不一致，请联系管理员安装匹配的定制版。`,
+        requiredProtocol: PROTOCOL_VERSION,
+        message:
+          auth.data.protocolVersion < PROTOCOL_VERSION
+            ? '需要升级客户端。此工作空间已更新，请安装配套的 CC SPACE 客户端后重新登录；如未收到配套版本，请联系管理员。账号和聊天记录会保留。'
+            : '客户端版本比工作空间新，请联系管理员更新配套服务端，无需反复下载客户端。',
         service: version,
       });
       peer.socket.close(4002, 'Version mismatch');

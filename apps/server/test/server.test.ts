@@ -111,6 +111,7 @@ test('requires authentication, rejects wrong token/version/origin and accepts he
   });
   for (const [badToken, version, code] of [
     ['wrong-token-with-enough-length', 1, 'unauthorized'],
+    [token, PROTOCOL_VERSION - 1, 'version_mismatch'],
     [token, 9999, 'version_mismatch'],
   ] as const) {
     const client = new Client(f.url);
@@ -119,6 +120,12 @@ test('requires authentication, rejects wrong token/version/origin and accepts he
     assert.ok(message.type === 'connection.error' && message.code === code);
     // Only a client holding the token learns which version runs here.
     assert.equal(message.service, code === 'unauthorized' ? undefined : serviceVersion());
+    assert.equal(message.requiredProtocol, code === 'unauthorized' ? undefined : PROTOCOL_VERSION);
+    if (code === 'version_mismatch')
+      assert.match(
+        message.message,
+        version < PROTOCOL_VERSION ? /需要升级客户端/ : /更新配套服务端/,
+      );
   }
   const denied = new Client(f.url, 'https://untrusted.example');
   f.clients.push(denied);

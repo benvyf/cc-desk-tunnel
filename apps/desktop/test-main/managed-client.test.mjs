@@ -25,6 +25,40 @@ const { ManagedController, atomic, alive } = require('../electron/managed-contro
 const { validateIdentity, installationId } = require('../electron/managed-identity.cjs');
 const { createNetwork } = require('../electron/managed-network.cjs');
 const { registerClientUpdates } = require('../electron/managed-updates.cjs');
+
+test(
+  'embedded client identity remains available when the updater cannot initialize',
+  { skip: process.platform !== 'win32' },
+  async (t) => {
+    const fs = require('node:fs'),
+      path = require('node:path');
+    const originalRead = fs.readFileSync,
+      originalExists = fs.existsSync,
+      originalRealpath = fs.realpathSync;
+    const file = path.resolve(
+      fileURLToPath(new URL('../electron/managed-build.json', import.meta.url)),
+    );
+    t.mock.method(fs, 'existsSync', (value) => String(value) === file || originalExists(value));
+    t.mock.method(fs, 'readFileSync', (value, ...args) =>
+      String(value) === file ? JSON.stringify(identity) : originalRead(value, ...args),
+    );
+    t.mock.method(fs, 'realpathSync', (value, ...args) => {
+      if (value === process.execPath) throw new Error('fixture updater path failure');
+      return originalRealpath(value, ...args);
+    });
+    const runtime = require('../electron/managed-updates.cjs').createManagedRuntime({
+      app: { isPackaged: true, getVersion: () => identity.appVersion },
+      net: { fetch: async () => {} },
+      notify: () => {},
+      quit: () => {},
+      log: () => {},
+    });
+    await runtime.initialize();
+    assert.equal(runtime.state().phase, 'disabled');
+    assert.equal(runtime.identity().protocol, identity.protocol);
+    assert.equal(runtime.identity().build, identity.build);
+  },
+);
 const { privateKey, publicKey } = generateKeyPairSync('ed25519');
 const bytes = Buffer.from('fixture installer: never execute');
 const identity = {
@@ -119,6 +153,25 @@ function fixture(t, overrides = {}) {
     },
   };
 }
+
+test('required-client manual link uses signed matching publication without enabling cross-protocol auto installation', async (t) => {
+  const f = fixture(t);
+  const next = { ...release, protocol: 21 };
+  f.index(payload(1, next));
+  assert.equal((await f.controller.check()).phase, 'idle');
+  await assert.rejects(f.controller.download(), /兼容/);
+  const result = await f.controller.clientDownload(21);
+  assert.equal(result.url, identity.origin + contract.artifactPath(next));
+  assert.equal(result.protocol, 21);
+  assert.equal(f.launches(), 0);
+  assert.equal(f.quits(), 0);
+  await assert.rejects(f.controller.download(), /兼容/);
+  assert.equal(await f.controller.clientDownload(22), null);
+  f.index(payload(3, next));
+  await f.controller.clientDownload(21);
+  f.index(payload(2, next));
+  await assert.rejects(f.controller.clientDownload(21), /replay/);
+});
 
 test('build identity fixes origin and public keys; installation ID is directory-scoped', (t) => {
   assert.equal(validateIdentity(identity).build, 1);

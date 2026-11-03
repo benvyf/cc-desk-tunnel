@@ -80,6 +80,61 @@ function fixture(t) {
   }
   return { client, socket, sessions, snapshot };
 }
+
+test('a client upgrade requirement ends the current connection attempt and never starts a reconnect loop', async () => {
+  const client = new ProxyClient();
+  client.connect(
+    'ws://127.0.0.1/ws',
+    'pending-connection-token-with-enough-characters',
+    null,
+    true,
+    async () => {
+      throw Object.assign(new Error('需要升级客户端。'), {
+        retryable: false,
+        clientUpgrade: { requiredProtocol: 24 },
+      });
+    },
+  );
+  await new Promise((r) => setImmediate(r));
+  assert.equal(client.state.status, 'disconnected');
+  assert.deepEqual(client.state.clientUpgrade, { requiredProtocol: 24 });
+  assert.equal(client.retryTimer, undefined);
+  client.disconnect();
+  assert.equal(client.state.clientUpgrade, null);
+});
+
+test('an obsolete upgrade refusal cannot open a prompt after the user disconnected', async () => {
+  const client = new ProxyClient();
+  let fail;
+  client.connect(
+    'ws://127.0.0.1/ws',
+    'pending-connection-token-with-enough-characters',
+    null,
+    true,
+    () =>
+      new Promise((_, reject) => {
+        fail = reject;
+      }),
+  );
+  client.disconnect();
+  fail(Object.assign(new Error('需要升级'), { clientUpgrade: { requiredProtocol: 24 } }));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(client.state.clientUpgrade, null);
+  assert.equal(client.state.error, null);
+});
+
+test('handshake fallback preserves client upgrade direction instead of offering a server update', (t) => {
+  const { client, socket } = fixture(t);
+  socket.message({
+    type: 'connection.error',
+    code: 'version_mismatch',
+    message: '需要升级客户端。',
+    requiredProtocol: PROTOCOL_VERSION + 1,
+  });
+  assert.deepEqual(client.state.clientUpgrade, { requiredProtocol: PROTOCOL_VERSION + 1 });
+  assert.equal(client.state.mismatch, false);
+  assert.equal(client.retryTimer, undefined);
+});
 function event(sessionId, sequence, text = 'text') {
   return {
     sessionId,

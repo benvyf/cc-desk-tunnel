@@ -679,6 +679,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   write: (desktopAccess) => writeSettings({ desktopAccess }),
   storage: safeStorage,
   deviceId: () => readComputer().deviceId ?? writeComputer({ deviceId: randomUUID() }).deviceId,
+  clientIdentity: () => managedClient.identity(),
   confirmSwitch: async () => {
     const { response } = await dialog.showMessageBox(primaryWindow, {
       type: 'question',
@@ -716,8 +717,21 @@ handle('access:ticket', async (_event, nodeId) => {
     return await desktopAccess.ticket(nodeId);
   } catch (error) {
     // Electron does not preserve custom Error properties across IPC.
-    return { error: error.message, retryable: error.retryable === true };
+    return {
+      error: error.message,
+      retryable: error.retryable === true,
+      ...(error.clientUpgrade ? { clientUpgrade: error.clientUpgrade } : {}),
+    };
   }
+});
+handle('access:upgrade-info', async (_event, requiredProtocol) => {
+  const release = await managedClient.clientDownload(requiredProtocol);
+  return release ? { build: release.build, appVersion: release.appVersion } : null;
+});
+handle('access:open-upgrade', async (_event, requiredProtocol) => {
+  const release = await managedClient.clientDownload(requiredProtocol);
+  if (!release) throw new Error('配套客户端尚未发布，请联系管理员。');
+  await shell.openExternal(release.url);
 });
 handle('access:logout', () => {
   serverClient?.cancel();

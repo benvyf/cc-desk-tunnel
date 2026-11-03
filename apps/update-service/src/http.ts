@@ -195,6 +195,45 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
             respond(response, 200, await desktopAccess.login(input, address));
           } else if (path === '/cc-access/v1/connect') {
             if (typeof input.nodeId !== 'string') throw new UpdateError(400, '请选择工作空间。');
+            if (!desktopAccess.workspaces(bearer).some((space) => space.id === input.nodeId))
+              throw new UpdateError(403, '未分配此工作空间。');
+            // Deployed email clients through Build 24 omit metadata and use protocol 22.
+            let clientProtocol = 22;
+            if (input.client !== undefined) {
+              const client = input.client as Record<string, unknown>;
+              if (
+                !client ||
+                typeof client !== 'object' ||
+                Array.isArray(client) ||
+                Object.keys(client).length !== 2 ||
+                !Number.isSafeInteger(client.build) ||
+                Number(client.build) < 1 ||
+                !Number.isSafeInteger(client.protocol) ||
+                Number(client.protocol) < 1
+              )
+                throw new UpdateError(400, '客户端版本信息无效，请更新客户端后重试。');
+              clientProtocol = Number(client.protocol);
+            }
+            const observed = Object.hasOwn(nodeHashes(), input.nodeId)
+              ? hostUpdates.status(input.nodeId)
+              : null;
+            if (
+              observed?.online &&
+              observed.current &&
+              ['idle', 'committed', 'rolled-back'].includes(observed.current.phase) &&
+              !['queued', 'running'].includes(observed.job?.state ?? '') &&
+              clientProtocol !== observed.current.protocol
+            ) {
+              const older = clientProtocol < observed.current.protocol;
+              respond(response, 426, {
+                code: older ? 'client_upgrade_required' : 'server_upgrade_required',
+                requiredProtocol: observed.current.protocol,
+                error: older
+                  ? '需要升级客户端。此工作空间已更新，请安装配套的 CC SPACE 客户端后重新登录；如未收到配套版本，请联系管理员。账号和聊天记录会保留。'
+                  : '客户端版本比工作空间新，请联系管理员更新配套服务端，无需反复下载客户端。',
+              });
+              return;
+            }
             respond(response, 200, desktopAccess.connect(bearer, input.nodeId));
           } else if (/^\/cc-access\/v1\/server\/(check|install|status)$/.test(path)) {
             respond(

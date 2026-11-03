@@ -141,6 +141,150 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('button', { name: '设置与账号', exact: true })).toBeVisible();
 });
 
+for (const scenario of ['available', 'unpublished', 'automatic', 'multiple'] as const) {
+  test(`client upgrade notice at sign-in: ${scenario}`, async ({ page }, testInfo) => {
+    await page.addInitScript(
+      ({ scenario, protocol }) => {
+        window.desktop!.dev = false;
+        window.desktop!.access = {
+          load: async () =>
+            scenario === 'automatic'
+              ? { email: 'owner@example.com', remember: true, autoLogin: true }
+              : null,
+          login: async ({ email }) => ({
+            email,
+            workspaces:
+              scenario === 'multiple'
+                ? [
+                    { id: 'compatible', name: '原工作空间' },
+                    { id: 'upgraded', name: '升级后的工作空间' },
+                  ]
+                : [{ id: 'upgraded', name: '我的 Ubuntu' }],
+          }),
+          ticket: async (nodeId) => {
+            window.updateFixture.calls.push('ticket:' + nodeId);
+            return {
+              error: '需要升级客户端。',
+              retryable: false,
+              clientUpgrade: { requiredProtocol: protocol + 1 },
+            };
+          },
+          upgradeInfo: async (required) => {
+            window.updateFixture.calls.push('upgrade-info:' + required);
+            return scenario === 'unpublished' ? null : { build: 26, appVersion: '0.3.7' };
+          },
+          openUpgrade: async (required) => {
+            window.updateFixture.calls.push('open-upgrade:' + required);
+          },
+          logout: async () => {
+            window.updateFixture.calls.push('logout');
+          },
+          onExpired: () => () => {},
+        };
+      },
+      { scenario, protocol: PROTOCOL_VERSION },
+    );
+    await page.reload();
+    if (scenario !== 'automatic') {
+      await page.getByLabel('邮箱', { exact: true }).fill('owner@example.com');
+      await page.getByLabel('密码', { exact: true }).fill('fixture-password');
+      await page.getByRole('button', { name: '登录', exact: true }).click();
+    }
+    if (scenario === 'multiple')
+      await page.getByRole('button', { name: '升级后的工作空间', exact: true }).click();
+    const notice = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
+    await expect(notice).toBeVisible();
+    await expect(notice).toContainText('账号和聊天记录会保留');
+    await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
+    if (scenario === 'unpublished') {
+      await expect(notice).toContainText('配套客户端尚未发布');
+      await expect(notice.getByRole('button', { name: '下载新版客户端', exact: true })).toHaveCount(
+        0,
+      );
+    } else {
+      await expect(notice).toContainText('Build 26');
+      await notice.getByRole('button', { name: '下载新版客户端', exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () => window.updateFixture.calls.filter((x) => x.startsWith('open-upgrade:')).length,
+          ),
+        )
+        .toBe(1);
+    }
+    if (scenario === 'available')
+      await page.screenshot({ path: testInfo.outputPath('client-upgrade-required.png') });
+    await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
+    await expect(notice).toHaveCount(0);
+    const calls = await page.evaluate(() => window.updateFixture.calls);
+    expect(calls.filter((x) => x.startsWith('ticket:'))).toHaveLength(1);
+    expect(calls).not.toContain('logout');
+    expect(calls).not.toContain('install');
+    if (scenario !== 'multiple')
+      await expect(page.getByLabel('邮箱', { exact: true })).toHaveValue('owner@example.com');
+  });
+}
+
+test('manual handshake fallback prompts client upgrade without a server-update action', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    window.desktop!.loadLogin = async () => ({
+      url: 'wss://fixture.example/ws',
+      fingerprint: '',
+      token: 'fixture-token-at-least-24-characters',
+      mode: 'remote',
+      remember: true,
+      autoLogin: false,
+      authMethod: 'manual',
+    });
+    window.desktop!.access = {
+      load: async () => null,
+      login: async () => ({ email: '', workspaces: [] }),
+      ticket: async () => {
+        throw Error('manual must not request ticket');
+      },
+      upgradeInfo: async () => null,
+      openUpgrade: async () => {},
+      logout: async () => {},
+      onExpired: () => () => {},
+    };
+    window.desktop!.managedServer = {
+      check: async () => {
+        throw Error('wrong action');
+      },
+      install: async () => {
+        throw Error('wrong action');
+      },
+      status: async () => {
+        throw Error('wrong action');
+      },
+      cancel: async () => {},
+      openManager: async () => {},
+    };
+  });
+  await page.routeWebSocket('ws://127.0.0.1:18889/ws', (route) => {
+    route.onMessage((raw) => {
+      if (JSON.parse(String(raw)).type === 'auth')
+        route.send(
+          JSON.stringify({
+            type: 'connection.error',
+            code: 'version_mismatch',
+            message: '需要升级客户端。',
+            requiredProtocol: PROTOCOL_VERSION + 1,
+          }),
+        );
+    });
+  });
+  await page.reload();
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  const notice = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
+  await expect(notice).toBeVisible();
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
+  await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
+  await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
+});
+
 test('a newer Build exposes the update action, downloads, then installs after disconnect', async ({
   page,
 }, testInfo) => {
@@ -319,6 +463,8 @@ test('email sign-in survives disconnecting for installation without starting ano
     window.desktop!.dev = false;
     window.desktop!.access = {
       load: async () => null,
+      upgradeInfo: async () => null,
+      openUpgrade: async () => {},
       login: async ({ email }) => {
         window.updateFixture.calls.push('email-login');
         return { email, workspaces: [{ id: 'fixture', name: '我的 Ubuntu' }] };
@@ -370,6 +516,8 @@ for (const scenario of ['success', 'lost-response', 'current', 'skip', 'mismatch
           window.updateFixture.calls.push(action + ':' + JSON.stringify(input));
         window.desktop!.access = {
           load: async () => null,
+          upgradeInfo: async () => null,
+          openUpgrade: async () => {},
           login: async ({ email }) => ({
             email,
             workspaces: [{ id: 'fixture', name: '我的 Ubuntu' }],

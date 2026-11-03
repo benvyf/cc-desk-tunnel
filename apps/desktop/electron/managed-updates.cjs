@@ -21,8 +21,10 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
   const { execFile } = require('node:child_process');
   const { promisify } = require('node:util');
   let controller;
+  let installedIdentity;
   let disabled = { phase: 'disabled', message: '此构建未启用定制在线更新。' };
   const runtime = {
+    identity: () => installedIdentity,
     state: () => (controller ? controller.state() : disabled),
     report: (activity) => controller?.report({ blocked: activity?.blocked !== false || isBusy() }),
     frozen: () => ['preparing', 'installing'].includes(runtime.state().phase),
@@ -34,8 +36,11 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
       try {
         const { ManagedController } = require('./managed-controller.cjs');
         const { createNetwork } = require('./managed-network.cjs');
-        const identity = JSON.parse(fs.readFileSync(file, 'utf8'));
+        const identity = require('./managed-identity.cjs').validateIdentity(
+          JSON.parse(fs.readFileSync(file, 'utf8')),
+        );
         if (identity.appVersion !== app.getVersion()) throw new Error('内嵌版本与程序不符');
+        installedIdentity = identity;
         const pwsh = path.join(process.resourcesPath, 'vendor/pwsh/pwsh.exe');
         const helper = path.resolve(
           process.resourcesPath,
@@ -101,5 +106,9 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
       if (!controller) throw new Error(disabled.message);
       return controller[action]();
     };
+  runtime.clientDownload = (protocol) => {
+    if (!controller) throw new Error(disabled.message);
+    return controller.clientDownload(protocol);
+  };
   return runtime;
 };

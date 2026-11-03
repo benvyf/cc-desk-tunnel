@@ -205,7 +205,7 @@ class ManagedController {
     this.abort?.abort();
     return this.state();
   }
-  async loadIndex(signal) {
+  async loadIndex(signal, protocol = this.identity.protocol) {
     const index = this.contract.verifyIndex(
       await this.network.index(this.identity.channel, signal),
       this.identity.trustedKeys,
@@ -218,12 +218,26 @@ class ManagedController {
     });
     const selected = this.contract.selectUpdate(
       index,
-      { ...this.identity, build: Math.max(this.identity.build, ledger.confirmedBuild) },
+      { ...this.identity, protocol, build: Math.max(this.identity.build, ledger.confirmedBuild) },
       ledger.replay,
     );
     if (selected.status === 'scope-mismatch') throw new Error('更新通道不匹配');
     atomic(this.file('ledger.json'), { ...ledger, replay: selected.nextState });
     return selected;
+  }
+  async clientDownload(requiredProtocol) {
+    if (!Number.isSafeInteger(requiredProtocol) || requiredProtocol < 1)
+      throw new Error('无效的客户端协议要求');
+    if (requiredProtocol <= this.identity.protocol) return null;
+    // A manual browser download link, never permission for cross-protocol auto-install.
+    return this.locked(async (signal) => {
+      const selected = await this.loadIndex(signal, requiredProtocol);
+      if (selected.status !== 'available') return null;
+      return {
+        ...selected.release,
+        url: this.identity.origin + this.contract.artifactPath(selected.release),
+      };
+    });
   }
   async check(manual = true) {
     return this.operation(async (signal) => {

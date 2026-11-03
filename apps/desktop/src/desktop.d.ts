@@ -138,8 +138,12 @@ declare global {
           nodeId: string,
         ) => Promise<
           | { url: string; fingerprint: string; token: string }
-          | { error: string; retryable: boolean }
+          | { error: string; retryable: boolean; clientUpgrade?: { requiredProtocol: number } }
         >;
+        upgradeInfo: (
+          requiredProtocol: number,
+        ) => Promise<{ build: number; appVersion: string } | null>;
+        openUpgrade: (requiredProtocol: number) => Promise<void>;
         logout: () => Promise<void>;
         onExpired: (callback: (message: string) => void) => () => void;
       };
