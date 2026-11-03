@@ -38,5 +38,7 @@ Files: `apps/desktop/src/{client,App,desktop.d}.ts[x]`, `ClientUpgradeDialog.tsx
 
 - [x] Run relevant Node tests, full typecheck/build and browser interaction checks. Review diff against karpathy-guidelines: every production line serves the approved behavior.
 - [x] Request an independent focused review; fix material findings and rerun affected checks.
-- [ ] Commit tested implementation, generate candidate update-center package and desktop candidate artifacts as supported by existing packaging. No production publication or Ubuntu upgrade in this implementation turn.
+- [x] Commit tested implementation, generate candidate update-center package and desktop candidate artifacts as supported by existing packaging. No production publication or Ubuntu upgrade in this implementation turn.
+
+Implementation: `0014b68134e4d289756822aec1fe1bada1b64c53`. Node 809 passed/60 skipped; related browser suite18 passed; typecheck/build passed; packaged smoke and actual main/preload metadata+notice serialization passed. Center65 files verified against that committed revision; Windows Build25/protocol23 candidate generated. No production publication.
 - [x] Record exact tests, old-client limitations and rollout order. Existing Build24 can show readable text, not retroactively acquire the new Modal; matching signed client must be published before server cutover.

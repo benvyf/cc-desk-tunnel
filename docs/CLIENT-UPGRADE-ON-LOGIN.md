@@ -21,9 +21,20 @@
 - 18 项相关真实浏览器测试全部通过，含五项新场景：登录、自动登录、多工作空间、未发布配套客户端、手动握手兜底方向。
 - TypeScript 全项目检查、前端生产构建与修改文件格式/空白检查通过。
 - 独立复查发现并修正“版本身份受临时更新状态影响”和“握手兜底仍显示错误恢复方向”两处问题，复查未发现剩余重要问题。
+- Windows 候选安装包已构建，原有打包主进程/资源回收烟测通过；另以隔离 profile 和模拟认证接口验证了实际主进程版本元数据与 preload 提示字段传递。
 - Windows 环境最初的 Markdown 隔离测试因依赖目录为 junction 而触发符号链接权限错误；将该工作区的两个测试依赖实体化后，未经修改的原测试及全组测试通过，没有改变 Markdown 产品代码或系统权限设置。
 
 浏览器中的 Build 26 为交互测试数据，不能视为已发布版本。截图只说明界面与交互。
+
+## 候选交付
+
+产物目录：`output/client-upgrade-notice-2026-11-04`。全部固定于实现提交 `0014b68134e4d289756822aec1fe1bada1b64c53`：
+
+- `cc-update-service-client-upgrade-notice.tar.gz`：65 个运行文件已与已提交源码逐项核对，独立导入及生成安装器语法通过。
+- `Windows-Build25-candidate/CC-Desk-Tunnel-Setup-0.3.7-x64.exe`：本地 Build 25／协议 23 候选，尚未签发更新索引或发布。正式签名前仍需核对线上构建登记，不能覆盖已占用编号。
+- `artifact-verification.json`、`packaged-client-verification.json`：产物摘要和打包 IPC 验证结果；`界面示例-测试数据.png` 为浏览器交互示例。
+
+工作区后来出现的 `upgrade-message-review.py`、`upgrade-runtime-base.py` 及 mount-order 测试改动已保持原样，不属于本功能，也没有混入以上提交对应的候选包。该记录用于区分同时进行的工作，不宣称工作区无其他修改。
 
 ## 采用与限制
 
