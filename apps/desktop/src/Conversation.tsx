@@ -509,6 +509,33 @@ function Message({
     // Give the pointer time to reach the footer, or to return after an accidental departure.
     leaveTimer.current = setTimeout(() => setControlsShown(false), 800);
   }
+  // The browser's own enter and leave, on the question and on the line under it: a question's words are drawn again
+  // once the Markdown renderer has loaded, and React's events, worked out from the element the pointer was last over,
+  // miss both when that element is replaced under the pointer. Native events also keep their order: leaving the
+  // question, then entering its line, which keeps the controls.
+  const content = useRef<HTMLDivElement>(null);
+  const line = useRef<HTMLDivElement>(null);
+  const shown = useRef(false);
+  shown.current = controlsShown;
+  useEffect(() => {
+    const words = content.current;
+    const under = line.current;
+    if (!user || !words || !under) return;
+    // Keyboard focus can reveal the line before the pointer ever enters the bubble.
+    const enterLine = () => {
+      if (shown.current || under.matches(':focus-within')) showControls();
+    };
+    words.addEventListener('pointerenter', showControls);
+    words.addEventListener('pointerleave', leaveControls);
+    under.addEventListener('pointerenter', enterLine);
+    under.addEventListener('pointerleave', leaveControls);
+    return () => {
+      words.removeEventListener('pointerenter', showControls);
+      words.removeEventListener('pointerleave', leaveControls);
+      under.removeEventListener('pointerenter', enterLine);
+      under.removeEventListener('pointerleave', leaveControls);
+    };
+  }, [user]);
   const attached = user ? splitAttachmentMessage(item.text) : null;
   const referenced = attached ? splitQuoteMessage(attached.text) : null;
   const copyBody = referenced?.quotes.length
@@ -538,8 +565,7 @@ function Message({
         className={`message-content${streaming ? ' streaming' : ''}`}
         data-search-content
         data-copy-text={copyBody}
-        onPointerEnter={user ? showControls : undefined}
-        onPointerLeave={user ? leaveControls : undefined}
+        ref={content}
       >
         {attached && referenced ? (
           <>
@@ -555,14 +581,7 @@ function Message({
         )}
       </div>
       {user && (
-        <div
-          className="message-footer"
-          onPointerEnter={(event) => {
-            // Keyboard focus can reveal the footer before the pointer ever enters the bubble.
-            if (controlsShown || event.currentTarget.matches(':focus-within')) showControls();
-          }}
-          onPointerLeave={leaveControls}
-        >
+        <div className="message-footer" ref={line}>
           {item.delivery && (
             <span
               className={`message-delivery${item.delivery === '原生已接收' ? '' : ' unsettled'}`}
