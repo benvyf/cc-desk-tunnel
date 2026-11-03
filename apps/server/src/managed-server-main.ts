@@ -64,7 +64,7 @@ supervisor = new ManagedServerSupervisor({
       process.platform !== 'linux' ||
       process.arch !== 'x64' ||
       process.versions.node.split('.')[0] !== '24' ||
-      readFileSync('/opt/runtime/level', 'utf8').trim() !== '1'
+      readFileSync('/opt/runtime/level', 'utf8').trim() !== '2'
     )
       return false;
     return [

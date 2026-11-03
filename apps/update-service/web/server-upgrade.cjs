@@ -90,6 +90,7 @@ function request(route, body) {
           phase: status.phase,
           check,
           hostMaintenance: status.hostMaintenance === true,
+          retryable: status.retryable === true,
           serving: typeof status.serving === 'boolean' ? status.serving : undefined,
           descriptorSha256,
         }),

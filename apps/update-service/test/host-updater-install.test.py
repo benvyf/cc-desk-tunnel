@@ -100,17 +100,31 @@ class InstallerTests(unittest.TestCase):
     def test_lost_enrollment_response_requires_reenrollment_instead_of_claiming_recovery(self):
         self.enrollment_failure_case(True)
 
-    def enrollment_failure_case(self,transport_error):
+    def test_existing_inactive_unit_with_failed_stop_cannot_consume_enrollment(self):
+        self.enrollment_failure_case(False,stop_fails=True)
+
+    def test_rejected_enrollment_reports_old_agent_restart_failure(self):
+        self.enrollment_failure_case(False,restart_fails=True)
+
+    def enrollment_failure_case(self,transport_error,stop_fails=False,restart_fails=False):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)
             paths={'/var/lib/cc-host-updater':root/'state','/opt/cc-host-updater':root/'program','/etc/systemd/system/cc-host-updater.service':root/'unit.service'}
             for key in ('/var/lib/cc-host-updater','/opt/cc-host-updater'):paths[key].mkdir()
             config=paths['/var/lib/cc-host-updater']/'config.json';config.write_text('old credentials')
             agent=paths['/opt/cc-host-updater']/'agent.py';agent.write_text('old program')
+            paths['/etc/systemd/system/cc-host-updater.service'].write_text('old unit')
             commands=[]
-            def run(args,**kwargs):commands.append(args);return SimpleNamespace(returncode=0)
+            def run(args,**kwargs):
+                commands.append(args)
+                if stop_fails and args[1]=='is-active':return SimpleNamespace(returncode=3)
+                if stop_fails and args[1]=='stop':return SimpleNamespace(returncode=1)
+                if restart_fails and args[1]=='start':return SimpleNamespace(returncode=1)
+                return SimpleNamespace(returncode=0)
             error=urllib.error.URLError('response lost') if transport_error else urllib.error.HTTPError('https://example.invalid',401,'rejected',{},None)
-            with patch.object(installer,'exchange_program',side_effect=self.exchange_fixture),patch.object(installer,'enrollment_lock',return_value=nullcontext()),patch.object(installer,'Path',side_effect=lambda value:paths.get(str(value),Path(value))),patch.object(installer.os,'geteuid',create=True,return_value=0),patch.object(installer.socket,'gethostname',return_value='ubuntu-cc'),patch.object(installer.subprocess,'run',side_effect=run),patch.object(installer.urllib.request,'build_opener',return_value=SimpleNamespace(open=lambda *a,**k:(_ for _ in ()).throw(error))):
+            attempted=[]
+            def enroll(*args,**kwargs):attempted.append(True);raise error
+            with patch.object(installer,'exchange_program',side_effect=self.exchange_fixture),patch.object(installer,'enrollment_lock',return_value=nullcontext()),patch.object(installer,'Path',side_effect=lambda value:paths.get(str(value),Path(value))),patch.object(installer.os,'geteuid',create=True,return_value=0),patch.object(installer.socket,'gethostname',return_value='ubuntu-cc'),patch.object(installer.subprocess,'run',side_effect=run),patch.object(installer.urllib.request,'build_opener',return_value=SimpleNamespace(open=enroll)):
                 # Non-root development files are accepted here only through a fixture metadata view.
                 original_stat=Path.stat
                 def stat(path,**kwargs):
@@ -118,7 +132,10 @@ class InstallerTests(unittest.TestCase):
                     if path in paths.values():return SimpleNamespace(st_uid=0,st_mode=result.st_mode&~0o022)
                     return result
                 with patch.object(Path,'stat',stat):
-                    if transport_error:
+                    if stop_fails or restart_fails:
+                        with self.assertRaisesRegex(RuntimeError,'Could not stop' if stop_fails else 'restart failed'):
+                            installer.install('ubuntu-cc','x'*43,{'origin':'https://example.invalid','keys':{},'files':{}})
+                    elif transport_error:
                         with self.assertRaisesRegex(RuntimeError,'outcome unknown.*reenrollment required'):
                             installer.install('ubuntu-cc','x'*43,{'origin':'https://example.invalid','keys':{},'files':{}})
                     else:
@@ -127,7 +144,8 @@ class InstallerTests(unittest.TestCase):
             if isinstance(error,urllib.error.HTTPError):error.close()
             self.assertEqual(config.read_text(),'old credentials')
             self.assertEqual(agent.read_text(),'old program')
-            self.assertIn(['systemctl','start','cc-host-updater.service'],commands)
+            self.assertEqual(['systemctl','start','cc-host-updater.service'] in commands,not stop_fails)
+            self.assertEqual(bool(attempted),not stop_fails)
 
 
 if __name__=='__main__':unittest.main()

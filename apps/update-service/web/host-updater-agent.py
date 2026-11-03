@@ -111,7 +111,10 @@ def probe(protocol=None):
 def current():
     try:
         value = probe()
-        return {'build':value['current']['build'],'protocol':value['current']['protocol'],'phase':value['phase']}
+        phase = value['phase']
+        if phase == 'failed' and value.get('retryable') is True and value.get('serving') is True:
+            phase = 'idle'
+        return {'build':value['current']['build'],'protocol':value['current']['protocol'],'phase':phase}
     except Exception as error:
         print('Local CC service status unavailable:',type(error).__name__,flush=True)
         return None

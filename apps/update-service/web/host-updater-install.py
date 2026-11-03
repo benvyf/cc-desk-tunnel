@@ -119,7 +119,7 @@ WantedBy=multi-user.target
 ''',0o644)
     was_active=subprocess.run(['systemctl','is-active','--quiet','cc-host-updater.service'],capture_output=True,timeout=10).returncode==0
     stopped=subprocess.run(['systemctl','stop','cc-host-updater.service'],capture_output=True,timeout=20)
-    if was_active and stopped.returncode:raise RuntimeError('Could not stop the existing host channel; no files or credentials changed')
+    if stopped.returncode and (was_active or previous_unit is not None):raise RuntimeError('Could not stop the existing host channel; no files or credentials changed')
     request=urllib.request.Request(bundle['origin']+'/cc-host/v1/enroll',data=json.dumps({'nodeId':node,'code':code}).encode(),headers={'Content-Type':'application/json'})
     class NoRedirect(urllib.request.HTTPRedirectHandler):
         def redirect_request(self,*args,**kwargs):return None
@@ -129,7 +129,14 @@ WantedBy=multi-user.target
         if not re.fullmatch('[A-Za-z0-9_-]{43}',enrolled.get('token','')):raise RuntimeError('Invalid enrollment response')
     except Exception as error:
         # A rejected grant must not replace the working program or leave its service stopped.
-        if was_active:subprocess.run(['systemctl','start','cc-host-updater.service'],capture_output=True,timeout=20)
+        if was_active:
+            try:
+                restarted=subprocess.run(['systemctl','start','cc-host-updater.service'],capture_output=True,timeout=20)
+                active=subprocess.run(['systemctl','is-active','--quiet','cc-host-updater.service'],capture_output=True,timeout=10)
+            except Exception:
+                raise RuntimeError('Enrollment failed and previous host channel restart failed; original files retained; inspect cc-host-updater.service and re-enroll if response was lost') from error
+            if restarted.returncode or active.returncode:
+                raise RuntimeError('Enrollment failed and previous host channel restart failed; original files retained; inspect cc-host-updater.service and re-enroll if response was lost') from error
         if isinstance(error,urllib.error.HTTPError) and 400 <= error.code < 500:
             raise
         raise RuntimeError('Enrollment outcome unknown; previous program retained but credential may have rotated; reenrollment required') from error

@@ -359,6 +359,14 @@ export class ManagedServerSupervisor {
   async status(): Promise<ServerStatus> {
     return {
       hostMaintenance: true,
+      retryable:
+        !this.stopped &&
+        !this.transitioning &&
+        !this.prepared &&
+        !this.journal.target &&
+        !!this.child &&
+        this.committedChildren.has(this.child) &&
+        !this.exitedChildren.has(this.child),
       schema: 1,
       phase: this.journal.phase,
       current: this.current(),

@@ -115,6 +115,113 @@ def sync_directory(path):
         finally: os.close(descriptor)
 
 
+def directory_identity(path):
+    if path.is_symlink() or not path.is_dir():
+        raise RuntimeError('Expected a physical recovery directory: ' + str(path))
+    info = path.stat()
+    return {'device': info.st_dev, 'inode': info.st_ino}
+
+
+def same_directory(path, identity):
+    if not identity or path.is_symlink() or not path.is_dir():
+        return False
+    return directory_identity(path) == identity
+
+
+def present(path):
+    return path.exists() or path.is_symlink()
+
+
+def sync_tree(root):
+    directories = [root]
+    for path in root.rglob('*'):
+        if path.is_symlink():
+            continue
+        if path.is_dir():
+            directories.append(path)
+        elif path.is_file():
+            with path.open('rb' if os.name == 'posix' else 'rb+') as stream:
+                os.fsync(stream.fileno())
+    for directory in sorted(directories, key=lambda p: len(p.parts), reverse=True):
+        sync_directory(directory)
+
+
+def prepare_restore(b, backup, record):
+    archive = backup / 'data.tar.gz'
+    if digest(archive) != record['archiveSha256']:
+        raise RuntimeError('Cold backup digest mismatch; data left untouched')
+    preserved = DATA.with_name(DATA.name + '.after-' + backup.name)
+    plan = record.get('restore')
+    if not plan:
+        if present(preserved):
+            raise RuntimeError('Unrecorded preserved data already exists; inspect rollback before retry')
+        candidate = directory_identity(DATA)
+        stage = Path(tempfile.mkdtemp(prefix='.cc-space-037-restore-', dir=str(DATA.parent)))
+        sync_directory(DATA.parent)
+        plan = {'stage': str(stage), 'stageIdentity': directory_identity(stage),
+                'preserved': str(preserved), 'candidateIdentity': candidate, 'state': 'extracting'}
+        record['restore'] = plan
+        record['phase'] = 'restoring'
+        save(b, backup, record)
+    stage = Path(plan['stage'])
+    if (not stage.is_absolute() or stage.parent.resolve() != DATA.parent.resolve() or
+            not stage.name.startswith('.cc-space-037-restore-') or
+            not same_directory(stage, plan.get('stageIdentity')) or plan.get('preserved') != str(preserved)):
+        raise RuntimeError('Recovery staging identity changed; data left untouched')
+    if present(preserved) and not same_directory(preserved, plan.get('candidateIdentity')):
+        raise RuntimeError('Unknown preserved data directory; data left untouched')
+    if present(DATA) and not (same_directory(DATA, plan.get('candidateIdentity')) or
+                              same_directory(DATA, plan.get('restoredIdentity'))):
+        raise RuntimeError('Unknown current data directory; data left untouched')
+    restored = stage / 'data'
+    if plan['state'] == 'extracting':
+        if not same_directory(DATA, plan['candidateIdentity']) or present(preserved):
+            raise RuntimeError('Recovery extraction state differs; data left untouched')
+        with tarfile.open(archive, 'r:gz') as content:
+            required = sum(member.size for member in content if member.isfile()) + 512 * 1024**2
+        free = shutil.disk_usage(DATA.parent).free
+        if free < required:
+            raise RuntimeError(f'Insufficient recovery space: required={required}; available={free}; missing={required-free} bytes; candidate service not stopped')
+        private_command(['tar', '-xpf', str(archive), '--numeric-owner', '-C', str(stage)], backup)
+        verify_cold_backup(archive, data=restored)
+        sync_tree(restored)
+        sync_directory(stage)
+        sync_directory(DATA.parent)
+        plan['restoredIdentity'] = directory_identity(restored)
+        plan['state'] = 'prepared'
+        save(b, backup, record)
+    elif plan['state'] not in ('prepared', 'restored'):
+        raise RuntimeError('Unknown recovery state; data left untouched')
+    if same_directory(DATA, plan['restoredIdentity']):
+        if not same_directory(preserved, plan['candidateIdentity']):
+            raise RuntimeError('Preserved candidate data is missing; inspect recovery')
+        verify_cold_backup(archive, data=DATA)
+    else:
+        if not same_directory(restored, plan['restoredIdentity']):
+            raise RuntimeError('Prepared recovery data changed; data left untouched')
+        if not (same_directory(DATA, plan['candidateIdentity']) and not present(preserved) or
+                not present(DATA) and same_directory(preserved, plan['candidateIdentity'])):
+            raise RuntimeError('Recovery directories differ; data left untouched')
+        verify_cold_backup(archive, data=restored)
+    return stage, preserved
+
+
+def restore_data(b, backup, record):
+    plan = record['restore']
+    stage, preserved = prepare_restore(b, backup, record)
+    if not same_directory(DATA, plan['restoredIdentity']):
+        if same_directory(DATA, plan['candidateIdentity']):
+            DATA.rename(preserved)
+            sync_directory(DATA.parent)
+        (stage / 'data').rename(DATA)
+        sync_directory(DATA.parent)
+        sync_directory(stage)
+    plan['state'] = 'restored'
+    record['preservedNewData'] = str(preserved)
+    record['dataChanged'] = False
+    save(b, backup, record)
+
+
 def rollback(b, backup):
     record = json.loads((backup / 'record.json').read_text())
     original = json.loads((backup / 'original.json').read_text())
@@ -125,22 +232,40 @@ def rollback(b, backup):
             print('Already rolled back; original container is running.')
             return
         raise RuntimeError('Rollback record and current container differ')
+    if record.get('dataChanged'):
+        old = engine.request('GET', '/containers/' + original['Id'] + '/json')
+        if old['State'].get('Running'):
+            raise RuntimeError('Original container is running; stop it before restoring the cold backup')
+        # Validate and prepare recovery while the current service can still run.
+        # Space/integrity failures must not stop the candidate first.
+        prepare_restore(b, backup, record)
     if replacement:
         candidate = engine.request('GET', '/containers/' + replacement + '/json')
+        isolated = False
         if candidate['State'].get('Running'):
-            engine.request('POST', '/containers/' + replacement + '/pause')
+            was_paused = candidate['State'].get('Paused', False)
+            if not was_paused:
+                engine.request('POST', '/containers/' + replacement + '/pause')
             try:
                 processes = engine.request('GET', '/containers/' + replacement + '/top?ps_args=-eo%20pid,args')['Processes']
                 if busy(b, processes):
                     raise RuntimeError('Finish Claude tasks and close clients before rollback')
                 b.frozen_idle(candidate)
-            finally:
+                for name in candidate['NetworkSettings']['Networks']:
+                    engine.request('POST', '/networks/' + b.urllib.parse.quote(name, safe='') + '/disconnect', {'Container': replacement, 'Force': True})
+                isolated = True
+            except BaseException:
+                if not was_paused:
+                    engine.request('POST', '/containers/' + replacement + '/unpause')
+                raise
+            else:
                 engine.request('POST', '/containers/' + replacement + '/unpause')
         engine.request('POST', '/containers/' + replacement + '/update', {'RestartPolicy': {'Name': 'no'}})
         if candidate['State'].get('Running'):
             engine.request('POST', '/containers/' + replacement + '/stop?t=30')
-        for name in candidate['NetworkSettings']['Networks']:
-            engine.request('POST', '/networks/' + b.urllib.parse.quote(name, safe='') + '/disconnect', {'Container': replacement, 'Force': True})
+        if not isolated:
+            for name in candidate['NetworkSettings']['Networks']:
+                engine.request('POST', '/networks/' + b.urllib.parse.quote(name, safe='') + '/disconnect', {'Container': replacement, 'Force': True})
         engine.request('POST', '/containers/' + replacement + '/rename?name=' + b.CONTAINER + '-failed-' + backup.name)
     # A stopped original can still be paused if interruption occurred at the first admission check.
     old = engine.request('GET', '/containers/' + original['Id'] + '/json')
@@ -149,20 +274,7 @@ def rollback(b, backup):
     if record.get('dataChanged'):
         if old['State'].get('Running'):
             raise RuntimeError('Original container is running; stop it before restoring the cold backup')
-        archive = backup / 'data.tar.gz'
-        if digest(archive) != record['archiveSha256']:
-            raise RuntimeError('Cold backup digest mismatch; data left untouched')
-        stage = Path(tempfile.mkdtemp(prefix='.cc-space-037-restore-', dir=str(DATA.parent)))
-        private_command(['tar', '-xpf', str(archive), '--numeric-owner', '-C', str(stage)], backup)
-        preserved = DATA.with_name(DATA.name + '.after-' + backup.name)
-        if preserved.exists():
-            raise RuntimeError('Preserved new data already exists; inspect rollback before retry')
-        if DATA.exists():
-            DATA.rename(preserved)
-        (stage / 'data').rename(DATA)
-        record['preservedNewData'] = str(preserved)
-        record['dataChanged'] = False
-        save(b, backup, record)
+        restore_data(b, backup, record)
     b.restore(engine, original)
     b.wait_healthy(engine, original['Id'])
     record['phase'] = 'rolled-back'
@@ -206,9 +318,10 @@ def check_idle(b, original):
     frozen_tasks_idle(b, b.Engine(), original)
 
 
-def verify_cold_backup(path):
+def verify_cold_backup(path, data=None):
     sync_file(path)
-    expected = {'data'} | {'data/' + p.relative_to(DATA).as_posix() for p in DATA.rglob('*')}
+    data = DATA if data is None else data
+    expected = {'data'} | {'data/' + p.relative_to(data).as_posix() for p in data.rglob('*')}
     seen = set()
     with tarfile.open(path, 'r:gz') as archive:
         for member in archive:
@@ -218,7 +331,7 @@ def verify_cold_backup(path):
             if member.name in seen:
                 raise RuntimeError('Cold backup contains duplicate entries')
             seen.add(member.name)
-            source = DATA.joinpath(*parts[1:])
+            source = data.joinpath(*parts[1:])
             if member.isfile() or member.islnk():
                 checksum = hashlib.sha256()
                 with archive.extractfile(member) as stream:

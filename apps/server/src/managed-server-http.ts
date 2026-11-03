@@ -35,6 +35,7 @@ export type Phase =
   | 'failed';
 export type ServerStatus = {
   hostMaintenance?: boolean;
+  retryable?: boolean;
   schema: 1;
   phase: Phase;
   current: CurrentProgram;

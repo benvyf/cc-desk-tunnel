@@ -131,7 +131,9 @@ test('busy maintenance cancels the prepared handoff immediately and permits a la
     sha256: f.payload.release.sha256,
   };
   await supervisor.prepare(request);
+  assert.equal((await supervisor.status()).retryable, false);
   supervisor.cancel();
+  assert.equal((await supervisor.status()).retryable, true);
   assert.equal((await supervisor.status()).current.build, 1);
   assert.equal(f.events.includes('stop'), false);
   await assert.rejects(supervisor.activate(), /No prepared release/);
