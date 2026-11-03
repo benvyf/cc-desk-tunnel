@@ -160,13 +160,32 @@ export default function Sidebar({
     if (!searchAsked) return;
     setSearching(true);
     searchDone?.();
-    // The column may be sliding in only now, and is not focusable until it shows: focus a frame later.
-    requestAnimationFrame(() =>
-      requestAnimationFrame(() => {
-        searchBox.current?.focus();
-        searchBox.current?.select();
-      }),
-    );
+    // The column may be sliding in only now, and is not focusable until it shows: focus a frame later. While it
+    // comes in (its columns glide, App.tsx) a restyle can still drop the focus to the page; take it back then, for
+    // the length of the slide, unless the reader has put it somewhere else.
+    // (No cleanup: searchDone above changes searchAsked at once, and that must not cancel these frames.)
+    let frames = 0;
+    let acted = false;
+    const act = () => {
+      acted = true;
+    };
+    const stop = () => {
+      window.removeEventListener('keydown', act, true);
+      window.removeEventListener('pointerdown', act, true);
+    };
+    window.addEventListener('keydown', act, true);
+    window.addEventListener('pointerdown', act, true);
+    const hold = () => {
+      const box = searchBox.current;
+      if (!box?.isConnected || (acted && frames > 0)) return stop();
+      if (frames === 0) {
+        box.focus();
+        box.select();
+      } else if (document.activeElement === document.body) box.focus();
+      if (++frames < 24) requestAnimationFrame(hold);
+      else stop();
+    };
+    requestAnimationFrame(() => requestAnimationFrame(hold));
   }, [searchAsked, searchDone]);
   // The lists listed in full rather than their latest few, for this window only.
   const [listed, setListed] = useState<string[]>([]);

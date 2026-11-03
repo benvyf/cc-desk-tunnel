@@ -4,7 +4,7 @@ import type { CSSProperties } from 'react';
 import { createRoot } from 'react-dom/client';
 import { createPortal } from 'react-dom';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
-import { useLeaving } from '../../src/Presence.tsx';
+import { useColumnsGliding, useLeaving } from '../../src/Presence.tsx';
 import { previewSpan, usePreviewWorkspace } from '../../src/preview.ts';
 import { linkTarget } from '../../src/links.ts';
 import type { PreviewBrowserState, PreviewFile } from '../../src/preview.ts';
@@ -385,8 +385,10 @@ function Fixture() {
       </Button>
     </div>
   );
-  // As in App.tsx: the preview slides out before it goes.
+  // As in App.tsx: the preview slides out before it goes, and its column glides open and shut.
   const leaving = useLeaving(opened && board.expanded);
+  const previewWidth = previewSpan(board.width, board.tree);
+  useColumnsGliding(`${board.expanded} ${previewWidth}`);
   return terminal ? (
     <div className="terminal-preview-layout" style={{ height: '100dvh' }}>
       <div className="terminal-workspace" data-native-controls="true">
@@ -404,7 +406,7 @@ function Fixture() {
   ) : (
     <div
       className={`shell side-closed ${board.expanded ? 'has-preview' : ''}`}
-      style={{ '--preview-width': `${previewSpan(board.width, board.tree)}px` } as CSSProperties}
+      style={{ '--preview-width': `${previewWidth}px` } as CSSProperties}
     >
       <header className="titlebar">
         <Button data-preview-toggle onClick={board.toggle}>

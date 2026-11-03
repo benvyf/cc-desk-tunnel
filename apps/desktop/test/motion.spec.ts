@@ -449,6 +449,37 @@ test('folding the side column glides the page over instead of jumping', async ({
   expect(await columnTransition(page)).toEqual([]);
 });
 
+test('the window moves the columns at once, even when the page is laid out before the resize event', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  await page.evaluate(() =>
+    document.documentElement.style.setProperty('--cds-dur-sheet', '1200ms'),
+  );
+  // 887 folds the column to the rail, 560 puts the rail away, 1280 brings the column back beside the page. Each
+  // first read lays the page out at the new size, often before the window's resize event has come.
+  for (const width of [887, 560, 1280, 887, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    expect(await columnTransition(page), `${width}`).toEqual([]);
+    await page.waitForTimeout(60);
+    expect(await columnTransition(page), `${width} later`).toEqual([]);
+  }
+  // The same restyle without any resize event (what the page sees when it is laid out first): no slide either.
+  await page.waitForTimeout(450);
+  await page.locator('.shell').evaluate((shell) => {
+    (shell as HTMLElement).style.setProperty('--sidebar-track', '200px');
+  });
+  expect(await columnTransition(page)).toEqual([]);
+  await page.locator('.shell').evaluate((shell) => {
+    (shell as HTMLElement).style.removeProperty('--sidebar-track');
+  });
+  // Closing the column from the app still glides once the window has settled.
+  await page.waitForTimeout(450);
+  await page.getByRole('banner').getByRole('button', { name: '收起侧栏', exact: true }).click();
+  expect(await columnTransition(page)).toEqual([1200]);
+});
+
 test('the preview slides in at its own width and slides out before it goes', async ({ page }) => {
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.evaluate(() =>

@@ -1191,12 +1191,17 @@ button.chip.danger:hover:not(:disabled) {
   pointer-events: none;
 }
 .shell {
+  transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
+}
+/* The columns glide only when the app opens or closes the side column or the preview (App.tsx sets the
+   attribute for that one change); the window's size and media queries move them at once. */
+.shell[data-columns-gliding] {
   transition:
     grid-template-columns var(--cds-dur-sheet) var(--cds-ease-snap),
     background-color var(--cds-dur-slow) var(--cds-ease-out);
 }
-/* Dragging a width or the window follows the pointer at once. */
-.shell:is([data-sidebar-resizing], [data-window-resizing]),
+/* Dragging a width follows the pointer at once. */
+.shell[data-sidebar-resizing],
 .shell:has(> .preview-sidebar[data-preview-resizing]) {
   transition: background-color var(--cds-dur-slow) var(--cds-ease-out);
 }

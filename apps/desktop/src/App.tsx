@@ -82,7 +82,7 @@ import SettingsPage from './SettingsPage.tsx';
 import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
 import TitleBar from './TitleBar.tsx';
-import Presence, { useLeaving } from './Presence.tsx';
+import Presence, { useColumnsGliding, useLeaving } from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
 import { IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
@@ -252,21 +252,6 @@ export function App({
     window.addEventListener('keydown', escape, true);
     return () => window.removeEventListener('keydown', escape, true);
   }, [overlay, sideOpen, putAwaySide]);
-  // While the window is being resized the columns follow it at once instead of gliding after it (style.css).
-  useEffect(() => {
-    let timer = 0;
-    const resizing = () => {
-      const shell = document.querySelector('.shell');
-      shell?.setAttribute('data-window-resizing', '');
-      clearTimeout(timer);
-      timer = window.setTimeout(() => shell?.removeAttribute('data-window-resizing'), 200);
-    };
-    window.addEventListener('resize', resizing);
-    return () => {
-      window.removeEventListener('resize', resizing);
-      clearTimeout(timer);
-    };
-  }, []);
   const sidebarWidth = usePrefs().sidebarWidth;
   useEffect(() => {
     const follow = () => {
@@ -370,6 +355,13 @@ export function App({
   const previewShown = sidebarAvailable && preview.expanded && place.page === 'chat';
   // Put away, the preview slides out before it goes (style.css, .preview-sidebar[data-leaving]).
   const previewLeaving = useLeaving(previewShown);
+  // The tree, when shown, is a column of its own beside the panes (previewLayout.ts).
+  const previewWidth = previewSpan(
+    preview.width,
+    preview.tree && previewAvailable && !!selected?.projectPath,
+  );
+  // Opening or closing the side column or the preview glides the columns; the window's size moves them at once.
+  useColumnsGliding(`${sideOpen} ${previewShown} ${previewWidth}`);
   // Another computer's session is worked on from here while that computer is connected and its commands
   // reach it: what is sent here runs there, as if sent there.
   const reachable = (session: Session) =>
@@ -2017,8 +2009,7 @@ export function App({
       style={
         {
           '--sidebar-width': `${prefs.sidebarWidth}px`,
-          // The tree, when shown, is a column of its own beside the panes (previewLayout.ts).
-          '--preview-width': `${previewSpan(preview.width, preview.tree && previewAvailable && !!selected?.projectPath)}px`,
+          '--preview-width': `${previewWidth}px`,
         } as CSSProperties
       }
     >
