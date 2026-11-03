@@ -387,6 +387,8 @@ for (const mode of ['standard', 'expanded']) {
     await expect(block.locator('.tool-detail')).toHaveCount(0);
     await summary.press('Enter');
     await finishTransitions();
+    // The closed box fades out (inert) for a moment; let it go so the fill reaches the reopened one.
+    await expect(page.locator('.conversation-find')).toHaveCount(0);
     await page.keyboard.press('Control+f');
     await find.fill('搜索反转期间新增内容');
     await expect(page.locator('.find-count')).toHaveText('1 / 1');

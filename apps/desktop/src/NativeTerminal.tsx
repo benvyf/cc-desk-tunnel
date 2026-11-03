@@ -7,6 +7,7 @@ import { X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
 import { terminalLinks } from './terminalLinks.ts';
+import { createTerminalPrediction, type TerminalPrediction } from './terminalPrediction.ts';
 import '@xterm/xterm/css/xterm.css';
 
 export type TerminalPhase =
@@ -62,15 +63,27 @@ export default function NativeTerminal({
   visible.current = active;
   const activate = useRef((_focus = false) => {});
   const terminalRef = useRef<Terminal | null>(null);
+  const predictionRef = useRef<TerminalPrediction | null>(null);
   const readingLine = useRef<number | null>(null);
-  const fontSize = usePrefs().fontSizes.code;
+  const prefs = usePrefs();
+  const fontSize = prefs.fontSizes.code;
   const handle = useRef<TerminalHandle | null>(null);
   const [phase, setPhase] = useState<TerminalPhase>('opening');
   const [detail, setDetail] = useState('正在启动');
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (active) activate.current(true);
+    else predictionRef.current?.clear();
   }, [active]);
+  useEffect(() => {
+    predictionRef.current?.setEnabled(prefs.terminalPredictiveEcho);
+  }, [prefs.terminalPredictiveEcho]);
+  useEffect(() => {
+    if (terminalRef.current && host.current) {
+      terminalRef.current.options.theme = terminalTheme(host.current);
+      predictionRef.current?.refresh();
+    }
+  }, [prefs.theme]);
   useEffect(() => {
     if (!terminalRef.current) return;
     const terminal = terminalRef.current;
@@ -79,6 +92,7 @@ export default function NativeTerminal({
         ? terminal.buffer.active.viewportY
         : null;
     terminal.options.fontSize = fontSize;
+    predictionRef.current?.refresh();
     activate.current();
   }, [fontSize]);
   useEffect(() => {
@@ -116,11 +130,15 @@ export default function NativeTerminal({
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     const connectionId = client.state?.connectionId;
+    let prediction: TerminalPrediction | null = null;
     const minimumRows = client.state?.terminalWorkspace?.minRows ?? 5;
     // A window opened for the terminal is handed the page's stylesheets as it opens; one that is still loading
     // has no tokens yet, so the colours are taken again once it has.
     const repaint = () => {
-      if (!disposed) terminal.options.theme = terminalTheme(host.current!);
+      if (!disposed) {
+        terminal.options.theme = terminalTheme(host.current!);
+        prediction?.refresh();
+      }
     };
     const loading = [
       ...host.current!.ownerDocument.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
@@ -135,6 +153,7 @@ export default function NativeTerminal({
       callbacks.current.onLink?.(target);
     }
     function status(next: TerminalPhase, text: string) {
+      if (next !== 'running') prediction?.clear();
       current = next;
       if (disposed) return;
       setPhase(next);
@@ -199,6 +218,7 @@ export default function NativeTerminal({
       });
     };
     function accept(terminalId: string) {
+      prediction?.clear();
       id = terminalId;
       if (disposed) return;
       opening = false;
@@ -374,6 +394,7 @@ export default function NativeTerminal({
     });
     const disconnected = () => {
       if (client.state.status !== 'connected' || client.state.connectionId !== connectionId) {
+        prediction?.clear();
         id = null;
         opening = false;
         closeRequested = true;
@@ -416,7 +437,7 @@ export default function NativeTerminal({
               ) &&
               !host.current?.ownerDocument.querySelector('dialog[open]')
             )
-              terminal.paste(text);
+              (prediction ?? terminal).paste(text);
           }
         } catch {
           if (!disposed) setError('无法访问剪贴板，请使用系统复制/粘贴菜单。');
@@ -424,6 +445,25 @@ export default function NativeTerminal({
       })();
       return false;
     });
+    try {
+      prediction = createTerminalPrediction(terminal, host.current!, () => ({
+        running: phaseNow() === 'running',
+        visible: visible.current,
+        connected:
+          client.state?.connectionId === connectionId &&
+          (!client.state || client.state.status === 'connected'),
+        closing: closeRequested || disposed,
+      }));
+      predictionRef.current = prediction;
+      prediction.setEnabled(prefs.terminalPredictiveEcho);
+    } catch {
+      // Prediction is optional; the existing input path remains available.
+      try {
+        prediction?.dispose();
+      } catch {}
+      predictionRef.current = null;
+      prediction = null;
+    }
     const input = terminal.onData((data) => {
       if (
         !visible.current ||
@@ -433,6 +473,13 @@ export default function NativeTerminal({
         host.current?.ownerDocument.querySelector('dialog[open]')
       )
         return;
+      try {
+        prediction?.beforeInput(data);
+      } catch {
+        try {
+          prediction?.dispose();
+        } catch {}
+      }
       for (let offset = 0; offset < data.length;) {
         let end = Math.min(offset + 4096, data.length);
         const last = data.charCodeAt(end - 1);
@@ -451,7 +498,10 @@ export default function NativeTerminal({
     // xterm can finish measuring characters after the host has already stopped resizing.
     const screen = terminal.element?.querySelector('.xterm-screen');
     if (screen) observer.observe(screen);
-    const onWindowResize = () => activate.current();
+    const onWindowResize = () => {
+      prediction?.refresh();
+      activate.current();
+    };
     view.addEventListener('resize', onWindowResize);
     handle.current = {
       close,
@@ -471,7 +521,7 @@ export default function NativeTerminal({
           throw new Error('终端未启用多行粘贴模式，请复制后手动粘贴并检查。');
         if (/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(text))
           throw new Error('草稿含有终端控制字符，请移除后再粘贴。');
-        terminal.paste(text);
+        (prediction ?? terminal).paste(text);
         terminal.focus();
       },
       retry: () => {
@@ -514,6 +564,8 @@ export default function NativeTerminal({
       observer.disconnect();
       view.removeEventListener('resize', onWindowResize);
       input.dispose();
+      prediction?.dispose();
+      if (predictionRef.current === prediction) predictionRef.current = null;
       links.dispose();
       for (const link of loading) link.removeEventListener('load', repaint);
       unwatch?.();

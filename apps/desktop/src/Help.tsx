@@ -99,9 +99,12 @@ export default function Help() {
               type="button"
               key={title}
               onClick={() =>
-                document
-                  .getElementById(`help-${index}`)
-                  ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+                document.getElementById(`help-${index}`)?.scrollIntoView({
+                  block: 'start',
+                  behavior: matchMedia('(prefers-reduced-motion: reduce)').matches
+                    ? 'auto'
+                    : 'smooth',
+                })
               }
             >
               {title}

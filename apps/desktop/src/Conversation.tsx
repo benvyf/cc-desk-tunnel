@@ -820,8 +820,11 @@ export default function Conversation({
   const transcriptRoot = useRef<HTMLDivElement>(null);
   const lastFindRequest = useRef(findRequest);
   const searching = findOpen && query.length > 0;
+  // Where the reader was before the find box took the focus: it goes back there when the box closes.
+  const beforeFind = useRef<Element | null>(null);
   const openFind = () => {
     leave();
+    if (!findOpen) beforeFind.current = document.activeElement;
     setFindOpen(true);
   };
   useEffect(() => {
@@ -1064,21 +1067,42 @@ export default function Conversation({
             </IconButton>
           </div>
         )}
-        {findOpen && session && (
-          <ConversationFind
-            root={transcriptRoot}
-            scroll={scroll}
-            query={query}
-            change={setQuery}
-            request={findRequest}
-            partial={!!history?.hasEarlier}
-            close={() => {
-              setFindOpen(false);
-              setQuery('');
-              scroll.current?.focus();
-            }}
-          />
-        )}
+        <Presence>
+          {findOpen && session && (
+            <ConversationFind
+              root={transcriptRoot}
+              scroll={scroll}
+              query={query}
+              change={setQuery}
+              request={findRequest}
+              partial={!!history?.hasEarlier}
+              close={() => {
+                setFindOpen(false);
+                setQuery('');
+                // The box fades out for a moment; the matches it marked go at once.
+                CSS.highlights.delete('conversation-matches');
+                CSS.highlights.delete('conversation-current');
+                const back = beforeFind.current;
+                beforeFind.current = null;
+                // Back to the control or text that had the focus; otherwise to the conversation, without drawing
+                // the keyboard ring around all of it.
+                if (
+                  back instanceof HTMLElement &&
+                  back !== document.body &&
+                  back.isConnected &&
+                  !back.closest('[inert], .conversation-find')
+                )
+                  back.focus({ preventScroll: true });
+                else
+                  scroll.current?.focus({
+                    preventScroll: true,
+                    // Chromium's option (not yet in TypeScript's DOM types): no ring for a focus put back.
+                    focusVisible: false,
+                  } as FocusOptions);
+              }}
+            />
+          )}
+        </Presence>
         <div className="conversation-frame">
           <div
             className={`conversation ${searching ? 'searching' : ''}`}
@@ -1369,20 +1393,27 @@ export default function Conversation({
           </div>
           {/* Over the foot of the conversation, just above the input box, not inside the scrolling text where a
               short conversation would carry it up to its top. */}
-          {session && away && !atEnd && (
-            <div className="to-end">
-              <IconButton
-                title="回到底部"
-                className="to-end-button"
-                onClick={() => {
-                  rejoin();
-                  toEnd();
-                }}
-              >
-                <ArrowDown />
-              </IconButton>
-            </div>
-          )}
+          <Presence>
+            {session && away && !atEnd && (
+              <div className="to-end">
+                <IconButton
+                  title="回到底部"
+                  className="to-end-button"
+                  onClick={(event) => {
+                    rejoin();
+                    toEnd();
+                    // The button goes once the end is reached; the focus moves on to the input box below it.
+                    if (event.currentTarget === document.activeElement)
+                      document
+                        .querySelector<HTMLElement>('.composer textarea')
+                        ?.focus({ preventScroll: true });
+                  }}
+                >
+                  <ArrowDown />
+                </IconButton>
+              </div>
+            )}
+          </Presence>
           {session && adjustableWidth && (
             <ConversationWidthControls
               key={`width:${session.id}`}

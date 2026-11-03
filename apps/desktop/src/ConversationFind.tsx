@@ -52,13 +52,25 @@ export default function ConversationFind({
   };
   useEffect(() => {
     const content = root.current;
-    if (!content) return;
+    // Closing empties the query while the box fades out: nothing is marked then.
+    if (!content || !query) {
+      CSS.highlights.delete('conversation-matches');
+      CSS.highlights.delete('conversation-current');
+      setResult({ index: 0, count: 0 });
+      return;
+    }
     active.current = 0;
     let frame = 0;
     let navigate = true;
     const refresh = () => {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
+        // A box that is fading out after closing marks nothing more.
+        if (input.current?.closest('[inert]')) {
+          CSS.highlights.delete('conversation-matches');
+          CSS.highlights.delete('conversation-current');
+          return;
+        }
         const previous = ranges.current[active.current];
         ranges.current = matchingRanges(content, query);
         const retained = ranges.current.findIndex(

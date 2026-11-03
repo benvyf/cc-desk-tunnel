@@ -23,6 +23,10 @@ third-party components, each under its own license:
   dependencies under their respective licenses.
 
 npm dependencies are listed in package-lock.json and keep their own licenses.
+Optional terminal display prediction uses xterm-zerolag-input 0.4.2,
+Copyright (c) 2026 Codeman Contributors, under the MIT License.
+The complete license is distributed in dist/third-party/xterm-zerolag-input.txt.
+
 The client build applies a version-checked linear text resolver patch to
 micromark 4.0.3 (MIT). Provenance and source hashes are in
 patches/micromark-4.0.3.md; the distributed notice is in

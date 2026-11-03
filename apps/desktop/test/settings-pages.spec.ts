@@ -47,6 +47,61 @@ async function connect(page: Page) {
 const section = (page: Page, name: string) =>
   page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name, exact: true });
 
+test('terminal prediction is opt-in, persists locally and reports storage failure', async ({
+  page,
+}) => {
+  await connect(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await section(page, '常规').click();
+  const toggle = page.getByRole('switch', { name: '终端输入预测（实验性）', exact: true });
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('proxy-prefs')!).terminalPredictiveEcho,
+    ),
+  ).toBe(true);
+  await page.reload();
+  expect(
+    await page.evaluate(async () => {
+      const path = '/src/prefs.ts';
+      return (await import(path)).getPrefs().terminalPredictiveEcho;
+    }),
+  ).toBe(true);
+  await connect(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await section(page, '常规').click();
+  await page.evaluate(() => {
+    const original = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === 'proxy-prefs')
+        throw new DOMException('storage unavailable', 'QuotaExceededError');
+      return original.call(this, key, value);
+    };
+  });
+  await toggle.click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: '无法保存终端输入预测设置' }),
+  ).toBeVisible();
+  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+});
+
+test('invalid terminal prediction preference stays off', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('proxy-prefs', JSON.stringify({ terminalPredictiveEcho: 'true' })),
+  );
+  await page.goto('/');
+  expect(
+    await page.evaluate(async () => {
+      const path = '/src/prefs.ts';
+      return (await import(path)).getPrefs().terminalPredictiveEcho;
+    }),
+  ).toBe(false);
+});
+
 test('the account page shows grey bars while reading, the column’s avatar, and lines up with the other pages', async ({
   page,
 }) => {

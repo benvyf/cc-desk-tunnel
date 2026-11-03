@@ -58,7 +58,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: SlidersHorizontal,
     words:
-      '主题 外观 Clawd 小人 吉祥物 动画 字体 回复字体 衬线 混排 宋体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter',
+      '主题 外观 Clawd 小人 吉祥物 动画 字体 回复字体 衬线 混排 宋体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter 终端 预测 回显',
   },
   {
     id: 'notifications',
@@ -143,7 +143,8 @@ function moveChoice(
 
 // How much of the work behind a reply is shown is a choice of this computer's window too.
 function ThemeSettings() {
-  const { theme, replyFont, mascot } = usePrefs();
+  const { theme, replyFont, mascot, terminalPredictiveEcho } = usePrefs();
+  const [echoError, setEchoError] = useState('');
   const font = replyFonts.find((entry) => entry.font === replyFont) ?? replyFonts[0];
   return (
     <>
@@ -241,6 +242,31 @@ function ThemeSettings() {
             onChange={(value) => setPrefs((prefs) => ({ ...prefs, mascot: value }))}
           />
         </Row>
+        <Row
+          title="终端输入预测（实验性）"
+          detail="在手动审批模式的普通单行输入区提前显示文字；菜单和复杂编辑仍等待远端，出现闪烁时可关闭"
+        >
+          <Switch
+            label="终端输入预测（实验性）"
+            checked={terminalPredictiveEcho}
+            onChange={(value) => {
+              setEchoError('');
+              try {
+                setPrefs((prefs) => ({ ...prefs, terminalPredictiveEcho: value }));
+              } catch {
+                try {
+                  setPrefs((prefs) => ({ ...prefs, terminalPredictiveEcho }));
+                } catch {}
+                setEchoError('无法保存终端输入预测设置，请重试。');
+              }
+            }}
+          />
+        </Row>
+        {echoError && (
+          <p role="alert" className="error-text">
+            {echoError}
+          </p>
+        )}
       </div>
     </>
   );

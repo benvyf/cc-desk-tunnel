@@ -146,12 +146,29 @@ export function Menu({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Whatever had focus when the menu opened (its button, or the row right-clicked) gets it back when the menu is
+  // put away from the keyboard or by choosing an item; a click elsewhere keeps the focus where it went.
+  const opener = useRef<Element | null>(null);
+  const settle = () => {
+    const back = opener.current;
+    const now = document.activeElement;
+    if (!(back instanceof HTMLElement) || !back.isConnected || back.closest('[inert]')) return;
+    if (now && now !== document.body && !ref.current?.contains(now)) return;
+    back.focus({ preventScroll: true });
+  };
+  const dismiss = () => {
+    settle();
+    onClose();
+  };
   useLayoutEffect(() => {
+    if (!opener.current) opener.current = document.activeElement;
     const menu = ref.current!;
     const { width, height } = menu.getBoundingClientRect();
     const top = above || y + height > innerHeight - 8 ? y - height : y;
     menu.style.left = `${Math.max(8, Math.min(x, innerWidth - width - 8))}px`;
     menu.style.top = `${Math.max(8, top)}px`;
+    // The menu grows out of the side it opens from (style.css, .menu[data-placement]).
+    menu.dataset.placement = top < y ? 'above' : 'below';
     menu.querySelector<HTMLButtonElement>('button:not(:disabled)')?.focus();
   }, [x, y, above, width]);
   useEffect(() => {
@@ -177,14 +194,23 @@ export function Menu({
       onContextMenu={(event) => event.preventDefault()}
       onKeyDown={(event) => {
         if (event.key === 'Escape') {
-          onClose();
+          dismiss();
           return;
         }
-        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
+        // Tab leaves the menu as it leaves any list: from the control that opened it, on to the next.
+        if (event.key === 'Tab') {
+          dismiss();
+          return;
+        }
+        if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
         event.preventDefault();
         const buttons = [
           ...ref.current!.querySelectorAll<HTMLButtonElement>('button:not(:disabled)'),
         ];
+        if (event.key === 'Home' || event.key === 'End') {
+          buttons[event.key === 'Home' ? 0 : buttons.length - 1]?.focus();
+          return;
+        }
         const next =
           buttons.indexOf(document.activeElement as HTMLButtonElement) +
           (event.key === 'ArrowDown' ? 1 : -1);
@@ -203,7 +229,7 @@ export function Menu({
             className={`${item.danger ? 'danger' : ''} ${item.detail ? 'detailed' : ''}`}
             disabled={item.disabled}
             onClick={() => {
-              onClose();
+              dismiss();
               item.run();
             }}
           >

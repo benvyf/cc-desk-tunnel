@@ -27,7 +27,8 @@
     "remark-gfm": "4.0.1",
     "remark-math": "6.0.0",
     "ssh2": "1.17.0",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "xterm-zerolag-input": "0.4.2"
   },
   "devDependencies": {
     "@phosphor-icons/react": "2.1.10",
