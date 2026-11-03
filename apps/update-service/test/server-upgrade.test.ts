@@ -27,20 +27,35 @@ test('generated upgrade command uses the actual managed HTTP contract and preser
   ).toString();
   assert.doesNotMatch(wrapper, /ba938975|shell=True/);
   const loader = JSON.parse(/^program = (.+)$/m.exec(wrapper)![1]);
-  for (const scenario of ['success', 'busy', 'mismatch', 'rollback', 'already-installed']) {
+  for (const scenario of [
+    'success',
+    'busy',
+    'mismatch',
+    'rollback',
+    'already-installed',
+    'host-success',
+  ]) {
     await t.test(scenario, async () => {
       let activated = false,
         prepared = false;
       const calls: string[] = [];
       const handler = managedServerHandler({
         token: 'synthetic_upgrade_token_1234567890',
-        admission: { enter: () => scenario !== 'busy', leave() {} },
+        admission: {
+          enter: (disconnect) => {
+            if (scenario === 'host-success') assert.equal(disconnect, true);
+            return scenario !== 'busy';
+          },
+          leave() {},
+        },
         backend: {
+          ...(scenario === 'host-success' ? { cancel: async () => {} } : {}),
           async status() {
             calls.push('status');
             const upgraded =
               scenario === 'already-installed' || (activated && scenario !== 'rollback');
             return {
+              hostMaintenance: scenario === 'host-success',
               schema: 1,
               target: null,
               phase: upgraded ? 'committed' : activated ? 'rolled-back' : 'idle',
@@ -104,7 +119,11 @@ test('generated upgrade command uses the actual managed HTTP contract and preser
           child.on('exit', resolve);
           child.on('error', reject);
         });
-        assert.equal(code, ['success', 'already-installed'].includes(scenario) ? 0 : 1, output);
+        assert.equal(
+          code,
+          ['success', 'already-installed', 'host-success'].includes(scenario) ? 0 : 1,
+          output,
+        );
         if (scenario === 'success')
           assert.match(output, /Build 7 \/ protocol 37 is installed and committed/);
         if (scenario === 'busy') assert.match(output, /HTTP 409: busy/);

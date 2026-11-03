@@ -106,7 +106,7 @@ export function setupNodeUpdates({ request, action, notice }) {
   $('node-update-install').onclick = () => {
     if (!data?.release || $('node-update-install').disabled) return;
     $('node-update-confirm-text').textContent =
-      `确认更新 ${nodeId} 到 Build ${data.release.build}／协议 ${data.release.protocol}？更新会暂时中断服务，请先结束任务并关闭原生终端。`;
+      `确认更新 ${nodeId} 到 Build ${data.release.build}／协议 ${data.release.protocol}？系统将先准备并检查空间，再自动断开空闲客户端、备份和切换。请先结束运行及等待中的任务，并关闭原生终端。旧版服务端不支持自动断连时会提示手动退出。`;
     $('node-update-confirmation').hidden = false;
     $('node-update-confirm').dataset.build = String(data.release.build);
     $('node-update-confirm').dataset.sha256 = data.release.sha256;

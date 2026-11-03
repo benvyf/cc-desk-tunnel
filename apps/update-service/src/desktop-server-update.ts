@@ -56,5 +56,7 @@ export async function desktopServerUpdate(
       throw new UpdateError(409, '管理中心保存的服务凭据已失效，请更新工作空间配置。');
     if (status === 409) throw new UpdateError(409, '服务繁忙或升级目标已变化，请重新检查后确认。');
     throw new UpdateError(502, '服务管理网络请求失败；服务重启期间请稍候查询状态。');
+  } finally {
+    access.releaseServerConnection(connection.token);
   }
 }

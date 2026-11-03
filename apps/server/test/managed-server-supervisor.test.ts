@@ -14,6 +14,8 @@ import {
 import {
   ManagedServerSupervisor,
   selectBackupDirectories,
+  checkBackupSpace,
+  downloadTrusted,
   type LaunchOptions,
   type ProgramChild,
 } from '../src/managed-server-supervisor.ts';
@@ -105,6 +107,64 @@ function setup(t: { after(fn: () => void): void }, failCandidate = false) {
   };
   return { ...fixture, data, payload, envelope, options, events, keys, crash: () => crash() };
 }
+
+test('ordinary backup capacity remeasures data, excludes managed state and reports exact deficit', (t) => {
+  const f = setup(t);
+  mkdirSync(f.options.stateRoot);
+  writeFileSync(join(f.options.stateRoot, 'retained-backup'), Buffer.alloc(1024));
+  const required = Buffer.byteLength('original') + 512 * 1024 ** 2;
+  assert.throws(() => checkBackupSpace(f.options.stateRoot, [f.data], required - 1), /missing=1/);
+  checkBackupSpace(f.options.stateRoot, [f.data, f.options.stateRoot], required);
+  writeFileSync(join(f.data, 'sessions.sqlite'), 'original grows');
+  assert.throws(() => checkBackupSpace(f.options.stateRoot, [f.data], required), /Insufficient/);
+});
+
+test('busy maintenance cancels the prepared handoff immediately and permits a later retry', async (t) => {
+  const f = setup(t),
+    supervisor = new ManagedServerSupervisor(f.options);
+  await supervisor.start();
+  t.after(() => supervisor.stop());
+  const request = {
+    clientProtocol: 42,
+    confirmed: true as const,
+    build: 2,
+    sha256: f.payload.release.sha256,
+  };
+  await supervisor.prepare(request);
+  supervisor.cancel();
+  assert.equal((await supervisor.status()).current.build, 1);
+  assert.equal(f.events.includes('stop'), false);
+  await assert.rejects(supervisor.activate(), /No prepared release/);
+  await supervisor.prepare(request);
+  await supervisor.activate();
+  assert.equal((await supervisor.status()).phase, 'committed');
+});
+
+test('release GET retries transient failures three times but never retries forbidden or oversized content', async (t) => {
+  let calls = 0;
+  t.mock.method(globalThis, 'fetch', async () => {
+    calls++;
+    if (calls < 3) throw new TypeError('network temporarily unavailable');
+    return new Response('ok');
+  });
+  assert.equal(
+    (await downloadTrusted('https://api.ghostapi.org/cc-updates/server/v1/test', 10)).toString(),
+    'ok',
+  );
+  assert.equal(calls, 3);
+  for (const response of [
+    new Response('', { status: 403 }),
+    new Response('too much', { headers: { 'content-length': '100' } }),
+  ]) {
+    calls = 0;
+    t.mock.method(globalThis, 'fetch', async () => {
+      calls++;
+      return response;
+    });
+    await assert.rejects(downloadTrusted('https://api.ghostapi.org/cc-updates/server/v1/test', 10));
+    assert.equal(calls, 1);
+  }
+});
 
 test('an interrupted release cache is quarantined and the confirmed release can be retried', async (t) => {
   const f = setup(t),

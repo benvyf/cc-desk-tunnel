@@ -19,7 +19,7 @@
         <section id="node-update-panel" class="card" aria-labelledby="node-update-heading" hidden>
           <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="node-update-heading"></h3><p class="muted">普通程序和基础镜像均通过宿主机通道更新，只执行已签名发布。</p></div><button id="node-update-close" class="quiet" type="button">关闭更新面板</button></div>
           <p id="node-update-channel"></p><p id="node-update-current"></p><p id="node-update-target" class="digest"></p>
-          <p class="muted">首次使用需在对应 Ubuntu 执行一次接入命令。接入本身不会触发升级。更新前结束任务并关闭原生终端；普通程序更新还需退出客户端连接。中断或失败时先查看日志与备份指引，不自动重放。</p>
+          <p class="muted">首次使用需在对应 Ubuntu 执行一次接入命令，接入本身不会触发升级。更新前结束任务并关闭原生终端；准备完成后自动断开空闲客户端。旧版服务端若不支持自动断连，会提示先退出客户端。中断或失败时查看实际服务状态、日志与恢复指引，不自动重放。</p>
           <div class="heading-actions"><button id="node-update-refresh" class="quiet" type="button">检查设备状态</button><button id="node-update-enroll" class="quiet" type="button">生成宿主机接入命令</button><button id="node-update-install" type="button" disabled>检查更新</button></div>
           <div id="node-update-enrollment" hidden><label for="node-update-command">一次性接入命令（十分钟有效，仅在对应 Ubuntu 执行）</label><textarea id="node-update-command" rows="6" readonly spellcheck="false"></textarea><button id="node-update-copy" class="quiet" type="button">复制宿主机接入命令</button></div>
           <div id="node-update-confirmation" class="access-editor" hidden><p id="node-update-confirm-text"></p><button id="node-update-confirm" type="button">确认更新此设备</button><button id="node-update-cancel" type="button" class="quiet">取消</button></div>

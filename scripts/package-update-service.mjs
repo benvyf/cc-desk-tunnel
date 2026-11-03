@@ -7,11 +7,14 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const runtimeFiles = [
+  'scripts/upgrade-runtime-base.py',
   'scripts/upgrade-message-review.py',
   'scripts/upgrade-terminal-base.py',
   'scripts/install-cc-space-037.py',
   'apps/update-service/src/config.ts',
   'apps/update-service/src/http.ts',
+  'apps/update-service/src/host-updates.ts',
+  'apps/update-service/src/host-updater-package.ts',
   'apps/update-service/src/main.ts',
   'apps/update-service/src/store.ts',
   'apps/update-service/src/monitor.ts',
@@ -33,6 +36,9 @@ export const runtimeFiles = [
   'scripts/create-admin-password-setup.mjs',
   'apps/update-service/web/index.html',
   'apps/update-service/web/app.js',
+  'apps/update-service/web/node-updates.js',
+  'apps/update-service/web/host-updater-agent.py',
+  'apps/update-service/web/host-updater-install.py',
   'apps/update-service/web/moderation.js',
   'apps/update-service/web/password-login.js',
   'apps/update-service/web/desktop-access.js',
@@ -57,6 +63,8 @@ export const runtimeFiles = [
   'deploy/update-service/cc-server-index-renew.timer',
   'deploy/server-bootstrap-profile.json',
   'docs/MANAGED-SERVER-DISTRIBUTION.md',
+  'docs/HOST-UPDATES.md',
+  'docs/LINUX-BUILD10-RUNTIME-UPGRADE.md',
   'docs/FRESH-UBUNTU-INSTALL.md',
   'docs/UPDATE-SERVICE.md',
   'docs/ACCOUNT-MONITOR.md',

@@ -73,6 +73,9 @@ export function connectManagedSupervisor(nonce: string): {
       prepare: async (input) => {
         await call('prepare', input);
       },
+      cancel: async () => {
+        await call('cancel', null);
+      },
       activate: () => {
         void call('activate', null).catch(() => {});
       },

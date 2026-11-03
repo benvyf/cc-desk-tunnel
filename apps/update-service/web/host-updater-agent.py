@@ -14,6 +14,8 @@ import sys
 import tempfile
 import time
 import urllib.request
+import urllib.error
+import http.client
 
 ROOT = Path('/var/lib/cc-host-updater')
 PROGRAM = Path('/opt/cc-host-updater')
@@ -30,10 +32,18 @@ def request(config, path, value=None, authenticated=True, limit=131072):
     headers = {'Content-Type': 'application/json'} if data else {}
     if authenticated: headers['Authorization'] = 'Bearer ' + config['token']
     req = urllib.request.Request(config['origin'] + path, data=data, headers=headers)
-    with urllib.request.build_opener(NoRedirect).open(req, timeout=15) as response:
-        content = response.read(limit + 1)
-    if len(content) > limit: raise RuntimeError('Response exceeded the updater limit')
-    return content
+    opener = urllib.request.build_opener(NoRedirect)
+    attempts = 3 if value is None and not authenticated else 1
+    for attempt in range(attempts):
+        try:
+            with opener.open(req, timeout=15) as response:
+                content = response.read(limit + 1)
+            if len(content) > limit: raise RuntimeError('Response exceeded the updater limit')
+            return content
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code not in (408,429,500,502,503,504): raise
+            if attempt + 1 == attempts: raise
+            time.sleep(attempt + 1)
 
 
 def save(path, value):
@@ -121,11 +131,11 @@ def command_for(config, job, work, floor):
     status = probe(release['protocol'])
     if floor > release['build'] or status['current']['build'] > release['build']: raise RuntimeError('Older releases cannot replace the installed version')
     if status['current']['build'] == release['build']:
-        if status['current']['protocol'] != release['protocol']: raise RuntimeError('Installed version identity differs')
+        if not target_ready(release): raise RuntimeError('Installed version identity or readiness differs')
         return None, release
     check = status.get('check') or {}
     if check.get('compatible') and check.get('reason') == 'available':
-        return node_command(container(),{'build':release['build'],'protocol':release['protocol'],'sha256':release['sha256']}), release
+        return node_command(container(),{'build':release['build'],'protocol':release['protocol'],'sha256':release['sha256'], 'host':status.get('hostMaintenance') is True}), release
     if check.get('reason') != 'manual-image-upgrade': raise RuntimeError('Device is busy or the target is not currently installable')
     if release['build']==10 and release['sha256']==BASE10:
         return [sys.executable,str(PROGRAM/'base/upgrade-runtime-base.py'),'--sha256',release['sha256'],'--cleanup','--install'], release
@@ -146,12 +156,42 @@ def progress(path, token):
     return text.replace(token,'[redacted]')[-1000:] or '更新处理中'
 
 
+def target_ready(release, require_serving=False):
+    status = probe()
+    if (require_serving or status.get('hostMaintenance') is True or 'serving' in status) and status.get('serving') is not True:
+        return False
+    current = status['current']
+    identity = current.get('sha256') == release['sha256'] or (
+        current.get('sha256') is None and release.get('descriptorSha256') is not None and
+        status.get('descriptorSha256') == release['descriptorSha256'])
+    return identity and (current['build'],current['protocol']) == (release['build'],release['protocol']) and status['phase'] in ('idle','committed')
+
+
+def reconcile_interrupted(state, config):
+    if state.get('report',{}).get('state') != 'running': return
+    identity = state['report']['id']
+    ready = False
+    try:
+        if state.get('target'): ready = target_ready(state['target'], require_serving=True)
+    except Exception: pass
+    if ready:
+        state['floor'] = max(state.get('floor',0),state['target']['build'])
+        state['report'] = {'id':identity,'state':'succeeded','progress':'进程中断后已核对目标版本、摘要及就绪状态；更新已完成，未重复执行。'}
+    else:
+        state['report']={'id':identity,'state':'failed','progress':('更新进程被中断，未自动重放。请检查节点日志和备份目录。\n'+progress(ROOT/'jobs'/f'{identity}.log',config['token']))[-1200:]}
+
+
+def begin_job(state, identity):
+    state.pop('target', None)
+    state['lastJob'] = identity
+    state['report'] = {'id':identity,'state':'running','progress':'正在校验已签名的更新目标；准备完成前旧服务继续运行'}
+
+
 def run(config):
     state_path=ROOT/'state.json'
     state=json.loads(state_path.read_text()) if state_path.exists() else {'floor':0}
     if state.get('report',{}).get('state')=='running':
-        identity=state['report']['id']
-        state['report']={'id':identity,'state':'failed','progress':('更新进程被中断，未自动重放。请检查节点日志和备份目录。\n'+progress(ROOT/'jobs'/f'{identity}.log',config['token']))[-1200:]};save(state_path,state)
+        reconcile_interrupted(state,config);save(state_path,state)
     while not stopping:
         version=current()
         try:
@@ -163,13 +203,15 @@ def run(config):
                 identity=job['id']
                 if not re.fullmatch('[a-f0-9-]{36}',identity): raise RuntimeError('Invalid job identity')
                 if state.get('lastJob')==identity: raise RuntimeError('An acknowledged job cannot be replayed')
-                state['lastJob']=identity;state['report']={'id':identity,'state':'running','progress':'正在校验已签名的更新目标'};save(state_path,state)
+                begin_job(state,identity);save(state_path,state)
                 log=ROOT/'jobs'/f'{identity}.log'
                 try:
                     created=datetime.datetime.fromisoformat(job['createdAt'].replace('Z','+00:00')).timestamp()
                     if not 0 <= time.time()-created <= 600: raise RuntimeError('Update confirmation expired; no installation requested')
                     with tempfile.TemporaryDirectory(prefix='update-',dir=ROOT) as directory:
                         args,release=command_for(config,job,Path(directory),state.get('floor',0))
+                        state['target'] = {k:release[k] for k in ('build','protocol','sha256','descriptorSha256') if k in release}
+                        save(state_path,state)
                         if args:
                             with log.open('ab') as output:
                                 worker=subprocess.Popen(args,stdout=output,stderr=subprocess.STDOUT)
@@ -180,7 +222,7 @@ def run(config):
                                     time.sleep(5)
                                 if worker.returncode: raise RuntimeError('更新未完成，请查看下方日志；原服务恢复和回退信息以脚本输出为准。')
                         version=current()
-                        if not version or version['build'] != release['build'] or version['protocol']!=release['protocol'] or version['phase'] not in ['idle','committed']: raise RuntimeError('更新后的版本或就绪状态尚未确认，请检查日志。')
+                        if not version or not target_ready(release): raise RuntimeError('更新后的版本、摘要或就绪状态尚未确认，请检查日志。')
                         state['floor']=max(state.get('floor',0),version['build'])
                         state['report']={'id':identity,'state':'succeeded','progress':('更新成功\n'+progress(log,config['token']))[-1200:]}
                 except Exception as error:

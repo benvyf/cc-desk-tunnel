@@ -34,6 +34,7 @@ export type Phase =
   | 'rolled-back'
   | 'failed';
 export type ServerStatus = {
+  hostMaintenance?: boolean;
   schema: 1;
   phase: Phase;
   current: CurrentProgram;
@@ -50,9 +51,15 @@ export type ManagedBackend = {
   check(protocol: number): Promise<ServerCheck>;
   status(): Promise<ServerStatus>;
   prepare(request: InstallConfirmation): Promise<void>;
+  cancel?(): Promise<void>;
   activate(): void;
 };
-export type MaintenanceAdmission = { enter(): boolean; leave(): void };
+export type MaintenanceAdmission = {
+  enter(disconnectClients?: boolean): boolean;
+  leave(): void;
+  busy?(): boolean;
+  serving?(): boolean;
+};
 const PREFIX = '/cc-managed/server/v1/';
 export function managedServerHandler(options: {
   token: string;
@@ -91,9 +98,10 @@ export function managedServerHandler(options: {
     }
     const route = request.url.slice(PREFIX.length);
     const run = async () => {
-      let authorized =
+      const serviceAuthorized =
         provided.startsWith('Bearer ') &&
         timingSafeEqual(expected, createHash('sha256').update(provided.slice(7)).digest());
+      let authorized = serviceAuthorized;
       if (
         !authorized &&
         options.authorizeDesktopTicket &&
@@ -118,8 +126,26 @@ export function managedServerHandler(options: {
         return;
       }
       throttle.succeed(address);
+      const hostInstall = request.method === 'POST' && route === 'host-install';
+      if (
+        hostInstall &&
+        (!serviceAuthorized ||
+          !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress ?? ''))
+      ) {
+        reply(403);
+        return;
+      }
       if (request.method === 'GET' && route === 'status') {
-        reply(200, await options.backend.status());
+        const status = await options.backend.status();
+        reply(200, {
+          ...status,
+          ...(serviceAuthorized
+            ? {
+                hostMaintenance: status.hostMaintenance === true && !!options.backend.cancel,
+                serving: options.admission.serving?.() === true,
+              }
+            : {}),
+        });
         return;
       }
       if (request.method === 'GET' && route === 'ready' && options.readiness && options.nonce) {
@@ -133,7 +159,7 @@ export function managedServerHandler(options: {
         reply(200, options.readiness());
         return;
       }
-      if (request.method !== 'POST' || !['check', 'install'].includes(route)) {
+      if (request.method !== 'POST' || !['check', 'install', 'host-install'].includes(route)) {
         reply(404);
         return;
       }
@@ -163,7 +189,7 @@ export function managedServerHandler(options: {
           Number.isSafeInteger(input.clientProtocol) && (input.clientProtocol as number) > 0,
           'Invalid client protocol',
         );
-        if (route === 'install')
+        if (route !== 'check')
           requireValue(
             input.confirmed === true &&
               Number.isSafeInteger(input.build) &&
@@ -182,13 +208,43 @@ export function managedServerHandler(options: {
         reply(200, await options.backend.check(input.clientProtocol as number));
         return;
       }
+      if (hostInstall) {
+        // Stage with the old service available; only the final synchronous admission
+        // may disconnect idle peers. Busy or failed staging must leave them alone.
+        if (!options.backend.cancel || (await options.backend.status()).hostMaintenance !== true) {
+          reply(409, { error: 'host-maintenance-unavailable' });
+          return;
+        }
+        if (options.admission.busy?.()) {
+          reply(409, {
+            error: 'busy; finish tasks and close native terminals; original service left running',
+          });
+          return;
+        }
+        try {
+          await options.backend.prepare(input as InstallConfirmation);
+        } catch {
+          const status = await options.backend.status();
+          reply(409, {
+            error: `${status.error ?? 'preparation-failed'}; no cutover requested; inspect service status`,
+          });
+          return;
+        }
+        if (!options.admission.enter(true)) {
+          await options.backend.cancel();
+          reply(409, {
+            error: 'busy; finish tasks and close native terminals; original service left running',
+          });
+          return;
+        }
+      }
       // enter() is synchronous: close every admission gate, then recheck all activity before any await.
-      if (!options.admission.enter()) {
+      if (!hostInstall && !options.admission.enter()) {
         reply(409, { error: 'busy' });
         return;
       }
       try {
-        await options.backend.prepare(input as InstallConfirmation);
+        if (!hostInstall) await options.backend.prepare(input as InstallConfirmation);
         let activated = false;
         const activate = () => {
           if (!activated) {

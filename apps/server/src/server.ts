@@ -295,11 +295,10 @@ export function createProxyServer(options: ServerOptions) {
   let closing = false;
   let maintenance = options.managed?.initialMaintenance ?? false;
   let webRequests = 0;
-  const managedMaintenance = {
-    enter() {
-      if (maintenance || closing) return false;
-      maintenance = true;
-      if (
+  function maintenanceBusy(disconnectClients: boolean) {
+    try {
+      return !!(
+        closing ||
         runs.size ||
         terminals.size ||
         mutations.size ||
@@ -308,11 +307,32 @@ export function createProxyServer(options: ServerOptions) {
         tasks.size ||
         tunnelTasks.size ||
         webRequests ||
-        [...peers].some((peer) => peer.authenticated || peer.registering)
-      ) {
+        store.list().some((session) => session.activeRun) ||
+        [...peers].some((peer) => peer.registering || (!disconnectClients && peer.authenticated))
+      );
+    } catch {
+      return true;
+    }
+  }
+  const managedMaintenance = {
+    serving() {
+      return !maintenance && !closing;
+    },
+    busy() {
+      return maintenance || maintenanceBusy(true);
+    },
+    enter(disconnectClients = false) {
+      if (maintenance || closing) return false;
+      maintenance = true;
+      if (maintenanceBusy(disconnectClients)) {
         maintenance = false;
         return false;
       }
+      if (disconnectClients)
+        for (const peer of peers) {
+          peer.left = true;
+          peer.socket.close(1012, 'Server update; reconnect after maintenance');
+        }
       return true;
     },
     leave() {

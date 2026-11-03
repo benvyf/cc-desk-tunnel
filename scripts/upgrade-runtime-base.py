@@ -14,7 +14,10 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import time
 import traceback
+import urllib.error
+import http.client
 
 ROOT = Path('/var/lib/cc-runtime-upgrade')
 BUILD, PROTOCOL = 10, 23
@@ -43,6 +46,53 @@ def load(name, path):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def retry_download(download, *args, **kwargs):
+    for attempt in range(3):
+        try:
+            return download(*args, **kwargs)
+        except (urllib.error.URLError, TimeoutError, ConnectionError, http.client.IncompleteRead) as error:
+            if isinstance(error, urllib.error.HTTPError) and error.code not in (408, 429, 500, 502, 503, 504):
+                raise
+            if attempt == 2:
+                raise
+            print(f'DOWNLOAD_RETRY: transient network error; attempt {attempt+2}/3; original service still running.', flush=True)
+            time.sleep(attempt + 1)
+
+
+def clean_build_cache():
+    before = shutil.disk_usage(ROOT).free
+    print(f'CLEANUP: unused Docker build cache only; available_before={before} bytes.', flush=True)
+    subprocess.run(['docker', 'builder', 'prune', '--all', '--force'], check=True, timeout=300)
+    print(f'CLEANUP: available_after={shutil.disk_usage(ROOT).free} bytes; images, containers, data and rollback resources retained.', flush=True)
+
+
+def check_docker_storage():
+    result = subprocess.run(['docker','info','--format','{{.DockerRootDir}}'],check=True,capture_output=True,text=True,timeout=15)
+    docker_root = Path(result.stdout.strip())
+    need(docker_root.is_absolute(), 'Docker storage path is unavailable; no build requested')
+    need(docker_root.stat().st_dev == ROOT.stat().st_dev, 'Docker storage uses an unbudgeted filesystem; no build requested')
+    containerd = Path('/var/lib/containerd')
+    if containerd.exists():
+        need(containerd.stat().st_dev == ROOT.stat().st_dev, 'Docker storage containerd uses an unbudgeted filesystem; no build requested')
+
+
+def finish_preparation(legacy, cleanup):
+    if cleanup:
+        clean_build_cache()
+    legacy.check_space()
+
+
+def check_recovery_records():
+    for backup in ROOT.glob('backup-*'):
+        record_path = backup / 'record.json'
+        if not record_path.is_file():
+            raise RuntimeError(f'Incomplete backup record; inspect {backup} before retrying')
+        record = json.loads(record_path.read_bytes())
+        if record.get('phase') not in ('prepared', 'installed', 'rolled-back') or (
+            record.get('phase') == 'prepared' and record.get('dataChanged')):
+            raise RuntimeError(f'Unresolved cutover; inspect {backup}; no new upgrade requested')
 
 
 def verify_release(fresh, data, expected):
@@ -148,12 +198,16 @@ def main():
     import fcntl
     with (ROOT / 'upgrade.lock').open('w') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        check_recovery_records()
         helper = Path(__file__).with_name('server-bootstrap.py')
         need(hashlib.sha256(helper.read_bytes()).hexdigest() == HELPER_SHA, 'Support helper changed')
         shutil.copyfile(helper, ROOT / 'helper.py')
         b = load('runtime_bootstrap_support', ROOT / 'helper.py')
         fresh = load('runtime_signed_release', Path(__file__).with_name('fresh-install.py'))
         fresh.ROOT = ROOT
+        for module in (b, fresh):
+            original_download = module.download
+            module.download = lambda *a, _download=original_download, **kw: retry_download(_download, *a, **kw)
         b.CONTAINER = review.NODES[node]
         original = b.Engine().request('GET', '/containers/' + b.CONTAINER + '/json')
         source = review.adapt(b, original)
@@ -164,6 +218,9 @@ def main():
             b.live_status(b.CONTAINER, release)
             print('ALREADY_INSTALLED: Build 10 / protocol 23 / Node 24.22.2; no change.')
             return
+        legacy = load('runtime_cutover', Path(__file__).with_name('install-cc-space-037.py'))
+        legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
+        legacy.check_idle(b, original)
         # The old CLI binary, SDK version and read-only policy were authenticated above. Never execute Claude.
         b.runtime_and_policy = lambda container: verify_runtime(container, node)
         work = Path(tempfile.mkdtemp(prefix='build10-', dir=ROOT)); work.chmod(0o755)
@@ -177,14 +234,14 @@ def main():
         need(identity['runtimeLevel'] == RUNTIME and identity['keys'] == b.KEYS and identity['origin'] == b.ORIGIN,
              'Candidate trust or runtime identity differs')
         if args.cleanup:
-            subprocess.run(['docker', 'builder', 'prune', '--all', '--force'], check=True, timeout=300)
-        size = sum(p.stat().st_size for p in b.DATA.rglob('*') if p.is_file() and not p.is_symlink())
-        need(shutil.disk_usage(ROOT).free >= size * 2 + 2 * 1024**3, 'Insufficient backup/preparation space; no cutover')
+            clean_build_cache()
+        legacy.check_space(reserve=2 * 1024**3)
         base = 'cc-space-runtime-base:' + original['Image'].split(':')[-1][:12]
         image = 'cc-space-runtime:build10-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         subprocess.run(['docker', 'tag', original['Image'], base], check=True, capture_output=True)
         inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True)
         if inspected.returncode:
+            check_docker_storage()
             provision_node(fresh, work)
             (work / 'Dockerfile').write_text(dockerfile(base))
             (work / '.dockerignore').write_text('*\n!Dockerfile\n!program/\n!program/**\n!runtime/\n!runtime/**\n')
@@ -200,10 +257,10 @@ def main():
         source_hashes = {str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}
         review.policy_copy(source, policy, program)
         print('2/4 Offline preflight passed; Node 24.22.2 and unchanged official CLI verified.', flush=True)
+        finish_preparation(legacy, args.cleanup)
         if not args.install:
             print('PREPARED: no service changed. Use --install for the idle cutover.')
             return
-        legacy = load('runtime_cutover', Path(__file__).with_name('install-cc-space-037.py'))
         legacy.ROOT, legacy.NODE, legacy.BASE, legacy.IMAGE = ROOT, node, original['Image'], image
         legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': BUILD, 'protocol': PROTOCOL}
         clone = b.clone_config

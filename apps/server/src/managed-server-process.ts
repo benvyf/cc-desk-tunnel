@@ -147,6 +147,10 @@ export async function forkProgram(
           );
           return backend.prepare(c as Parameters<ManagedBackend['prepare']>[0]);
         }
+        case 'cancel':
+          requireValue(request.input === null && backend.cancel, 'Invalid cancellation');
+          await backend.cancel!();
+          return null;
         case 'activate':
           requireValue(request.input === null, 'Invalid activation');
           backend.activate();

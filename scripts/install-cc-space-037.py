@@ -3,6 +3,7 @@
 
 import argparse
 import copy
+from contextlib import closing
 import hashlib
 import importlib.util
 import json
@@ -162,6 +163,62 @@ def busy(b, processes):
     return b.busy([[cell.replace('/apps/server/src/managed-server-child.ts', '/apps/server/src/managed-server-main.ts') for cell in row] for row in processes])
 
 
+def check_space(reserve=512 * 1024 * 1024):
+    if DATA.is_mount() or DATA.stat().st_dev != DATA.parent.stat().st_dev:
+        raise RuntimeError('Data mountpoint is unsupported by the offline rollback rename; no cutover')
+    size = sum(p.stat().st_size for p in DATA.rglob('*') if p.is_file() and not p.is_symlink())
+    shared = ROOT.stat().st_dev == DATA.stat().st_dev
+    targets = [('backup/recovery', ROOT, size * 2 + reserve)] if shared else [
+        ('backup', ROOT, size + reserve), ('recovery', DATA.parent, size + reserve)]
+    for stage, path, required in targets:
+        free = shutil.disk_usage(path).free
+        print(f'SPACE: {stage}; path={path}; required={required}; available={free}; missing={max(0, required-free)} bytes; required={required/1024**3:.2f} GiB; available={free/1024**3:.2f} GiB', flush=True)
+        if free < required:
+            raise RuntimeError(f'Insufficient {stage} space: required={required}; available={free}; missing={required-free} bytes; no cutover; original service left running')
+
+
+def frozen_tasks_idle(b, engine, original):
+    if busy(b, engine.request('GET', '/containers/' + original['Id'] + '/top?ps_args=-eo%20pid,args')['Processes']):
+        raise RuntimeError('Finish Claude tasks and close native terminals before upgrading; original service left running')
+    database = DATA / 'state/sessions.sqlite'
+    if not database.is_file():
+        raise RuntimeError('Expected local session state is missing')
+    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=1)) as db:
+        if any(json.loads(row[0]).get('activeRun') for row in db.execute('SELECT metadata FROM sessions')):
+            raise RuntimeError('Finish Claude tasks, including waiting runs, before upgrading; original service left running')
+
+
+def check_idle(b, original):
+    # An observational early check avoids leaving an unjournaled pause if this
+    # process is killed. install() freezes and rechecks before the actual cutover.
+    frozen_tasks_idle(b, b.Engine(), original)
+
+
+def verify_cold_backup(path):
+    expected = {'data'} | {'data/' + p.relative_to(DATA).as_posix() for p in DATA.rglob('*')}
+    seen = set()
+    with tarfile.open(path, 'r:gz') as archive:
+        for member in archive:
+            parts = Path(member.name).parts
+            if not parts or parts[0] != 'data' or '..' in parts:
+                raise RuntimeError('Cold backup contains an unexpected path')
+            if member.name in seen:
+                raise RuntimeError('Cold backup contains duplicate entries')
+            seen.add(member.name)
+            source = DATA.joinpath(*parts[1:])
+            if member.isfile() or member.islnk():
+                checksum = hashlib.sha256()
+                with archive.extractfile(member) as stream:
+                    for block in iter(lambda: stream.read(1024 * 1024), b''):
+                        checksum.update(block)
+                if source.is_symlink() or checksum.hexdigest() != digest(source):
+                    raise RuntimeError('Cold backup does not match source data')
+            elif member.issym() and (not source.is_symlink() or os.readlink(source) != member.linkname):
+                raise RuntimeError('Cold backup link differs from source data')
+    if seen != expected:
+        raise RuntimeError('Cold backup inventory differs from source data')
+
+
 def install(b, disconnect_clients=False):
     engine = b.Engine()
     if DATA.is_symlink() or not DATA.is_dir():
@@ -174,9 +231,7 @@ def install(b, disconnect_clients=False):
     candidate = engine.request('GET', '/images/' + b.urllib.parse.quote(IMAGE, safe='') + '/json')['Id']
     check = "const f=require('fs'),c=require('crypto'),a=require('assert/strict');a.equal(c.createHash('sha256').update(f.readFileSync('/app/SERVER-RELEASE.json')).digest('hex'),process.argv[1]);a.equal(c.createHash('sha256').update(f.readFileSync('/opt/runtime/cli/bin/claude')).digest('hex'),'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358');"
     subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint', '/opt/runtime/node/bin/node', candidate, '-e', check, DESCRIPTOR], check=True, timeout=30, capture_output=True)
-    size = sum(p.stat().st_size for p in DATA.rglob('*') if p.is_file() and not p.is_symlink())
-    if shutil.disk_usage(ROOT).free < size * 2 + 512 * 1024 * 1024:
-        raise RuntimeError('Insufficient free space for backup and recovery')
+    check_space()
     stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + os.urandom(4).hex()
     backup = ROOT / ('backup-' + stamp)
     backup.mkdir(mode=0o700)
@@ -199,14 +254,11 @@ def install(b, disconnect_clients=False):
         if disconnect_clients:
             # The container is frozen: no new run can start between this check
             # and network isolation. Idle client sockets will be closed by stop.
-            database = DATA / 'state/sessions.sqlite'
-            if not database.is_file():
-                raise RuntimeError('Expected local session state is missing')
-            with sqlite3.connect(database.as_uri() + '?mode=ro', uri=True, timeout=1) as db:
-                if any(json.loads(row[0]).get('activeRun') for row in db.execute('SELECT metadata FROM sessions')):
-                    raise RuntimeError('Finish Claude tasks, including waiting runs, before upgrading')
+            frozen_tasks_idle(b, engine, original)
         else:
             b.frozen_idle(original)
+        # Freeze closes the race with task/data growth during preparation.
+        check_space()
         changed = True
         record['phase'] = 'stopping'
         save(b, backup, record)
@@ -221,9 +273,11 @@ def install(b, disconnect_clients=False):
         print('Creating full cold backup; keep this terminal open.', flush=True)
         with tarfile.open(backup / 'data.tar.gz', 'w:gz', dereference=False) as archive:
             archive.add(DATA, arcname='data')
+        verify_cold_backup(backup / 'data.tar.gz')
         record['archiveSha256'] = digest(backup / 'data.tar.gz')
         record['phase'] = 'backed-up'
         save(b, backup, record)
+        print('BACKUP_VERIFIED: full cold backup and SHA256 recorded.', flush=True)
         engine.request('POST', '/containers/' + original['Id'] + '/rename?name=' + b.CONTAINER + '-before-' + stamp)
         record['dataChanged'] = True
         save(b, backup, record)

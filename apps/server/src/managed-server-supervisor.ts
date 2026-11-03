@@ -8,8 +8,10 @@ import {
   closeSync,
   fsyncSync,
   renameSync,
+  statfsSync,
 } from 'node:fs';
 import { join, resolve, relative, isAbsolute, parse, sep } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   COMPATIBILITY_PATHS,
   MAX_INDEX_BYTES,
@@ -94,6 +96,30 @@ function within(parent: string, child: string) {
   const path = relative(parent, child);
   return path === '' || (path !== '..' && !path.startsWith(`..${sep}`) && !isAbsolute(path));
 }
+export function checkBackupSpace(stateRoot: string, directories: string[], available?: number) {
+  let bytes = 0,
+    count = 0;
+  const scan = (path: string) => {
+    if (within(resolve(stateRoot), resolve(path))) return;
+    const stat = lstatSync(path);
+    requireValue(!stat.isSymbolicLink(), 'Backup symlink rejected');
+    if (stat.isDirectory()) for (const name of readdirSync(path)) scan(join(path, name));
+    else {
+      requireValue(
+        stat.isFile() && ++count <= 200000 && (bytes += stat.size) <= 8 * 1024 ** 3,
+        'Backup exceeds safe limits',
+      );
+    }
+  };
+  for (const path of directories) if (existsSync(path)) scan(path);
+  const disk = statfsSync(stateRoot);
+  const free = available ?? disk.bavail * disk.bsize;
+  const required = bytes + 512 * 1024 ** 2;
+  requireValue(
+    free >= required,
+    `Insufficient backup space: required=${required}; available=${free}; missing=${required - free} bytes; original service left running`,
+  );
+}
 export function selectBackupDirectories(paths: string[], stateRoot: string) {
   const selected: string[] = [];
   for (const path of [...new Set(paths.map((p) => resolve(p)))].sort(
@@ -116,6 +142,26 @@ function abortable<T>(operation: Promise<T>, signal: AbortSignal): Promise<T> {
   });
 }
 export async function downloadTrusted(url: string, maxBytes: number, signal?: AbortSignal) {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      return await downloadOnce(url, maxBytes, signal);
+    } catch (error) {
+      if (
+        signal?.aborted ||
+        attempt === 2 ||
+        !(
+          error instanceof TypeError ||
+          (error instanceof Error &&
+            (error.name === 'TimeoutError' || error.message === 'Transient release HTTP failure'))
+        )
+      )
+        throw error;
+      await delay((attempt + 1) * 1000, undefined, { signal });
+    }
+  }
+  throw new Error('Release download exhausted');
+}
+async function downloadOnce(url: string, maxBytes: number, signal?: AbortSignal) {
   const u = new URL(url);
   requireValue(
     u.origin === ORIGIN &&
@@ -133,6 +179,10 @@ export async function downloadTrusted(url: string, maxBytes: number, signal?: Ab
       : AbortSignal.timeout(60000),
     headers: { 'accept-encoding': 'identity' },
   });
+  if ([408, 429, 500, 502, 503, 504].includes(result.status)) {
+    await result.body?.cancel();
+    throw new Error('Transient release HTTP failure');
+  }
   requireValue(
     result.ok &&
       result.body &&
@@ -308,6 +358,7 @@ export class ManagedServerSupervisor {
   }
   async status(): Promise<ServerStatus> {
     return {
+      hostMaintenance: true,
       schema: 1,
       phase: this.journal.phase,
       current: this.current(),
@@ -369,6 +420,7 @@ export class ManagedServerSupervisor {
       this.journal.previous = this.journal.current;
       this.journal.target = index.envelope;
       this.phase('staging');
+      checkBackupSpace(this.options.stateRoot, this.options.dataDirectories);
       const bytes = await abortable(
         (this.options.download ?? downloadTrusted)(
           `${ORIGIN}/cc-updates/server/v1/artifacts/${r.build}/linux-x64/${releaseFilename(r)}`,
@@ -396,6 +448,7 @@ export class ManagedServerSupervisor {
       const fresh = await this.index(controller.signal);
       requireValue(fresh.payloadHash === index.payloadHash, 'Release changed during staging');
       checkOwner();
+      checkBackupSpace(this.options.stateRoot, this.options.dataDirectories);
       this.prepared = true;
       this.preparedOwner = owner;
       this.preparedPrevious = previous;
@@ -408,7 +461,10 @@ export class ManagedServerSupervisor {
       this.journal.previous = previous;
       this.journal.target = null;
       this.phase('failed');
-      this.failure = 'staging-failed';
+      this.failure =
+        error instanceof Error && error.message.startsWith('Insufficient backup space:')
+          ? error.message
+          : 'staging-failed';
       this.transitioning = false;
       owner.cancelMaintenance?.();
       throw error;
@@ -417,6 +473,9 @@ export class ManagedServerSupervisor {
       this.preparing = undefined;
       if (!this.transitioning && this.missedExit && !this.stopped) this.resumeMissedExit();
     }
+  }
+  cancel() {
+    this.cancelPrepared('maintenance-busy');
   }
   private cancelPrepared(reason: string) {
     if (!this.prepared) return;
@@ -441,6 +500,12 @@ export class ManagedServerSupervisor {
     )
       this.cancelPrepared('handoff-expired');
     requireValue(this.prepared && !this.stopped && this.journal.target, 'No prepared release');
+    try {
+      checkBackupSpace(this.options.stateRoot, this.options.dataDirectories);
+    } catch (error) {
+      this.cancelPrepared('insufficient-backup-space');
+      throw error;
+    }
     clearTimeout(this.handoffTimer);
     this.preparedOwner = undefined;
     this.preparedPrevious = undefined;

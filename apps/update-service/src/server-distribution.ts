@@ -305,7 +305,12 @@ export function upgradeCommand(release: ServerRelease, script: Buffer) {
       /^[a-f0-9]{64}$/.test(release.sha256),
     'Invalid upgrade identity',
   );
-  const target = { build: release.build, sha256: release.sha256, protocol: release.protocol };
+  const target = {
+    build: release.build,
+    sha256: release.sha256,
+    protocol: release.protocol,
+    host: 'auto',
+  };
   const program = `const target = ${JSON.stringify(target)};\n${script.toString('utf8')}`;
   const encoded = deflateSync(program).toString('base64');
   const loader =

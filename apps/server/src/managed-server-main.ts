@@ -29,6 +29,7 @@ const backend: ManagedBackend = {
   check: (protocol) => supervisor.check(protocol),
   status: () => supervisor.status(),
   prepare: (confirmation) => supervisor.prepare(confirmation),
+  cancel: async () => supervisor.cancel(),
   activate: () => {
     void supervisor.activate().catch(() => {
       console.error('Managed upgrade failed; administrator attention required.');

@@ -77,7 +77,23 @@ function request(route, body) {
       const check = target.protocol
         ? await request('check', { clientProtocol: target.protocol })
         : null;
-      console.log(JSON.stringify({ current: status.current, phase: status.phase, check }));
+      let descriptorSha256;
+      try {
+        descriptorSha256 = require('node:crypto')
+          .createHash('sha256')
+          .update(fs.readFileSync('/app/SERVER-RELEASE.json'))
+          .digest('hex');
+      } catch {}
+      console.log(
+        JSON.stringify({
+          current: status.current,
+          phase: status.phase,
+          check,
+          hostMaintenance: status.hostMaintenance === true,
+          serving: typeof status.serving === 'boolean' ? status.serving : undefined,
+          descriptorSha256,
+        }),
+      );
       return;
     }
     console.log(
@@ -105,8 +121,17 @@ function request(route, body) {
       throw Error(
         `The current signed release is not the pinned, compatible Build ${target.build}. No installation requested.`,
       );
-    console.log('2/3 Requesting the managed upgrade; active connections/tasks will be rejected...');
-    await request('install', {
+    const hostInstall =
+      target.host === true || (target.host === 'auto' && status.hostMaintenance === true);
+    if (hostInstall)
+      console.log(
+        '2/3 Preparing while the old service runs; idle clients disconnect only after final task and terminal checks...',
+      );
+    else
+      console.log(
+        '2/3 Requesting the managed upgrade; active connections/tasks will be rejected...',
+      );
+    await request(hostInstall ? 'host-install' : 'install', {
       clientProtocol: target.protocol,
       confirmed: true,
       build: target.build,
