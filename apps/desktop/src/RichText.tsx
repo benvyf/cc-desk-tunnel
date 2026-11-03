@@ -21,12 +21,13 @@ function drawing(children: ReactNode) {
   return /<svg[\s>]/.test(source) && source.includes('</svg>') ? source : null;
 }
 
-export function CodeBlock({ children }: { children?: ReactNode }) {
+// `plain`: a question's block, always its source (style.css shows it without the header).
+export function CodeBlock({ children, plain = false }: { children?: ReactNode; plain?: boolean }) {
   const block = useRef<HTMLPreElement>(null);
   const language = isValidElement<{ className?: string }>(children)
     ? (/\blanguage-([^\s]+)/.exec(children.props.className ?? '')?.[1] ?? 'text')
     : 'text';
-  const svg = drawing(children);
+  const svg = plain ? null : drawing(children);
   const [shown, setShown] = useState<'picture' | 'source' | 'broken'>('picture');
   const picture = svg !== null && shown === 'picture';
   return (
@@ -127,6 +128,13 @@ const components: Components = {
   a: ({ href, children }) => <Anchor href={href}>{children}</Anchor>,
   img: ({ src, alt }) => <Figure src={typeof src === 'string' ? src : ''} alt={alt ?? ''} />,
 };
+// A question is the user's own words: Markdown, but no formulas (a dollar there is a price far more often) and a
+// block of code is code, never a drawing.
+const questionComponents: Components = {
+  ...components,
+  pre: ({ children }) => <CodeBlock plain>{children}</CodeBlock>,
+};
+const questionPlugins = [remarkGfm];
 
 // Formulas are also written as \( … \) and \[ … \], which Markdown would read as escaped brackets; outside of
 // code they become the dollar form the parser knows.
@@ -204,9 +212,11 @@ function subscribeMotion(listener: () => void) {
 export default memo(function RichText({
   text,
   streaming = false,
+  question = false,
 }: {
   text: string;
   streaming?: boolean;
+  question?: boolean;
 }) {
   // Static history adds no media listeners. Live preference changes discard old reveal spans,
   // so re-enabling motion cannot replay already displayed text.
@@ -216,7 +226,7 @@ export default memo(function RichText({
     motionOff,
   );
   const reveal = streaming && !reduced;
-  const source = dollars(text);
+  const source = question ? text : dollars(text);
   const [frame, setFrame] = useState({
     source,
     streaming: reveal,
@@ -233,11 +243,13 @@ export default memo(function RichText({
   }
   return (
     <Markdown
-      remarkPlugins={remarkPlugins}
-      rehypePlugins={reveal ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins}
+      remarkPlugins={question ? questionPlugins : remarkPlugins}
+      rehypePlugins={
+        question ? [] : reveal ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins
+      }
       skipHtml
       urlTransform={urlTransform}
-      components={components}
+      components={question ? questionComponents : components}
     >
       {source}
     </Markdown>

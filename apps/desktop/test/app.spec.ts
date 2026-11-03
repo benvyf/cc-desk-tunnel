@@ -112,7 +112,8 @@ test('narrow screen, safe Markdown, switching and cancellation while awaiting ap
   );
   await settled(page);
   await expandActivity(page);
-  const typeset = page.locator('.transcript');
+  // The reply (the simulated service says the question back); the question itself is Markdown without formulas.
+  const typeset = page.locator('.transcript .message.assistant');
   await expect(typeset.locator('.katex')).toHaveCount(3);
   await expect(typeset.locator('.katex-display')).toHaveCount(1);
   await expect(typeset.locator(':not(pre) > code')).toHaveText('$5 \\(x\\)');

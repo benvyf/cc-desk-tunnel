@@ -9,7 +9,10 @@ async function settings(page: Page) {
 }
 
 // The user's words (bubble and composer) are a step above body text: 15px at the default 14px interface size.
-const user = (size: number) => `${+((size * 15) / 14).toFixed(4)}px`;
+// A question is in the interface size itself, as in Claude.
+const user = (size: number) => `${size}px`;
+// The input box stays a step larger.
+const draftSize = (size: number) => `${+((size * 15) / 14).toFixed(4)}px`;
 
 async function samples(page: Page) {
   await page.evaluate(async () => {
@@ -136,7 +139,7 @@ test('a live interface size change refits a mounted draft without typing or resi
       fontSizes: { ...prefs.fontSizes, interface: 20 },
     }));
   });
-  await expect(draft).toHaveCSS('font-size', user(20));
+  await expect(draft).toHaveCSS('font-size', draftSize(20));
   await expect.poll(() => draft.evaluate((box) => box.clientHeight)).toBeGreaterThan(before);
   expect(await draft.evaluate((box) => box.scrollHeight - box.clientHeight)).toBeLessThanOrEqual(1);
   await page.evaluate(async () => {

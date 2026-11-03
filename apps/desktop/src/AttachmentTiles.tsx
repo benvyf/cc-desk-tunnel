@@ -1,7 +1,110 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FileCode, FileText, X } from './icons.tsx';
 import { attachmentKind, fileName } from './attachments.ts';
 import type { Attachment } from './attachments.ts';
+import { localPicture } from './links.ts';
+import { Modal } from './ui.tsx';
+
+// A picture's small preview, read by the desktop app; none in the browser or for other files.
+function usePreview(path: string | undefined, kind: string) {
+  const [preview, setPreview] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  useEffect(() => {
+    setPreview(null);
+    setLoading(false);
+    if (kind !== 'IMAGE' || !path || !window.desktop?.attachmentPreview) return;
+    let current = true;
+    setLoading(true);
+    void window.desktop.attachmentPreview(path).then(
+      (value) => {
+        if (current) {
+          setPreview(value);
+          setLoading(false);
+        }
+      },
+      () => {
+        if (current) setLoading(false);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [path, kind]);
+  return { preview, loading, drop: () => setPreview(null) };
+}
+
+// What a sent question carried, in a row above its bubble: the same small tiles as in the input box, so that many
+// pictures take little room. A picture opens whole on a click, read from this computer; where it cannot be (sent
+// from another, or since moved), its preview is shown larger instead.
+function SentFile({ item }: { item: Attachment }) {
+  const kind = attachmentKind(fileName(item.path ?? item.name));
+  const { preview, drop } = usePreview(item.path, kind);
+  const [open, setOpen] = useState(false);
+  const [whole, setWhole] = useState(true);
+  const Icon = kind === 'CODE' ? FileCode : FileText;
+  const face = (
+    <>
+      {preview && (
+        <img
+          className="attachment-preview"
+          src={preview}
+          alt={item.name}
+          decoding="async"
+          onError={drop}
+        />
+      )}
+      <span className="attachment-kind">
+        <Icon />
+        {kind}
+      </span>
+      <span className="attachment-name">{item.name}</span>
+    </>
+  );
+  return (
+    <div className="attachment-slot" role="listitem">
+      {preview ? (
+        <button
+          type="button"
+          className="attachment-tile attachment-open"
+          title={`${item.path ?? item.name}（点击放大）`}
+          onClick={() => setOpen(true)}
+        >
+          {face}
+        </button>
+      ) : (
+        <div className="attachment-tile" title={item.path ?? item.name}>
+          {face}
+        </div>
+      )}
+      {open &&
+        preview &&
+        createPortal(
+          <Modal title={item.name} onClose={() => setOpen(false)}>
+            <div className="picture-view" onContextMenu={(event) => event.stopPropagation()}>
+              <img
+                src={whole && item.path ? localPicture(item.path) : preview}
+                alt={item.name}
+                onError={() => setWhole(false)}
+              />
+            </div>
+          </Modal>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
+export function MessageAttachments({ items }: { items: Attachment[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="message-attachments" role="list" aria-label="附件">
+      {items.map((item) => (
+        <SentFile key={item.id} item={item} />
+      ))}
+    </div>
+  );
+}
 
 function Tile({
   item,
@@ -12,30 +115,8 @@ function Tile({
   remove?: () => void;
   disabled: boolean;
 }) {
-  const [preview, setPreview] = useState<string | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const kind = attachmentKind(fileName(item.path ?? item.name));
-  useEffect(() => {
-    setPreview(null);
-    setPreviewLoading(false);
-    if (kind !== 'IMAGE' || !item.path || !window.desktop?.attachmentPreview) return;
-    let current = true;
-    setPreviewLoading(true);
-    void window.desktop.attachmentPreview(item.path).then(
-      (value) => {
-        if (current) {
-          setPreview(value);
-          setPreviewLoading(false);
-        }
-      },
-      () => {
-        if (current) setPreviewLoading(false);
-      },
-    );
-    return () => {
-      current = false;
-    };
-  }, [item.path, kind]);
+  const { preview, loading: previewLoading, drop } = usePreview(item.path, kind);
   const Icon = kind === 'CODE' ? FileCode : FileText;
   const preparing = item.status === 'preparing' || (previewLoading && !!remove);
   return (
@@ -52,7 +133,7 @@ function Tile({
             src={preview}
             alt={item.name}
             decoding="async"
-            onError={() => setPreview(null)}
+            onError={drop}
           />
         )}
         <span className="attachment-kind">
