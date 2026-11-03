@@ -398,6 +398,10 @@ for (const theme of ['light', 'dark']) {
       await page.setViewportSize({ width, height: 800 });
       const nav = page.locator('.turn-navigation');
       const mark = nav.locator('.turn-mark').nth(4);
+      const latest = nav.locator('.turn-mark').last();
+      const currentColor = theme === 'light' ? 'rgb(61, 61, 58)' : 'rgb(194, 192, 182)';
+      await expect(latest).toHaveAttribute('aria-current', 'true');
+      await expect(latest.locator('span')).toHaveCSS('background-color', currentColor);
       const compact = async () => {
         await expect
           .poll(() =>
@@ -436,8 +440,19 @@ for (const theme of ['light', 'dark']) {
       await compact();
       await mark.hover();
       await expect(preview).toBeVisible();
+      await mark.click();
+      await expect(mark).toHaveAttribute('aria-current', 'true');
+      await expect(mark.locator('span')).toHaveCSS('background-color', currentColor);
       await page.mouse.move(100, 100);
       await compact();
+      await expect(mark.locator('span')).toHaveCSS('background-color', currentColor);
+      await expect(latest).not.toHaveAttribute('aria-current');
+      await page.locator('.conversation').evaluate((element) => {
+        element.scrollTop = element.scrollHeight;
+      });
+      await expect(latest).toHaveAttribute('aria-current', 'true');
+      await expect(latest.locator('span')).toHaveCSS('background-color', currentColor);
+      await expect(mark).not.toHaveAttribute('aria-current');
     });
   }
 }

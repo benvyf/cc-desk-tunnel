@@ -179,7 +179,10 @@ export default function TurnNavigator({
             tabIndex={active === item.id || (!active && index === 0) ? 0 : -1}
             onPointerEnter={(event) => show(item.id, event.currentTarget)}
             onFocus={(event) => show(item.id, event.currentTarget)}
-            onClick={() => navigate(item.id)}
+            onClick={() => {
+              setActive(item.id);
+              navigate(item.id);
+            }}
           >
             <span />
           </button>

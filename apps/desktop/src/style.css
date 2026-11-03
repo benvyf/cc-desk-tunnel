@@ -2847,6 +2847,10 @@ kbd {
   transform: scaleX(1);
   background: var(--text);
 }
+.turn-mark[aria-current='true'] span {
+  height: 3px;
+  background: var(--text-2);
+}
 @media (prefers-reduced-motion: reduce) {
   .turn-mark span {
     transition: none;
