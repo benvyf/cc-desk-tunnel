@@ -103,9 +103,9 @@ test('composer grows and shrinks without shifting on focus; bubbles stay open an
   await sizeChat(page, 390);
   await send(page, '实现一个清晰、安静的聊天界面。');
   await settled(page);
-  await expect(page.locator('.message.user .message-content').last()).toHaveCSS(
+  await expect(page.locator('.message.user .user-bubble').last()).toHaveCSS(
     'border-radius',
-    '16px',
+    '12px',
   );
   await expect(page.locator('.message.assistant .message-content').last()).toHaveCSS(
     'background-color',

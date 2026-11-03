@@ -2,6 +2,49 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { FileCode, FileText, X } from './icons.tsx';
 import { attachmentKind, fileName } from './attachments.ts';
 import type { Attachment } from './attachments.ts';
+import { localPicture } from './links.ts';
+import { Picture } from './Picture.tsx';
+
+// What a sent question carried, above its bubble as in Claude: a picture as itself, one click from whole, and any
+// other file as a card with its name and kind. A picture this computer cannot read (sent from another, or since
+// moved) is a card too.
+function SentFile({ item }: { item: Attachment }) {
+  const kind = attachmentKind(fileName(item.path ?? item.name));
+  const [broken, setBroken] = useState(false);
+  if (kind === 'IMAGE' && item.path && window.desktop && !broken)
+    return (
+      <div className="message-attachment" role="listitem" data-kind={kind}>
+        <Picture
+          src={localPicture(item.path)}
+          alt={item.name}
+          link={item.path}
+          onError={() => setBroken(true)}
+        />
+      </div>
+    );
+  return (
+    <div
+      className="message-attachment message-attachment-file"
+      role="listitem"
+      data-kind={kind}
+      title={item.path ?? item.name}
+    >
+      <span className="message-attachment-name">{item.name}</span>
+      <span className="message-attachment-kind">{kind}</span>
+    </div>
+  );
+}
+
+export function MessageAttachments({ items }: { items: Attachment[] }) {
+  if (!items.length) return null;
+  return (
+    <div className="message-attachments" role="list" aria-label="附件">
+      {items.map((item) => (
+        <SentFile key={item.id} item={item} />
+      ))}
+    </div>
+  );
+}
 
 function Tile({
   item,

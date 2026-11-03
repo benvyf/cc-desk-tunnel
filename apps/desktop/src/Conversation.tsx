@@ -3,6 +3,7 @@ import {
   Suspense,
   useContext,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -48,7 +49,7 @@ import ConversationFind, { SearchExpanded } from './ConversationFind.tsx';
 import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
-import AttachmentTiles from './AttachmentTiles.tsx';
+import { MessageAttachments } from './AttachmentTiles.tsx';
 import { attachmentMessage, splitAttachmentMessage } from './attachments.ts';
 import { LinkPlace, linkTarget } from './links.ts';
 import type { Link } from './links.ts';
@@ -69,9 +70,17 @@ import { Picture } from './Picture.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
 
 const RichText = lazy(() => import('./RichText.tsx'));
-const Rich = ({ text, streaming = false }: { text: string; streaming?: boolean }) => (
+const Rich = ({
+  text,
+  streaming = false,
+  question = false,
+}: {
+  text: string;
+  streaming?: boolean;
+  question?: boolean;
+}) => (
   <Suspense fallback={<p>{text}</p>}>
-    <RichText text={text} streaming={streaming} />
+    <RichText text={text} streaming={streaming} question={question} />
   </Suspense>
 );
 
@@ -400,6 +409,67 @@ function WorkGroup({
   );
 }
 
+// A question's own words, in Markdown as Claude shows them; a line break typed in it stays a line break (style.css).
+// A long one, most often something pasted, is cut to its first ten lines (style.css) and opened on demand, as in
+// Claude; one only a little longer than that is shown whole. Searching the conversation opens every one.
+const foldFrom = 16;
+function Bubble({ text, children }: { text: string; children?: ReactNode }) {
+  const bubble = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const id = useId();
+  const searching = useContext(SearchExpanded);
+  const [long, setLong] = useState(false);
+  const [open, setOpen] = useState(false);
+  // Short questions, nearly all of them, are not measured at all.
+  const maybe = text.length > 200 || text.split('\n', foldFrom).length >= foldFrom;
+  useLayoutEffect(() => {
+    const element = body.current;
+    if (!maybe || !element) {
+      setLong(false);
+      return;
+    }
+    const measure = () => {
+      // A message off screen is not laid out (content-visibility) and measures nothing; it is measured once shown.
+      // The height scrolled is the whole text's, folded or not.
+      if (!element.scrollHeight) return;
+      const line = parseFloat(getComputedStyle(element).lineHeight) || 19;
+      setLong(element.scrollHeight > line * foldFrom);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [maybe, text]);
+  const folded = long && !open && !searching;
+  return (
+    <div className="user-bubble" ref={bubble}>
+      {children}
+      {text && (
+        <div className="user-text" id={id} ref={body} data-folded={folded || undefined}>
+          <Rich text={text} question />
+        </div>
+      )}
+      {long && !searching && (
+        <button
+          type="button"
+          className="bubble-fold"
+          aria-expanded={open}
+          aria-controls={id}
+          onClick={() => {
+            setOpen(!open);
+            // Folding a question read to its end brings its start back into view rather than leaving the reader
+            // further down the conversation.
+            if (open)
+              requestAnimationFrame(() => bubble.current?.scrollIntoView({ block: 'nearest' }));
+          }}
+        >
+          {open ? '收起' : '展开'}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // No message has a heading; what belongs to it is in a line under it, shown while the pointer is over the message. Under
 // a question: how it was delivered, its time, copy and editing, always shown at the right like the question. Under the reply that
 // closes a turn: copy, the turn's figures and the time, always shown on the latest. Replies said along the way have
@@ -471,11 +541,14 @@ function Message({
         onPointerEnter={user ? showControls : undefined}
         onPointerLeave={user ? leaveControls : undefined}
       >
-        {attached ? (
+        {attached && referenced ? (
           <>
-            {referenced && <QuoteChips quotes={referenced.quotes} />}
-            {referenced?.text && <p>{referenced.text}</p>}
-            <AttachmentTiles items={attached.files} />
+            <MessageAttachments items={attached.files} />
+            {(referenced.quotes.length > 0 || referenced.text) && (
+              <Bubble text={referenced.text}>
+                <QuoteChips quotes={referenced.quotes} />
+              </Bubble>
+            )}
           </>
         ) : (
           <Rich text={item.text} streaming={streaming} />

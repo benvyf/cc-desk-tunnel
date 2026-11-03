@@ -356,6 +356,13 @@ test('find and “回到底部” come and go with motion and leave the focus so
   await createSession(page, '动效查找');
   await send(page, Array.from({ length: 90 }, (_, index) => `第 ${index + 1} 行`).join('\n'));
   await settled(page);
+  // The long question is folded; opened, the conversation is long enough to scroll.
+  await page.locator('.message.user').getByRole('button', { name: '展开', exact: true }).click();
+  // Back at the end, so that “回到底部” comes up only when scrolled away below.
+  await page
+    .locator('.workspace .conversation')
+    .evaluate((element) => element.scrollTo({ top: element.scrollHeight }));
+  await expect(page.getByRole('button', { name: '回到底部', exact: true })).toHaveCount(0);
   const input = page.getByRole('textbox', { name: '消息' });
   await input.focus();
   await page.keyboard.press('Control+f');

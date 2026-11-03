@@ -182,6 +182,9 @@
   --button-md: 32px;
   --button-lg: 40px;
   --user-bubble: light-dark(#f0eee6, #141413);
+  /* Inside a question: a block of code is a well a step towards the page, and a link is blue, as in Claude. */
+  --user-code-bg: light-dark(#faf9f5, #1f1e1d);
+  --user-link: light-dark(#2d5f99, #8fb8e6);
   /* Code keeps a dark canvas in either app theme, on Claude's warm charcoal. */
   --code-bg: #1d1c1a;
   --code-header-bg: #161514;
@@ -3440,18 +3443,163 @@ dialog:has(.picture-view) {
   width: var(--icon-xs);
   height: var(--icon-xs);
 }
+/* A question as Claude shows one (measured on its screenshots): what it carried above, as cards; under them the
+   words, in the interface face at 14px with lines of about 18.6px and 8px between blocks, on a 12px rounded bubble
+   with 10px / 14px of room. */
 .user .message-content {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  font-family: var(--font-ui);
+  font-size: 1rem;
+  line-height: 1.33;
+}
+.user-bubble {
+  max-width: 100%;
+  min-width: 0;
+  padding: 10px 14px;
+  border-radius: var(--radius-lg);
   background: var(--user-bubble);
   box-shadow: none;
-  border-radius: var(--radius-xl);
-  padding: 10px 16px;
-  font-family: var(--font-ui);
-  font-size: calc(15rem / 14);
-  line-height: 1.6;
 }
 .user .message-content p {
   white-space: pre-wrap;
   margin: 0;
+}
+.message.user .user-text > * {
+  margin: 0;
+}
+.message.user .user-text > * + *,
+.message.user .user-bubble > .quote-references + .user-text {
+  margin-top: 8px;
+}
+.message.user .user-text li {
+  white-space: pre-wrap;
+}
+.message.user .user-text li + li {
+  margin-top: 0;
+}
+.message.user .user-text :is(ul, ol) {
+  padding-left: 24px;
+}
+.message.user .user-text :is(h1, h2, h3, h4) {
+  font-family: inherit;
+  font-size: 1.07em;
+  line-height: inherit;
+  text-wrap: wrap;
+}
+.message.user .user-text a {
+  color: var(--user-link);
+  text-decoration-color: color-mix(in srgb, var(--user-link) 45%, transparent);
+  text-underline-offset: 2px;
+}
+/* A block of code in a question is a lighter well in the bubble, without the header of a reply's block: the question
+   as a whole is what is copied. */
+.message.user .user-text .code-block {
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  background: var(--user-code-bg);
+  color: var(--text);
+}
+.message.user .user-text .code-header {
+  display: none;
+}
+.message.user .user-text .code-block > pre {
+  padding: 13px 16px;
+  color: inherit;
+  color-scheme: inherit;
+  line-height: 1.6;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+/* A long question folded: its first ten lines, the last fading out, and the way to open it under them. */
+.user-text[data-folded] {
+  max-height: 10lh;
+  overflow: hidden;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 3lh), transparent);
+}
+.bubble-fold {
+  display: block;
+  margin: 8px 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: none;
+  color: var(--text-2);
+  font: inherit;
+  font-size: calc(13rem / 14);
+  line-height: 20px;
+  cursor: pointer;
+}
+.bubble-fold:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+/* What a question carried: pictures as themselves, other files as cards with name and kind. */
+.message-attachments {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 100%;
+}
+.message-attachment {
+  max-width: 100%;
+  min-width: 0;
+}
+.message-attachment .picture {
+  display: block;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+.message-attachment .picture img {
+  max-width: min(100%, 330px);
+  max-height: 330px;
+}
+.message-attachment-file {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 10px;
+  width: 112px;
+  min-height: 112px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: calc(13rem / 14);
+  line-height: 17px;
+}
+.message-attachment-name {
+  display: -webkit-box;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+}
+.message-attachment-kind {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow: hidden;
+  padding: 1px 6px;
+  border-radius: var(--radius-xs);
+  background: var(--user-bubble);
+  color: var(--muted);
+  font-size: calc(11rem / 14);
+  line-height: 16px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+@media (forced-colors: active) {
+  .user-bubble,
+  .message-attachment-file {
+    border: 1px solid CanvasText;
+  }
 }
 .message-content {
   line-height: var(--leading-body);
@@ -3830,8 +3978,10 @@ details[open] > summary > .fold-chevron {
 }
 /* A question put in while the run went on is a word in passing: a smaller bubble. */
 .message.user.joined .message-content {
-  padding: 7px 14px;
   font-size: calc(13rem / 14);
+}
+.message.user.joined .user-bubble {
+  padding: 7px 12px;
 }
 .message-footer .message-time {
   padding: 0 4px;
@@ -4853,12 +5003,6 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
 }
 .attachment-remove:focus-visible {
   outline-offset: -2px;
-}
-.message-content .attachment-tiles {
-  padding: 6px 0 4px;
-}
-.message-content .attachment-slot {
-  animation: none;
 }
 .attachment-name {
   position: absolute;
