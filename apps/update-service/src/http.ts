@@ -14,6 +14,8 @@ import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
 import { DesktopAccess } from './desktop-access.ts';
 import { desktopServerUpdate } from './desktop-server-update.ts';
+import { HostUpdates } from './host-updates.ts';
+import { hostInstaller, hostEnrollmentCommand } from './host-updater-package.ts';
 import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
 import {
   ServerDistribution,
@@ -73,6 +75,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['fresh-nodes.js', 'text/javascript'],
     ['desktop-access.js', 'text/javascript'],
     ['monitor.js', 'text/javascript'],
+    ['node-updates.js', 'text/javascript'],
     ['style.css', 'text/css'],
   ]) {
     assets.set(file === 'index.html' ? base + '/' : `${base}/${file}`, {
@@ -86,6 +89,9 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   const distribution = new ServerDistribution(config.dataDir, config.trustedKeys);
   const freshNodes = new FreshNodes(config);
   const nodeHashes = () => ({ ...config.monitorNodes, ...freshNodes.monitorNodes() });
+  const hostUpdates = new HostUpdates(config.dataDir, () => Object.keys(nodeHashes()));
+  const installer = await hostInstaller(config);
+  assets.set(base + '/host-updater-install.py', { bytes: installer, type: 'text/plain' });
   let monitor = Object.keys(nodeHashes()).length
     ? new MonitorStore(config.dataDir, Object.keys(nodeHashes()))
     : undefined;
@@ -140,6 +146,24 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
         const url = new URL(request.url, 'http://localhost');
         if (url.search) throw new UpdateError(404, 'Not found.');
         const path = url.pathname;
+        if (path === '/cc-host/v1/enroll' || path === '/cc-host/v1/poll') {
+          if (request.method !== 'POST' || request.headers.origin !== undefined)
+            throw new UpdateError(403, 'Host channel request required.');
+          contentType(request, 'application/json');
+          let input: unknown;
+          try {
+            input = JSON.parse((await body(request, 8192)).toString('utf8'));
+          } catch {
+            throw new UpdateError(400, 'Invalid host channel JSON.');
+          }
+          const token = request.headers.authorization?.replace(/^Bearer /, '') ?? '';
+          respond(
+            response,
+            200,
+            path.endsWith('/enroll') ? hostUpdates.enroll(input) : hostUpdates.poll(token, input),
+          );
+          return;
+        }
         if (path.startsWith('/cc-access/v1/')) {
           if (request.headers.origin !== undefined && request.headers.origin !== config.origin)
             throw new UpdateError(403, 'Invalid request origin.');
@@ -405,6 +429,56 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           return;
         }
         authenticated(request);
+        const hostNode = new RegExp(
+          `^${api}/host-updates/([a-z0-9_-]{1,64})(?:/(enrollment|install))?$`,
+        ).exec(path);
+        if (hostNode) {
+          const id = hostNode[1]!;
+          const publication = distribution.status();
+          if (request.method === 'GET' && !hostNode[2]) {
+            respond(response, 200, {
+              ...hostUpdates.status(id),
+              release:
+                publication.published && !publication.expired ? publication.payload.release : null,
+            });
+          } else if (request.method === 'POST' && hostNode[2]) {
+            contentType(request, 'application/json');
+            let input: unknown;
+            try {
+              input = JSON.parse((await body(request, 1024)).toString('utf8'));
+            } catch {
+              throw new UpdateError(400, 'Invalid host update JSON.');
+            }
+            if (hostNode[2] === 'enrollment') {
+              if (
+                !input ||
+                typeof input !== 'object' ||
+                Array.isArray(input) ||
+                Object.keys(input).length
+              )
+                throw new UpdateError(400, 'Invalid enrollment request.');
+              const grant = hostUpdates.issue(id);
+              respond(response, 200, {
+                expiresAt: grant.expiresAt,
+                command: hostEnrollmentCommand(config.origin, installer, id, grant.code),
+              });
+            } else {
+              if (!publication.published || publication.expired)
+                throw new UpdateError(409, '请先发布有效的已签名 Linux 服务端。');
+              respond(
+                response,
+                202,
+                hostUpdates.enqueue(
+                  id,
+                  input,
+                  publication.payload.release,
+                  JSON.parse(distribution.index()!.toString('utf8')),
+                ),
+              );
+            }
+          } else throw new UpdateError(405, 'Method not allowed.');
+          return;
+        }
         if (path === `${api}/desktop-access` && request.method === 'GET') {
           respond(response, 200, desktopAccess.status(Object.keys(nodeHashes())));
           return;
@@ -472,9 +546,11 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
                     status.payload.release,
                     await readFile(
                       new URL(
-                        status.payload.release.build === 9
-                          ? '../../../scripts/upgrade-message-review.py'
-                          : '../../../scripts/upgrade-terminal-base.py',
+                        status.payload.release.build === 10
+                          ? '../../../scripts/upgrade-runtime-base.py'
+                          : status.payload.release.build === 9
+                            ? '../../../scripts/upgrade-message-review.py'
+                            : '../../../scripts/upgrade-terminal-base.py',
                         import.meta.url,
                       ),
                     ),
@@ -482,6 +558,10 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
                       new URL('../../../scripts/install-cc-space-037.py', import.meta.url),
                     ),
                     assets.get(base + '/server-bootstrap.py')!.bytes,
+                    assets.get(base + '/fresh-install.py')!.bytes,
+                    await readFile(
+                      new URL('../../../scripts/upgrade-message-review.py', import.meta.url),
+                    ),
                   ),
                 }
               : {}),
@@ -690,5 +770,6 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
   server.once('close', () => monitor?.close());
   server.once('close', () => moderation.close());
   server.once('close', () => desktopAccess.close());
+  server.once('close', () => hostUpdates.close());
   return server;
 }

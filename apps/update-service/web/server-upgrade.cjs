@@ -3,6 +3,9 @@ const http = require('node:http'),
 const fs = require('node:fs'),
   tls = require('node:tls');
 const direct = process.env.PROXY_TLS_MODE !== 'reverse-proxy';
+const certificate = direct
+  ? new (require('node:crypto').X509Certificate)(fs.readFileSync(process.env.PROXY_TLS_CERT))
+  : null;
 if (!process.env.PROXY_TOKEN) throw Error('Service authentication environment is missing.');
 function request(route, body) {
   return new Promise((resolve, reject) => {
@@ -24,6 +27,10 @@ function request(route, body) {
               ca: [...tls.rootCertificates, fs.readFileSync(process.env.PROXY_TLS_CERT)],
               allowPartialTrustChain: true,
               servername: process.env.PROXY_CERT_NAME,
+              checkServerIdentity: (_host, peer) =>
+                peer.fingerprint256 === certificate.fingerprint256
+                  ? undefined
+                  : Error('Local service certificate differs'),
             }
           : {}),
       },
@@ -48,7 +55,9 @@ function request(route, body) {
         });
       },
     );
-    req.setTimeout(180000, () => req.destroy(Error('Management request timed out')));
+    req.setTimeout(target.probe ? 5000 : 180000, () =>
+      req.destroy(Error('Management request timed out')),
+    );
     req.on('error', reject);
     req.end(payload);
   });
@@ -63,6 +72,14 @@ function request(route, body) {
     15000,
   );
   try {
+    if (target.probe) {
+      const status = await request('status');
+      const check = target.protocol
+        ? await request('check', { clientProtocol: target.protocol })
+        : null;
+      console.log(JSON.stringify({ current: status.current, phase: status.phase, check }));
+      return;
+    }
     console.log(
       `1/3 Checking the signed Build ${target.build} target (no Claude/provider requests)...`,
     );

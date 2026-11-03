@@ -6,6 +6,7 @@ import { setupServerDownload } from './server-download.js';
 import { setupFreshNodes } from './fresh-nodes.js';
 import { setupDesktopAccess } from './desktop-access.js';
 import { setupMonitor } from './monitor.js';
+import { setupNodeUpdates } from './node-updates.js';
 const api = '/cc-updates/admin/api';
 const $ = (id) => document.getElementById(id);
 let token = '';
@@ -56,6 +57,7 @@ function logout() {
   serverDownload.clear();
   freshNodes.clear();
   desktopAccess.clear();
+  nodeUpdates.clear();
 }
 async function request(path, options = {}) {
   const response = await fetch(api + path, {
@@ -393,9 +395,17 @@ const monitor = setupMonitor({
   notice,
   element,
   date,
-  manage: (id, tab) => desktopAccess.open(id, tab),
+  manage: (id, tab) => {
+    if (tab === 'updates') {
+      desktopAccess.clear();
+      return nodeUpdates.open(id);
+    }
+    nodeUpdates.clear();
+    return desktopAccess.open(id, tab);
+  },
 });
 const desktopAccess = setupDesktopAccess({ request, action, notice, date, monitor });
+const nodeUpdates = setupNodeUpdates({ request, action, notice });
 const navigation = setupNavigation({
   changed: queuePageRefresh,
   authenticated: () => Boolean(token),

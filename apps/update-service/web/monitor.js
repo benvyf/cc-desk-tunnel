@@ -338,6 +338,7 @@ export function setupMonitor({ request, action, notice, element: el, date, manag
       ['查看详情', 'claude'],
       ['连接配置', 'connection'],
       ['登录用户', 'users'],
+      ['更新设备', 'updates'],
     ]) {
       const button = el('button', label, 'text-button');
       button.type = 'button';

@@ -260,14 +260,30 @@ export function baseUpgradeCommand(
   script: Buffer,
   legacy: Buffer,
   support?: Buffer,
+  fresh?: Buffer,
+  previous?: Buffer,
 ) {
-  if (![8, 9].includes(release.build) || release.protocol !== 22) return undefined;
-  if (release.build === 9 && !support) return undefined;
+  const runtime = release.build === 10 && release.protocol === 23;
+  if (!runtime && (![8, 9].includes(release.build) || release.protocol !== 22)) return undefined;
+  if ((release.build === 9 || runtime) && !support) return undefined;
+  if (runtime && (!fresh || !previous || release.runtimeLevel !== RUNTIME_LEVEL)) return undefined;
+  const scriptName = runtime
+    ? 'upgrade-runtime-base.py'
+    : release.build === 9
+      ? 'upgrade-message-review.py'
+      : 'upgrade-terminal-base.py';
   const files = {
-    [release.build === 9 ? 'upgrade-message-review.py' : 'upgrade-terminal-base.py']:
-      script.toString('base64'),
+    [scriptName]: script.toString('base64'),
     'install-cc-space-037.py': legacy.toString('base64'),
-    ...(release.build === 9 ? { 'server-bootstrap.py': support!.toString('base64') } : {}),
+    ...(release.build === 9 || runtime
+      ? { 'server-bootstrap.py': support!.toString('base64') }
+      : {}),
+    ...(runtime
+      ? {
+          'fresh-install.py': fresh!.toString('base64'),
+          'upgrade-message-review.py': previous!.toString('base64'),
+        }
+      : {}),
   };
   const encoded = deflateSync(JSON.stringify(files)).toString('base64');
   const wrapper = `import base64,json,pathlib,subprocess,tempfile,zlib
@@ -275,7 +291,7 @@ files=json.loads(zlib.decompress(base64.b64decode("${encoded}")))
 with tempfile.TemporaryDirectory(prefix='cc-terminal-base-') as directory:
  for name,data in files.items():
   (pathlib.Path(directory)/name).write_bytes(base64.b64decode(data))
- subprocess.run(['python3',str(pathlib.Path(directory)/'${release.build === 9 ? 'upgrade-message-review.py' : 'upgrade-terminal-base.py'}'),'--cleanup',${release.build === 9 ? `'--sha256','${release.sha256}',` : "'--disconnect-clients',"}'--install'],check=True)
+ subprocess.run(['python3',str(pathlib.Path(directory)/'${scriptName}'),'--cleanup',${release.build === 9 || runtime ? `'--sha256','${release.sha256}',` : "'--disconnect-clients',"}'--install'],check=True)
 `;
   return `sudo python3 -c 'import base64;exec(base64.b64decode("${Buffer.from(wrapper).toString('base64')}"))'`;
 }
