@@ -53,6 +53,10 @@ Files: `scripts/package-update-service.mjs`, `apps/update-service/src/host-updat
 ## Task 5: Review and delivery
 
 - [x] Request independent review of the final diff against the approved spec; fix material findings and rerun affected checks.
-- [ ] Commit the tested code and produce the update-service archive from the clean checkout, verifying its manifest and installer.
+- [x] Commit the tested code and produce the update-service archive from the clean checkout, verifying its manifest and installer.
 - [x] Prepare reviewable deployment/adoption artifacts and explicit status. Keep node business upgrades user-confirmed and do not upgrade other machines.
 - [x] Report implementation, checks, and any remaining live rollout requirement accurately.
+
+## Delivery evidence
+
+Implementation commit: `ed12fb4123613e0f90c8b448576c62b40cbedc83`. Update-service archive SHA256: `dbe8e095f95da9da1dc425a0996f8ac217979fb6266e000f1feaf2d8c1c3ed39`. All 65 runtime file hashes and generated installer syntax verified; standalone packaged runtime import passed. Node full suite: 405 passed, 5 skipped; additional real browser command-page check: 1 passed. Linux Python suites: 27 + 13 + 6 + 4 = 50 passed. No production deployment performed; publication and node adoption remain the explicit rollout checkpoint in the approved spec.
