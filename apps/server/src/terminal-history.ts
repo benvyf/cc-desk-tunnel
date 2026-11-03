@@ -1,3 +1,5 @@
+import { getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
+import type { SessionStoreEntry } from '@anthropic-ai/claude-agent-sdk';
 import { createHash } from 'node:crypto';
 import { homedir } from 'node:os';
 import { join, resolve, dirname, basename } from 'node:path';
@@ -27,7 +29,7 @@ export function terminalHistoryPath(config: string, cwd: string, nativeId: strin
     throw new Error('此 CLI 长路径历史格式暂不支持，请使用官方历史选择器。');
   return join(config, 'projects', project, `${nativeId}.jsonl`);
 }
-export async function readTerminalHistory(config: string, cwd: string, nativeId: string) {
+async function openTerminalHistory(config: string, cwd: string, nativeId: string) {
   const path = terminalHistoryPath(config, cwd, nativeId);
   let file;
   try {
@@ -47,6 +49,47 @@ export async function readTerminalHistory(config: string, cwd: string, nativeId:
       actual,
       constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
     );
+    return file;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+}
+export async function readTerminalMessages(config: string, cwd: string, nativeId: string) {
+  return getSessionMessages(nativeId, {
+    dir: cwd,
+    includeSystemMessages: true,
+    sessionStore: {
+      async append() {
+        throw new Error('Terminal history reader is read-only');
+      },
+      async load() {
+        const file = await openTerminalHistory(config, cwd, nativeId);
+        if (!file) return null;
+        try {
+          if (!(await file.stat()).isFile()) return null;
+          const text = await file.readFile('utf8');
+          return text.split('\n').flatMap((line): SessionStoreEntry[] => {
+            try {
+              const value = JSON.parse(line);
+              return value && typeof value === 'object' && typeof value.type === 'string'
+                ? [value]
+                : [];
+            } catch {
+              return [];
+            }
+          });
+        } finally {
+          await file.close();
+        }
+      },
+    },
+  });
+}
+export async function readTerminalHistory(config: string, cwd: string, nativeId: string) {
+  const file = await openTerminalHistory(config, cwd, nativeId);
+  if (!file) return null;
+  try {
     const stat = await file.stat();
     if (!stat.isFile() || !stat.size) return null;
     const bytes = Buffer.alloc(Math.min(stat.size, 256 * 1024));

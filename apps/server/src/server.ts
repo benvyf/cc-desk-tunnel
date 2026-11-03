@@ -1,5 +1,5 @@
 import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { mkdirSync, readFileSync, rmSync, unwatchFile, watchFile } from 'node:fs';
 import { createServer } from 'node:http';
 import { totalmem } from 'node:os';
 import { join } from 'node:path';
@@ -41,10 +41,29 @@ import type {
   Session,
   TerminalControl,
   TunnelCredentials,
+  TerminalActivity,
 } from '@cc-desk-tunnel/protocol';
-import { runClaude, nativeDirectory, prepareNativeDirectory, readNativeStatus } from './claude.ts';
+import {
+  runClaude,
+  nativeDirectory,
+  prepareNativeDirectory,
+  readNativeStatus,
+  quotas,
+} from './claude.ts';
 import type { ClaudeOptions } from './claude.ts';
-import { terminalHistoryContext, readTerminalHistory } from './terminal-history.ts';
+import {
+  terminalHistoryContext,
+  readTerminalHistory,
+  readTerminalMessages,
+  terminalHistoryPath,
+} from './terminal-history.ts';
+import { statusLineQuota } from './native-controls.ts';
+import {
+  terminalEvents,
+  terminalSettings,
+  terminalHooks,
+  terminalActivity,
+} from './terminal-transcript.ts';
 import { readTerminalFile } from './terminal-files.ts';
 import { DomainError } from './errors.ts';
 import { accountMessageForClient } from './account-presentation.ts';
@@ -86,6 +105,8 @@ type Peer = {
   registering: boolean;
   // The client said it was closing the connection: nothing is kept for it to come back to.
   left: boolean;
+  // The client keeps the plan quota current on its screen, so the service reads it while runs go on.
+  quotaWanted?: boolean;
   subscriptions: Set<string>;
   responses: Map<string, { command: string; response: Promise<ServerMessage> }>;
 };
@@ -111,7 +132,7 @@ export type Run = {
   open?: Fragment;
   input?: NativeInput;
   controls: {
-    refresh?: () => Promise<void>;
+    refresh?: (asked?: boolean) => Promise<void>;
     stopTask?: (taskId: string) => Promise<void>;
     backgroundTask?: (toolId: string) => Promise<boolean>;
   };
@@ -121,9 +142,28 @@ export type Run = {
 type Terminal = {
   id: string;
   sessionId: string;
-  owner: Peer;
+  owner?: Peer;
   process?: NativeTerminal;
   closing?: boolean;
+  idle?: ReturnType<typeof setTimeout>;
+  continued?: {
+    nativeId: string;
+    config: string;
+    empty: boolean;
+    known: Set<string>;
+    connectionId: string;
+    at: string;
+    last?: string;
+    settingsPath: string;
+    hooksPath: string;
+    statusPath: string;
+    quota?: string;
+    offset: number;
+    heard: Promise<void>;
+    activity?: TerminalActivity;
+    elsewhere?: boolean;
+    toldElsewhere?: boolean;
+  };
 };
 // One of the user's computers, while it is connected or expected back: its connections, the door its commands
 // go through, and the wait that ends its runs if it stays away.
@@ -134,6 +174,7 @@ type Seat = {
   opening?: Promise<void>;
   away?: NodeJS.Timeout;
 };
+const INTERRUPTS = new Set(['\x1b', '\x03', '\x1b[27u', '\x1b[99;5u']);
 type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
 export type ServerOptions = {
   managed?: {
@@ -192,6 +233,7 @@ export function createProxyServer(options: ServerOptions) {
     : undefined;
   const usageReceiver = options.claude ? createUsageReceiver(usage) : undefined;
   const peers = new Set<Peer>();
+  quotas.wanted = () => [...peers].some((peer) => peer.quotaWanted);
   // One run or one terminal per session, each a CLI process of its own in the session's directory. What reads
   // or changes the state the CLI keeps for all of them — a status read or session change (`mutations`), an
   // account change — waits until none is going.
@@ -526,11 +568,11 @@ export function createProxyServer(options: ServerOptions) {
   }
 
   // Stores an event and sends it to the session's subscribers; quota readings also drive the usage periods.
-  function record(sessionId: string, runId: string, payload: EventPayload) {
+  function record(sessionId: string, runId: string, payload: EventPayload, at?: string) {
     accountMonitor?.observe(payload, sessionId, runId);
     if (payload.type === 'native.metrics' && payload.rateLimits?.available)
       usage.observe(payload.rateLimits);
-    const event = store.append(sessionId, runId, payload);
+    const event = store.append(sessionId, runId, payload, at);
     broadcast({ type: 'session.event', event }, sessionId);
     return event;
   }
@@ -724,11 +766,13 @@ export function createProxyServer(options: ServerOptions) {
     const active =
       runs.get(command.sessionId) ?? [...runs.values()].find((run) => run.controls.refresh);
     if (active?.controls.refresh && !mutations.size) {
-      await active.controls.refresh();
+      await active.controls.refresh(command.quota);
       return;
     }
-    if (terminals.size || runs.size || mutations.size)
+    if ((terminals.size && !command.quota) || runs.size || mutations.size)
       throw new DomainError('native_busy', '运行结束后再刷新原生状态。');
+    const resume = !terminals.has(command.sessionId);
+    const last = resume ? null : store.lastMetrics(command.sessionId);
     mutations.add(command.sessionId);
     const controller = new AbortController();
     const closed = () => controller.abort();
@@ -741,8 +785,13 @@ export function createProxyServer(options: ServerOptions) {
         nativeRoot(command.sessionId),
         command.sessionId,
         controller.signal,
+        { asked: command.quota, previous: store.lastMetrics(command.sessionId)?.usage, resume },
       );
-      for (const payload of events) {
+      for (const read of events) {
+        const payload: EventPayload =
+          resume || read.type !== 'native.metrics'
+            ? read
+            : { ...read, context: last?.context ?? null, usage: last?.usage ?? null };
         const event = record(command.sessionId, command.requestId, payload);
         if (!peer.subscriptions.has(command.sessionId))
           send(peer, { type: 'session.event', event });
@@ -770,7 +819,23 @@ export function createProxyServer(options: ServerOptions) {
         '此节点已启用内容审核，请使用聊天输入；原生终端暂不可用。',
       );
     if (!options.claude) throw new DomainError('native_unavailable', '离线模拟不启动原生终端。');
-    if (terminals.has(command.sessionId) || runs.has(command.sessionId) || mutations.size)
+    const existing = terminals.get(command.sessionId);
+    if (existing?.process && !existing.closing) {
+      target(peer, session);
+      if (existing.owner === peer) throw new DomainError('native_busy', '原生终端已经打开。');
+      if (existing.owner && existing.owner !== peer)
+        throw new DomainError('not_owner', '原生终端正在另一连接中显示。');
+      existing.owner = peer;
+      clearTimeout(existing.idle);
+      send(peer, {
+        type: 'terminal.opened',
+        sessionId: existing.sessionId,
+        terminalId: existing.id,
+      });
+      await existing.process.attach(command.cols, command.rows);
+      return;
+    }
+    if (existing || runs.has(command.sessionId) || mutations.size)
       throw new DomainError('native_busy', '请先结束这个会话的运行或会话管理，再打开终端。');
     const device = target(peer, session);
     // target() may claim a legacy session; use its persisted device identity.
@@ -802,7 +867,7 @@ export function createProxyServer(options: ServerOptions) {
         const now = new Date().toISOString();
         history = {
           sessionId: session.id,
-          nativeId: randomUUID(),
+          nativeId: session.id,
           root: nativeRoot(session.id),
           deviceId: session.device!.id,
           pathKey: pathKey(session.projectPath),
@@ -833,49 +898,100 @@ export function createProxyServer(options: ServerOptions) {
       const saved = await readTerminalHistory(context.config, cwd, history.nativeId);
       if (history.mode === 'resume' && !saved)
         throw new DomainError('history_missing', '官方历史已删除或尚无有效消息，不会静默新建。');
-      if (history.mode === 'new' && saved)
+      if (history.mode === 'new' && saved && history.nativeId !== session.id)
         throw new DomainError('history_exists', '此终端已有官方历史，请显式选择继续历史会话。');
+      const messages = await readTerminalMessages(context.config, cwd, history.nativeId);
+      const directory = join(store.directory, 'terminal-runtime');
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      current.continued = {
+        nativeId: history.nativeId,
+        config: context.config,
+        empty: !messages.length,
+        known: new Set(messages.map((message) => message.uuid)),
+        connectionId: peer.id,
+        at: new Date().toISOString(),
+        last: messages.at(-1)?.uuid,
+        settingsPath: join(directory, `${current.id}.json`),
+        hooksPath: join(directory, `${current.id}.hooks`),
+        statusPath: join(directory, `${current.id}.status`),
+        offset: 0,
+        heard: Promise.resolve(),
+        activity: 'idle',
+      };
+      terminalSettings(
+        current.continued.settingsPath,
+        current.continued.hooksPath,
+        options.claude.settingsPath,
+        current.continued.statusPath,
+      );
       if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
       current.process = new NativeTerminal(
         executable,
         terminalArguments(
-          options.claude,
+          { ...options.claude, settingsPath: current.continued.settingsPath },
           session,
           ssh ? sessionSsh(store.directory, session.id, ssh) : undefined,
-          history,
+          { ...history, mode: saved ? 'resume' : history.mode },
         ),
         {
           cwd,
           cols: command.cols,
           rows: command.rows,
           env,
+          screen: {
+            detached: () => {
+              if (current.owner)
+                send(current.owner, {
+                  type: 'terminal.detached',
+                  sessionId: current.sessionId,
+                  terminalId: current.id,
+                  reason: 'stalled',
+                });
+              detachTerminal(current);
+            },
+          },
         },
-        (data, bytes) =>
-          send(peer, {
-            type: 'terminal.data',
-            sessionId: current.sessionId,
-            terminalId: current.id,
-            data,
-            bytes,
-          }),
-        (exitCode) => {
+        (data, bytes) => {
+          if (current.owner)
+            send(current.owner, {
+              type: 'terminal.data',
+              sessionId: current.sessionId,
+              terminalId: current.id,
+              data,
+              bytes,
+            });
+        },
+        async (exitCode) => {
           if (terminals.get(current.sessionId) !== current) return;
+          clearTimeout(current.idle);
+          unwatchFile(current.continued!.hooksPath);
+          unwatchFile(current.continued!.statusPath);
+          await heardTerminal(current, true);
+          if (
+            current.continued!.empty &&
+            current.continued!.nativeId === session.id &&
+            !store.hasNativeContext(session.id)
+          )
+            rmSync(terminalHistoryPath(context.config, cwd, session.id), { force: true });
+          terminalQuota(current);
+          cleanupTerminal(current);
           store.touchTerminalHistory(current.sessionId);
-          store.append(current.sessionId, current.id, {
+          record(current.sessionId, current.id, {
             type: 'run.status',
             status: 'completed',
             surface: 'terminal',
             connectionId: peer.id,
           });
           updated(current.sessionId);
-          send(peer, {
-            type: 'terminal.closed',
-            sessionId: current.sessionId,
-            terminalId: current.id,
-            exitCode,
-            reason: current.process?.reason ?? 'process_exit',
-          });
+          if (current.owner)
+            send(current.owner, {
+              type: 'terminal.closed',
+              sessionId: current.sessionId,
+              terminalId: current.id,
+              exitCode,
+              reason: current.process?.reason ?? 'process_exit',
+            });
           terminals.delete(current.sessionId);
         },
       );
@@ -885,17 +1001,20 @@ export function createProxyServer(options: ServerOptions) {
         );
         return;
       }
-      store.append(command.sessionId, current.id, {
+      record(command.sessionId, current.id, {
         type: 'run.status',
         status: 'running',
         surface: 'terminal',
         connectionId: peer.id,
       });
       updated(command.sessionId);
+      watchFile(current.continued.hooksPath, { interval: 500 }, () => void heardTerminal(current));
+      watchFile(current.continued.statusPath, { interval: 1000 }, () => terminalQuota(current));
       send(peer, { type: 'terminal.opened', sessionId: command.sessionId, terminalId: current.id });
       store.touchTerminalHistory(command.sessionId);
     } catch (error) {
       await current.process?.close();
+      cleanupTerminal(current);
       if (terminals.get(current.sessionId) === current) terminals.delete(current.sessionId);
       if (error instanceof DomainError) throw error;
       console.error(
@@ -904,6 +1023,146 @@ export function createProxyServer(options: ServerOptions) {
         error instanceof Error ? error.stack : String(error),
       );
       throw new DomainError('terminal_failed', '原生终端启动失败，请检查 Linux PTY 组件与 CLI。');
+    }
+  }
+  function detachTerminal(terminal: Terminal) {
+    terminal.owner = undefined;
+    terminal.process?.detach();
+    clearTimeout(terminal.idle);
+    terminal.idle = setTimeout(() => {
+      terminal.closing = true;
+      const task = terminal.process?.close('disconnected');
+      if (task) track(task);
+    }, graceMs);
+  }
+  function cleanupTerminal(terminal: Terminal) {
+    if (!terminal.continued) return;
+    for (const path of [
+      terminal.continued.settingsPath,
+      terminal.continued.hooksPath,
+      terminal.continued.statusPath,
+    ]) {
+      unwatchFile(path);
+      rmSync(path, { force: true });
+    }
+  }
+  function heardTerminal(terminal: Terminal, ended = false, interrupted = false) {
+    const continued = terminal.continued!;
+    const task = continued.heard
+      .then(async () => {
+        const { hooks, offset } = terminalHooks(continued.hooksPath, continued.offset);
+        continued.offset = offset;
+        let activity: TerminalActivity | undefined;
+        for (const hook of hooks) {
+          if (typeof hook.session_id === 'string' && hook.session_id !== continued.nativeId)
+            continued.elsewhere = true;
+          activity = terminalActivity(hook) ?? activity;
+        }
+        interrupted &&= !hooks.length && continued.activity === 'working';
+        if (interrupted) activity = 'idle';
+        if (ended || interrupted || hooks.some((hook) => terminalActivity(hook) === 'idle'))
+          await importTerminal(terminal);
+        if (ended || !activity || activity === continued.activity) return;
+        continued.activity = activity;
+        record(terminal.sessionId, terminal.id, {
+          type: 'run.status',
+          status: 'running',
+          surface: 'terminal',
+          activity,
+          connectionId: continued.connectionId,
+        });
+        updated(terminal.sessionId);
+      })
+      .catch((error) =>
+        console.error(
+          'Terminal conversation import failed',
+          { sessionId: terminal.sessionId, terminalId: terminal.id },
+          error,
+        ),
+      );
+    continued.heard = task;
+    return task;
+  }
+  // The quota a terminal's CLI showed in its status line, its replies' as a chat run's stream would carry it: it goes
+  // to the account's quota, and every connection is told, as the quota is the account's, not the session's.
+  function terminalQuota(terminal: Terminal) {
+    const continued = terminal.continued!;
+    let windows;
+    try {
+      windows = statusLineQuota(JSON.parse(readFileSync(continued.statusPath, 'utf8')));
+    } catch {
+      return;
+    }
+    const heard = JSON.stringify(windows);
+    if (!windows.length || heard === continued.quota) return;
+    continued.quota = heard;
+    const last = store.lastMetrics(terminal.sessionId);
+    const rateLimits = quotas.observeTerminal(windows);
+    // Nothing the status line showed still holds: the quota the clients have is left as it is.
+    if (!rateLimits?.available) return;
+    usage.observe(rateLimits);
+    accountMonitor?.observe(
+      {
+        type: 'native.metrics',
+        context: last?.context ?? null,
+        usage: last?.usage ?? null,
+        rateLimits,
+      },
+      terminal.sessionId,
+      terminal.id,
+    );
+    const event = store.append(terminal.sessionId, terminal.id, {
+      type: 'native.metrics',
+      context: last?.context ?? null,
+      usage: last?.usage ?? null,
+      rateLimits,
+    });
+    broadcast({ type: 'session.event', event });
+  }
+  async function importTerminal(terminal: Terminal) {
+    const continued = terminal.continued!;
+    const { known } = continued;
+    const { sessionId } = terminal;
+    const now = new Date().toISOString();
+    // Each at the time the CLI recorded it, after what was recorded of its turns before and no later than now. What the
+    // terminal was doing is recorded as it happens, and does not move them: a turn keeps the times it took.
+    const emit = (payload: EventPayload, at?: string) => {
+      const time = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : now;
+      continued.at = time < continued.at ? continued.at : time > now ? now : time;
+      record(sessionId, terminal.id, payload, continued.at);
+    };
+    const dir = nativeDirectory(store.directory, nativeRoot(sessionId));
+    const messages = await readTerminalMessages(continued.config, dir, continued.nativeId);
+    continued.empty = !messages.length;
+    if (messages.length && continued.nativeId === sessionId && !store.hasNativeContext(sessionId)) {
+      const answer = messages.findLast((message) => message.type === 'assistant')?.message as
+        { model?: unknown } | undefined;
+      emit({
+        type: 'native.session',
+        nativeSessionId: sessionId,
+        model: typeof answer?.model === 'string' ? answer.model : '',
+        version: '',
+      });
+    }
+    const compacted = messages.some(
+      (message) =>
+        !known.has(message.uuid) && (message as { isCompactSummary?: boolean }).isCompactSummary,
+    );
+    if (
+      continued.last &&
+      !compacted &&
+      !messages.some((message) => message.uuid === continued.last)
+    )
+      emit({ type: 'native.notice', text: '终端里回退了对话，上面有些内容已不在上下文中。' });
+    terminalEvents(messages, known, emit);
+    for (const message of messages) known.add(message.uuid);
+    continued.last = messages.at(-1)?.uuid ?? continued.last;
+    if (continued.elsewhere && !continued.toldElsewhere) {
+      continued.toldElsewhere = true;
+      emit({
+        type: 'native.notice',
+        text: '终端里换到了另一段对话（/clear 或 /resume），那之后的内容不在这个会话中。',
+      });
     }
   }
   // Rename and delete change the native session first; the proxy record follows only when that succeeded.
@@ -1419,6 +1678,9 @@ export function createProxyServer(options: ServerOptions) {
       case 'usage.summary':
         send(peer, { type: 'usage.summary', requestId: command.requestId, ...usage.summary() });
         return undefined;
+      case 'quota.watch':
+        peer.quotaWanted = command.active;
+        return undefined;
       case 'session.stats':
         store.get(command.sessionId);
         send(peer, {
@@ -1591,7 +1853,7 @@ export function createProxyServer(options: ServerOptions) {
         protocolVersion: PROTOCOL_VERSION,
         connectionId: peer.id,
         adapter,
-        terminalWorkspace: { version: 1, minRows: 1 },
+        terminalWorkspace: { version: 1, minRows: 1, resumable: true },
         terminalFiles: { version: 1 },
         terminalHistory: { version: 1 },
         sideConversations: true,
@@ -1664,7 +1926,7 @@ export function createProxyServer(options: ServerOptions) {
       protocolVersion: PROTOCOL_VERSION,
       connectionId: peer.id,
       adapter,
-      terminalWorkspace: { version: 1, minRows: 1 },
+      terminalWorkspace: { version: 1, minRows: 1, resumable: true },
       terminalFiles: { version: 1 },
       terminalHistory: { version: 1 },
       sideConversations: true,
@@ -1779,8 +2041,21 @@ export function createProxyServer(options: ServerOptions) {
       return;
     }
     try {
-      if (control.type === 'terminal.input') current.process?.write(control.data);
-      else if (control.type === 'terminal.resize')
+      if (control.type === 'terminal.input') {
+        current.process?.write(control.data);
+        const continued = current.continued;
+        if (continued?.activity === 'working' && INTERRUPTS.has(control.data)) {
+          const offset = continued.offset;
+          setTimeout(() => {
+            if (
+              !current.process?.exited &&
+              continued.activity === 'working' &&
+              continued.offset === offset
+            )
+              void heardTerminal(current, false, true);
+          }, 2000).unref();
+        }
+      } else if (control.type === 'terminal.resize')
         current.process?.resize(control.cols, control.rows);
       else current.process?.acknowledge(control.bytes);
     } catch {
@@ -1886,6 +2161,13 @@ export function createProxyServer(options: ServerOptions) {
     if (seats.get(seat.device) !== seat) return;
     seats.delete(seat.device);
     for (const run of runs.values()) if (run.device === seat.device) cancel(run, reason);
+    for (const terminal of terminals.values()) {
+      if (store.get(terminal.sessionId).session.device?.id === seat.device) {
+        terminal.closing = true;
+        const task = terminal.process?.close('disconnected');
+        if (task) track(task);
+      }
+    }
     if (seat.door) track(seat.door.close(), tunnelTasks);
     announce();
   }
@@ -1896,20 +2178,34 @@ export function createProxyServer(options: ServerOptions) {
     peers.delete(peer);
     for (const terminal of terminals.values())
       if (terminal.owner === peer) {
-        terminal.closing = true;
-        const task = terminal.process?.close('disconnected');
-        if (task) track(task);
+        if (
+          !closing &&
+          !peer.left &&
+          terminal.process &&
+          !terminal.process.closing &&
+          !terminal.closing
+        )
+          detachTerminal(terminal);
+        else {
+          terminal.closing = true;
+          const task = terminal.process?.close('disconnected');
+          if (task) track(task);
+        }
       }
     const seat = peer.device && seats.get(peer.device.id);
     if (seat?.peers.delete(peer)) {
       if (seat.door?.uses(peer.tunnel))
         seat.door.use([...seat.peers].findLast((other) => other.tunnel?.ssh)?.tunnel);
       if (!seat.peers.size) {
-        const waiting = [...runs.values()].some((run) => run.device === seat.device);
+        const waiting =
+          [...runs.values()].some((run) => run.device === seat.device) ||
+          [...terminals.values()].some(
+            (terminal) => store.get(terminal.sessionId).session.device?.id === seat.device,
+          );
         const gone = options.claude
           ? '连接断开，运行未重放；在途命令结果可能未知。'
           : '连接断开，运行未重放。';
-        if (peer.left || !waiting || !graceMs) vacate(seat, gone);
+        if (closing || peer.left || !waiting || !graceMs) vacate(seat, gone);
         else
           seat.away = setTimeout(
             () =>

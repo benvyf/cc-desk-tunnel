@@ -9157,3 +9157,16 @@ dialog:has(.web-settings-form) {
 .side-conversation .composer-stack {
   max-width: none;
 }
+
+.quota-live {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+.quota-live small {
+  display: block;
+  color: var(--faint);
+  font-size: var(--font-xs);
+}

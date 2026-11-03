@@ -127,9 +127,10 @@ export default function NativeTerminal({
       size = '',
       resizeFrame = 0;
     let outputLost = false;
+    let reconnecting = false;
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
     const early: { terminalId: string; data: string; bytes: number }[] = [];
-    const connectionId = client.state?.connectionId;
+    let connectionId = client.state?.connectionId;
     let prediction: TerminalPrediction | null = null;
     const minimumRows = client.state?.terminalWorkspace?.minRows ?? 5;
     // A window opened for the terminal is handed the page's stylesheets as it opens; one that is still loading
@@ -389,18 +390,53 @@ export default function NativeTerminal({
                   ? '终端控制失败'
                   : `退出码 ${message.exitCode ?? '未知'}`;
         status('ended', `已结束 · ${reason}`);
+      } else if (message.type === 'terminal.detached' && message.terminalId === id) {
+        prediction?.clear();
+        id = null;
+        opening = false;
+        closeRequested = false;
+        status('disconnected', '终端暂时停止显示，可重新连接');
       } else if (message.type === 'connection.error' && message.terminalId === id)
         setError(message.message);
     });
     const disconnected = () => {
+      const deviceId = client.state.sessions.find((session) => session.id === sessionId)?.device
+        ?.id;
+      const executionReady =
+        !deviceId ||
+        !client.state.devices ||
+        client.state.devices.some((device) => device.id === deviceId && device.ready);
+      if (
+        reconnecting &&
+        executionReady &&
+        client.state.status === 'connected' &&
+        client.state.terminalWorkspace?.resumable &&
+        client.state.connectionId !== connectionId &&
+        phaseNow() === 'disconnected' &&
+        !disposed
+      ) {
+        reconnecting = false;
+        connectionId = client.state.connectionId;
+        terminal.reset();
+        pendingBytes = 0;
+        bufferedBytes = 0;
+        early.length = 0;
+        size = '';
+        closeRequested = false;
+        outputLost = false;
+        status('opening', '正在恢复终端');
+        openTask = start();
+        return;
+      }
       if (client.state.status !== 'connected' || client.state.connectionId !== connectionId) {
+        if (client.state.status === 'reconnecting') reconnecting = true;
         prediction?.clear();
         id = null;
         opening = false;
         closeRequested = true;
         clearTimeout(ackTimer);
         if (phaseNow() !== 'ended' && phaseNow() !== 'failed')
-          status('disconnected', '连接中断 · 终端不会续接');
+          status('disconnected', '连接中断 · 正在等待恢复终端');
       }
     };
     const unwatch = client.subscribe?.(disconnected);
@@ -525,8 +561,13 @@ export default function NativeTerminal({
         terminal.focus();
       },
       retry: () => {
-        if (phaseNow() === 'failed') {
+        if (phaseNow() === 'failed' || phaseNow() === 'disconnected') {
+          connectionId = client.state.connectionId;
+          terminal.reset();
+          pendingBytes = 0;
+          size = '';
           closeRequested = false;
+          status('opening', '正在恢复终端');
           openTask = start();
           return;
         }
@@ -606,9 +647,13 @@ export default function NativeTerminal({
         </span>
       )}
       {error && <p role="alert">{error}</p>}
-      {(phase === 'failed' || phase === 'unknown') && (
+      {(phase === 'failed' || phase === 'unknown' || phase === 'disconnected') && (
         <Button size="sm" onClick={() => handle.current?.retry()}>
-          {phase === 'failed' ? '重试启动' : '确认终端状态'}
+          {phase === 'disconnected'
+            ? '重新连接终端'
+            : phase === 'failed'
+              ? '重试启动'
+              : '确认终端状态'}
         </Button>
       )}
       <div className="terminal-host" ref={host} />

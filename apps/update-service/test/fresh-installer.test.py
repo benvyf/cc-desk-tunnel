@@ -73,6 +73,15 @@ class InstallerTests(unittest.TestCase):
             download.assert_not_called()
             run.assert_not_called()
 
+    def test_selected_runtime_downloads_the_pinned_node_and_rejects_wrong_bytes(self):
+        for level, version in [('node24-cli2.1.295-v1', '24.21.0'),
+                               ('node24-cli2.1.295-v2', '24.22.2')]:
+            with self.subTest(level=level), patch.object(fresh, 'download', return_value=b'wrong archive') as download:
+                with self.assertRaisesRegex(fresh.InstallError, 'Node archive digest mismatch'):
+                    fresh.provision_runtime(self.root / version, level)
+                download.assert_called_once_with(
+                    f'https://nodejs.org/dist/v{version}/node-v{version}-linux-x64.tar.xz', 80 * 1024 * 1024)
+
     @unittest.skipUnless(os.name == 'posix' and os.geteuid() == 0, 'isolated Linux root fixture')
     def test_lost_enrollment_response_reuses_persisted_installation_identity(self):
         import types
@@ -135,7 +144,7 @@ class InstallerTests(unittest.TestCase):
             (program / 'deploy/docker/managed-settings.json').write_bytes(b'{}')
             (program / 'deploy/managed-server.json').write_text(json.dumps({'keys': fresh.KEYS, 'origin': fresh.ORIGIN, 'build': 3}))
             (program / 'package-lock.json').write_bytes(b'fixture lock')
-        def runtime(work): (work / 'runtime').mkdir(exist_ok=True)
+        def runtime(work, runtime_level): (work / 'runtime').mkdir(exist_ok=True)
         commands = []
         containers = []
         def run(args, **kwargs):

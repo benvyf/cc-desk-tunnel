@@ -514,6 +514,7 @@ export function App({
   // A native run accepts follow-up messages from wherever it can be worked on.
   const inputDisabled =
     !connected ||
+    selected?.activeRun?.surface === 'terminal' ||
     busy ||
     !!history?.loading ||
     (!!selected?.activeRun && (!nativeMode || !ownsRun)) ||
@@ -771,6 +772,10 @@ export function App({
     if (nativeMode && connected) void client.request({ type: 'account.status' }).catch(() => {});
   }, [nativeMode, connected, accountOpen]);
   useEffect(() => {
+    if (nativeMode && connected)
+      void client.request({ type: 'quota.watch', active: prefs.quotaReads }).catch(() => {});
+  }, [nativeMode, connected, prefs.quotaReads]);
+  useEffect(() => {
     if (
       !accountOpen ||
       terminalsActive ||
@@ -997,12 +1002,12 @@ export function App({
       section = 'general';
     visit({ page, section, sessionId: client.state.selectedId });
   };
-  async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id) {
-    if (!sessionId || statusReading.current || terminalsActive) return;
+  async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id, quota = false) {
+    if (!sessionId || statusReading.current || (terminalsActive && !quota)) return;
     statusReading.current = true;
     setRefreshing(true);
     try {
-      await client.request({ type: 'session.status', sessionId });
+      await client.request({ type: 'session.status', sessionId, ...(quota ? { quota } : {}) });
     } catch (error) {
       setError(
         error instanceof RequestInterruptedError
@@ -2110,10 +2115,10 @@ export function App({
               capabilities={signedOut ? null : capabilities}
               metrics={signedOut ? null : accountMetrics}
               refreshing={refreshing}
-              disabled={!state.sessions.length || !connected || refreshing || anyTerminal}
+              disabled={!state.sessions.length || !connected || refreshing}
               error={currentError}
               refresh={() => {
-                void refreshStatus();
+                void refreshStatus(undefined, true);
               }}
             />
           }

@@ -8,7 +8,54 @@ import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
-import { terminalHistoryPath, terminalHistoryContext } from '../src/terminal-history.ts';
+import {
+  terminalHistoryPath,
+  terminalHistoryContext,
+  readTerminalMessages,
+} from '../src/terminal-history.ts';
+
+test('transcript imports read only the selected CLI configuration and never fall back to another history', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-transcript-scope-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'selected-config');
+  const cwd = join(root, 'project');
+  const id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const question = randomUUID(),
+    answer = randomUUID();
+  writeFileSync(
+    path,
+    [
+      {
+        type: 'user',
+        uuid: question,
+        parentUuid: null,
+        sessionId: id,
+        message: { role: 'user', content: 'selected history' },
+      },
+      {
+        type: 'assistant',
+        uuid: answer,
+        parentUuid: question,
+        sessionId: id,
+        message: {
+          role: 'assistant',
+          id: 'answer',
+          content: [{ type: 'text', text: 'selected answer' }],
+        },
+      },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join('\n') + '\n',
+  );
+  const messages = await readTerminalMessages(config, cwd, id);
+  assert.deepEqual(
+    messages.map((message) => message.uuid),
+    [question, answer],
+  );
+  assert.deepEqual(await readTerminalMessages(join(root, 'another-config'), cwd, id), []);
+});
 
 test('official IDs persist and explicit continuation checks files, scope, locks and request identity without provider calls', async () => {
   const args: string[][] = [];
@@ -115,9 +162,9 @@ test('official IDs persist and explicit continuation checks files, scope, locks 
       true,
     );
     const first = server.store.terminalHistory(original)!;
-    assert.notEqual(first.nativeId, original);
+    assert.equal(first.nativeId, original);
     assert.equal(first.nativeId, failedId);
-    assert.deepEqual(args[0], args[1]);
+    assert.deepEqual(args[0].slice(0, -2), args[1].slice(0, -2)); // Per-process hook settings have distinct paths.
     assert.equal(args[0][args[0].indexOf('--session-id') + 1], first.nativeId);
     const opened = await client.wait((value) => value.type === 'terminal.opened');
     assert.equal((await client.histories(original))[0].available, false); // Managed active lock.

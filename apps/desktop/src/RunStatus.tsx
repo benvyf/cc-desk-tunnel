@@ -1,6 +1,13 @@
 import { useEffect, useState } from 'react';
 import type { TaskProgress } from './client.ts';
 import { Spark } from './icons.tsx';
+import type { TerminalActivity } from '@cc-desk-tunnel/protocol';
+
+export function terminalState(activity?: TerminalActivity) {
+  if (activity === 'working') return '终端运行中';
+  if (activity === 'waiting') return '终端等你确认';
+  return activity === 'idle' ? '终端打开中' : '原生终端';
+}
 
 // The service's clock as this window knows it, and when something last came from a session's run.
 export type Clock = { now: () => number; activityAt: (sessionId: string) => number };

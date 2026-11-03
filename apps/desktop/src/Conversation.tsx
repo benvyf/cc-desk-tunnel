@@ -33,7 +33,7 @@ import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 import { describe, duration, summarize } from './activity.ts';
 import type { Category } from './activity.ts';
 import type { HistoryState, TaskProgress } from './client.ts';
-import { RunStatus, TaskLine } from './RunStatus.tsx';
+import { RunStatus, TaskLine, terminalState } from './RunStatus.tsx';
 import RunNotice from './RunNotice.tsx';
 import { approvalQuestion, toolInput } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
@@ -582,6 +582,7 @@ function Message({
       </div>
       {user && (
         <div className="message-footer" ref={line}>
+          {item.terminal && <span className="message-delivery">终端</span>}
           {item.delivery && (
             <span
               className={`message-delivery${item.delivery === '原生已接收' ? '' : ' unsettled'}`}
@@ -1457,7 +1458,14 @@ export default function Conversation({
                     )}
                   </div>
                 )}
+                {session.activeRun && session.activeRun.surface === 'terminal' && (
+                  <div className="run-indicator" role="status">
+                    {terminalState(session.activeRun.activity)} ·
+                    每轮结束后同步对话，关闭终端后可以在这里接着聊
+                  </div>
+                )}
                 {session.activeRun &&
+                  session.activeRun.surface !== 'terminal' &&
                   !background &&
                   // Waiting for the user, the card that asks is the status; a line stands in only where no card
                   // here can answer.

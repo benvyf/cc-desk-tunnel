@@ -398,6 +398,16 @@ export class SessionStore {
       )
       .get(sessionId);
   }
+  // The session's last reading of its native state.
+  lastMetrics(sessionId: string) {
+    const row = this.database
+      .prepare(
+        "SELECT data FROM events WHERE session_id = ? AND json_extract(data, '$.payload.type') = 'native.metrics' ORDER BY sequence DESC LIMIT 1",
+      )
+      .get(sessionId);
+    const payload = row ? (JSON.parse(String(row.data)) as SessionEvent).payload : undefined;
+    return payload?.type === 'native.metrics' ? payload : null;
+  }
   userMessage(sessionId: string, messageId: string) {
     const row = this.database
       .prepare(
@@ -830,13 +840,18 @@ export class SessionStore {
     };
   }
 
-  append(sessionId: string, runId: string, payload: EventPayload): SessionEvent {
+  append(
+    sessionId: string,
+    runId: string,
+    payload: EventPayload,
+    createdAt = new Date().toISOString(),
+  ): SessionEvent {
     const { session } = this.get(sessionId);
     const event: SessionEvent = {
       sessionId,
       runId,
       sequence: this.lastSequence(sessionId) + 1,
-      createdAt: new Date().toISOString(),
+      createdAt,
       payload,
     };
     if (!stateReadings.has(payload.type)) session.updatedAt = event.createdAt;
@@ -849,6 +864,7 @@ export class SessionStore {
             connectionId: payload.connectionId,
             ...(payload.surface ? { surface: payload.surface } : {}),
             ...(payload.waiting ? { waiting: payload.waiting } : {}),
+            ...(payload.activity ? { activity: payload.activity } : {}),
           };
     this.database.exec('BEGIN');
     try {

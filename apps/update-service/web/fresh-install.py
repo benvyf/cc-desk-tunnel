@@ -28,6 +28,10 @@ LOGIN = pathlib.Path('/usr/local/bin/cc-claude-login')
 ORIGIN = 'https://api.ghostapi.org'
 SUPPORT_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 NODE_SHA = 'fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6'
+NODE_RUNTIMES = {
+    'node24-cli2.1.295-v1': ('24.21.0', NODE_SHA),
+    'node24-cli2.1.295-v2': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
+}
 CLI_ARCHIVE_SHA = 'd45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95'
 CLI_SHA = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 KEYS = {'managed-vps-2026-10-23': '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n'}
@@ -138,7 +142,7 @@ def verify_index(index):
     if issued > time.time() + 60 or expires <= time.time() or not 0 < expires - issued <= 31 * 86400:
         raise InstallError('Release expired or system clock incorrect. Regenerate the command.')
     r = p['release']
-    if r['runtimeLevel'] != 'node24-cli2.1.295-v1' or r['size'] > 64 * 1024 * 1024:
+    if r['runtimeLevel'] not in NODE_RUNTIMES or r['size'] > 64 * 1024 * 1024:
         raise InstallError('Unsupported runtime or release size.')
     if (not re.fullmatch(r'[0-9]{1,5}\.[0-9]{1,5}\.[0-9]{1,5}(?:-[a-zA-Z0-9.]{1,40})?', r['appVersion'])
             or type(r['build']) is not int or r['build'] < 1):
@@ -173,17 +177,18 @@ CMD ["server"]
 '''
 
 
-def provision_runtime(work):
+def provision_runtime(work, runtime_level='node24-cli2.1.295-v1'):
+    version, node_sha = NODE_RUNTIMES[runtime_level]
     runtime = work / 'runtime'
     if runtime.exists(): shutil.rmtree(runtime)
     (runtime / 'node').mkdir(parents=True)
     (runtime / 'cli/bin').mkdir(parents=True)
-    node = download('https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz', 80 * 1024 * 1024)
-    if hashlib.sha256(node).hexdigest() != NODE_SHA: raise InstallError('Node archive digest mismatch.')
+    node = download(f'https://nodejs.org/dist/v{version}/node-v{version}-linux-x64.tar.xz', 80 * 1024 * 1024)
+    if hashlib.sha256(node).hexdigest() != node_sha: raise InstallError('Node archive digest mismatch.')
     with tarfile.open(fileobj=io.BytesIO(node), mode='r:xz') as archive:
         archive.extractall(work / 'node-extract', filter='data')
     shutil.rmtree(runtime / 'node')
-    (work / 'node-extract/node-v24.21.0-linux-x64').rename(runtime / 'node')
+    (work / f'node-extract/node-v{version}-linux-x64').rename(runtime / 'node')
     cli = download('https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.295.tgz', 300 * 1024 * 1024)
     if hashlib.sha256(cli).hexdigest() != CLI_ARCHIVE_SHA: raise InstallError('Official Claude archive digest mismatch.')
     with tarfile.open(fileobj=io.BytesIO(cli), mode='r:gz') as archive:
@@ -347,7 +352,7 @@ def install(args):
                 raise InstallError('Unexpected managed server trust identity.')
             if hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() != release['packageLockSha256']:
                 raise InstallError('Dependency lockfile mismatch.')
-            provision_runtime(work)
+            provision_runtime(work, release['runtimeLevel'])
             (work / 'Dockerfile').write_text(DOCKERFILE)
             image = 'cc-desk-tunnel:fresh-' + str(release['build'])
             print('4/6 Building the service image; progress is printed every 15 seconds...', flush=True)

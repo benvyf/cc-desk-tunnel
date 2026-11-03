@@ -24,6 +24,7 @@ import { useConnectionName } from './shared.ts';
 import { IconButton } from './ui.tsx';
 import type { MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
+import { terminalState } from './RunStatus.tsx';
 
 // What a session is doing, as its row names it in `data-state`: the stylesheet colours the dot and the word by it.
 type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed';
@@ -56,6 +57,7 @@ function rowState(session: Session, failed: ReadonlySet<string>): RowState | und
 const breathes = (state: RowState) =>
   state === 'running' || state === 'background' || state === 'terminal';
 function activity(session: Session, state: RowState | undefined) {
+  if (state === 'terminal') return terminalState(session.activeRun?.activity);
   return state ? stateLabels[state] : ago(Date.parse(session.updatedAt));
 }
 

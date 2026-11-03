@@ -478,10 +478,11 @@ test('OSC file links read only on click, preserve URI filenames and reject late 
     .locator('.dialog-actions')
     .getByRole('button', { name: '关闭', exact: true })
     .click();
-  await page.mouse.move(screen!.x + 80, screen!.y + 80);
-  await page.mouse.move(screen!.x + 25, screen!.y + 7, { steps: 5 });
+  const disconnectedScreen = await page.locator('.xterm-screen').boundingBox();
+  await page.mouse.move(disconnectedScreen!.x + 80, disconnectedScreen!.y + 80);
+  await page.mouse.move(disconnectedScreen!.x + 25, disconnectedScreen!.y + 7, { steps: 5 });
   await expect(page.locator('.xterm-screen')).toHaveClass(/xterm-cursor-pointer/);
-  await page.mouse.click(screen!.x + 25, screen!.y + 7);
+  await page.mouse.click(disconnectedScreen!.x + 25, disconnectedScreen!.y + 7);
   await expect(page.locator('.native-terminal').getByRole('alert')).toContainText('连接已变化');
   await expect(page.getByRole('dialog')).toHaveCount(0);
   expect(
@@ -673,6 +674,55 @@ test('disconnect retains output and old services offer only one terminal', async
         (window as any).terminalTest.requests.filter((c: any) => c.type === 'terminal.open').length,
     ),
   ).toBe(1);
+});
+
+test('a resumable terminal reattaches after reconnect and accepts input on the new connection', async ({
+  page,
+}) => {
+  await page.evaluate(() => (window as any).terminalTest.update({ status: 'reconnecting' }));
+  await expect(page.getByRole('tab')).toContainText('连接中断');
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({
+      status: 'connected',
+      connectionId: 'recovered-connection',
+      devices: [{ id: 'device', ready: false }],
+    }),
+  );
+  await expect(page.getByRole('tab')).toContainText('连接中断');
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).terminalTest.requests.filter(
+          (command: any) => command.type === 'terminal.open',
+        ).length,
+    ),
+  ).toBe(1);
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({ devices: [{ id: 'device', ready: true }] }),
+  );
+  await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).terminalTest.requests.filter(
+            (command: any) => command.type === 'terminal.open',
+          ).length,
+      ),
+    )
+    .toBe(2);
+  await page.locator('.xterm-helper-textarea').focus();
+  await page.keyboard.type('recovered input');
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).terminalTest.controls
+          .filter((command: any) => command.type === 'terminal.input')
+          .map((command: any) => command.data)
+          .join(''),
+      ),
+    )
+    .toContain('recovered input');
 });
 
 test('lost creation response reuses the durable request and closing during creation cleans only its tab', async ({

@@ -58,7 +58,14 @@ type Replies = {
 };
 type TerminalMessage = Extract<
   ServerMessage,
-  { type: 'terminal.opened' | 'terminal.data' | 'terminal.closed' | 'connection.error' }
+  {
+    type:
+      | 'terminal.opened'
+      | 'terminal.data'
+      | 'terminal.closed'
+      | 'terminal.detached'
+      | 'connection.error';
+  }
 >;
 type NewCommand = Command extends infer C
   ? C extends Command
@@ -87,6 +94,7 @@ export class RequestInterruptedError extends Error {
       'account.status',
       'usage.summary',
       'usage.query',
+      'quota.watch',
       'session.stats',
       'settings.get',
       'instructions.get',
@@ -121,7 +129,7 @@ export type HistoryState = {
 export type ClientState = {
   status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   connectionId: string | null;
-  terminalWorkspace?: { version: 1; minRows?: 1 };
+  terminalWorkspace?: { version: 1; minRows?: 1; resumable?: boolean };
   terminalFiles?: { version: 1 };
   terminalHistory?: { version: 1 };
   sideConversations: boolean;
@@ -549,6 +557,7 @@ export class ProxyClient {
         this.upsert(message.session);
       } else if (
         message.type === 'terminal.opened' ||
+        message.type === 'terminal.detached' ||
         message.type === 'terminal.data' ||
         message.type === 'terminal.closed'
       ) {

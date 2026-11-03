@@ -8,7 +8,8 @@ import type {
 } from '../../../packages/protocol/src/account-display.ts';
 import UsagePanel, { dollars, quotaName, tokens } from './UsagePanel.tsx';
 import type { ProxyClient } from './client.ts';
-import { Button, IconButton } from './ui.tsx';
+import { Button, IconButton, Switch } from './ui.tsx';
+import { setPrefs, usePrefs } from './prefs.ts';
 
 // A grey bar standing in for a value still being read, as wide as such a value usually is.
 function Pending({ width }: { width: string }) {
@@ -36,6 +37,7 @@ export default function AccountPanel({
   refresh: () => void;
 }) {
   const account = capabilities?.account;
+  const { quotaReads } = usePrefs();
   const signedOut = state?.loggedIn === false;
   const [summary, setSummary] = useState<UsageSummary | null>(null);
   const [log, setLog] = useState<string | null>(null);
@@ -182,6 +184,17 @@ export default function AccountPanel({
               (metrics?.rateLimits ? '这个账号没有订阅额度。' : '还没有读到订阅额度。')}
           </p>
         )}
+        <div className="quota-live">
+          <span>
+            运行中每分钟读取一次额度
+            <small>关闭后只记录回复自带的额度，手动刷新仍会读取；与“常规”里是同一个设置。</small>
+          </span>
+          <Switch
+            label="运行中每分钟读取一次额度"
+            checked={quotaReads}
+            onChange={(quotaReads) => setPrefs((prefs) => ({ ...prefs, quotaReads }))}
+          />
+        </div>
         <h2 className="account-section-title">
           <ShieldCheck />
           当前会话

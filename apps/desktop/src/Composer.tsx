@@ -497,7 +497,13 @@ export default function Composer({
             <textarea
               ref={input}
               aria-label="消息"
-              placeholder={quotes.length ? '输入关于引用内容的问题…' : '随心输入…'}
+              placeholder={
+                session.activeRun?.surface === 'terminal'
+                  ? '会话在终端中打开，关闭终端后可接着聊'
+                  : quotes.length
+                    ? '输入关于引用内容的问题…'
+                    : '随心输入…'
+              }
               value={draft}
               disabled={inputDisabled}
               maxLength={messageLimit}
@@ -629,23 +635,23 @@ export default function Composer({
                 canRefreshModels={canRefreshModels}
               />
             )}
-            {session.activeRun && session.activeRun.waiting !== 'background' && (
-              <IconButton
-                title="停止运行"
-                aria-description={
-                  shortcutsEnabled &&
-                  session.activeRun.status !== 'awaiting_approval' &&
-                  session.activeRun.surface !== 'terminal'
-                    ? '在当前会话内，500 毫秒内连续按两次 Esc 可停止当前回答。'
-                    : undefined
-                }
-                className="stop-button"
-                disabled={!connected || !ownsRun || busy}
-                onClick={stop}
-              >
-                <Square />
-              </IconButton>
-            )}
+            {session.activeRun &&
+              session.activeRun.surface !== 'terminal' &&
+              session.activeRun.waiting !== 'background' && (
+                <IconButton
+                  title="停止运行"
+                  aria-description={
+                    shortcutsEnabled && session.activeRun.status !== 'awaiting_approval'
+                      ? '在当前会话内，500 毫秒内连续按两次 Esc 可停止当前回答。'
+                      : undefined
+                  }
+                  className="stop-button"
+                  disabled={!connected || !ownsRun || busy}
+                  onClick={stop}
+                >
+                  <Square />
+                </IconButton>
+              )}
             {resume && !draft.trim() && !attachments.length && !quotes.length ? (
               <IconButton title="接着上一轮继续" className="send-button" onClick={resume}>
                 <Play />

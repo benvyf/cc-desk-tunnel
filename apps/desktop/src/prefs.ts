@@ -63,6 +63,8 @@ export type Prefs = {
   stats: { enabled: boolean; summary: Record<string, boolean> };
   // Whether the quota used is shown beside the message box.
   quota: boolean;
+  // Ask the service to keep the account quota current during runs.
+  quotaReads: boolean;
   // Whether Clawd stands on the session's message box (Clawd.tsx).
   mascot: boolean;
   // Optional local display prediction for the remote native terminal.
@@ -103,6 +105,7 @@ const defaults: Prefs = {
   bypassPermissions: false,
   stats: { enabled: false, summary: {} },
   quota: false,
+  quotaReads: true,
   mascot: true,
   terminalPredictiveEcho: false,
   view: defaultView,
@@ -164,6 +167,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
       ) as ConnectionWaits,
       bypassPermissions: saved.bypassPermissions === true,
       quota: saved.quota === true,
+      quotaReads: saved.quotaReads !== false,
       mascot: saved.mascot !== false,
       terminalPredictiveEcho: saved.terminalPredictiveEcho === true,
       view: {

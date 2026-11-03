@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -18,17 +18,25 @@ const state = {
   kills: 0,
   args: [] as string[][],
   onboardingReads: 0,
+  messages: [] as object[],
 };
+const sdkUrl = import.meta.resolve('@anthropic-ai/claude-agent-sdk');
 const key = Symbol.for('cc-terminal-control-test');
 Reflect.set(globalThis, key, state);
 const hooks = registerHooks({
   resolve(specifier, context, next) {
+    if (specifier === '@anthropic-ai/claude-agent-sdk')
+      return { url: 'test:terminal-sdk', shortCircuit: true };
     if (specifier === 'node-pty') return { url: 'test:terminal-pty', shortCircuit: true };
     return next(specifier, context);
   },
   load(url, context, next) {
     let source: string | undefined;
     const shared = `const state = globalThis[Symbol.for('cc-terminal-control-test')];`;
+    if (url === 'test:terminal-sdk')
+      source =
+        shared +
+        `export * from ${JSON.stringify(sdkUrl)}; export async function getSessionMessages() { return state.messages; }`;
     if (url === 'test:terminal-pty')
       source =
         shared +
@@ -66,7 +74,7 @@ const hooks = registerHooks({
 });
 const { createProxyServer } = await import('../src/server.ts');
 
-test('reviewed terminal accepts keys, rejects foreign controls, and closes on disconnect', async (t) => {
+test('reviewed terminal synchronizes turns and quota, rejects foreign controls, and resumes after disconnect', async (t) => {
   const diagnostics = t.mock.method(console, 'error', () => {});
   const directory = mkdtempSync(join(tmpdir(), 'cc-terminal-control-'));
   const token = randomUUID();
@@ -149,6 +157,61 @@ test('reviewed terminal accepts keys, rejects foreign controls, and closes on di
   const opened = await owner.wait((message) => message.type === 'terminal.opened');
   assert.equal(opened.type, 'terminal.opened');
   const terminalId = opened.terminalId;
+  assert.ok(
+    state.args.at(-1)?.includes(sessionId),
+    'new terminals share the chat native session ID',
+  );
+  const settings = state.args.at(-1)!;
+  const settingsPath = settings[settings.indexOf('--settings') + 1];
+  const runtimeSettings = JSON.parse(readFileSync(settingsPath, 'utf8'));
+  assert.ok(runtimeSettings.hooks.UserPromptSubmit.length);
+  const hooksPath = settingsPath.replace(/\.json$/, '.hooks');
+  const statusPath = settingsPath.replace(/\.json$/, '.status');
+  state.messages = [
+    {
+      type: 'user',
+      uuid: randomUUID(),
+      message: { content: 'terminal fixture prompt' },
+      timestamp: new Date().toISOString(),
+    },
+    {
+      type: 'assistant',
+      uuid: randomUUID(),
+      message: { id: 'answer', content: [{ type: 'text', text: 'terminal fixture answer' }] },
+      timestamp: new Date().toISOString(),
+    },
+  ];
+  writeFileSync(
+    hooksPath,
+    JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId }) + '\n',
+  );
+  await owner.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.payload.type === 'message.user' &&
+      message.event.payload.text === 'terminal fixture prompt',
+  );
+  await owner.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.payload.type === 'text.delta' &&
+      message.event.payload.text === 'terminal fixture answer',
+  );
+  writeFileSync(
+    statusPath,
+    JSON.stringify({
+      rate_limits: {
+        five_hour: { used_percentage: 17, resets_at: Math.floor(Date.now() / 1000) + 3600 },
+      },
+    }),
+  );
+  await other.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.payload.type === 'native.metrics' &&
+      message.event.payload.rateLimits?.windows[0]?.utilization === 17,
+  );
+  state.messages = [];
   for (const data of ['\x1b[B', '\r', '中文🙂', '\x03'])
     owner.send({ type: 'terminal.input', sessionId, terminalId, data });
   // A response on the same socket is a processing barrier for earlier control frames.
@@ -280,6 +343,28 @@ test('reviewed terminal accepts keys, rejects foreign controls, and closes on di
   assert.equal(controlExit.reason, 'control_error');
   assert.equal(state.onboardingReads, 0);
   owner.socket.terminate();
-  for (let i = 0; i < 400 && state.kills < 4; i++) await delay(5);
+  await new Promise<void>((resolve) => owner.socket.once('close', resolve));
+  await delay(25);
+  assert.equal(state.kills, 3, 'network loss keeps the terminal process alive');
+  assert.equal(
+    (await other.request({ type: 'terminal.open', sessionId, cols: 90, rows: 28 })).ok,
+    true,
+  );
+  const resumed = await other.wait(
+    (message) => message.type === 'terminal.opened' && message.sessionId === sessionId,
+  );
+  assert.equal(resumed.type, 'terminal.opened');
+  assert.equal(state.args.length, 4, 'reattaching does not spawn another CLI');
+  other.send({
+    type: 'terminal.input',
+    sessionId,
+    terminalId: resumed.terminalId,
+    data: 'after reconnect',
+  });
+  assert.equal(
+    (await other.request({ type: 'terminal.close', sessionId, terminalId: resumed.terminalId })).ok,
+    true,
+  );
+  assert.equal(state.writes.at(-1), 'after reconnect');
   assert.equal(state.kills, 4);
 });

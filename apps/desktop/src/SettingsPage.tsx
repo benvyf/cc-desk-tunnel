@@ -611,7 +611,7 @@ function General({
   chooseWorkspace: (reset: boolean) => void;
 }) {
   const [closeToTray, setCloseToTray] = useState<boolean | null>(null);
-  const { connection, bypassPermissions, quota, busyEnter } = usePrefs();
+  const { connection, bypassPermissions, quota, quotaReads, busyEnter } = usePrefs();
   useEffect(() => {
     void window.desktop?.windowSettings().then((values) => setCloseToTray(values.closeToTray));
   }, []);
@@ -622,6 +622,19 @@ function General({
         <ThemeSettings />
         <FontSizeSettings />
         <SessionDefaultsSettings capabilities={capabilities} />
+        <h2 className="page-heading">额度</h2>
+        <div className="card">
+          <Row
+            title="运行中每分钟读取一次额度"
+            detail="同一账号的会话与设备共用一次读取。关闭后只记录回复自带的额度，账号页手动刷新仍会读取。所有在线客户端都关闭此项后，服务端停止主动读取。"
+          >
+            <Switch
+              label="运行中每分钟读取一次额度"
+              checked={quotaReads}
+              onChange={(quotaReads) => setPrefs((prefs) => ({ ...prefs, quotaReads }))}
+            />
+          </Row>
+        </div>
         <h2 className="page-heading">消息发送</h2>
         <div className="card">
           <Row

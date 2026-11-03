@@ -4,7 +4,7 @@ import { webCertificateStateSchema } from './web-certificate.ts';
 export * from './web.ts';
 export * from './web-certificate.ts';
 
-export const PROTOCOL_VERSION = 22;
+export const PROTOCOL_VERSION = 23;
 // The release each protocol version began with, from 0.2.4 on: a client newer than its service signs in with
 // the service's number to have it upgrade (see the README). A new number adds its line here.
 export const PROTOCOL_HISTORY: Readonly<Record<string, number>> = {
@@ -220,6 +220,8 @@ export const runStatusSchema = z.enum([
 // What a run waits for. In `awaiting_approval`: a decision on a tool, or an answer to a question Claude asked.
 // While `running`, `background`: Claude has finished its turn and only the background tasks it started go on.
 export const waitingSchema = z.enum(['approval', 'question', 'background']);
+export const terminalActivitySchema = z.enum(['working', 'waiting', 'idle']);
+export type TerminalActivity = z.infer<typeof terminalActivitySchema>;
 export const terminalStatuses = new Set<RunStatus>(['completed', 'cancelled', 'failed']);
 export type RunStatus = z.infer<typeof runStatusSchema>;
 
@@ -250,6 +252,7 @@ export const eventPayloadSchema = z.discriminatedUnion('type', [
     connectionId: id,
     surface: z.enum(['chat', 'terminal']).optional(),
     waiting: waitingSchema.optional(),
+    activity: terminalActivitySchema.optional(),
     reason: z.string().optional(),
   }),
   z.object({ type: z.literal('text.delta'), messageId: id, text: z.string() }),
@@ -466,6 +469,7 @@ export const sessionSchema = z.object({
       connectionId: id,
       surface: z.enum(['chat', 'terminal']).optional(),
       waiting: waitingSchema.optional(),
+      activity: terminalActivitySchema.optional(),
     })
     .nullable(),
 });
@@ -666,7 +670,15 @@ export const commandSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('session.unsubscribe'), ...request, sessionId: id }).strict(),
-  z.object({ type: z.literal('session.status'), ...request, sessionId: id }).strict(),
+  z
+    .object({
+      type: z.literal('session.status'),
+      ...request,
+      sessionId: id,
+      quota: z.boolean().optional(),
+    })
+    .strict(),
+  z.object({ type: z.literal('quota.watch'), ...request, active: z.boolean() }).strict(),
   z
     .object({
       type: z.literal('terminal.open'),
@@ -808,7 +820,11 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     connectionId: id,
     adapter: z.enum(['simulation', 'claude-code']),
     terminalWorkspace: z
-      .object({ version: z.literal(1), minRows: z.literal(1).optional() })
+      .object({
+        version: z.literal(1),
+        minRows: z.literal(1).optional(),
+        resumable: z.boolean().optional(),
+      })
       .optional(),
     terminalFiles: z.object({ version: z.literal(1) }).optional(),
     terminalHistory: z.object({ version: z.literal(1) }).optional(),
@@ -900,6 +916,12 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
       .max(100),
   }),
   z.object({ type: z.literal('terminal.opened'), sessionId: id, terminalId: id }),
+  z.object({
+    type: z.literal('terminal.detached'),
+    sessionId: id,
+    terminalId: id,
+    reason: z.enum(['taken', 'stalled']),
+  }),
   z.object({
     type: z.literal('terminal.data'),
     sessionId: id,
