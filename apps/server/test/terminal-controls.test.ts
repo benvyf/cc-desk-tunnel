@@ -18,26 +18,17 @@ const state = {
   kills: 0,
   args: [] as string[][],
   onboardingReads: 0,
-  messages: [] as object[],
-  failRead: false,
 };
-const sdkUrl = import.meta.resolve('@anthropic-ai/claude-agent-sdk');
 const key = Symbol.for('cc-terminal-control-test');
 Reflect.set(globalThis, key, state);
 const hooks = registerHooks({
   resolve(specifier, context, next) {
-    if (specifier === '@anthropic-ai/claude-agent-sdk')
-      return { url: 'test:terminal-sdk', shortCircuit: true };
     if (specifier === 'node-pty') return { url: 'test:terminal-pty', shortCircuit: true };
     return next(specifier, context);
   },
   load(url, context, next) {
     let source: string | undefined;
     const shared = `const state = globalThis[Symbol.for('cc-terminal-control-test')];`;
-    if (url === 'test:terminal-sdk')
-      source =
-        shared +
-        `export * from ${JSON.stringify(sdkUrl)}; export async function getSessionMessages() { if(state.failRead) throw new Error('fixture transcript read failure'); return state.messages; }`;
     if (url === 'test:terminal-pty')
       source =
         shared +
@@ -171,20 +162,38 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   assert.ok(runtimeSettings.hooks.UserPromptSubmit.length);
   const hooksPath = settingsPath.replace(/\.json$/, '.hooks');
   const statusPath = settingsPath.replace(/\.json$/, '.status');
-  state.messages = [
+  const binding = server.store.terminalHistory(sessionId)!;
+  const nativeFile = join(
+    directory,
+    'cli',
+    'projects',
+    resolve(directory, 'native', binding.root).replace(/[^a-zA-Z0-9]/g, '-'),
+    `${binding.nativeId}.jsonl`,
+  );
+  const questionId = randomUUID();
+  const terminalMessages = [
     {
       type: 'user',
-      uuid: randomUUID(),
+      uuid: questionId,
+      parentUuid: null,
+      sessionId,
       message: { content: 'terminal fixture prompt' },
       timestamp: new Date().toISOString(),
     },
     {
       type: 'assistant',
       uuid: randomUUID(),
+      parentUuid: questionId,
+      sessionId,
       message: { id: 'answer', content: [{ type: 'text', text: 'terminal fixture answer' }] },
       timestamp: new Date().toISOString(),
     },
   ];
+  mkdirSync(dirname(nativeFile), { recursive: true });
+  writeFileSync(
+    nativeFile,
+    terminalMessages.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
+  );
   writeFileSync(
     hooksPath,
     JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId }) + '\n',
@@ -201,6 +210,12 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
       message.event.payload.type === 'text.delta' &&
       message.event.payload.text === 'terminal fixture answer',
   );
+  await owner.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.payload.type === 'run.status' &&
+      message.event.payload.activity === 'idle',
+  );
   writeFileSync(
     statusPath,
     JSON.stringify({
@@ -215,7 +230,6 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
       message.event.payload.type === 'native.metrics' &&
       message.event.payload.rateLimits?.windows[0]?.utilization === 17,
   );
-  state.messages = [];
   for (const data of ['\x1b[B', '\r', '中文🙂', '\x03'])
     owner.send({ type: 'terminal.input', sessionId, terminalId, data });
   // A response on the same socket is a processing barrier for earlier control frames.
@@ -338,7 +352,6 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   );
   mkdirSync(dirname(historyFile), { recursive: true });
   writeFileSync(historyFile, 'history that failed to import must be preserved');
-  state.failRead = true;
   owner.send({
     type: 'terminal.ack',
     sessionId: third.sessionId!,
@@ -361,7 +374,6 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     true,
     'a failed import cannot be treated as an empty native transcript',
   );
-  state.failRead = false;
   assert.equal(state.onboardingReads, 0);
   owner.socket.terminate();
   await new Promise<void>((resolve) => owner.socket.once('close', resolve));

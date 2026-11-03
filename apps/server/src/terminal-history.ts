@@ -56,6 +56,27 @@ async function openTerminalHistory(config: string, cwd: string, nativeId: string
   }
 }
 export async function readTerminalMessages(config: string, cwd: string, nativeId: string) {
+  const file = await openTerminalHistory(config, cwd, nativeId);
+  if (!file) return [];
+  let entries: SessionStoreEntry[];
+  try {
+    if (!(await file.stat()).isFile()) throw new Error('Terminal transcript is not a regular file');
+    const text = await file.readFile('utf8');
+    entries = text.split('\n').flatMap((line, index): SessionStoreEntry[] => {
+      if (!line.trim()) return [];
+      let value;
+      try {
+        value = JSON.parse(line);
+      } catch {
+        throw new Error(
+          `Invalid terminal transcript at line ${index + 1}: ${terminalHistoryPath(config, cwd, nativeId)}`,
+        );
+      }
+      return value && typeof value === 'object' && typeof value.type === 'string' ? [value] : [];
+    });
+  } finally {
+    await file.close();
+  }
   return getSessionMessages(nativeId, {
     dir: cwd,
     includeSystemMessages: true,
@@ -64,24 +85,7 @@ export async function readTerminalMessages(config: string, cwd: string, nativeId
         throw new Error('Terminal history reader is read-only');
       },
       async load() {
-        const file = await openTerminalHistory(config, cwd, nativeId);
-        if (!file) return null;
-        try {
-          if (!(await file.stat()).isFile()) return null;
-          const text = await file.readFile('utf8');
-          return text.split('\n').flatMap((line): SessionStoreEntry[] => {
-            try {
-              const value = JSON.parse(line);
-              return value && typeof value === 'object' && typeof value.type === 'string'
-                ? [value]
-                : [];
-            } catch {
-              return [];
-            }
-          });
-        } finally {
-          await file.close();
-        }
+        return entries;
       },
     },
   });

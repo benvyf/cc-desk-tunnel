@@ -57,6 +57,18 @@ test('transcript imports read only the selected CLI configuration and never fall
   assert.deepEqual(await readTerminalMessages(join(root, 'another-config'), cwd, id), []);
 });
 
+test('corrupt transcript rows are reported instead of being treated as an empty history', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-transcript-corrupt-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const id = randomUUID(),
+    config = join(root, 'config'),
+    cwd = join(root, 'project');
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, '{broken transcript row}\n');
+  await assert.rejects(readTerminalMessages(config, cwd, id), /line 1/);
+});
+
 test('official IDs persist and explicit continuation checks files, scope, locks and request identity without provider calls', async () => {
   const args: string[][] = [];
   const key = Symbol.for('cc-history-fixture');
@@ -190,7 +202,7 @@ test('official IDs persist and explicit continuation checks files, scope, locks 
     mkdirSync(dirname(file), { recursive: true });
     writeFileSync(
       file,
-      'null\n{broken\n' +
+      'null\n' +
         JSON.stringify({
           type: 'user',
           sessionId: first.nativeId,

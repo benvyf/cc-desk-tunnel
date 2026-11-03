@@ -142,6 +142,40 @@ async function connect(page: Page) {
 }
 const open = (page: Page, title: string) =>
   page.locator('.session-row').filter({ hasText: title }).locator('.session-select').click();
+
+test('a terminal that stays open shows its completed answer in the normal conversation layout', async ({
+  page,
+}) => {
+  const terminal = session('终端已完成一轮', { surface: 'terminal', activity: 'idle' });
+  const run = terminal.activeRun!.id;
+  history(terminal, run, [
+    {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId,
+    },
+    ask('终端里问的问题'),
+    { type: 'text.delta', messageId: randomUUID(), text: '终端回答已完成' },
+    { type: 'run.status', status: 'running', surface: 'terminal', activity: 'idle', connectionId },
+  ]);
+  sessions.push(terminal);
+  try {
+    await connect(page);
+    await open(page, terminal.title);
+    await expect(
+      page.locator('.message.assistant').filter({ hasText: '终端回答已完成' }),
+    ).toBeVisible();
+    await expect(page.locator('.turn-process').getByText('终端回答已完成')).toHaveCount(0);
+    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeDisabled();
+    await expect(page.locator('.run-indicator')).toContainText('终端打开中');
+    await page.screenshot({ path: '.local/upstream-review2-completed-turn.png' });
+  } finally {
+    sessions.pop();
+    histories.delete(terminal.id);
+  }
+});
 async function openAll(page: Page) {
   for (const selector of ['.turn-process', '.work', '.tool'])
     while (await page.locator(`${selector}:not([open]) > summary`).count())

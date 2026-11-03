@@ -14,6 +14,55 @@ const event = (runId, second, payload) => ({
 const said = (runId, second, messageId, text) =>
   event(runId, second, { type: 'text.delta', messageId, text });
 
+test('a finished terminal turn becomes an answer while the terminal remains open', () => {
+  const events = [
+    event('terminal', 0, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId: 'c',
+    }),
+    event('terminal', 1, { type: 'message.user', messageId: 'q', text: '问', scenario: 'chat' }),
+    said('terminal', 2, 'answer', '已经完成的回答'),
+    event('terminal', 3, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'idle',
+      connectionId: 'c',
+    }),
+  ];
+  assert.equal(conversation(events)[0].answer?.text, '已经完成的回答');
+  assert.equal(conversation(events)[0].endedAt, at(2));
+  const nextWorking = event('terminal', 4, {
+    type: 'run.status',
+    status: 'running',
+    surface: 'terminal',
+    activity: 'working',
+    connectionId: 'c',
+  });
+  assert.equal(conversation([...events, nextWorking])[0].answer?.text, '已经完成的回答');
+  const running = [
+    ...events,
+    event('terminal', 4, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId: 'c',
+    }),
+    event('terminal', 4, {
+      type: 'message.user',
+      messageId: 'next',
+      text: '继续问',
+      scenario: 'chat',
+    }),
+    said('terminal', 5, 'next-answer', '尚在输出'),
+  ];
+  assert.equal(conversation(running).at(-1).endedAt, undefined);
+});
+
 test('an automatic compaction is one mark among the steps, with what came after it under it', () => {
   const turns = conversation([
     event('run', 0, { type: 'message.user', messageId: 'question', text: '做事' }),

@@ -286,12 +286,13 @@ export function conversation(events: SessionEvent[]): Turn[] {
     if (payload.type !== 'run.status') continue;
     else if (
       ['completed', 'cancelled', 'failed'].includes(payload.status) ||
-      payload.waiting === 'background'
+      payload.waiting === 'background' ||
+      (payload.surface === 'terminal' && payload.activity === 'idle')
     ) {
       ended.set(runId, createdAt);
       endedHow.set(runId, payload.status);
       stops.set(runId, [...(stops.get(runId) ?? []), createdAt]);
-    } else if (payload.status === 'running') {
+    } else if (payload.status === 'running' && payload.surface !== 'terminal') {
       ended.delete(runId);
       endedHow.delete(runId);
     }
@@ -364,7 +365,12 @@ export function conversation(events: SessionEvent[]): Turn[] {
     }
   }
   const last = turns.at(-1);
-  if (last && !last.endedAt && ended.has(runId)) {
+  if (
+    last &&
+    !last.endedAt &&
+    ended.has(runId) &&
+    (!last.question?.terminal || ended.get(runId)! >= last.startedAt)
+  ) {
     close(last, ended.get(runId));
     last.outcome = outcome(runId);
   }

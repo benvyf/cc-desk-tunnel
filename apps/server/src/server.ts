@@ -1086,7 +1086,13 @@ export function createProxyServer(options: ServerOptions) {
         if (interrupted) activity = 'idle';
         if (ended || interrupted || hooks.some((hook) => terminalActivity(hook) === 'idle'))
           await importTerminal(terminal);
-        if (ended || !activity || activity === continued.activity) return;
+        if (
+          ended ||
+          !activity ||
+          (activity === continued.activity &&
+            !hooks.some((hook) => hook.hook_event_name === 'Stop'))
+        )
+          return;
         continued.activity = activity;
         record(terminal.sessionId, terminal.id, {
           type: 'run.status',
