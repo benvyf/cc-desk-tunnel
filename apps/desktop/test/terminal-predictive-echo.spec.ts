@@ -72,6 +72,317 @@ async function mount(page: Page, enabled = true) {
 }
 const spans = (page: Page) => page.locator('[data-predictive-echo] span');
 
+for (const route of ['clipboard event', 'keyboard shortcut']) {
+  test(`empty paste via ${route} forwards its framing once and preserves future prediction`, async ({
+    page,
+  }) => {
+    await mount(page);
+    if (route === 'keyboard shortcut') {
+      await page.evaluate(() =>
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: { readText: async () => '' },
+        }),
+      );
+      await page.keyboard.press('Control+v');
+    } else {
+      await page.evaluate(() => {
+        const clipboardData = new DataTransfer();
+        clipboardData.setData('text/plain', '');
+        document
+          .querySelector('.xterm-helper-textarea')!
+          .dispatchEvent(
+            new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+          );
+      });
+    }
+    await page.keyboard.press('a');
+    await expect(spans(page)).toHaveText(['a']);
+    expect((await snapshot(page)).inputs).toEqual(['\x1b[200~\x1b[201~', 'a']);
+  });
+}
+
+test('empty clipboard paste cannot acknowledge preceding in-flight typing', async ({ page }) => {
+  await mount(page);
+  await page.keyboard.press('a');
+  await page.evaluate(() => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', '');
+    document
+      .querySelector('.xterm-helper-textarea')!
+      .dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+      );
+  });
+  await page.keyboard.press('b');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'a');
+  await page.keyboard.press('c');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'abc');
+  await page.keyboard.press('d');
+  await expect(spans(page)).toHaveText(['d']);
+  expect((await snapshot(page)).inputs).toEqual(['a', '\x1b[200~\x1b[201~', 'b', 'c', 'd']);
+});
+
+// Drive the actual NativeTerminal/xterm path with completed, valid Linux composer writes.
+async function composer(page: Page, text: string) {
+  const cells = Array.from(text).reduce((sum, char) => sum + (char > '~' ? 2 : 1), 0);
+  const row = (await snapshot(page)).rows - 2;
+  await page.evaluate(
+    (data) =>
+      new Promise<void>((resolve) => {
+        const api = (window as any).terminalTest;
+        const listener = api.terminalInstances.at(-1).onWriteParsed(() => {
+          listener.dispose();
+          resolve();
+        });
+        api.emit({ type: 'terminal.data', data, bytes: new TextEncoder().encode(data).length });
+      }),
+    `\x1b[${row};1H\x1b[2K❯\u00a0${text}\x1b[7m \x1b[27m\x1b[${row};${cells + 3}H`,
+  );
+}
+
+test('history text ending in queued input cannot acknowledge the newer wire edit', async ({
+  page,
+}) => {
+  await mount(page);
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('b');
+  await composer(page, 'ab');
+  await composer(page, 'ab');
+  await page.keyboard.press('c');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'abb');
+  await composer(page, 'abbc');
+  await page.keyboard.press('d');
+  await expect(spans(page)).toHaveText(['d']);
+  expect((await snapshot(page)).inputs).toEqual(['\x1b[A', 'b', 'c', 'd']);
+});
+
+test('expired prediction recovers when its delayed real echo arrives', async ({ page }) => {
+  await mount(page);
+  await page.keyboard.press('a');
+  await expect(spans(page)).toHaveText(['a']);
+  await page.waitForTimeout(900);
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'a');
+  await page.keyboard.press('b');
+  await expect(spans(page)).toHaveText(['b']);
+  await composer(page, 'ab');
+  await page.keyboard.press('c');
+  await expect(spans(page)).toHaveText(['c']);
+  expect((await snapshot(page)).inputs).toEqual(['a', 'b', 'c']);
+});
+
+for (const [key, before, after, wire] of [
+  ['Control+u', 'old', '', '\x15'],
+  ['Control+w', 'one two', 'one ', '\x17'],
+  ['ArrowUp', '', 'recalled', '\x1b[A'],
+]) {
+  test(`ordinary prediction resumes after ${key} and real editor echo`, async ({ page }) => {
+    await mount(page);
+    await composer(page, before);
+    await page.keyboard.press(key);
+    await expect(spans(page)).toHaveCount(0);
+    await composer(page, after);
+    await page.keyboard.press('a');
+    // The changed control result arrived before any later input, so this complete
+    // screen disambiguates the latest position and ordinary prediction can resume.
+    await expect(spans(page)).toHaveText(['a']);
+    await composer(page, after + 'a');
+    await page.keyboard.press('b');
+    await expect(spans(page)).toHaveText(['b']);
+    expect((await snapshot(page)).inputs).toEqual([wire, 'a', 'b']);
+  });
+}
+
+test('history capacity suspends display and recovers without unloading or changing wire input', async ({
+  page,
+}) => {
+  await mount(page);
+  await page.keyboard.type('a'.repeat(90));
+  await expect(spans(page)).toHaveCount(0);
+  await expect(page.locator('[data-predictive-echo]')).toHaveCount(1);
+  await page.keyboard.press('Control+u');
+  await composer(page, 'a'.repeat(70));
+  await page.keyboard.press('x');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'x');
+  await page.keyboard.press('y');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'xy');
+  await page.keyboard.press('z');
+  await expect(spans(page)).toHaveText(['z']);
+  expect((await snapshot(page)).inputs).toEqual([...Array(90).fill('a'), '\x15', 'x', 'y', 'z']);
+});
+
+test('typing with the switch off then on uses the latest real composer', async ({ page }) => {
+  await mount(page);
+  await page.keyboard.press('a');
+  await page.evaluate(() => (window as any).terminalTest.setPrediction(false));
+  await composer(page, 'a');
+  await page.keyboard.press('b');
+  await composer(page, 'ab');
+  await page.keyboard.press('c');
+  await composer(page, 'abc');
+  await page.evaluate(() => (window as any).terminalTest.setPrediction(true));
+  await page.keyboard.press('d');
+  await expect(spans(page)).toHaveText(['d']);
+  expect((await snapshot(page)).inputs).toEqual(['a', 'b', 'c', 'd']);
+});
+
+test('consecutive control edits reject queued older composer frames', async ({ page }) => {
+  await mount(page);
+  await composer(page, 'old');
+  await page.keyboard.press('Control+u');
+  await page.keyboard.type('xy');
+  await page.keyboard.press('Control+w');
+  await composer(page, 'x');
+  await composer(page, 'xy');
+  await page.keyboard.press('z');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'z');
+  await page.keyboard.press('q');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'zq');
+  await page.keyboard.press('r');
+  await expect(spans(page)).toHaveText(['r']);
+  expect((await snapshot(page)).inputs).toEqual(['\x15', 'x', 'y', '\x17', 'z', 'q', 'r']);
+});
+
+test('typing then deleting after control waits through older blank and text echoes', async ({
+  page,
+}) => {
+  await mount(page);
+  await page.keyboard.press('a');
+  await composer(page, 'a');
+  await page.keyboard.press('Control+w');
+  await page.keyboard.press('b');
+  await page.keyboard.press('Backspace');
+  await composer(page, '');
+  await page.keyboard.press('b');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'b');
+  await composer(page, '');
+  await page.keyboard.press('x');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'b');
+  await composer(page, 'bx');
+  await page.keyboard.press('q');
+  await expect(spans(page)).toHaveText(['q']);
+  expect((await snapshot(page)).inputs).toEqual(['a', '\x17', 'b', '\x7f', 'b', 'x', 'q']);
+});
+
+test('Enter after unknown edits rejects an older blank until new input is confirmed', async ({
+  page,
+}) => {
+  await mount(page);
+  await composer(page, 'b');
+  await page.keyboard.press('Control+u');
+  await page.keyboard.press(' ');
+  await page.keyboard.press('Enter');
+  await composer(page, '');
+  await page.keyboard.press('x');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, ' ');
+  await composer(page, '');
+  await page.keyboard.press('y');
+  await expect(spans(page)).toHaveCount(0);
+  await composer(page, 'x');
+  await composer(page, 'xy');
+  await page.keyboard.press('z');
+  await expect(spans(page)).toHaveText(['z']);
+  expect((await snapshot(page)).inputs).toEqual(['\x15', ' ', '\r', 'x', 'y', 'z']);
+});
+
+test('untrackable paste stays remote until a new terminal is created', async ({ page }) => {
+  await mount(page);
+  await page.evaluate(() => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', 'a'.repeat(413));
+    document
+      .querySelector('.xterm-helper-textarea')!
+      .dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+      );
+  });
+  await page.keyboard.press('Control+u');
+  await composer(page, 'a');
+  await page.keyboard.press('z');
+  await expect(spans(page)).toHaveCount(0);
+  await page.keyboard.press('Enter');
+  await composer(page, '');
+  await page.keyboard.press('b');
+  await composer(page, 'b');
+  await page.keyboard.press('c');
+  await expect(spans(page)).toHaveCount(0);
+  await expect(page.locator('[data-predictive-echo]')).toHaveCount(1);
+  expect((await snapshot(page)).inputs).toEqual([
+    `\x1b[200~${'a'.repeat(413)}\x1b[201~`,
+    '\x15',
+    'z',
+    '\r',
+    'b',
+    'c',
+  ]);
+  // A fresh terminal owns a new prediction instance; the old uncertainty is not
+  // erased by a setting toggle or by an arbitrary blank screen.
+  await mount(page);
+  await page.keyboard.press('z');
+  await expect(spans(page)).toHaveText(['z']);
+});
+
+test('nonbracketed multi-command clipboard paste keeps exact wire input and suspends prediction', async ({
+  page,
+}) => {
+  await mount(page);
+  await composer(page, 'old');
+  await emit(page, '\x1b[?2004l');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => (window as any).terminalTest.terminalInstances.at(-1).modes.bracketedPasteMode,
+      ),
+    )
+    .toBe(false);
+  await page.evaluate(() => {
+    const clipboardData = new DataTransfer();
+    clipboardData.setData('text/plain', 'a\rc');
+    document
+      .querySelector('.xterm-helper-textarea')!
+      .dispatchEvent(
+        new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+      );
+  });
+  await page.keyboard.press('c');
+  await composer(page, '');
+  await composer(page, 'c');
+  await page.keyboard.press('z');
+  await expect(spans(page)).toHaveCount(0);
+  await expect(page.locator('[data-predictive-echo]')).toHaveCount(1);
+  expect((await snapshot(page)).inputs).toEqual(['a\rc', 'c', 'z']);
+});
+
+test('prediction recovers when resize moves the composer to a new bottom row', async ({ page }) => {
+  await mount(page);
+  await page.keyboard.press('a');
+  await expect(spans(page)).toHaveText(['a']);
+  await page.evaluate(() => (window as any).terminalTest.setPredictionRows(40));
+  await page.evaluate(() => new Promise<void>((resolve) => requestAnimationFrame(() => resolve())));
+  expect((await snapshot(page)).rows).toBe(40);
+  await expect(spans(page)).toHaveCount(0);
+  // Move the recorded border/footer with the strict composer to its new bottom row.
+  await emit(
+    page,
+    `\x1b[37;1H${'─'.repeat(100)}\x1b[39;1H${'─'.repeat(100)}\x1b[40;1H  ⏸ manual mode on\x1b[K`,
+  );
+  await composer(page, 'a');
+  await page.keyboard.press('b');
+  await expect(spans(page)).toHaveText(['b']);
+  expect((await snapshot(page)).inputs).toEqual(['a', 'b']);
+});
+
 for (const delay of [50, 150, 300]) {
   test(`real Linux ASCII echo converges at ${delay}ms without changing wire bytes or real buffer`, async ({
     page,
@@ -253,20 +564,28 @@ test('disabled prediction preserves normal terminal input and has no overlay', a
   await expect(page.locator('[data-predictive-echo]')).toHaveCount(0);
 });
 
-test('one-character clipboard paste is forwarded once without prediction', async ({ page }) => {
-  await mount(page);
-  await page.evaluate(() => {
-    const clipboardData = new DataTransfer();
-    clipboardData.setData('text/plain', 'x');
-    document
-      .querySelector('.xterm-helper-textarea')!
-      .dispatchEvent(
-        new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
-      );
+for (const text of ['x', 'a'.repeat(33)]) {
+  test(`clipboard paste of ${text.length} characters recovers after real echo without predicting paste`, async ({
+    page,
+  }) => {
+    await mount(page);
+    await page.evaluate((text) => {
+      const clipboardData = new DataTransfer();
+      clipboardData.setData('text/plain', text);
+      document
+        .querySelector('.xterm-helper-textarea')!
+        .dispatchEvent(
+          new ClipboardEvent('paste', { clipboardData, bubbles: true, cancelable: true }),
+        );
+    }, text);
+    expect((await snapshot(page)).inputs).toEqual([`\x1b[200~${text}\x1b[201~`]);
+    await expect(spans(page)).toHaveCount(0);
+    await composer(page, text);
+    await page.keyboard.press('b');
+    await expect(spans(page)).toHaveText(['b']);
+    expect((await snapshot(page)).inputs).toEqual([`\x1b[200~${text}\x1b[201~`, 'b']);
   });
-  expect((await snapshot(page)).inputs).toEqual(['\x1b[200~x\x1b[201~']);
-  await expect(spans(page)).toHaveCount(0);
-});
+}
 
 test('focus loss and disconnect clear pending display immediately', async ({ page }) => {
   await mount(page);

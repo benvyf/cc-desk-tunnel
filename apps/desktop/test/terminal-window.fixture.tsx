@@ -8,9 +8,10 @@ import { FitAddon } from '@xterm/addon-fit';
 import { PredictiveEchoAddon } from 'xterm-zerolag-input';
 import { setPrefs } from '../src/prefs.ts';
 const terminalInstances: Terminal[] = [];
+let predictiveRows = 35;
 if (new URLSearchParams(location.search).get('predictive') === '1') {
   // Match the recorded Linux PTY grid independently of the test browser's font metrics.
-  FitAddon.prototype.proposeDimensions = () => ({ cols: 100, rows: 35 });
+  FitAddon.prototype.proposeDimensions = () => ({ cols: 100, rows: predictiveRows });
   const open = Terminal.prototype.open;
   Terminal.prototype.open = function (parent) {
     terminalInstances.push(this);
@@ -180,6 +181,10 @@ root.render(React.createElement(React.StrictMode, null, React.createElement(Fixt
 Object.assign(window, {
   terminalTest: {
     terminalInstances,
+    setPredictionRows: (rows: number) => {
+      predictiveRows = rows;
+      terminalInstances.at(-1)?.resize(100, rows);
+    },
     setPrediction: (value: boolean) =>
       setPrefs((prefs) => ({ ...prefs, terminalPredictiveEcho: value })),
     failPrediction: () => {

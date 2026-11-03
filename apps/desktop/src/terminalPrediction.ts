@@ -68,7 +68,8 @@ function inspectComposer(terminal: Terminal) {
   }
   const input = line.translateToString(false, 2, col);
   if (!ordinaryText.test(input) || /[/@]/u.test(input)) return null;
-  return { row, col, input, signature: `${row}:${col}:${input}` };
+  // Row is already validated against the bottom composer; resizing may move it.
+  return { row, col, input, signature: `${col}:${input}` };
 }
 
 export function createTerminalPrediction(
@@ -96,13 +97,24 @@ export function createTerminalPrediction(
   let imeTimer: ReturnType<typeof setTimeout> | undefined;
   let pasteTimer: ReturnType<typeof setTimeout> | undefined;
   let modalOpen = false;
-  let painting = false;
   let pending: { char: string; width: number }[] = [];
+  let runTarget: ReturnType<typeof inspectComposer> = null;
   const lateEchoSignatures = new Set<string>();
   let deletedPending = false;
   let confirmedTotal = 0;
   let heldSignatures: Set<string> | null = null;
+  const overflowColumns = new Set<number>();
   let heldExpected: ReturnType<typeof inspectComposer> = null;
+  // null: exact target; false: untrackable. Otherwise retain every possible
+  // rendered input position until the complete screen proves the latest one.
+  let recovery:
+    | {
+        observed: string | null;
+        edits: (string | null)[];
+        positions: Set<number>;
+      }
+    | null
+    | false = null;
   let lastSignature: string | null = null;
 
   const restoreOption = () => {
@@ -114,6 +126,7 @@ export function createTerminalPrediction(
     const current = addon;
     addon = null;
     pending = [];
+    runTarget = null;
     lateEchoSignatures.clear();
     deletedPending = false;
     try {
@@ -138,7 +151,6 @@ export function createTerminalPrediction(
   const fail = () => {
     failed = true;
     enabled = false;
-    painting = false;
     unload();
   };
   const safely = (action: () => void) => {
@@ -167,45 +179,131 @@ export function createTerminalPrediction(
     if (heldSignatures === null) {
       const snapshot = inspectComposer(terminal);
       const buffer = terminal.buffer.active;
+      const target = runTarget ?? snapshot;
       heldSignatures = new Set([
         snapshot?.signature ??
           lastSignature ??
-          `${buffer.cursorY}:${buffer.cursorX}:${buffer.getLine(buffer.baseY + terminal.rows - 3)?.translateToString(true, 0, Math.min(terminal.cols, 400)) ?? ''}`,
+          `${buffer.cursorX}:${buffer.getLine(buffer.baseY + terminal.rows - 3)?.translateToString(true, 0, Math.min(terminal.cols, 400)) ?? ''}`,
       ]);
       // Keep states removed by local backspace: their earlier wire echoes can still arrive.
       for (const signature of lateEchoSignatures) heldSignatures.add(signature);
-      heldExpected = snapshot
-        ? {
-            ...snapshot,
-            input: snapshot.input + pending.map(({ char }) => char).join(''),
-            col: snapshot.col + pending.reduce((sum, { width }) => sum + width, 0),
-          }
-        : null;
+      // Expired predictions may already be in the buffer. The sent target is independent
+      // of plugin acknowledgements; appending pending to that buffer would count twice.
+      heldExpected = target ? { ...target } : null;
+      if (runTarget && !deletedPending) heldSignatures.delete(runTarget.signature);
     }
+  };
+  const rememberHeld = (signature: string) => {
+    if (!heldSignatures) return;
+    // Preserve every exclusion without unbounded strings. Overflow conservatively
+    // excludes the whole column (the strict composer has at most 400 columns).
+    if (heldSignatures.size < 65 || heldSignatures.has(signature)) heldSignatures.add(signature);
+    else overflowColumns.add(Number(signature.split(':', 1)[0]));
   };
   const advanceHeldEdit = (data: string) => {
     if (!heldSignatures) return;
-    if (heldExpected)
-      heldSignatures.add(`${heldExpected.row}:${heldExpected.col}:${heldExpected.input}`);
+    if (recovery === false) return;
+    // Beyond a supported single line, do not discard uncertainty and guess a new
+    // baseline. The healthy renderer stays loaded; a new terminal starts afresh.
+    if (data.length > 412) {
+      heldExpected = null;
+      recovery = false;
+      return;
+    }
+    if (heldExpected) rememberHeld(heldExpected.signature);
+    // Paste is never predicted, but its bounded single-line text can be tracked.
+    const text = data.replace(/^\x1b\[200~([\s\S]*)\x1b\[201~$/u, '$1');
+    const append = !!text && ordinaryText.test(text) && !/[/@]/u.test(text);
+    const singleEdit =
+      Array.from(data).length === 1 || /^\x1b(?:\[[0-?]*[ -/]*[@-~]|O[A-Za-z])$/u.test(data);
+    if (!append && !singleEdit) {
+      // A bulk paste/macro may produce several editor states, so one unknown
+      // operation cannot describe its intermediate frames safely.
+      heldExpected = null;
+      recovery = false;
+      return;
+    }
+    if (recovery) {
+      recovery.edits.push(
+        ...(append ? Array.from(text) : [data === '\r' || data === '\x7f' ? data : null]),
+      );
+      // One entry per BMP character admits partial IME/paste echoes. Bound both
+      // the log and its possible positions by the supported 400-column grid.
+      if (recovery.edits.length > 400) recovery = false;
+      return;
+    }
     if (data === '\r') {
       heldExpected = { row: terminal.rows - 3, col: 2, input: '', signature: '' };
-    } else if (heldExpected && data === '\x7f') {
-      const chars = Array.from(heldExpected.input);
+    } else if (data === '\x7f') {
+      const chars = Array.from(heldExpected?.input ?? '');
       chars.pop();
-      heldExpected.input = chars.join('');
-    } else if (heldExpected && classifyTerminalInput(data, 'ime').kind === 'text') {
-      heldExpected.input += data;
-    } else if (data.length > 1 && !/^\x1b\[[A-Za-z0-9;]*[A-Za-z~]$/u.test(data)) {
+      if (heldExpected) heldExpected.input = chars.join('');
+    } else if (append) {
+      if (heldExpected) {
+        // Only newly sent prefixes can still echo. Prefixes of an already
+        // observed baseline are not outstanding input.
+        let input = heldExpected.input;
+        let col = heldExpected.col;
+        const chars = Array.from(text);
+        for (const char of chars.slice(0, -1)) {
+          input += char;
+          col += char > '~' ? 2 : 1;
+          if (col > 400) break;
+          rememberHeld(`${col}:${input}`);
+        }
+        heldExpected.input += text;
+      }
+    } else {
+      recovery = {
+        observed: heldExpected?.input ?? null,
+        edits: [null],
+        positions: new Set([0]),
+      };
       heldExpected = null;
     }
     if (heldExpected) {
       // Every supported BMP glyph has the verified width used by the prediction gate.
       heldExpected.col =
         2 + Array.from(heldExpected.input).reduce((sum, char) => sum + (char > '~' ? 2 : 1), 0);
-      heldExpected.signature = `${heldExpected.row}:${heldExpected.col}:${heldExpected.input}`;
+      heldExpected.signature = `${heldExpected.col}:${heldExpected.input}`;
     }
-    // Preserve at most 32 prior predictions plus 32 suppressed edits and the baseline.
-    if (heldSignatures.size > 65 || (heldExpected?.col ?? 0) > 400) fail();
+    if ((heldExpected?.col ?? 0) > 400) {
+      heldExpected = null;
+      recovery = false;
+    }
+  };
+  const confirmRecovery = (input: string) => {
+    if (!recovery) return false;
+    const next = new Set<number>();
+    for (const position of recovery.positions) {
+      let text = recovery.observed ?? '';
+      let unknown = recovery.observed === null;
+      // Repainting the same screen may still represent the same old input position.
+      if (unknown || text === input) next.add(position);
+      for (let i = position; i < recovery.edits.length; i++) {
+        const edit = recovery.edits[i];
+        if (edit === null) {
+          unknown = true;
+          text = '';
+        } else if (edit === '\r') {
+          unknown = false;
+          text = '';
+        } else if (edit === '\x7f') text = text.slice(0, -1);
+        else text += edit;
+        // A matching suffix only retains a possible position. It is not an ACK.
+        if (unknown ? input.endsWith(text) : input === text) next.add(i + 1);
+      }
+    }
+    if (!next.size) {
+      recovery = false;
+      return false;
+    }
+    if (next.size === 1 && next.has(recovery.edits.length)) return true;
+    const consumed = Math.min(...next);
+    recovery.edits.splice(0, consumed);
+    recovery.positions = new Set(Array.from(next, (position) => position - consumed));
+    recovery.observed = input;
+    return false;
   };
   const clearPredictions = (
     hold = pending.length > 0 || lateEchoSignatures.size > 0 || heldSignatures !== null,
@@ -215,6 +313,7 @@ export function createTerminalPrediction(
     addon.clearPredictions();
     for (const overlay of ownedOverlays) overlay.replaceChildren();
     pending = [];
+    runTarget = null;
     confirmedTotal = addon.state.confirmedTotal;
   };
   const clear = () => safely(() => clearPredictions());
@@ -229,19 +328,26 @@ export function createTerminalPrediction(
     if (state.outstanding !== pending.length) clearPredictions();
     else if (confirmed > 0 && !pending.length && !deletedPending && heldSignatures === null) {
       lateEchoSignatures.clear();
+      runTarget = null;
     }
   };
   const parsed = () =>
     safely(() => {
       const snapshot = inspectComposer(terminal);
+      if (addon && active() && !composing && snapshot) reconcile();
       if (
         snapshot &&
         heldSignatures !== null &&
-        heldExpected?.signature === snapshot.signature &&
-        !heldSignatures.has(snapshot.signature)
+        !heldSignatures.has(snapshot.signature) &&
+        !overflowColumns.has(snapshot.col) &&
+        (heldExpected
+          ? heldExpected.signature === snapshot.signature
+          : confirmRecovery(snapshot.input))
       ) {
         heldSignatures = null;
         heldExpected = null;
+        recovery = null;
+        overflowColumns.clear();
         lateEchoSignatures.clear();
         deletedPending = false;
       }
@@ -251,7 +357,6 @@ export function createTerminalPrediction(
         return;
       }
       lastSignature = snapshot.signature;
-      reconcile();
     });
   const listen = (
     target: EventTarget | null | undefined,
@@ -385,6 +490,8 @@ export function createTerminalPrediction(
         else if (keyTicket?.text === data) origin = 'key';
         keyTicket = null;
         imeTicket = null;
+        // xterm frames empty clipboard text too; it does not edit the composer.
+        if (origin === 'paste' && data === '\x1b[200~\x1b[201~') return;
         // xterm's own focus/device replies share onData but do not edit the remote composer.
         if (origin === 'unknown' && /^\x1b\[(?:[IO]|\?[0-9;]*c)$/u.test(data)) return;
         if (!addon) {
@@ -414,6 +521,13 @@ export function createTerminalPrediction(
             advanceHeldEdit(data);
           } else {
             pending.pop();
+            if (runTarget) {
+              const chars = Array.from(runTarget.input);
+              const removed = chars.pop()!;
+              runTarget.input = chars.join('');
+              runTarget.col -= charCellWidth(addonTerminal, removed);
+              runTarget.signature = `${runTarget.col}:${runTarget.input}`;
+            }
             deletedPending = true;
             holdEditor();
           }
@@ -441,7 +555,7 @@ export function createTerminalPrediction(
         for (const entry of entries) {
           candidateInput += entry.char;
           candidateCol += entry.width;
-          candidates.add(`${snapshot.row}:${candidateCol}:${candidateInput}`);
+          candidates.add(`${candidateCol}:${candidateInput}`);
         }
         // Repeated typing/deleting without acknowledgement cannot create unbounded history.
         if (candidates.size > 32) {
@@ -449,19 +563,20 @@ export function createTerminalPrediction(
           advanceHeldEdit(data);
           return;
         }
-        painting = true;
-        try {
-          for (const char of input.text) {
-            if (!addon.predictChar(char)) {
-              fail();
-              return;
-            }
+        runTarget = {
+          ...snapshot,
+          input: candidateInput,
+          col: candidateCol,
+          signature: `${candidateCol}:${candidateInput}`,
+        };
+        for (const char of input.text) {
+          if (!addon.predictChar(char)) {
+            clearPredictions(true);
+            return;
           }
-          pending.push(...entries);
-          for (const signature of candidates) lateEchoSignatures.add(signature);
-        } finally {
-          painting = false;
         }
+        pending.push(...entries);
+        for (const signature of candidates) lateEchoSignatures.add(signature);
       });
     },
     paste(text) {
@@ -502,7 +617,6 @@ export function createTerminalPrediction(
           ttlMs: 800,
           maxPending: 32,
           edgeMarginCells: 4,
-          predictWhen: () => painting && heldSignatures === null && enabled,
         });
         const screen = terminal.element?.querySelector('.xterm-screen');
         const existing = new Set(screen?.querySelectorAll('[data-predictive-echo]'));

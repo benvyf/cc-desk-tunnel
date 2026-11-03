@@ -265,15 +265,16 @@ function fixture(cols = 80, preboundXterm = false) {
     lines.set(row, cells);
   };
   const composer = (text = '') => {
-    line(20, '─'.repeat(cols));
-    line(21, `❯\u00a0${text}`);
+    const row = terminal.rows - 3;
+    line(row - 1, '─'.repeat(cols));
+    line(row, `❯\u00a0${text}`);
     buffer.cursorX = 2 + width(text);
-    buffer.cursorY = 21;
-    lines.get(21)![buffer.cursorX] = { chars: ' ', width: 1, inverse: true };
-    line(22, '─'.repeat(cols));
+    buffer.cursorY = row;
+    lines.get(row)![buffer.cursorX] = { chars: ' ', width: 1, inverse: true };
+    line(row + 1, '─'.repeat(cols));
     // This footer's symbols use terminal cells differently from the text fixture helper.
     lines.set(
-      23,
+      row + 2,
       Array.from('  ⏸ manual mode on', (chars) => ({ chars, width: 1 })),
     );
   };
@@ -631,7 +632,11 @@ test('a control edit stays blocked through background refresh until the real edi
   f.composer('olda');
   await f.parsed();
   f.key('b');
-  assert.equal(f.overlay(), 'b');
+  assert.equal(f.overlay(), '');
+  f.composer('oldab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
 });
 
 test('echoes queued before a control edit cannot unlock its editor barrier', async () => {
@@ -652,7 +657,11 @@ test('echoes queued before a control edit cannot unlock its editor barrier', asy
   f.composer('abxyy');
   await f.parsed();
   f.key('z');
-  assert.equal(f.overlay(), 'z');
+  assert.equal(f.overlay(), '');
+  f.composer('abxyyz');
+  await f.parsed();
+  f.key('q');
+  assert.equal(f.overlay(), 'q');
 });
 
 test('a locally removed pending character remains excluded from control barrier recovery', async () => {
@@ -674,7 +683,11 @@ test('a locally removed pending character remains excluded from control barrier 
     f.composer('az');
     await f.parsed();
     f.key('q');
-    assert.equal(f.overlay(), 'q');
+    assert.equal(f.overlay(), '');
+    f.composer('azq');
+    await f.parsed();
+    f.key('r');
+    assert.equal(f.overlay(), 'r');
   }
 });
 
@@ -983,4 +996,624 @@ test('dispose releases parsed/resize listeners and prevents subsequent use', () 
   f.key('b');
   f.prediction.setEnabled(true);
   assert.equal(f.screen.children.length, 0);
+});
+
+const control = (f: ReturnType<typeof fixture>, data: string, key: string) => {
+  f.emitKey(data, Object.assign(new Event('keydown'), { key, ctrlKey: true }) as KeyboardEvent);
+  f.prediction.beforeInput(data);
+};
+
+test('Ctrl+U recovers after ordinary echo', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  control(f, '\x15', 'u');
+  f.composer();
+  await f.parsed();
+  f.key('a');
+  f.composer('a');
+  await f.parsed();
+  f.key('b');
+  f.composer('ab');
+  await f.parsed();
+  f.prediction.setEnabled(false);
+  f.prediction.setEnabled(true);
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('Ctrl+W recovers after ordinary echo', async () => {
+  const f = fixture();
+  f.composer('one two');
+  f.prediction.setEnabled(true);
+  control(f, '\x17', 'w');
+  f.composer('one ');
+  await f.parsed();
+  f.key('a');
+  f.composer('one a');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), 'b');
+});
+
+test('history recalled into ordinary end-of-line text recovers after ordinary echo', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('\x1b[A', 'ArrowUp');
+  f.composer('recalled');
+  await f.parsed();
+  f.key('a');
+  f.composer('recalleda');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), 'b');
+});
+
+test('long single-line ASCII paste recovers at echoed composer', async () => {
+  const f = fixture(120);
+  f.prediction.setEnabled(true);
+  const text = 'a'.repeat(33);
+  f.prediction.paste(text);
+  f.composer(text);
+  await f.parsed();
+  f.key('b');
+  f.composer(text + 'b');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('over 65 suppressed edits remain recoverable after Enter and toggle', async () => {
+  const f = fixture(120);
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  control(f, '\x15', 'u');
+  f.composer();
+  await f.parsed();
+  let text = '';
+  for (let i = 0; i < 66; i++) {
+    f.key('a');
+    text += 'a';
+    f.composer(text);
+    await f.parsed();
+  }
+  f.key('\r', 'Enter');
+  f.composer();
+  await f.parsed();
+  f.prediction.setEnabled(false);
+  f.prediction.setEnabled(true);
+  f.key('z');
+  assert.equal(f.overlay(), 'z');
+});
+
+test('a real TTL expiry followed by delayed successful echo does not double-count pending', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  assert.equal(f.overlay(), 'a');
+  await new Promise((resolve) => setTimeout(resolve, 830));
+  assert.equal(f.addon().state.outstanding, 0);
+  f.composer('a');
+  await f.parsed();
+  f.key('b');
+  f.composer('ab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('consecutive no-op controls require enough distinct ordinary echoes to resolve both', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  control(f, '\x01', 'a');
+  control(f, '\x05', 'e');
+  f.composer('old');
+  await f.parsed();
+  f.key('a');
+  f.composer('olda');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('oldab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), '');
+  f.composer('oldabc');
+  await f.parsed();
+  f.key('d');
+  assert.equal(f.overlay(), 'd');
+});
+
+test('cancelled composition without pending leaves prediction usable', () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.event(f.textarea, 'compositionstart');
+  f.event(f.textarea, 'compositionend', { data: '' });
+  f.key('a');
+  assert.equal(f.overlay(), 'a');
+});
+
+test('no-op Tab cannot use an unchanged or ambiguous first echo as acknowledgement', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  f.key('\t', 'Tab');
+  f.composer('old');
+  await f.parsed();
+  f.key('a');
+  f.composer('olda');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('oldab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('parsed intermediate redraw preserves the sent target until the complete echo', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  // A split redraw ends its first parsed write while the cursor is on the top border.
+  f.buffer.cursorY = 20;
+  await f.parsed();
+  // The next write completes the supported single-line composer including the real a echo.
+  f.composer('a');
+  await f.parsed();
+  f.key('b');
+  f.composer('ab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('Ctrl+U hold recovers on Enter before state budget overflow', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  control(f, '\x15', 'u');
+  f.composer();
+  await f.parsed();
+  f.key('a');
+  f.composer('a');
+  await f.parsed();
+  f.key('\r', 'Enter');
+  f.composer();
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), 'b');
+});
+
+test('acknowledged pending prediction can resume after cancellation', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  f.event(f.textarea, 'compositionstart');
+  f.event(f.textarea, 'compositionend', { data: '' });
+  f.composer('a');
+  await f.parsed();
+  f.key('b');
+  f.composer('ab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('bracketed paste is not predicted and recovers after its complete echo', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.event(f.textarea, 'paste');
+  f.prediction.beforeInput('\x1b[200~x\x1b[201~');
+  assert.equal(f.overlay(), '');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  f.composer('x');
+  await f.parsed();
+  f.key('a');
+  assert.equal(f.overlay(), 'a');
+});
+
+test('unknown control followed by queued text rejects earlier predicted echoes', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  f.key('b');
+  control(f, '\x15', 'u');
+  f.key('x');
+  for (const text of ['a', 'ab', '']) {
+    f.composer(text);
+    await f.parsed();
+    assert.equal(f.overlay(), '');
+  }
+  f.key('y');
+  assert.equal(f.overlay(), '');
+  f.composer('xy');
+  await f.parsed();
+  f.key('z');
+  assert.equal(f.overlay(), '');
+  f.composer('xyz');
+  await f.parsed();
+  f.key('q');
+  assert.equal(f.overlay(), 'q');
+});
+
+test('history budget exhaustion keeps a healthy renderer and recovers on a new verified column', async () => {
+  const f = fixture(120);
+  f.prediction.setEnabled(true);
+  // Keep sending without any echo, forcing the suppressed-history budget to fill.
+  for (let i = 0; i < 90; i++) f.key('a');
+  assert.equal(f.screen.children.length, 1);
+  assert.equal(f.overlay(), '');
+  // An overflowed old prefix must still be excluded after a control edit.
+  control(f, '\x15', 'u');
+  f.composer('a'.repeat(70));
+  await f.parsed();
+  f.key('x');
+  assert.equal(f.overlay(), '');
+  f.composer('x');
+  await f.parsed();
+  f.key('y');
+  assert.equal(f.overlay(), '');
+  f.composer('xy');
+  await f.parsed();
+  f.key('z');
+  assert.equal(f.overlay(), 'z');
+});
+
+test('fully echoed disabled typing does not reuse an unloaded prediction target', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  f.prediction.setEnabled(false);
+  let text = '';
+  for (const char of 'abc') {
+    if (char !== 'a') f.key(char);
+    text += char;
+    f.composer(text);
+    await f.parsed();
+  }
+  f.prediction.setEnabled(true);
+  f.key('d');
+  assert.equal(f.overlay(), 'd');
+});
+
+for (const mode of ['queued-typing', 'large-paste'] as const) {
+  test(`untrackable ${mode} stays suspended without unloading a healthy renderer`, async () => {
+    const f = fixture(120);
+    f.composer('old');
+    f.prediction.setEnabled(true);
+    control(f, '\x15', 'u');
+    if (mode === 'queued-typing') {
+      for (let i = 0; i < 401; i++) f.key('a');
+    } else f.prediction.paste('a'.repeat(413));
+    f.composer('a');
+    await f.parsed();
+    f.key('z');
+    assert.equal(f.overlay(), '');
+    f.key('\r', 'Enter');
+    f.composer();
+    await f.parsed();
+    f.key('b');
+    assert.equal(f.overlay(), '');
+    f.composer('b');
+    await f.parsed();
+    f.key('c');
+    assert.equal(f.overlay(), '');
+    f.prediction.setEnabled(false);
+    f.prediction.setEnabled(true);
+    assert.equal(f.screen.children.length, 1);
+    f.key('d');
+    assert.equal(f.overlay(), '');
+    const fresh = fixture();
+    fresh.prediction.setEnabled(true);
+    fresh.key('z');
+    assert.equal(fresh.overlay(), 'z');
+  });
+}
+
+test('a second unknown control cannot forget earlier suppressed text echoes', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  control(f, '\x15', 'u');
+  f.key('x');
+  f.key('y');
+  control(f, '\x17', 'w');
+  for (const text of ['x', 'xy']) {
+    f.composer(text);
+    await f.parsed();
+  }
+  f.key('z');
+  assert.equal(f.overlay(), '');
+  f.composer('z');
+  await f.parsed();
+  f.key('q');
+  assert.equal(f.overlay(), '');
+  f.composer('zq');
+  await f.parsed();
+  f.key('r');
+  assert.equal(f.overlay(), 'r');
+});
+
+test('repeated ordinary suffixes remain ambiguous until a distinct echo resolves them', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  control(f, '\x15', 'u');
+  for (let i = 0; i < 6; i++) f.key('a');
+  f.composer('aaaaaa');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('aaaaaab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('a normal addon refusal suspends prediction until echo without disabling the renderer', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  const predictChar = f.addon().predictChar.bind(f.addon());
+  f.addon().predictChar = () => false;
+  f.key('a');
+  assert.equal(f.screen.children.length, 1);
+  assert.equal(f.overlay(), '');
+  f.addon().predictChar = predictChar;
+  f.composer('a');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), 'b');
+});
+
+test('resizing moves the supported composer without losing its in-flight recovery target', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  f.terminal.rows = 30;
+  for (const callback of f.callbacks.get('resize') ?? []) callback();
+  f.composer('a');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), 'b');
+});
+
+test('an unknown control cannot discard uncertainty from an oversized paste', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.prediction.paste('a'.repeat(413));
+  control(f, '\x15', 'u');
+  f.composer('a');
+  await f.parsed();
+  f.key('z');
+  assert.equal(f.overlay(), '');
+  f.key('\r', 'Enter');
+  f.composer();
+  await f.parsed();
+  f.key('b');
+  f.composer('b');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), '');
+  assert.equal(f.screen.children.length, 1);
+});
+
+test('a control after a short paste excludes valid partial composer echoes', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.prediction.paste('abc');
+  control(f, '\x15', 'u');
+  for (const text of ['a', 'ab', 'abc']) {
+    f.composer(text);
+    await f.parsed();
+  }
+  f.key('z');
+  assert.equal(f.overlay(), '');
+  f.composer('z');
+  await f.parsed();
+  f.key('q');
+  assert.equal(f.overlay(), '');
+  f.composer('zq');
+  await f.parsed();
+  f.key('r');
+  assert.equal(f.overlay(), 'r');
+});
+
+test('cancelled unknown-prefix text cannot acknowledge a later edit through an older empty echo', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  f.composer('a');
+  await f.parsed();
+  control(f, '\x17', 'w');
+  f.key('b');
+  f.key('\x7f', 'Backspace');
+  // This is the earlier Ctrl+W echo; b and its deletion have not echoed yet.
+  f.composer();
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('b');
+  await f.parsed();
+  f.composer();
+  await f.parsed();
+  f.key('x');
+  assert.equal(f.overlay(), '');
+  f.composer('b');
+  await f.parsed();
+  f.composer('bx');
+  await f.parsed();
+  f.key('q');
+  assert.equal(f.overlay(), 'q');
+});
+
+test('Enter after an unknown edit cannot acknowledge itself through an older empty echo', async () => {
+  const f = fixture();
+  f.composer('b');
+  f.prediction.setEnabled(true);
+  control(f, '\x15', 'u');
+  f.key(' ');
+  f.key('\r', 'Enter');
+  f.composer();
+  await f.parsed();
+  f.key('x');
+  assert.equal(f.overlay(), '');
+  f.composer(' ');
+  await f.parsed();
+  f.composer();
+  await f.parsed();
+  f.key('y');
+  assert.equal(f.overlay(), '');
+  f.composer('x');
+  await f.parsed();
+  f.composer('xy');
+  await f.parsed();
+  f.key('z');
+  assert.equal(f.overlay(), 'z');
+});
+
+for (const character of ['b', '中']) {
+  test(`a recalled line ending in queued ${character} cannot acknowledge that input`, async () => {
+    const f = fixture();
+    f.prediction.setEnabled(true);
+    f.key('\x1b[A', 'ArrowUp');
+    f.key(character);
+    f.composer('a' + character);
+    await f.parsed();
+    // Background redraws of the same line cannot disambiguate the two positions.
+    await f.parsed();
+    f.key('c');
+    assert.equal(f.overlay(), '');
+    f.composer('a' + character + character);
+    await f.parsed();
+    f.composer('a' + character + character + 'c');
+    await f.parsed();
+    f.key('d');
+    assert.equal(f.overlay(), 'd');
+  });
+}
+
+test('repeated characters keep ambiguous history echoes suspended until a distinct echo', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('\x1b[A', 'ArrowUp');
+  f.key('b');
+  f.composer('ab');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('abb');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), '');
+  f.composer('abbb');
+  await f.parsed();
+  f.composer('abbbc');
+  await f.parsed();
+  f.key('d');
+  assert.equal(f.overlay(), 'd');
+});
+
+test('a queued IME group admits partial echoes without confirming the recalled prefix', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('\x1b[A', 'ArrowUp');
+  f.event(f.textarea, 'compositionstart');
+  f.event(f.textarea, 'compositionend', { data: '中文' });
+  f.prediction.beforeInput('中文');
+  f.composer('a中');
+  await f.parsed();
+  assert.equal(f.overlay(), '');
+  f.composer('a中中');
+  await f.parsed();
+  f.composer('a中中文');
+  await f.parsed();
+  f.key('d');
+  assert.equal(f.overlay(), 'd');
+});
+
+test('unsupported bulk commands cannot pretend to be one completed edit', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  // A clipboard paste without bracketed-paste mode can submit and then type again.
+  f.prediction.paste('a\rc');
+  f.key('c');
+  f.composer();
+  await f.parsed();
+  f.composer('c');
+  await f.parsed();
+  f.key('z');
+  assert.equal(f.overlay(), '');
+  assert.deepEqual(f.pasted, ['a\rc']);
+  assert.equal(f.screen.children.length, 1);
+});
+
+test('one complete CSI mouse report remains an unknown single edit rather than a bulk macro', async () => {
+  const f = fixture();
+  f.composer('old');
+  f.prediction.setEnabled(true);
+  f.prediction.beforeInput('\x1b[<0;5;22M');
+  f.composer('changed');
+  await f.parsed();
+  f.key('a');
+  assert.equal(f.overlay(), 'a');
+});
+
+test('repeated characters resume when the queued echoes fully catch up', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('\x1b[A', 'ArrowUp');
+  f.key('b');
+  f.composer('ab');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('abb');
+  await f.parsed();
+  f.composer('abbb');
+  await f.parsed();
+  f.key('b');
+  assert.equal(f.overlay(), 'b');
+});
+
+for (const enabled of [false, true]) {
+  test(`empty bracketed clipboard paste is not an editor change with prediction ${enabled ? 'on' : 'off'}`, async () => {
+    const f = fixture();
+    f.prediction.setEnabled(enabled);
+    f.event(f.textarea, 'paste');
+    f.prediction.beforeInput('\x1b[200~\x1b[201~');
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    f.prediction.setEnabled(true);
+    f.key('a');
+    assert.equal(f.overlay(), 'a');
+  });
+}
+
+test('empty clipboard paste preserves a barrier for earlier unacknowledged input', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  f.event(f.textarea, 'paste');
+  f.prediction.beforeInput('\x1b[200~\x1b[201~');
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  f.key('b');
+  assert.equal(f.overlay(), '');
+  f.composer('a');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), '');
+  f.composer('abc');
+  await f.parsed();
+  f.key('d');
+  assert.equal(f.overlay(), 'd');
+});
+
+test('empty framing without a paste source cannot bypass unsupported bulk suspension', () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.prediction.beforeInput('\x1b[200~\x1b[201~');
+  f.key('a');
+  assert.equal(f.overlay(), '');
 });
