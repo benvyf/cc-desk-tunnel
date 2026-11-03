@@ -184,9 +184,9 @@ export default function AccountPanel({
               (metrics?.rateLimits ? '这个账号没有订阅额度。' : '还没有读到订阅额度。')}
           </p>
         )}
-        <div className="quota-live">
+        <div className="setting-row quota-live">
           <span>
-            运行中每分钟读取一次额度
+            <strong>运行中每分钟读取一次额度</strong>
             <small>关闭后只记录回复自带的额度，手动刷新仍会读取；与“常规”里是同一个设置。</small>
           </span>
           <Switch

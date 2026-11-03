@@ -149,7 +149,7 @@ type Terminal = {
   continued?: {
     nativeId: string;
     config: string;
-    empty: boolean;
+    empty?: boolean;
     known: Set<string>;
     connectionId: string;
     at: string;
@@ -771,7 +771,7 @@ export function createProxyServer(options: ServerOptions) {
     }
     if ((terminals.size && !command.quota) || runs.size || mutations.size)
       throw new DomainError('native_busy', '运行结束后再刷新原生状态。');
-    const resume = !terminals.has(command.sessionId);
+    const resume = !terminalForNative(command.sessionId);
     const last = resume ? null : store.lastMetrics(command.sessionId);
     mutations.add(command.sessionId);
     const controller = new AbortController();
@@ -807,11 +807,19 @@ export function createProxyServer(options: ServerOptions) {
     const terminal = terminals.get(command.sessionId);
     if (!terminal || terminal.id !== command.terminalId)
       throw new DomainError('terminal_inactive', '原生终端已结束。');
-    if (terminal.owner !== peer) throw new DomainError('not_owner', '原生终端属于另一连接。');
+    if (terminal.owner && terminal.owner !== peer)
+      throw new DomainError('not_owner', '原生终端属于另一连接。');
+    if (!terminal.owner) target(peer, store.get(command.sessionId).session);
     terminal.closing = true;
     await terminal.process?.close();
   }
   // The terminal occupies its session like a run does, so other connections see it as busy.
+  function terminalForNative(sessionId: string) {
+    return (
+      terminals.get(sessionId) ??
+      [...terminals.values()].find((terminal) => terminal.continued?.nativeId === sessionId)
+    );
+  }
   async function openTerminal(peer: Peer, command: CommandOf<'terminal.open'>, session: Session) {
     if (options.moderation && !options.nativeTerminalReview)
       throw new DomainError(
@@ -820,6 +828,14 @@ export function createProxyServer(options: ServerOptions) {
       );
     if (!options.claude) throw new DomainError('native_unavailable', '离线模拟不启动原生终端。');
     const existing = terminals.get(command.sessionId);
+    if (
+      command.terminalId &&
+      (!existing ||
+        existing.id !== command.terminalId ||
+        existing.process?.exited ||
+        existing.closing)
+    )
+      throw new DomainError('terminal_inactive', '原终端已结束，未新建进程。请新开终端继续。');
     if (existing?.process && !existing.closing) {
       target(peer, session);
       if (existing.owner === peer) throw new DomainError('native_busy', '原生终端已经打开。');
@@ -888,6 +904,8 @@ export function createProxyServer(options: ServerOptions) {
           'history_environment_changed',
           '终端关联的 CLI 配置或项目已变化，请新开终端或在官方 CLI 中选择历史。',
         );
+      if (runs.has(history.nativeId))
+        throw new DomainError('history_busy', '此官方历史正在聊天界面运行，请结束后再打开终端。');
       if (
         [...terminals.keys()].some(
           (id) => id !== session.id && store.terminalHistory(id)?.nativeId === history.nativeId,
@@ -923,6 +941,7 @@ export function createProxyServer(options: ServerOptions) {
         current.continued.hooksPath,
         options.claude.settingsPath,
         current.continued.statusPath,
+        join(context.config, 'settings.json'),
       );
       if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
@@ -969,7 +988,7 @@ export function createProxyServer(options: ServerOptions) {
           unwatchFile(current.continued!.statusPath);
           await heardTerminal(current, true);
           if (
-            current.continued!.empty &&
+            current.continued!.empty === true &&
             current.continued!.nativeId === session.id &&
             !store.hasNativeContext(session.id)
           )
@@ -1007,6 +1026,11 @@ export function createProxyServer(options: ServerOptions) {
         surface: 'terminal',
         connectionId: peer.id,
       });
+      if (history.nativeId !== session.id)
+        record(session.id, current.id, {
+          type: 'native.notice',
+          text: '此终端继续独立官方历史；新内容会记入当前记录，但不会合并到原聊天上下文。',
+        });
       updated(command.sessionId);
       watchFile(current.continued.hooksPath, { interval: 500 }, () => void heardTerminal(current));
       watchFile(current.continued.statusPath, { interval: 1000 }, () => terminalQuota(current));
@@ -1132,6 +1156,7 @@ export function createProxyServer(options: ServerOptions) {
       record(sessionId, terminal.id, payload, continued.at);
     };
     const dir = nativeDirectory(store.directory, nativeRoot(sessionId));
+    continued.empty = undefined;
     const messages = await readTerminalMessages(continued.config, dir, continued.nativeId);
     continued.empty = !messages.length;
     if (messages.length && continued.nativeId === sessionId && !store.hasNativeContext(sessionId)) {
@@ -1488,6 +1513,7 @@ export function createProxyServer(options: ServerOptions) {
               ? 'CLI 配置已变化，请使用官方历史选择器确认。'
               : undefined;
           if (
+            runs.has(entry.nativeId) ||
             [...terminals.keys()].some(
               (id) => store.terminalHistory(id)?.nativeId === entry.nativeId,
             )
@@ -1554,6 +1580,7 @@ export function createProxyServer(options: ServerOptions) {
             'CLI 配置已变化，请使用官方历史选择器确认。',
           );
         if (
+          runs.has(entry.nativeId) ||
           [...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId)
         )
           throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
@@ -1800,7 +1827,7 @@ export function createProxyServer(options: ServerOptions) {
         await controlRun(peer, command);
         return command.sessionId;
     }
-    if (terminals.has(command.sessionId))
+    if (terminalForNative(command.sessionId))
       throw new DomainError('native_busy', '这个会话的原生终端开着，请先关闭终端再操作它。');
     switch (command.type) {
       case 'session.configure':

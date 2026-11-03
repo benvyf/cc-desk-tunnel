@@ -7,6 +7,17 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { PredictiveEchoAddon } from 'xterm-zerolag-input';
 import { setPrefs } from '../src/prefs.ts';
+import { RequestFailedError } from '../src/client.ts';
+let holdRenderCallbacks = false;
+const renderCallbacks: (() => void)[] = [];
+const writeTerminal = Terminal.prototype.write;
+Terminal.prototype.write = function (data, callback) {
+  return writeTerminal.call(
+    this,
+    data,
+    holdRenderCallbacks && callback ? () => renderCallbacks.push(callback) : callback,
+  );
+};
 const terminalInstances: Terminal[] = [];
 let predictiveRows = 35;
 if (new URLSearchParams(location.search).get('predictive') === '1') {
@@ -26,7 +37,7 @@ let closeMode: 'normal' | 'pending' | 'fail' = 'normal';
 let createMode: 'normal' | 'lostResponse' | 'pending' = 'normal';
 let finishCreate = () => {};
 let failSession: string | null = null;
-let openMode: 'normal' | 'lostOpened' | 'lostResponse' = 'normal';
+let openMode: 'normal' | 'lostOpened' | 'lostResponse' | 'expired' = 'normal';
 let finishClose: (ok: boolean) => void = () => {};
 const running = new Map<string, string>();
 const created = new Map<string, string>();
@@ -113,6 +124,8 @@ const client = {
       return { sessionId: id, ok: true, requestId };
     }
     if (command.type === 'terminal.open') {
+      if (openMode === 'expired' && command.terminalId)
+        throw new RequestFailedError('原终端已结束，未新建进程。', 'terminal_inactive');
       const terminalId = command.sessionId === 'fixture' ? 'pty' : `pty-${command.sessionId}`;
       running.set(command.sessionId, terminalId);
       if (openMode !== 'lostOpened')
@@ -210,6 +223,14 @@ Object.assign(window, {
     },
     setOpenMode: (mode: typeof openMode) => {
       openMode = mode;
+    },
+    holdRenderCallbacks: (value: boolean) => {
+      holdRenderCallbacks = value;
+    },
+    pendingRenderCallbacks: () => renderCallbacks.length,
+    flushRenderCallbacks: () => {
+      holdRenderCallbacks = false;
+      renderCallbacks.splice(0).forEach((callback) => callback());
     },
   },
 });

@@ -755,6 +755,87 @@ test('lost creation response reuses the durable request and closing during creat
   ).toBe(true);
 });
 
+test('expired terminal recovery reports the ended process and does not offer a silent restart', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    (window as any).terminalTest.setOpenMode('expired');
+    (window as any).terminalTest.update({ status: 'reconnecting' });
+  });
+  await expect(page.getByRole('button', { name: '重新连接终端', exact: true })).toBeDisabled();
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({ status: 'connected', connectionId: 'expired-reconnect' }),
+  );
+  await expect(page.getByRole('tab')).toContainText('原终端已结束');
+  await expect(page.getByRole('alert')).toContainText('未新建进程');
+  expect(
+    await page.evaluate(
+      () =>
+        (window as any).terminalTest.requests
+          .filter((request: any) => request.type === 'terminal.open')
+          .at(-1).terminalId,
+    ),
+  ).toBe('pty');
+  await expect(page.getByRole('button', { name: '重试启动', exact: true })).toHaveCount(0);
+});
+
+test('callbacks from the old screen cannot acknowledge output on a recovered connection', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    (window as any).terminalTest.controls.length = 0;
+    (window as any).terminalTest.holdRenderCallbacks(true);
+    (window as any).terminalTest.emit({ type: 'terminal.data', data: 'old output', bytes: 10 });
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).terminalTest.pendingRenderCallbacks()))
+    .toBe(1);
+  await page.evaluate(() => (window as any).terminalTest.update({ status: 'reconnecting' }));
+  await page.evaluate(() =>
+    (window as any).terminalTest.update({ status: 'connected', connectionId: 'screen-reconnect' }),
+  );
+  await expect(page.getByRole('tab')).toContainText('Linux · Claude Code');
+  await page.evaluate(() => (window as any).terminalTest.flushRenderCallbacks());
+  await page.waitForTimeout(50);
+  expect(
+    await page.evaluate(() =>
+      (window as any).terminalTest.controls.filter(
+        (request: any) => request.type === 'terminal.ack',
+      ),
+    ),
+  ).toEqual([]);
+  await page.evaluate(() =>
+    (window as any).terminalTest.emit({ type: 'terminal.data', data: 'new', bytes: 3 }),
+  );
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).terminalTest.controls
+          .filter((request: any) => request.type === 'terminal.ack')
+          .map((request: any) => request.bytes),
+      ),
+    )
+    .toEqual([3]);
+});
+
+test('closing a stalled terminal explicitly ends its retained process', async ({ page }) => {
+  await page.evaluate(() =>
+    (window as any).terminalTest.emit({ type: 'terminal.detached', reason: 'stalled' }),
+  );
+  await expect(page.getByRole('tab')).toContainText('连接中断');
+  await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          (window as any).terminalTest.requests
+            .filter((request: any) => request.type === 'terminal.close')
+            .at(-1)?.terminalId,
+      ),
+    )
+    .toBe('pty');
+});
+
 test('a selected local project and subsequent plus use the returned project identity', async ({
   page,
 }) => {

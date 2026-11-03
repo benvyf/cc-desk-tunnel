@@ -1461,7 +1461,7 @@ export default function Conversation({
                 {session.activeRun && session.activeRun.surface === 'terminal' && (
                   <div className="run-indicator" role="status">
                     {terminalState(session.activeRun.activity)} ·
-                    每轮结束后同步对话，关闭终端后可以在这里接着聊
+                    每轮结束后同步对话，关闭终端后恢复聊天输入
                   </div>
                 )}
                 {session.activeRun &&

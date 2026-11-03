@@ -231,6 +231,27 @@ test('official IDs persist and explicit continuation checks files, scope, locks 
     );
     assert.equal(args.at(-1)![args.at(-1)!.indexOf('--resume') + 1], first.nativeId);
     assert.equal(args.at(-1)!.includes('--session-id'), false);
+    assert.equal(
+      (
+        await client.request({
+          type: 'message.send',
+          sessionId: original,
+          text: 'must not launch another CLI',
+          scenario: 'chat',
+        })
+      ).code,
+      'native_busy',
+    );
+    assert.equal(
+      (
+        await client.request({
+          type: 'session.rename',
+          sessionId: original,
+          title: 'must not mutate shared history',
+        })
+      ).code,
+      'native_busy',
+    );
     assert.equal((await client.request(command)).code, 'history_busy');
     socket!.terminate();
     await server.close();

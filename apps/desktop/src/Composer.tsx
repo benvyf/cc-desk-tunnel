@@ -499,7 +499,7 @@ export default function Composer({
               aria-label="消息"
               placeholder={
                 session.activeRun?.surface === 'terminal'
-                  ? '会话在终端中打开，关闭终端后可接着聊'
+                  ? '会话在终端中打开，关闭终端后恢复聊天输入'
                   : quotes.length
                     ? '输入关于引用内容的问题…'
                     : '随心输入…'

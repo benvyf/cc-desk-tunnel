@@ -9159,14 +9159,11 @@ dialog:has(.web-settings-form) {
 }
 
 .quota-live {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
   margin-top: 12px;
 }
-.quota-live small {
-  display: block;
-  color: var(--faint);
-  font-size: var(--font-xs);
+.terminal-recovery {
+  display: flex;
+  padding: 6px 12px;
+  gap: 8px;
+  align-items: center;
 }

@@ -227,7 +227,7 @@ export default function TerminalWindow({
         control = await new Promise<TerminalHandle>((resolve) =>
           waitingHandles.current.set(tab.tabId, resolve),
         );
-      const done = !live(tab) || (control ? await control.close() : false);
+      const done = control ? await control.close() : !live(tab);
       if (done) removed.push(tab.tabId);
       else failed.push(tab.alias || folderName(tab.source.projectPath));
     }
@@ -411,7 +411,15 @@ export default function TerminalWindow({
                 onClick={() => setActiveId(tab.tabId)}
               >
                 <span>{tab.alias || folderName(tab.source.projectPath)}</span>
-                {!live(tab) && <span className="terminal-tab-ended">已结束</span>}
+                {!live(tab) && (
+                  <span className="terminal-tab-ended">
+                    {tab.phase === 'disconnected'
+                      ? '连接中断'
+                      : tab.phase === 'failed'
+                        ? '启动失败'
+                        : '已结束'}
+                  </span>
+                )}
                 <small>{tab.detail}</small>
               </button>
               <IconButton

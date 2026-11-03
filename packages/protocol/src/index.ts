@@ -684,6 +684,8 @@ export const commandSchema = z.discriminatedUnion('type', [
       type: z.literal('terminal.open'),
       ...request,
       sessionId: id,
+      // Reattach this exact process; never start a replacement after its grace period expired.
+      terminalId: id.optional(),
       cols: z.number().int().min(20).max(400),
       rows: z.number().int().min(1).max(160),
     })

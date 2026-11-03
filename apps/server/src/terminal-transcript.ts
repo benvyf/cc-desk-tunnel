@@ -98,6 +98,8 @@ const HOOKED = [
   'Notification',
   'Stop',
 ];
+// Tool hooks may carry megabytes of output. Keep only the lifecycle fields used below.
+export const terminalHookScript = `const fs=require('node:fs');const input=JSON.parse(fs.readFileSync(0,'utf8'));const {hook_event_name,session_id,notification_type}=input;fs.appendFileSync(process.argv[1],JSON.stringify({hook_event_name,session_id,notification_type})+'\\n',{mode:0o600});`;
 // Its status line command also keeps the last of what the CLI hands it at `statusPath`, which carries the quota its
 // replies were answered with (see `statusLineQuota`). A status line of the user's own, from these settings or the user
 // settings these take the place of, is still run on the same input and shows as before.
@@ -114,7 +116,14 @@ export function terminalSettings(
   for (const name of HOOKED)
     hooks[name] = [
       ...(Array.isArray(hooks[name]) ? hooks[name] : []),
-      { hooks: [{ type: 'command', command: `{ cat; echo; } >> ${quote(hooksPath)}` }] },
+      {
+        hooks: [
+          {
+            type: 'command',
+            command: `${quote(process.execPath)} -e ${quote(terminalHookScript)} ${quote(hooksPath)}`,
+          },
+        ],
+      },
     ];
   let statusLine = settings.statusLine;
   if (statusPath) {

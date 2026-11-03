@@ -66,6 +66,14 @@ export default function NativeTerminal({
   const predictionRef = useRef<TerminalPrediction | null>(null);
   const readingLine = useRef<number | null>(null);
   const prefs = usePrefs();
+  const executionReady = () => {
+    const deviceId = client.state.sessions.find((session) => session.id === sessionId)?.device?.id;
+    return (
+      !deviceId ||
+      !client.state.devices ||
+      client.state.devices.some((device) => device.id === deviceId && device.ready)
+    );
+  };
   const fontSize = prefs.fontSizes.code;
   const handle = useRef<TerminalHandle | null>(null);
   const [phase, setPhase] = useState<TerminalPhase>('opening');
@@ -128,6 +136,8 @@ export default function NativeTerminal({
       resizeFrame = 0;
     let outputLost = false;
     let reconnecting = false;
+    let reconnectTerminalId: string | null = null;
+    let renderGeneration = 0;
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     let connectionId = client.state?.connectionId;
@@ -174,8 +184,15 @@ export default function NativeTerminal({
       pendingBytes = 0;
     }
     function write(frame: { terminalId: string; data: string; bytes: number }) {
+      const generation = renderGeneration;
       terminal.write(frame.data, () => {
-        if (disposed || id !== frame.terminalId || closeRequested) return;
+        if (
+          disposed ||
+          generation !== renderGeneration ||
+          id !== frame.terminalId ||
+          closeRequested
+        )
+          return;
         pendingBytes += frame.bytes;
         if (pendingBytes >= 16 * 1024) acknowledge();
         else ackTimer ??= setTimeout(acknowledge, 20);
@@ -260,6 +277,7 @@ export default function NativeTerminal({
       )
         return;
       opening = true;
+      const openingConnection = connectionId;
       closeRequested = false;
       setError(null);
       status('opening', '正在启动');
@@ -268,19 +286,27 @@ export default function NativeTerminal({
         await client.request({
           type: 'terminal.open',
           sessionId,
+          ...(reconnectTerminalId ? { terminalId: reconnectTerminalId } : {}),
           cols: Math.max(20, Math.min(400, terminal.cols)),
           rows: Math.max(minimumRows, Math.min(160, terminal.rows)),
         });
+        if (openingConnection !== connectionId) return;
         if (opening && !disposed) {
           const result = await observe();
           if (result?.state === 'running' && result.terminalId) accept(result.terminalId);
           else if (phaseNow() !== 'ended') status('unknown', '启动结果尚未确认');
         }
       } catch (failure) {
+        if (openingConnection !== connectionId) return;
         if (disposed || phaseNow() === 'ended' || phaseNow() === 'disconnected') return;
         if (id && phaseNow() === 'running') return;
         if (failure instanceof RequestFailedError && !id) {
           opening = false;
+          if (failure.code === 'terminal_inactive' && reconnectTerminalId) {
+            status('ended', '原终端已结束');
+            setError(failure.message);
+            return;
+          }
           status('failed', '启动失败');
           setError(failure.message);
           return;
@@ -303,8 +329,31 @@ export default function NativeTerminal({
     }
     async function close(): Promise<boolean> {
       if (closeTask) return closeTask;
-      if (phaseNow() === 'ended' || phaseNow() === 'failed' || phaseNow() === 'disconnected')
-        return true;
+      if (phaseNow() === 'ended' || phaseNow() === 'failed') return true;
+      if (phaseNow() === 'disconnected') {
+        if (client.state.status !== 'connected' || !reconnectTerminalId) return true;
+        closeRequested = true;
+        closeTask = client
+          .request({ type: 'terminal.close', sessionId, terminalId: reconnectTerminalId })
+          .then(
+            () => {
+              status('ended', '已关闭');
+              return true;
+            },
+            (failure) => {
+              if (failure instanceof RequestFailedError && failure.code === 'terminal_inactive') {
+                status('ended', '原终端已结束');
+                return true;
+              }
+              setError(failure instanceof Error ? failure.message : '关闭失败');
+              return false;
+            },
+          )
+          .finally(() => {
+            closeTask = null;
+          });
+        return closeTask;
+      }
       closeRequested = true;
       clearTimeout(ackTimer);
       view.cancelAnimationFrame(resizeFrame);
@@ -392,6 +441,8 @@ export default function NativeTerminal({
         status('ended', `已结束 · ${reason}`);
       } else if (message.type === 'terminal.detached' && message.terminalId === id) {
         prediction?.clear();
+        reconnectTerminalId = id;
+        renderGeneration++;
         id = null;
         opening = false;
         closeRequested = false;
@@ -400,15 +451,9 @@ export default function NativeTerminal({
         setError(message.message);
     });
     const disconnected = () => {
-      const deviceId = client.state.sessions.find((session) => session.id === sessionId)?.device
-        ?.id;
-      const executionReady =
-        !deviceId ||
-        !client.state.devices ||
-        client.state.devices.some((device) => device.id === deviceId && device.ready);
       if (
         reconnecting &&
-        executionReady &&
+        executionReady() &&
         client.state.status === 'connected' &&
         client.state.terminalWorkspace?.resumable &&
         client.state.connectionId !== connectionId &&
@@ -417,6 +462,7 @@ export default function NativeTerminal({
       ) {
         reconnecting = false;
         connectionId = client.state.connectionId;
+        renderGeneration++;
         terminal.reset();
         pendingBytes = 0;
         bufferedBytes = 0;
@@ -431,6 +477,8 @@ export default function NativeTerminal({
       if (client.state.status !== 'connected' || client.state.connectionId !== connectionId) {
         if (client.state.status === 'reconnecting') reconnecting = true;
         prediction?.clear();
+        reconnectTerminalId ??= id;
+        renderGeneration++;
         id = null;
         opening = false;
         closeRequested = true;
@@ -562,7 +610,9 @@ export default function NativeTerminal({
       },
       retry: () => {
         if (phaseNow() === 'failed' || phaseNow() === 'disconnected') {
+          if (client.state.status !== 'connected' || !executionReady()) return;
           connectionId = client.state.connectionId;
+          renderGeneration++;
           terminal.reset();
           pendingBytes = 0;
           size = '';
@@ -648,13 +698,21 @@ export default function NativeTerminal({
       )}
       {error && <p role="alert">{error}</p>}
       {(phase === 'failed' || phase === 'unknown' || phase === 'disconnected') && (
-        <Button size="sm" onClick={() => handle.current?.retry()}>
-          {phase === 'disconnected'
-            ? '重新连接终端'
-            : phase === 'failed'
-              ? '重试启动'
-              : '确认终端状态'}
-        </Button>
+        <div className="terminal-recovery">
+          <Button
+            size="sm"
+            disabled={
+              phase === 'disconnected' && (client.state.status !== 'connected' || !executionReady())
+            }
+            onClick={() => handle.current?.retry()}
+          >
+            {phase === 'disconnected'
+              ? '重新连接终端'
+              : phase === 'failed'
+                ? '重试启动'
+                : '确认终端状态'}
+          </Button>
+        </div>
       )}
       <div className="terminal-host" ref={host} />
     </section>

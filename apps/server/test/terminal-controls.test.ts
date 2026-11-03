@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve, dirname } from 'node:path';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
@@ -19,6 +19,7 @@ const state = {
   args: [] as string[][],
   onboardingReads: 0,
   messages: [] as object[],
+  failRead: false,
 };
 const sdkUrl = import.meta.resolve('@anthropic-ai/claude-agent-sdk');
 const key = Symbol.for('cc-terminal-control-test');
@@ -36,7 +37,7 @@ const hooks = registerHooks({
     if (url === 'test:terminal-sdk')
       source =
         shared +
-        `export * from ${JSON.stringify(sdkUrl)}; export async function getSessionMessages() { return state.messages; }`;
+        `export * from ${JSON.stringify(sdkUrl)}; export async function getSessionMessages() { if(state.failRead) throw new Error('fixture transcript read failure'); return state.messages; }`;
     if (url === 'test:terminal-pty')
       source =
         shared +
@@ -84,7 +85,10 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     nativeTerminalReview: true,
     reverseProxy: true,
     tunnel: {},
-    claude: { executable: 'fixture-never-launch-claude' },
+    claude: {
+      executable: 'fixture-never-launch-claude',
+      environment: { CLAUDE_CONFIG_DIR: join(directory, 'cli') },
+    },
     maxRuns: 2,
     moderation: {
       endpoint: 'https://review.invalid/check',
@@ -324,6 +328,17 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     (message) => message.type === 'terminal.opened' && message.sessionId === third.sessionId,
   );
   assert.equal(thirdOpened.type, 'terminal.opened');
+  const historyBinding = server.store.terminalHistory(third.sessionId!)!;
+  const historyFile = join(
+    directory,
+    'cli',
+    'projects',
+    resolve(directory, 'native', historyBinding.root).replace(/[^a-zA-Z0-9]/g, '-'),
+    `${historyBinding.nativeId}.jsonl`,
+  );
+  mkdirSync(dirname(historyFile), { recursive: true });
+  writeFileSync(historyFile, 'history that failed to import must be preserved');
+  state.failRead = true;
   owner.send({
     type: 'terminal.ack',
     sessionId: third.sessionId!,
@@ -341,6 +356,12 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   );
   assert.equal(controlExit.type, 'terminal.closed');
   assert.equal(controlExit.reason, 'control_error');
+  assert.equal(
+    existsSync(historyFile),
+    true,
+    'a failed import cannot be treated as an empty native transcript',
+  );
+  state.failRead = false;
   assert.equal(state.onboardingReads, 0);
   owner.socket.terminate();
   await new Promise<void>((resolve) => owner.socket.once('close', resolve));
@@ -367,4 +388,22 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   );
   assert.equal(state.writes.at(-1), 'after reconnect');
   assert.equal(state.kills, 4);
+  const spawnCount = state.args.length;
+  assert.equal(
+    (
+      await other.request({
+        type: 'terminal.open',
+        sessionId,
+        terminalId: resumed.terminalId,
+        cols: 90,
+        rows: 28,
+      })
+    ).code,
+    'terminal_inactive',
+  );
+  assert.equal(
+    state.args.length,
+    spawnCount,
+    'expired process recovery cannot silently start a new CLI',
+  );
 });

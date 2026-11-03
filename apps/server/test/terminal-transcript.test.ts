@@ -18,6 +18,7 @@ import {
   terminalEvents,
   terminalHooks,
   terminalSettings,
+  terminalHookScript,
 } from '../src/terminal-transcript.ts';
 
 const session = '11111111-2222-4333-8444-555555555555';
@@ -185,12 +186,31 @@ test('the terminal settings add the hooks to the provider settings, readable onl
   assert.equal(written.hooks.SessionStart.length, 2);
   assert.equal(written.hooks.UserPromptSubmit[0].hooks[0].command, 'existing-message-review');
   assert.equal(written.hooks.UserPromptSubmit[0].hooks[0].onFailure, 'block');
-  const command = `{ cat; echo; } >> '${hooks.replaceAll("'", "'\\''")}'`;
+  const command = written.hooks.SessionStart[1].hooks[0].command;
+  assert.ok(command.includes(hooks.replaceAll("'", "'\\''")));
   assert.equal(written.hooks.SessionStart[1].hooks[0].command, command);
   for (const name of ['UserPromptSubmit', 'PermissionRequest', 'PostToolUse', 'Stop'])
     assert.equal(written.hooks[name].at(-1).hooks[0].command, command);
   if (process.platform !== 'win32') assert.equal(statSync(settings).mode & 0o777, 0o600);
   assert.equal(written.statusLine, undefined);
+});
+
+test('terminal activity hooks retain metadata without retaining tool outputs or prompts', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'cc-terminal-hook-meta-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const hooks = join(directory, 'activity.hooks');
+  execFileSync(process.execPath, ['-e', terminalHookScript, hooks], {
+    input: JSON.stringify({
+      hook_event_name: 'PostToolUse',
+      session_id: session,
+      tool_response: 'x'.repeat(1024 * 1024),
+      prompt: 'private prompt',
+    }),
+  });
+  assert.ok(statSync(hooks).size < 200);
+  assert.deepEqual(terminalHooks(hooks).hooks, [
+    { hook_event_name: 'PostToolUse', session_id: session },
+  ]);
 });
 
 test("the terminal status line keeps what the CLI hands it, and still shows the user's own", (t) => {
