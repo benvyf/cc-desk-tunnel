@@ -11,6 +11,8 @@ declare global {
       finish: () => void;
       fail: () => void;
       calls: string[];
+      recoverUpgradeCheck?: () => void;
+      finishUpgradeOpen?: () => void;
     };
     finishInitialUpdateRead: () => void;
   }
@@ -141,11 +143,22 @@ test.beforeEach(async ({ page }) => {
   await expect(page.getByRole('button', { name: '设置与账号', exact: true })).toBeVisible();
 });
 
-for (const scenario of ['available', 'unpublished', 'automatic', 'multiple'] as const) {
+for (const scenario of [
+  'available',
+  'unpublished',
+  'automatic',
+  'multiple',
+  'check-retry',
+  'opening',
+] as const) {
   test(`client upgrade notice at sign-in: ${scenario}`, async ({ page }, testInfo) => {
     await page.addInitScript(
       ({ scenario, protocol }) => {
         window.desktop!.dev = false;
+        let checkOnline = scenario !== 'check-retry';
+        window.updateFixture.recoverUpgradeCheck = () => {
+          checkOnline = true;
+        };
         window.desktop!.access = {
           load: async () =>
             scenario === 'automatic'
@@ -171,10 +184,15 @@ for (const scenario of ['available', 'unpublished', 'automatic', 'multiple'] as 
           },
           upgradeInfo: async (required) => {
             window.updateFixture.calls.push('upgrade-info:' + required);
+            if (!checkOnline) throw new Error('检查连接中断，请重试。');
             return scenario === 'unpublished' ? null : { build: 26, appVersion: '0.3.7' };
           },
           openUpgrade: async (required) => {
             window.updateFixture.calls.push('open-upgrade:' + required);
+            if (scenario === 'opening')
+              await new Promise<void>((resolve) => {
+                window.updateFixture.finishUpgradeOpen = resolve;
+              });
           },
           logout: async () => {
             window.updateFixture.calls.push('logout');
@@ -196,6 +214,17 @@ for (const scenario of ['available', 'unpublished', 'automatic', 'multiple'] as 
     await expect(notice).toBeVisible();
     await expect(notice).toContainText('账号和聊天记录会保留');
     await expect(page.getByRole('button', { name: '检查服务端更新', exact: true })).toHaveCount(0);
+    if (scenario === 'check-retry') {
+      await expect(notice.getByRole('alert')).toContainText('检查连接中断');
+      await notice.evaluate(async (element) => {
+        await Promise.allSettled(
+          element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+        );
+      });
+      await page.screenshot({ path: testInfo.outputPath('check-failed.png') });
+      await page.evaluate(() => window.updateFixture.recoverUpgradeCheck?.());
+      await notice.getByRole('button', { name: '重新检查', exact: true }).click();
+    }
     if (scenario === 'unpublished') {
       await expect(notice).toContainText('配套客户端尚未发布');
       await expect(notice.getByRole('button', { name: '下载新版客户端', exact: true })).toHaveCount(
@@ -212,9 +241,18 @@ for (const scenario of ['available', 'unpublished', 'automatic', 'multiple'] as 
         )
         .toBe(1);
     }
+    if (scenario === 'opening') {
+      await expect(
+        notice.getByRole('button', { name: '正在打开下载…', exact: true }),
+      ).toBeDisabled();
+      await notice.getByRole('button', { name: '关闭', exact: true }).click();
+      await expect(notice).toHaveCount(0);
+      await page.evaluate(() => window.updateFixture.finishUpgradeOpen?.());
+    }
     if (scenario === 'available')
       await page.screenshot({ path: testInfo.outputPath('client-upgrade-required.png') });
-    await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
+    if (scenario !== 'opening')
+      await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
     await expect(notice).toHaveCount(0);
     const calls = await page.evaluate(() => window.updateFixture.calls);
     expect(calls.filter((x) => x.startsWith('ticket:'))).toHaveLength(1);
@@ -224,6 +262,218 @@ for (const scenario of ['available', 'unpublished', 'automatic', 'multiple'] as 
       await expect(page.getByLabel('邮箱', { exact: true })).toHaveValue('owner@example.com');
   });
 }
+
+test('retained terminal output cannot hide a client upgrade notice after refused reconnect', async ({
+  page,
+}) => {
+  const session = {
+    id: randomUUID(),
+    title: '保留的终端',
+    projectPath: 'D:\\fixture',
+    permissionMode: 'auto',
+    model: null,
+    effort: null,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    activeRun: null,
+  };
+  let closeConnection = async () => {};
+  await page.routeWebSocket('ws://127.0.0.1:18889/ws', (route) => {
+    closeConnection = () => route.close({ code: 1012, reason: 'service updated' });
+    const send = (message: object) => route.send(JSON.stringify(message));
+    route.onMessage((raw) => {
+      const command = JSON.parse(String(raw));
+      if (command.type === 'auth')
+        return send({
+          type: 'ready',
+          protocolVersion: PROTOCOL_VERSION,
+          version: '0.3.7',
+          connectionId: randomUUID(),
+          adapter: 'claude-code',
+          terminalWorkspace: { version: 1, resumable: true },
+          sessions: [session],
+        });
+      if (command.type === 'session.subscribe')
+        send({
+          type: 'session.snapshot',
+          requestId: command.requestId,
+          session,
+          mode: 'replace',
+          firstSequence: 0,
+          lastSequence: 0,
+          hasEarlier: false,
+          events: [],
+        });
+      if (command.type === 'terminal.open') {
+        const terminalId = randomUUID();
+        send({ type: 'terminal.opened', sessionId: session.id, terminalId });
+        send({
+          type: 'terminal.data',
+          sessionId: session.id,
+          terminalId,
+          data: 'retained terminal output\r\n',
+          bytes: 26,
+        });
+      }
+      if (command.requestId) send({ type: 'response', requestId: command.requestId, ok: true });
+    });
+  });
+  await page.addInitScript((protocol) => {
+    window.desktop!.dev = false;
+    window.desktop!.terminalWindow = { focus: async () => false, onClosed: () => () => {} };
+    window.desktop!.foldersExist = async (paths) => paths.map(() => true);
+    let tickets = 0;
+    window.desktop!.access = {
+      load: async () => null,
+      login: async ({ email }) => ({ email, workspaces: [{ id: 'fixture', name: '工作空间' }] }),
+      ticket: async () =>
+        ++tickets === 1
+          ? { url: 'wss://fixture.example/ws', fingerprint: '', token: 'ccs_' + 'x'.repeat(43) }
+          : {
+              error: '需要升级客户端。',
+              retryable: false,
+              clientUpgrade: { requiredProtocol: protocol + 1 },
+            },
+      upgradeInfo: async () => null,
+      openUpgrade: async () => {},
+      logout: async () => {},
+      onExpired: () => () => {},
+    };
+  }, PROTOCOL_VERSION);
+  await page.reload();
+  await page.getByLabel('邮箱', { exact: true }).fill('owner@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('fixture-password');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await page.locator('.session-row').filter({ hasText: '保留的终端' }).click();
+  const popup = page.waitForEvent('popup');
+  await page.getByRole('button', { name: '终端', exact: true }).click();
+  const terminalPage = await popup;
+  await expect(terminalPage.locator('.native-terminal')).toBeVisible();
+  await expect(terminalPage.locator('.xterm-rows')).toContainText('retained terminal output');
+  await closeConnection();
+  const notice = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
+  await expect(notice).toBeVisible();
+  await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
+  await expect(terminalPage.locator('.native-terminal')).toBeVisible();
+  await expect(terminalPage.locator('.xterm-rows')).toContainText('retained terminal output');
+});
+
+test('upgrade notice shares CC SPACE modal tokens in light dark and narrow layouts', async ({
+  page,
+}, testInfo) => {
+  await page.addInitScript((protocol) => {
+    window.desktop!.dev = false;
+    window.desktop!.access = {
+      load: async () => null,
+      login: async ({ email }) => ({ email, workspaces: [{ id: 'fixture', name: '工作空间' }] }),
+      ticket: async () => ({
+        error: '需要升级客户端。',
+        retryable: false,
+        clientUpgrade: { requiredProtocol: protocol + 1 },
+      }),
+      upgradeInfo: async () => ({ build: 26, appVersion: '0.3.7' }),
+      openUpgrade: async () => {},
+      logout: async () => {},
+      onExpired: () => () => {},
+    };
+  }, PROTOCOL_VERSION);
+  await page.reload();
+  await page.getByLabel('邮箱', { exact: true }).fill('owner@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('fixture-password');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  const notice = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
+  await expect(notice).toContainText('Build 26');
+  const measurements = [];
+  for (const [theme, width] of [
+    ['light', 1280],
+    ['dark', 1280],
+    ['dark', 390],
+  ] as const) {
+    await page.setViewportSize({ width, height: 900 });
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    await page.mouse.move(0, 0);
+    await notice.evaluate(async (element) => {
+      getComputedStyle(element).color;
+      await Promise.allSettled(
+        element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+      );
+    });
+    await expect(
+      notice.getByRole('button', { name: '下载新版客户端', exact: true }),
+    ).toBeInViewport();
+    const box = (await notice.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(width);
+    measurements.push(
+      await notice.evaluate((element) => {
+        const s = getComputedStyle(element),
+          title = getComputedStyle(element.querySelector('h2')!),
+          button = getComputedStyle(element.querySelector('.button.primary')!);
+        return {
+          background: s.backgroundColor,
+          color: s.color,
+          font: s.fontFamily,
+          size: s.fontSize,
+          radius: s.borderRadius,
+          padding: s.padding,
+          titleSize: title.fontSize,
+          titleWeight: title.fontWeight,
+          buttonBackground: button.backgroundColor,
+          buttonRadius: button.borderRadius,
+          buttonHeight: button.minHeight,
+        };
+      }),
+    );
+    await page.screenshot({ path: testInfo.outputPath(`upgrade-notice-${theme}-${width}.png`) });
+  }
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
+  await page.evaluate(() => window.updateFixture.offer());
+  await page.getByRole('button', { name: '更新', exact: true }).click();
+  const reference = page.getByRole('dialog', { name: '更新', exact: true });
+  await expect(reference).toBeVisible();
+  await page.mouse.move(0, 0);
+  await reference.evaluate(async (element) => {
+    getComputedStyle(element).color;
+    await Promise.allSettled(
+      element.getAnimations({ subtree: true }).map((animation) => animation.finished),
+    );
+  });
+  const known = await reference.evaluate((element) => {
+    const s = getComputedStyle(element),
+      title = getComputedStyle(element.querySelector('h2')!),
+      button = getComputedStyle(element.querySelector('.button.primary')!);
+    return {
+      background: s.backgroundColor,
+      color: s.color,
+      font: s.fontFamily,
+      size: s.fontSize,
+      radius: s.borderRadius,
+      padding: s.padding,
+      titleSize: title.fontSize,
+      titleWeight: title.fontWeight,
+      buttonBackground: button.backgroundColor,
+      buttonRadius: button.borderRadius,
+      buttonHeight: button.minHeight,
+    };
+  });
+  expect(measurements[1]).toEqual(known);
+  expect(measurements[2]).toEqual(known);
+  await page.screenshot({ path: testInfo.outputPath('existing-update-dialog-dark.png') });
+  await reference
+    .locator('.managed-update-buttons')
+    .getByRole('button', { name: '关闭', exact: true })
+    .click();
+  await expect(reference).toHaveCount(0);
+  await page.getByLabel('密码', { exact: true }).fill('fixture-password');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(notice).toBeVisible();
+  await expect(notice.locator('..')).toHaveAttribute('data-kind', 'dialog');
+  await page.keyboard.press('Escape');
+  await expect(notice).toHaveCount(0);
+});
 
 test('manual handshake fallback prompts client upgrade without a server-update action', async ({
   page,

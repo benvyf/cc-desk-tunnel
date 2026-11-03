@@ -494,11 +494,15 @@ export function App({
       )}
     </Presence>
   );
-  const clientUpgradeDialog = state.clientUpgrade && (
-    <ClientUpgradeDialog
-      requiredProtocol={state.clientUpgrade.requiredProtocol}
-      onClose={() => client.update({ clientUpgrade: null, error: null })}
-    />
+  const clientUpgradeDialog = (
+    <Presence kind="dialog">
+      {state.clientUpgrade && (
+        <ClientUpgradeDialog
+          requiredProtocol={state.clientUpgrade.requiredProtocol}
+          onClose={() => client.update({ clientUpgrade: null, error: null })}
+        />
+      )}
+    </Presence>
   );
   useEffect(() => {
     const report = () => {
@@ -2624,6 +2628,7 @@ export function App({
       </Presence>
       {notesDialog}
       {managedUpdateDialog}
+      {clientUpgradeDialog}
     </div>
   );
 }

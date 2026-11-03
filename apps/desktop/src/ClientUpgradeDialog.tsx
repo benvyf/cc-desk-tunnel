@@ -11,6 +11,7 @@ export default function ClientUpgradeDialog({
   const [release, setRelease] = useState<{ build: number; appVersion: string } | null>();
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const [lookupAttempt, setLookupAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setRelease(undefined);
@@ -27,7 +28,7 @@ export default function ClientUpgradeDialog({
     return () => {
       active = false;
     };
-  }, [requiredProtocol]);
+  }, [requiredProtocol, lookupAttempt]);
   async function download() {
     setOpening(true);
     setError(null);
@@ -40,12 +41,7 @@ export default function ClientUpgradeDialog({
     }
   }
   return (
-    <Modal
-      title="需要升级客户端"
-      onClose={() => {
-        if (!opening) onClose();
-      }}
-    >
+    <Modal title="需要升级客户端" onClose={onClose}>
       <p>此工作空间已更新，请升级 CC SPACE 客户端后重新登录。你的账号和聊天记录会保留。</p>
       {!error && release === undefined && <p role="status">正在检查配套客户端…</p>}
       {release === null && <p role="status">配套客户端尚未发布，请联系管理员。</p>}
@@ -63,6 +59,15 @@ export default function ClientUpgradeDialog({
         </p>
       )}
       <div className="setting-actions">
+        {(error || release === null) && (
+          <button
+            className="button"
+            disabled={opening}
+            onClick={() => setLookupAttempt((value) => value + 1)}
+          >
+            重新检查
+          </button>
+        )}
         <button className="button" disabled={opening} onClick={onClose}>
           稍后升级
         </button>
