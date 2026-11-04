@@ -8,6 +8,7 @@ function createDesktopAccess({
   storage,
   deviceId,
   onExpired,
+  onAccountChanged,
   confirmSwitch,
   origin = ORIGIN,
 }) {
@@ -149,6 +150,12 @@ function createDesktopAccess({
         if (turn !== generation) throw new Error('登录已取消。');
         if (!next || typeof next.token !== 'string' || !Array.isArray(next.workspaces))
           throw new Error('管理中心返回了无效登录信息。');
+        const previousEmail = session?.email?.trim().toLowerCase() ?? null;
+        const nextEmail = next.email?.trim().toLowerCase() ?? null;
+        if (previousEmail !== nextEmail) {
+          await onAccountChanged?.(previousEmail, nextEmail);
+          if (turn !== generation) throw new Error('登录已取消。');
+        }
         session = { email: next.email, token: next.token, remembered: next.remembered ?? remember };
         persist(remember, !!input.autoLogin);
         return { email: next.email, workspaces: next.workspaces };

@@ -305,7 +305,7 @@ export async function openProxyBridge(
       );
     }
   });
-  async function close(notify = false) {
+  async function close(notify = false, intentional = !notify) {
     if (closing) return closing;
     if (pair && !notify) log('Connection closed from this client.');
     closed = true;
@@ -315,7 +315,7 @@ export async function openProxyBridge(
       // Ended on purpose, by the window or by this program: the service hears it before the connection goes,
       // and ends what this computer was running instead of keeping it for a return.
       const remote = pair?.remote;
-      if (remote?.readyState === WebSocket.OPEN && (leaving || !notify))
+      if (remote?.readyState === WebSocket.OPEN && (leaving || intentional))
         await new Promise((resolve) => {
           remote.once('close', resolve);
           setTimeout(resolve, 1000);

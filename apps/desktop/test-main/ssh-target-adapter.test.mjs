@@ -18,6 +18,7 @@ import { createSshTargets } from '../electron/ssh-targets.mjs';
 import { createProxyServer } from '../../server/src/server.ts';
 import { defaultCertificate } from '../../server/test/fixtures/web-certificates.ts';
 import { repairChannelOutput } from '../electron/ssh-channel-output.mjs';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   connectSshTarget,
   startTargetAdapter,
@@ -730,6 +731,250 @@ test(
     assert.equal(manager.list().find((entry) => entry.id === b).status, 'disconnected');
   },
 );
+
+test(
+  'refreshing the same authorized workspace preserves target transport and existing sessions',
+  { timeout: 20000 },
+  async (t) => {
+    const target = await fixture(t);
+    const directory = await mkdtemp(join(tmpdir(), 'cc-ssh-refresh-'));
+    const token = `test-only-${randomUUID()}`;
+    const server = createProxyServer({
+      token,
+      dataDir: directory,
+      claude: { executable: process.execPath },
+      tunnel: { probe: nativeProbeOnTestHost },
+      tls: { cert: Buffer.from(defaultCertificate.cert), key: Buffer.from(defaultCertificate.key) },
+    });
+    const address = await server.listen(0);
+    let saved = [];
+    const manager = createSshTargets({
+      read: () => saved,
+      write: (value) => (saved = value),
+      confirmHost: async () => true,
+    });
+    t.after(async () => {
+      await manager.setService(null);
+      await server.close();
+      await rm(directory, { recursive: true, force: true });
+    });
+    const context = {
+      config: {
+        url: address.replace('https:', 'wss:') + '/ws',
+        fingerprint: new X509Certificate(defaultCertificate.cert).fingerprint256,
+      },
+      binaries: {},
+      credentials: async () => ({ token }),
+    };
+    await manager.setService(context);
+    const id = manager.save({ ...target.config, name: 'keep target' });
+    await manager.connect(id, 'test-password');
+    const session = await manager.createSession(id, '/home/dev/project');
+    const logins = target.controls.logins;
+    await manager.prepareService({ ...context.config });
+    assert.equal(manager.list()[0].status, 'connected');
+    await manager.setService({ ...context, credentials: async () => ({ token }) });
+    assert.equal(manager.list()[0].status, 'connected');
+    assert.equal(target.controls.logins, logins, 'refresh must not authenticate SSH again');
+    assert.deepEqual(await manager.openProject(id, '/home/dev/project'), {
+      sessionId: session,
+      created: false,
+    });
+    assert.ok(!JSON.stringify(saved).includes('test-password'));
+    await manager.prepareService({ ...context.config, nodeId: 'another-workspace' });
+    assert.equal(manager.list()[0].status, 'disconnected', 'workspace change still disconnects');
+  },
+);
+
+test(
+  'a restarted service recovers target sessions without asking for the SSH password again',
+  { timeout: 20000 },
+  async (t) => {
+    const target = await fixture(t);
+    const directory = await mkdtemp(join(tmpdir(), 'cc-ssh-service-recover-'));
+    const token = `test-only-${randomUUID()}`;
+    const options = {
+      token,
+      dataDir: directory,
+      claude: { executable: process.execPath },
+      tunnel: { probe: nativeProbeOnTestHost },
+      tls: { cert: Buffer.from(defaultCertificate.cert), key: Buffer.from(defaultCertificate.key) },
+    };
+    let server = createProxyServer(options);
+    const address = await server.listen(0);
+    let saved = [];
+    let dropDuringProbe = 'capabilities';
+    const manager = createSshTargets({
+      read: () => saved,
+      write: (value) => (saved = value),
+      confirmHost: async () => true,
+      retryMs: 10,
+      changed: (entries) => {
+        if (target.controls.logins > 1 && entries[0]?.stage === dropDuringProbe) {
+          dropDuringProbe = dropDuringProbe === 'capabilities' ? 'sftp' : null;
+          target.drop();
+        }
+      },
+    });
+    t.after(async () => {
+      await manager.setService(null);
+      await server.close();
+      await rm(directory, { recursive: true, force: true });
+    });
+    const context = {
+      config: {
+        url: address.replace('https:', 'wss:') + '/ws',
+        fingerprint: new X509Certificate(defaultCertificate.cert).fingerprint256,
+      },
+      binaries: {},
+      credentials: async () => ({ token }),
+    };
+    await manager.setService(context);
+    const id = manager.save({ ...target.config, name: 'service recovery' });
+    await manager.connect(id, 'test-password');
+    const session = await manager.createSession(id, '/home/dev/project');
+    const logins = target.controls.logins;
+    await server.close();
+    server = createProxyServer(options);
+    await server.listen(Number(new URL(address).port));
+    await manager.setService({ ...context });
+    const deadline = Date.now() + 5000;
+    while (
+      Date.now() < deadline &&
+      (target.controls.logins === logins || manager.list()[0].status !== 'connected')
+    )
+      await delay(10);
+    assert.equal(manager.list()[0].status, 'connected');
+    assert.deepEqual(await manager.openProject(id, '/home/dev/project'), {
+      sessionId: session,
+      created: false,
+    });
+    assert.equal(
+      server.store.list().length,
+      1,
+      'reconnection does not recreate the project session',
+    );
+    assert.equal(
+      dropDuringProbe,
+      null,
+      'recovery must survive additional transport losses during both probes',
+    );
+    assert.ok(!JSON.stringify(saved).includes('test-password'));
+  },
+);
+
+test(
+  'established SSH targets reconnect automatically without persisting passwords and stop on manual disconnect',
+  { timeout: 15000 },
+  async (t) => {
+    const target = await fixture(t);
+    const directory = await mkdtemp(join(tmpdir(), 'cc-ssh-recover-'));
+    const token = `test-only-${randomUUID()}`;
+    const server = createProxyServer({
+      token,
+      dataDir: directory,
+      claude: { executable: process.execPath },
+      tunnel: { probe: nativeProbeOnTestHost },
+      tls: { cert: Buffer.from(defaultCertificate.cert), key: Buffer.from(defaultCertificate.key) },
+    });
+    const address = await server.listen(0);
+    let saved = [];
+    const manager = createSshTargets({
+      read: () => saved,
+      write: (value) => (saved = value),
+      confirmHost: async () => true,
+      retryMs: 10,
+    });
+    t.after(async () => {
+      await manager.setService(null);
+      await server.close();
+      await rm(directory, { recursive: true, force: true });
+    });
+    await manager.setService({
+      config: {
+        url: address.replace('https:', 'wss:') + '/ws',
+        fingerprint: new X509Certificate(defaultCertificate.cert).fingerprint256,
+      },
+      binaries: {},
+      credentials: async () => ({ token }),
+    });
+    const id = manager.save({ ...target.config, name: 'recover target' });
+    await manager.connect(id, 'test-password');
+    const session = await manager.createSession(id, '/home/dev/project');
+    const logins = target.controls.logins;
+    target.drop();
+    const deadline = Date.now() + 3000;
+    while (
+      Date.now() < deadline &&
+      (target.controls.logins === logins || manager.list()[0].status !== 'connected')
+    )
+      await delay(10);
+    assert.ok(
+      target.controls.logins > logins,
+      'lost transport must authenticate with its in-memory secret',
+    );
+    assert.equal(manager.list()[0].status, 'connected');
+    assert.deepEqual(await manager.openProject(id, '/home/dev/project'), {
+      sessionId: session,
+      created: false,
+    });
+    assert.ok(!JSON.stringify(saved).includes('test-password'));
+    target.drop();
+    await manager.disconnect(id);
+    const stoppedLogins = target.controls.logins;
+    await delay(100);
+    assert.equal(
+      target.controls.logins,
+      stoppedLogins,
+      'manual disconnect must cancel automatic recovery',
+    );
+    assert.equal(manager.list()[0].status, 'disconnected');
+  },
+);
+
+test('concurrent target connects cannot leave a superseded authentication alive', async (t) => {
+  const clients = [];
+  t.mock.method(ssh2.Client.prototype, 'connect', function () {
+    clients.push(this);
+    return this;
+  });
+  t.mock.method(ssh2.Client.prototype, 'destroy', function () {
+    this.auditDestroyed = true;
+    this.emit('close');
+    return this;
+  });
+  let saved = [];
+  const manager = createSshTargets({
+    read: () => saved,
+    write: (value) => (saved = value),
+    confirmHost: async () => true,
+  });
+  await manager.setService({
+    config: { url: 'wss://127.0.0.1:1/ws', fingerprint: 'AB'.repeat(32) },
+    binaries: {},
+    credentials: async () => ({ token: 'test-only-auth-token' }),
+  });
+  const id = manager.save({
+    host: '127.0.0.1',
+    port: 22,
+    username: 'dev',
+    auth: 'password',
+    name: 'race',
+  });
+  const pending = [
+    manager.connect(id, 'test-password').catch(() => {}),
+    manager.connect(id, 'test-password').catch(() => {}),
+  ];
+  t.after(async () => {
+    for (const client of clients) client.destroy();
+    await Promise.all(pending);
+    await manager.setService(null);
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(clients.length, 1, 'only the newest connection attempt may start authentication');
+  await manager.disconnect(id);
+  assert.ok(clients.every((client) => client.auditDestroyed));
+});
 
 test(
   'connection diagnostics identify the failed stage without leaking credentials or reviving removed connections',

@@ -31,6 +31,12 @@ const stages = {
   tunnel: '开发通道连接',
   ready: '开发通道已就绪',
 };
+const serviceIdentity = (config) =>
+  JSON.stringify([
+    config.nodeId ?? null,
+    new URL(config.url).href,
+    (config.fingerprint ?? '').replaceAll(':', '').toLowerCase(),
+  ]);
 function diagnosis(stage, error) {
   const reasons = {
     HOST_KEY_CHANGED: '主机指纹已变化，请核实后添加新的连接。',
@@ -64,10 +70,21 @@ function diagnosis(stage, error) {
 
 // One owner per desktop service profile. SSH secrets live only in connect()'s
 // opening call; persistent entries contain configuration, trust and project paths.
-export function createSshTargets({ read, write, confirmHost, changed, log = () => {} }) {
+export function createSshTargets({
+  read,
+  write,
+  confirmHost,
+  changed,
+  log = () => {},
+  retryMs = 1000,
+}) {
   let service = null;
   let generation = 0;
   const active = new Map();
+  // Connection intent and authentication material live only for this signed-in
+  // process. They never enter list(), persisted settings, logs or the renderer.
+  const wanted = new Map();
+  const attempts = new Map();
   const entries = () => read() ?? [];
   const scope = () => service?.config.nodeId ?? service?.config.url;
   const emit = () => changed?.(list());
@@ -90,14 +107,14 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
     write(entries().map((item) => (item.id === entry.id ? entry : item)));
     emit();
   }
-  function closeRun(run) {
+  function closeRun(run, intentional = true) {
     run.closing ??= (async () => {
       run.controller.abort();
       for (const pending of run.pending.values()) pending.reject(new Error('SSH 开发通道已断开。'));
       run.pending.clear();
       run.socket?.close();
       try {
-        await run.bridge?.close();
+        await run.bridge?.close(false, intentional);
       } finally {
         run.target?.destroy();
         run.target = undefined;
@@ -108,7 +125,14 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
     })();
     return run.closing;
   }
-  async function disconnect(id) {
+  async function disconnect(id, preserveAttempt = false) {
+    if (!preserveAttempt) attempts.set(id, (attempts.get(id) ?? 0) + 1);
+    const intent = wanted.get(id);
+    wanted.delete(id);
+    if (intent) {
+      clearTimeout(intent.timer);
+      intent.secret = '';
+    }
     const run = active.get(id);
     if (!run) return;
     active.delete(id);
@@ -117,18 +141,59 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
   }
   function failure(id, run, error) {
     if (active.get(id) !== run || run.controller.signal.aborted) return;
+    const intent = wanted.get(id);
+    const retryable =
+      error.retryable ??
+      (!['HOST_KEY_CHANGED', 'HOST_NOT_TRUSTED', 'ENOENT', 'EACCES'].includes(error.code) &&
+        error.level !== 'client-authentication' &&
+        !/Cannot parse privateKey/.test(error.message ?? '') &&
+        ['ssh', 'tunnel', 'ready'].includes(run.stage));
+    const retry = !!intent?.established && retryable;
     const diagnostic = diagnosis(run.stage, error);
-    run.status = 'failed';
+    run.status = retry ? 'connecting' : 'failed';
     run.error = diagnostic.message;
     run.errorCode = diagnostic.code;
     log(`SSH target ${id}: ${run.stage}: ${diagnostic.code}`);
     emit();
-    void closeRun(run).catch(() => log(`SSH target ${id}: cleanup_failed`));
+    if (!retry && intent) {
+      wanted.delete(id);
+      intent.secret = '';
+    }
+    void closeRun(run, false)
+      .then(() => {
+        if (!retry || wanted.get(id) !== intent || !service || generation !== intent.generation)
+          return;
+        intent.timer = setTimeout(
+          () => {
+            intent.timer = undefined;
+            if (wanted.get(id) !== intent || !service) return;
+            void connect(id, intent.secret, true).catch(() => {});
+          },
+          Math.min(retryMs * 2 ** Math.min(intent.failures++, 4), 10000),
+        );
+        intent.timer.unref?.();
+      })
+      .catch(() => {
+        log(`SSH target ${id}: cleanup_failed`);
+        if (intent && wanted.get(id) === intent) {
+          wanted.delete(id);
+          intent.secret = '';
+          run.status = 'failed';
+          emit();
+        }
+      });
   }
   async function setService(value) {
+    if (value && service && serviceIdentity(value.config) === serviceIdentity(service.config)) {
+      service = value;
+      emit();
+      return;
+    }
     const turn = ++generation;
     service = null;
-    await Promise.all([...active.keys()].map(disconnect));
+    await Promise.all(
+      [...new Set([...active.keys(), ...wanted.keys()])].map((id) => disconnect(id)),
+    );
     if (turn !== generation) return;
     service = value;
     emit();
@@ -164,15 +229,41 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
     emit();
     return entry.id;
   }
-  async function connect(id, secret = '') {
+  async function connect(id, secret = '', recovering = false) {
     const entry = entryOf(id);
     const context = service;
     const turn = generation;
     if (!context || entry.scope !== scope())
       throw new Error('请连接此 SSH 配置所属的 Ubuntu 工作空间。');
     if (typeof secret !== 'string' || secret.length > 16384) throw new Error('SSH 登录信息无效。');
-    await disconnect(id);
-    if (service !== context || generation !== turn) throw new Error('连接已取消。');
+    let intent = recovering ? wanted.get(id) : null;
+    const attempt = recovering ? intent?.attempt : (attempts.get(id) ?? 0) + 1;
+    if (!recovering) attempts.set(id, attempt);
+    if (recovering) {
+      if (!intent) throw new Error('连接已取消。');
+      const previous = active.get(id);
+      active.delete(id);
+      if (previous) await closeRun(previous, false);
+    } else await disconnect(id, true);
+    if (
+      !service ||
+      serviceIdentity(service.config) !== serviceIdentity(context.config) ||
+      generation !== turn ||
+      attempts.get(id) !== attempt
+    )
+      throw new Error('连接已取消。');
+    if (!recovering) {
+      intent = {
+        secret,
+        established: false,
+        failures: 0,
+        generation: turn,
+        attempt,
+        timer: undefined,
+      };
+      wanted.set(id, intent);
+    }
+    if (wanted.get(id) !== intent) throw new Error('连接已取消。');
     const run = {
       status: 'connecting',
       error: '',
@@ -186,8 +277,10 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
     try {
       const current = () => {
         if (
-          service !== context ||
+          !service ||
+          serviceIdentity(service.config) !== serviceIdentity(context.config) ||
           generation !== turn ||
+          attempts.get(id) !== attempt ||
           active.get(id) !== run ||
           run.controller.signal.aborted
         )
@@ -208,7 +301,11 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
       if (config.fingerprint !== entry.fingerprint)
         persist({ ...entry, fingerprint: config.fingerprint });
       run.target.once('close', () =>
-        failure(id, run, new Error('目标 SSH 已断开，在途命令结果可能未知。')),
+        failure(
+          id,
+          run,
+          Object.assign(new Error('目标 SSH 已断开，在途命令结果可能未知。'), { retryable: true }),
+        ),
       );
       stage('capabilities');
       await targetExec(run.target, 'test "$(uname -s)" = Linux && test -x /bin/bash');
@@ -218,7 +315,7 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
       current();
       run.status = 'ssh-connected';
       stage('authorization');
-      const credentials = await context.credentials();
+      const credentials = await service.credentials();
       current();
       stage('tunnel');
       const candidate = join(context.binaries.openssh ?? '', 'ssh-keygen.exe');
@@ -243,8 +340,11 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
       const socket = new WebSocket(run.bridge.url);
       run.socket = socket;
       await new Promise((resolve, reject) => {
+        let settled = false;
         const timer = setTimeout(() => reject(new Error('Ubuntu 开发通道连接超时。')), 60000);
         const finish = (error) => {
+          if (settled) return;
+          settled = true;
           clearTimeout(timer);
           run.controller.signal.removeEventListener('abort', aborted);
           error ? reject(error) : resolve();
@@ -263,13 +363,20 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
           socket.send(JSON.stringify({ type: 'device', id }));
         });
         socket.on('message', (raw) => {
-          const parsed = serverMessageSchema.safeParse(JSON.parse(raw.toString()));
+          let parsed;
+          try {
+            parsed = serverMessageSchema.safeParse(JSON.parse(raw.toString()));
+          } catch {
+            parsed = { success: false };
+          }
           if (!parsed.success) return finish(new Error('Ubuntu 返回了不兼容的消息。'));
           const message = parsed.data;
           if (message.type === 'ready') {
             for (const session of message.sessions)
               if (session.device?.id === id) run.sessions.set(session.id, session);
             run.status = 'connected';
+            intent.established = true;
+            intent.failures = 0;
             stage('ready');
             finish();
           } else if (message.type === 'session.updated') {
@@ -280,6 +387,9 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
             run.sessions.delete(message.sessionId);
           } else if (message.type === 'connection.error') {
             const error = new Error(message.message);
+            error.retryable = ['connection_lost', 'tunnel_failed', 'ssh_failed'].includes(
+              message.code,
+            );
             finish(error);
             failure(id, run, error);
           } else if (message.type === 'response') {
@@ -364,6 +474,10 @@ export function createSshTargets({ read, write, confirmHost, changed, log = () =
     disconnect,
     createSession,
     setService,
+    async prepareService(config) {
+      if (service && serviceIdentity(config) !== serviceIdentity(service.config))
+        await setService(null);
+    },
     async openProject(id, path, forceNew = false) {
       const run = readyRun(id);
       const canonical = await targetDirectory(run.target, path);

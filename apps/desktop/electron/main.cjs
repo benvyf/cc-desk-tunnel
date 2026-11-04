@@ -47,6 +47,7 @@ const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
+let sshTargetsActive = false;
 let sshTargetsLoading;
 function sshTargets() {
   sshTargetsLoading ??= import(pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href).then(
@@ -55,6 +56,10 @@ function sshTargets() {
         read: () => readSettings().sshTargets,
         write: (sshTargets) => writeSettings({ sshTargets }),
         changed: (entries) => {
+          sshTargetsActive = entries.some((entry) =>
+            ['connecting', 'ssh-connected', 'connected'].includes(entry.status),
+          );
+          keepAwake(!!bridge || sshTargetsActive);
           for (const window of BrowserWindow.getAllWindows())
             if (!window.isDestroyed()) window.webContents.send('ssh:changed', entries);
         },
@@ -593,10 +598,10 @@ handle('proxy:connect', async (event, config) => {
     if (!config || typeof config.url !== 'string' || typeof config.fingerprint !== 'string')
       throw new Error('Invalid proxy configuration');
     const generation = ++connectionGeneration;
-    await (await sshTargets()).setService(null);
+    await (await sshTargets()).prepareService(config);
     const previous = bridge;
     bridge = null;
-    await previous?.close();
+    await previous?.close(false, false);
     if (generation !== connectionGeneration) throw new Error('Connection cancelled');
     const { openProxyBridge } = await import(
       pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href
@@ -645,8 +650,9 @@ handle('proxy:connect', async (event, config) => {
       () => {
         if (bridge !== connection) return;
         bridge = null;
-        void sshTargets().then((targets) => targets.setService(null));
-        keepAwake(false);
+        // SSH targets have independent authenticated channels. A main-window
+        // reconnect must not turn their temporary absence into an explicit leave.
+        keepAwake(sshTargetsActive);
         if (!event.sender.isDestroyed()) event.sender.send('proxy:closed');
       },
     );
@@ -748,6 +754,10 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
       log(`Close expired email connection: ${error.message}`),
     );
     primaryWindow?.webContents.send('access:expired', message);
+  },
+  onAccountChanged: async () => {
+    serverClient?.cancel();
+    await (await sshTargets()).setService(null);
   },
 });
 setInterval(

@@ -6,7 +6,58 @@ import {
   controlTlsOptions,
   openProxyBridge,
 } from '../electron/proxy-bridge.mjs';
-import { WebSocket } from 'ws';
+import { WebSocket, WebSocketServer } from 'ws';
+import { createServer } from 'node:https';
+import { X509Certificate } from 'node:crypto';
+import { once } from 'node:events';
+import { defaultCertificate } from '../../server/test/fixtures/web-certificates.ts';
+
+test('transient bridge closure preserves offline grace while explicit closure sends leave', async (t) => {
+  for (const intentional of [false, true]) {
+    await t.test(intentional ? 'explicit disconnect' : 'transient disconnect', async () => {
+      const server = createServer({ key: defaultCertificate.key, cert: defaultCertificate.cert });
+      const wss = new WebSocketServer({ server });
+      server.listen(0, '127.0.0.1');
+      await once(server, 'listening');
+      const messages = [];
+      let peer;
+      const authenticated = new Promise((resolve) =>
+        wss.once('connection', (socket) => {
+          peer = socket;
+          socket.on('message', (raw) => {
+            const message = JSON.parse(raw.toString());
+            messages.push(message.type);
+            if (message.type === 'auth') resolve();
+          });
+        }),
+      );
+      const bridge = await openProxyBridge(
+        {
+          url: `wss://127.0.0.1:${server.address().port}/ws`,
+          fingerprint: new X509Certificate(defaultCertificate.cert).fingerprint256,
+        },
+        {},
+      );
+      const client = new WebSocket(bridge.url);
+      client.on('error', () => {});
+      try {
+        await once(client, 'open');
+        client.send(JSON.stringify({ type: 'auth', token: 'test-only-token-for-bridge' }));
+        await authenticated;
+        const closed = once(peer, 'close');
+        await bridge.close(false, intentional);
+        await closed;
+        assert.equal(messages.includes('leave'), intentional);
+      } finally {
+        client.terminate();
+        await bridge.close();
+        for (const socket of wss.clients) socket.terminate();
+        await new Promise((resolve) => wss.close(resolve));
+        await new Promise((resolve) => server.close(resolve));
+      }
+    });
+  }
+});
 
 test('WSS pin comparison rejects empty, malformed and mismatched fingerprints', () => {
   const pin = Array(32).fill('AB').join(':');

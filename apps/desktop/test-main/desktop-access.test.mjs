@@ -3,6 +3,36 @@ import { createRequire } from 'node:module';
 import { test } from 'node:test';
 const { createDesktopAccess } = createRequire(import.meta.url)('../electron/desktop-access.cjs');
 
+test('account replacement waits for old SSH identity cleanup while same-account refresh preserves it', async () => {
+  const changes = [];
+  let release;
+  const access = createDesktopAccess({
+    read: () => null,
+    write() {},
+    storage: { isEncryptionAvailable: () => false },
+    onAccountChanged: async (previous, next) => {
+      changes.push([previous, next]);
+      if (previous) await new Promise((resolve) => (release = resolve));
+    },
+    request: async (_url, options) => {
+      const input = JSON.parse(options.body);
+      return Response.json({ email: input.email, token: 'test-only-session', workspaces: [] });
+    },
+  });
+  await access.login({ email: 'one@example.com', password: 'test-password' });
+  await access.login({ email: 'one@example.com', password: 'test-password' });
+  assert.deepEqual(changes, [[null, 'one@example.com']]);
+  let replaced = false;
+  const replacing = access
+    .login({ email: 'two@example.com', password: 'test-password' })
+    .then(() => (replaced = true));
+  while (!release) await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(replaced, false);
+  release();
+  await replacing;
+  assert.deepEqual(changes.at(-1), ['one@example.com', 'two@example.com']);
+});
+
 test('computer switching waits for confirmation, preserves the current session on cancel and retries only on consent', async () => {
   let conflict = false;
   let consent = false;
