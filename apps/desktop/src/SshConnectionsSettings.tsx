@@ -246,9 +246,6 @@ export default function SshConnectionsSettings({
               <Server />
             </span>
             <strong>尚未添加 SSH 连接</strong>
-            <p className="muted">
-              添加一台 Linux 设备，即可在它的项目里开发；Claude 仍运行在 Ubuntu 工作空间。
-            </p>
             <Button size="sm" disabled={!api || busy} onClick={startAdding}>
               <Plus />
               添加连接

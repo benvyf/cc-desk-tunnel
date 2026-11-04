@@ -2455,7 +2455,7 @@ dialog:has(.release-notes) {
 .ssh-heading .page-heading {
   margin: 0;
 }
-/* Nothing added yet: a quiet panel with the laptop-to-server mark, one sentence and the way to add one. */
+/* Nothing added yet: a quiet panel with the laptop-to-server mark, a title and the way to add one. */
 .ssh-empty {
   display: flex;
   flex-direction: column;
@@ -2486,11 +2486,8 @@ dialog:has(.release-notes) {
 .ssh-empty strong {
   font-weight: 500;
 }
-.ssh-empty p {
-  max-width: 460px;
-  text-wrap: pretty;
-  margin: 0 0 10px;
-  font-size: calc(13rem / 14);
+.ssh-empty strong + .button {
+  margin-top: 8px;
 }
 .ssh-row > .switch {
   align-self: flex-start;
