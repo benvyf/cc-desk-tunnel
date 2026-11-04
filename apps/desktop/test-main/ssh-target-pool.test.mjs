@@ -52,6 +52,30 @@ test('metadata and cancellation slots remain available while work is held', asyn
   assert.deepEqual(target.calls, ['held', 'metadata', 'cancel']);
 });
 
+test('late canceled supervised channels retain their cleanup hook and lease until actual close', async (t) => {
+  const target = new Target();
+  let acknowledge;
+  target.exec = (_command, callback) => (acknowledge = callback);
+  const pool = createSshTargetPool(target, () => assert.fail(), null, { connections: 1, work: 1 });
+  t.after(() => pool.destroy());
+  const controller = new AbortController();
+  let cleanup;
+  const opening = assert.rejects(
+    open(pool, 'supervised', {
+      signal: controller.signal,
+      onCanceledChannel: (channel) => (cleanup = channel),
+    }),
+    (error) => error.code === 'ABORT_ERR',
+  );
+  controller.abort();
+  await opening;
+  const late = new Channel();
+  acknowledge(null, late);
+  assert.equal(cleanup, late);
+  assert.equal(late.closed, undefined);
+  late.destroy();
+});
+
 test('pending work has a finite queue and deadline and the transport remains usable', async (t) => {
   const target = new Target();
   const pool = createSshTargetPool(target, () => assert.fail(), null, {

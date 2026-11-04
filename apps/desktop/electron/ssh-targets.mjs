@@ -56,11 +56,12 @@ function diagnosis(stage, error) {
         : 'CONNECTION_FAILED';
   const tips = {
     ssh: '请核对主机、端口和身份验证信息。',
-    capabilities: '目标需要 Linux 和 /bin/bash，请检查目标的非交互 SSH 环境。',
+    capabilities:
+      '目标需要 Linux、/bin/bash、setsid --wait、mkfifo 和 timeout，请检查目标的非交互 SSH 环境。',
     sftp: '请检查目标是否启用 SFTP，以及当前用户的访问权限。',
     authorization: '请重新登录并连接此配置所属的 Ubuntu 工作空间。',
     tunnel: '请检查 Ubuntu 服务的网络、证书和协议版本是否与客户端匹配。',
-    ready: '连接已中断，在途命令结果可能未知，请核实后手动重连。',
+    ready: '连接已中断，请核实在途命令状态，避免重复执行。',
   };
   return {
     code,
@@ -201,7 +202,18 @@ export function createSshTargets({
   function save(input) {
     if (input?.id) {
       const entry = entryOf(input.id);
-      persist({ ...entry, name: field(input.name, '显示名称', 120) });
+      const name = field(input.name, '显示名称', 120);
+      const run = active.get(entry.id);
+      if (run?.status === 'connected') {
+        const rename = async () => {
+          await request(run, { type: 'device.rename', name });
+          persist({ ...entryOf(entry.id), name });
+          return entry.id;
+        };
+        run.renaming = (run.renaming ?? Promise.resolve()).then(rename, rename);
+        return run.renaming;
+      }
+      persist({ ...entry, name });
       return input.id;
     }
     if (!service) throw new Error('请先连接 Ubuntu 工作空间，再添加 SSH 设备。');
@@ -299,7 +311,7 @@ export function createSshTargets({
       );
       current();
       if (config.fingerprint !== entry.fingerprint)
-        persist({ ...entry, fingerprint: config.fingerprint });
+        persist({ ...entryOf(id), fingerprint: config.fingerprint });
       run.target.once('close', () =>
         failure(
           id,
@@ -308,7 +320,10 @@ export function createSshTargets({
         ),
       );
       stage('capabilities');
-      await targetExec(run.target, 'test "$(uname -s)" = Linux && test -x /bin/bash');
+      await targetExec(
+        run.target,
+        'test "$(uname -s)" = Linux && test -x /bin/bash && command -v mkfifo >/dev/null && command -v timeout >/dev/null && setsid --wait /bin/bash -c :',
+      );
       // Probe SFTP without requiring an initial project path.
       stage('sftp');
       await targetDirectory(run.target, '/');
@@ -408,6 +423,10 @@ export function createSshTargets({
         });
       });
       current();
+      const latestName = entryOf(id).name;
+      if (latestName !== entry.name)
+        await request(run, { type: 'device.rename', name: latestName });
+      current();
     } catch (error) {
       failure(id, run, error);
       await closeRun(run);
@@ -452,7 +471,7 @@ export function createSshTargets({
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         run.pending.delete(requestId);
-        reject(new Error('创建响应超时，请先查看已有会话，避免重复创建。'));
+        reject(new Error('操作响应超时，请先检查当前状态，避免重复操作。'));
       }, 20000);
       run.pending.set(requestId, {
         resolve: (value) => {

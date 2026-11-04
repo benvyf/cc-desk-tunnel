@@ -504,6 +504,18 @@ export type ServiceUpdate = z.infer<typeof serviceUpdateSchema>;
 const request = { requestId: id };
 export const commandSchema = z.discriminatedUnion('type', [
   ...webCommandSchemas,
+  z
+    .object({
+      type: z.literal('device.rename'),
+      ...request,
+      name: z
+        .string()
+        .trim()
+        .min(1)
+        .max(120)
+        .regex(/^[^\0\r\n]+$/),
+    })
+    .strict(),
   z.object({ type: z.literal('terminal.history.list'), ...request, sessionId: id }).strict(),
   z
     .object({

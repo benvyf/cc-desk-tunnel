@@ -1842,6 +1842,16 @@ export function createProxyServer(options: ServerOptions) {
       case 'session.unsubscribe':
         peer.subscriptions.delete(command.sessionId);
         return command.sessionId;
+      case 'device.rename': {
+        const device = { ...deviceOf(peer), name: command.name };
+        for (const member of seats.get(device.id)?.peers ?? []) {
+          member.name = command.name;
+          if (member.device) member.device = { ...member.device, name: command.name };
+        }
+        for (const session of store.named(device)) broadcast({ type: 'session.updated', session });
+        announce();
+        return undefined;
+      }
       case 'session.create': {
         const session = store.create(
           command.requestId,

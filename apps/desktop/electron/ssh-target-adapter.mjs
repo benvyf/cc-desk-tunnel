@@ -7,6 +7,7 @@ import ssh2 from 'ssh2';
 import { connectionKeys } from './ssh-keys.mjs';
 import { discardChannel, repairChannelOutput } from './ssh-channel-output.mjs';
 import { createSshTargetPool } from './ssh-target-pool.mjs';
+import { supervisedCommand } from './ssh-command.mjs';
 
 export const hostFingerprint = (key) =>
   `SHA256:${createHash('sha256').update(key).digest('base64').replace(/=+$/, '')}`;
@@ -196,11 +197,14 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
   signal.addEventListener('abort', close, { once: true });
   server.on('connection', (client, info) => {
     const openings = new Set();
+    const commands = new Set();
     clients.add(client);
     client.on('error', () => client.end());
     client.once('close', () => clients.delete(client));
     client.once('close', () => {
       for (const pending of openings) pending.abort();
+      for (const task of commands) task.cancel();
+      commands.clear();
     });
     client.once('ready', () => sockets.get(`${info.ip}:${info.port}`)?.setTimeout(0));
     client.on('authentication', (ctx) => {
@@ -220,16 +224,23 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
         const local = acceptCommand();
         if (!local) return;
         const pending = new AbortController();
+        const task = supervisedCommand(command, target);
+        commands.add(task);
         openings.add(pending);
-        session.once('close', () => pending.abort());
-        local.once('close', () => pending.abort());
+        const cancel = () => {
+          pending.abort();
+          task.cancel();
+        };
+        session.once('close', cancel);
+        local.once('close', cancel);
         local.on('error', () => {});
         local.stderr.on('error', () => {});
         target.exec(
-          `export CC_DESK_TUNNEL_SHELL=/bin/bash; ${command}`,
+          task.command,
           (error, remote) => {
             openings.delete(pending);
             if (error) {
+              commands.delete(task);
               if (!local.destroyed && !pending.signal.aborted) {
                 local.stderr.write(
                   error.code === 'SSH_TARGET_BUSY'
@@ -239,9 +250,28 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
                 local.exit(255);
                 local.close();
               }
-            } else attach(local, remote);
+            } else {
+              remote.once('close', () => commands.delete(task));
+              task.attach(
+                remote,
+                (stream) => attach(local, stream, task),
+                () => {
+                  if (pending.signal.aborted || local.destroyed) return;
+                  local.stderr.write('目标命令启动失败；请检查 setsid、bash 和临时目录权限。\n');
+                  local.exit(255);
+                  local.close();
+                },
+              );
+            }
           },
-          { signal: pending.signal },
+          {
+            signal: pending.signal,
+            onCanceledChannel: (remote) => {
+              task.cancel();
+              remote.once('close', () => commands.delete(task));
+              task.attach(remote);
+            },
+          },
         );
       });
       session.on('subsystem', (acceptSubsystem, reject, { name }) => {
@@ -270,7 +300,8 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
       });
     });
   });
-  function attach(local, remote) {
+  function attach(local, remote, task) {
+    const dispose = () => (task ? task.cancel() : discardChannel(remote));
     // ssh2 can mark an SSH channel closed without setting stream.destroyed.
     // An incoming EOF is valid stdin completion; a full close cancels input.
     if (
@@ -280,13 +311,13 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
       local.incoming.state === 'closed' ||
       local.outgoing.state !== 'open'
     )
-      return discardChannel(remote);
+      return dispose();
     repairChannelOutput(local);
-    local.on('error', () => discardChannel(remote));
+    local.on('error', dispose);
     remote.on('error', () => local.destroy());
-    local.stderr.on('error', () => discardChannel(remote));
+    local.stderr.on('error', dispose);
     remote.stderr.on('error', () => local.destroy());
-    local.once('close', () => discardChannel(remote));
+    local.once('close', dispose);
     local.pipe(remote);
     remote.pipe(local, { end: false });
     remote.stderr.pipe(local.stderr, { end: false });

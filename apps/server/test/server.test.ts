@@ -102,6 +102,38 @@ async function fixture(t: TestContext, stepMs = 2, graceMs?: number) {
   return { directory, server, url, clients, connect, create };
 }
 
+test('device rename updates every seat peer and owned sessions without reconnecting', async (t) => {
+  const f = await fixture(t);
+  const client = await f.connect();
+  const overlapping = await f.connect();
+  const foreign = await f.connect({ id: randomUUID(), name: 'other device' });
+  const sessionId = await f.create(client);
+  const foreignId = await f.create(foreign);
+  client.forgetDevices();
+  const response = await client.request({ type: 'device.rename', name: 'renamed device' });
+  assert.ok(response.type === 'response' && response.ok);
+  assert.equal(f.server.store.get(sessionId).session.device?.name, 'renamed device');
+  assert.equal(f.server.store.get(foreignId).session.device?.name, 'other device');
+  const presence = await client.wait((m) => m.type === 'devices');
+  assert.ok(
+    presence.type === 'devices' &&
+      presence.devices.some((d) => d.id === device.id && d.name === 'renamed device'),
+  );
+  assert.equal((await f.create(overlapping)).length > 0, true);
+  const updated = await overlapping.wait(
+    (m) => m.type === 'session.updated' && m.session.device?.name === 'renamed device',
+  );
+  assert.equal(updated.type, 'session.updated');
+  client.send({
+    type: 'device.rename',
+    requestId: randomUUID(),
+    name: 'attack',
+    deviceId: foreign.computer.id,
+  });
+  assert.equal((await client.wait((m) => m.type === 'connection.error')).type, 'connection.error');
+  assert.equal(f.server.store.get(foreignId).session.device?.name, 'other device');
+});
+
 test('requires authentication, rejects wrong token/version/origin and accepts health', async (t) => {
   const f = await fixture(t);
   assert.deepEqual(await (await fetch(f.url + '/health')).json(), {

@@ -109,7 +109,8 @@ export function createSshTargetPool(
             channel.once('close', release);
             if (channel.incoming?.state === 'closed') release();
             if (entry.cancelled || closed) {
-              discardChannel(channel);
+              if (entry.onCanceledChannel && !closed) entry.onCanceledChannel(channel);
+              else discardChannel(channel);
               finish(entry, canceled());
             } else finish(entry, null, channel);
           },
@@ -128,7 +129,15 @@ export function createSshTargetPool(
       );
       return;
     }
-    const entry = { kind, open, callback, signal: options.signal, started: false, done: false };
+    const entry = {
+      kind,
+      open,
+      callback,
+      signal: options.signal,
+      onCanceledChannel: options.onCanceledChannel,
+      started: false,
+      done: false,
+    };
     entry.abort = () => {
       entry.cancelled = true;
       if (!entry.started) {

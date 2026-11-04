@@ -16,6 +16,7 @@ async function fixture(
     longAnswer = false,
     delaySendAck = false,
     failCancelOnce = false,
+    ssh = false,
   } = {},
 ) {
   const now = new Date().toISOString(),
@@ -35,6 +36,49 @@ async function fixture(
   };
   const sessions = [parent],
     events = new Map<string, SessionEvent[]>([[parent.id, []]]);
+  if (ssh) {
+    parent.device = { id: randomUUID(), name: 'SSH fixture', platform: 'linux', viaSsh: true };
+    parent.projectPath = '/home/dev/project';
+    await page.addInitScript(() => {
+      const noOp = () => {};
+      const api: Record<string, unknown> = {
+        dev: true,
+        platform: 'win32',
+        boot: { connection: '', shared: { connections: [], busy: [] } },
+        preview: undefined,
+        access: undefined,
+        managedUpdate: undefined,
+        managedServer: undefined,
+        version: async () => '0.3.7',
+        windowSettings: async () => ({ closeToTray: false }),
+        connections: async () => [],
+        workspaceRoots: async () => [],
+        foldersExist: async (paths: string[]) => paths.map(() => true),
+        device: async () => ({
+          id: 'e04aef32-195f-48c0-a45a-34ebd8b0aa94',
+          name: 'fixture desktop',
+        }),
+        loadLogin: async () => null,
+        loadDrafts: async () => ({}),
+        loadSchedules: async () => ({ path: '', text: '' }),
+        ssh: {
+          forkSession: async () => {
+            throw Error('offline SSH edit must not be called');
+          },
+        },
+      };
+      Object.defineProperty(window, 'desktop', {
+        value: new Proxy(api, {
+          get: (target, key) =>
+            String(key) in target
+              ? target[String(key)]
+              : String(key).startsWith('on')
+                ? () => noOp
+                : async () => undefined,
+        }),
+      });
+    });
+  }
   const calls: Record<string, any>[] = [],
     created: string[] = [];
   let send = (value: unknown) => {};
@@ -90,6 +134,7 @@ async function fixture(
           sessions,
           ...(capable ? { sideConversations: true } : {}),
         });
+        if (ssh) send({ type: 'devices', devices: [{ ...parent.device, ready: false }] });
         return;
       }
       if (message.type === 'session.subscribe') {
@@ -213,11 +258,14 @@ async function fixture(
     });
   });
   await page.goto('/');
+  const localMode = page.getByRole('button', { name: '本地模拟', exact: true });
+  if (ssh && (await localMode.isVisible())) await localMode.click();
   await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18903/ws');
   await page
     .getByLabel('服务凭据', { exact: true })
     .fill('quote-fixture-token-with-enough-characters');
   await page.getByRole('button', { name: '连接', exact: true }).click();
+  if (ssh) await page.getByRole('button', { name: '展开其他设备的会话', exact: true }).click();
   await page
     .locator('.session-row')
     .filter({ hasText: parent.title })
@@ -231,6 +279,8 @@ async function fixture(
     calls,
     created,
     answer,
+    updateSshReady: (ready: boolean) =>
+      send({ type: 'devices', devices: [{ ...parent.device, ready }] }),
     finishSide: () => finishSide(),
     finishSend: () => finishSend(),
     updateRun: (sessionId: string, run: Session['activeRun']) => {
@@ -241,6 +291,21 @@ async function fixture(
     messages: () => calls.filter((c) => c.type === 'message.send'),
   };
 }
+
+test('SSH edit-resend follows target readiness without attempting an offline fork', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const f = await fixture(page, { ssh: true });
+  const edit = page.getByRole('button', { name: '编辑重发', exact: true });
+  await expect(edit).toHaveCount(0);
+  f.updateSshReady(true);
+  await expect(edit).toBeVisible();
+  f.updateSshReady(false);
+  await expect(edit).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
 async function selectAnswer(page: Page, text: string) {
   const content = page.locator('.workspace .message.assistant [data-copy-text]').last();
   await content.scrollIntoViewIfNeeded();

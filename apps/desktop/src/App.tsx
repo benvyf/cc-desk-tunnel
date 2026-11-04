@@ -2265,7 +2265,8 @@ export function App({
               fresh={fresh}
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={
-                controlsDisabled || (away && !(selected?.device?.viaSsh && window.desktop?.ssh))
+                controlsDisabled ||
+                (away && !(selected?.device?.viaSsh && window.desktop?.ssh && remote))
                   ? undefined
                   : (id, text) => {
                       void fork(selected!, { id, text });

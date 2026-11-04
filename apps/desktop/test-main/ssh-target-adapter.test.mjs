@@ -103,6 +103,76 @@ async function nativeProbeOnTestHost(configPath) {
   return sshProbe(configPath);
 }
 
+test('established target handles repeated raw client errors without an unhandled event or replay', async (t) => {
+  const f = await fixture(t);
+  const original = ssh2.Client.prototype.connect;
+  let raw;
+  ssh2.Client.prototype.connect = function (...args) {
+    raw = this;
+    return original.apply(this, args);
+  };
+  let target;
+  try {
+    target = await connectSshTarget(
+      f.config,
+      'test-password',
+      async () => true,
+      new AbortController().signal,
+    );
+  } finally {
+    ssh2.Client.prototype.connect = original;
+  }
+  t.after(() => target.destroy());
+  const errors = [];
+  target.on('error', (error) => errors.push(error));
+  raw.emit('error', new Error('controlled first error'));
+  raw.emit('error', new Error('controlled second error'));
+  assert.equal(errors.length, 2);
+  assert.equal(await targetDirectory(target, '/home/dev/project'), '/home/dev/project');
+  assert.equal(f.controls.logins, 1);
+});
+
+test(
+  'disconnecting the entire SSH caller cancels a late supervised command with buffered input',
+  { timeout: 10000 },
+  async (t) => {
+    const f = await fixture(t);
+    const { target, client } = await adapterOf(t, f);
+    const original = target.exec.bind(target);
+    let release;
+    const opening = new Promise((resolve) => {
+      target.exec = (command, callback, options) =>
+        original(
+          command,
+          (error, remote) => {
+            release = () => callback(error, remote);
+            resolve();
+          },
+          options,
+        );
+    });
+    const controls = [];
+    target.execControl = (command, callback) => {
+      controls.push(command);
+      callback(new Error('controlled cancellation transport'));
+    };
+    const stream = await new Promise((resolve, reject) =>
+      client.exec('sleep 600', (error, value) => (error ? reject(error) : resolve(value))),
+    );
+    stream.on('error', () => {});
+    stream.write('buffered stdin');
+    await opening;
+    const gone = once(client, 'close');
+    client.destroy();
+    await gone;
+    release();
+    const deadline = Date.now() + 2000;
+    while (!controls.length && Date.now() < deadline) await delay(5);
+    assert.equal(controls.length, 1);
+    assert.equal(f.controls.inputBytes, 0);
+  },
+);
+
 test(
   'closing a caller before target acknowledgement never forwards its buffered input',
   { timeout: 15000 },
@@ -280,6 +350,8 @@ async function fixture(t, loginKey) {
         stream.on('error', () => {});
         stream.stderr.on('error', () => {});
         repairChannelOutput(stream);
+        const supervisedToken = command.match(/'([a-f0-9]{32})'$/)?.[1];
+        if (supervisedToken) stream.write(`CCSPACE:${supervisedToken}:READY\n`);
         if (controls.earlyOutput) {
           stream.write('late stdout');
           stream.stderr.end('late stderr');
@@ -296,7 +368,7 @@ async function fixture(t, loginKey) {
           if (stream.destroyed || stream.writableEnded || stream.outgoing.state !== 'open') return;
           const input = Buffer.concat(parts);
           const check =
-            command === 'test "$(uname -s)" = Linux && test -x /bin/bash' ||
+            command.startsWith('test "$(uname -s)" = Linux && test -x /bin/bash') ||
             input.toString().startsWith('echo CC_DESK_TUNNEL_SSH_READY');
           const output = () => {
             stream.write(input);
@@ -505,9 +577,8 @@ test(
     assert.equal(outputAtExit, data.length, 'exit status must follow the forwarded output');
     assert.deepEqual(Buffer.concat(stdout), data);
     assert.equal(Buffer.concat(stderr).toString(), 'remote stderr');
-    assert.deepEqual(f.commands, [
-      'export CC_DESK_TUNNEL_SHELL=/bin/bash; exec "$CC_DESK_TUNNEL_SHELL" -s',
-    ]);
+    assert.equal(f.commands.length, 1);
+    assert.ok(f.commands[0].includes('cc-space \'exec "$CC_DESK_TUNNEL_SHELL" -s\''));
   },
 );
 
@@ -606,7 +677,7 @@ test(
     stream.end('through existing tunnel');
     assert.equal((await finished)[0], 7);
     assert.equal(output, 'through existing tunnel');
-    assert.equal(f.commands.at(-1), 'export CC_DESK_TUNNEL_SHELL=/bin/bash; target-command');
+    assert.ok(f.commands.at(-1).includes("cc-space 'target-command'"));
 
     await tunnel.accept({ ...adapter.credentials, connectionId: tunnel.id }, 'linux');
     t.diagnostic('native SSH probe passed');
@@ -656,10 +727,7 @@ test(
       process.pid,
       'desktop/target test process did not send the model request',
     );
-    assert.equal(
-      f.commands.at(-1),
-      'export CC_DESK_TUNNEL_SHELL=/bin/bash; exec "$CC_DESK_TUNNEL_SHELL" -s',
-    );
+    assert.ok(f.commands.at(-1).includes('cc-space \'exec "$CC_DESK_TUNNEL_SHELL" -s\''));
   },
 );
 
@@ -709,6 +777,12 @@ test(
     assert.equal(server.store.get(second).session.device.id, b);
     assert.equal(server.store.get(first).session.device.platform, 'linux');
     assert.equal(server.store.get(first).session.device.viaSsh, true);
+    const loginsBeforeRename = targetA.controls.logins;
+    await manager.save({ id: a, name: 'renamed target A' });
+    assert.equal(server.store.get(first).session.device.name, 'renamed target A');
+    assert.equal(manager.list().find((entry) => entry.id === a).name, 'renamed target A');
+    assert.equal(targetA.controls.logins, loginsBeforeRename);
+    assert.equal(manager.list().find((entry) => entry.id === a).status, 'connected');
     assert.notEqual(
       server.store.get(first).session.nativeRoot,
       server.store.get(second).session.nativeRoot,
@@ -736,7 +810,11 @@ test(
     assert.equal((await manager.openProject(a, '/home/dev/project')).sessionId, separate.sessionId);
     server.store.rename(first, 'Most recently used session');
     await manager.disconnect(a);
+    const offlineLogins = targetA.controls.logins;
+    await manager.save({ id: a, name: 'offline renamed target A' });
+    assert.equal(targetA.controls.logins, offlineLogins);
     await manager.connect(a, 'test-password');
+    assert.equal(server.store.get(first).session.device.name, 'offline renamed target A');
     assert.equal(
       (await manager.openProject(a, '/home/dev/project')).sessionId,
       first,
@@ -790,7 +868,10 @@ test(
     const manager = createSshTargets({
       read: () => saved,
       write: (value) => (saved = value),
-      confirmHost: async () => true,
+      confirmHost: async (entry) => {
+        manager.save({ id: entry.id, name: 'renamed during host trust' });
+        return true;
+      },
     });
     t.after(async () => {
       await manager.setService(null);
@@ -809,6 +890,8 @@ test(
     const id = manager.save({ ...target.config, name: 'keep target' });
     await manager.connect(id, 'test-password');
     const session = await manager.createSession(id, '/home/dev/project');
+    assert.equal(manager.list()[0].name, 'renamed during host trust');
+    assert.equal(server.store.get(session).session.device.name, 'renamed during host trust');
     const logins = target.controls.logins;
     await manager.prepareService({ ...context.config });
     assert.equal(manager.list()[0].status, 'connected');
