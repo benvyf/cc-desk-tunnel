@@ -72,6 +72,7 @@ const selected = {
   RotateCcw: 'ArrowCounterClockwise',
   ScrollText: 'Scroll',
   Search: 'MagnifyingGlass',
+  Server: 'HardDrives',
   Settings: 'Gear',
   Settings2: 'Sliders',
   ShieldAlert: 'ShieldWarning',

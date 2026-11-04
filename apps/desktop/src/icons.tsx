@@ -114,6 +114,7 @@ export const RefreshCw = icon(paths.RefreshCwGlyph, 'RefreshCw');
 export const RotateCcw = icon(paths.RotateCcwGlyph, 'RotateCcw');
 export const ScrollText = icon(paths.ScrollTextGlyph, 'ScrollText');
 export const Search = icon(paths.SearchGlyph, 'Search');
+export const Server = icon(paths.ServerGlyph, 'Server');
 export const Settings = icon(paths.SettingsGlyph, 'Settings');
 export const Settings2 = icon(paths.Settings2Glyph, 'Settings2');
 export const ShieldAlert = icon(paths.ShieldAlertGlyph, 'ShieldAlert');

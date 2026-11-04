@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import type { SshDirectoryList, SshTarget, SshTargetInput } from './desktop.d.ts';
 import type { ProxyClient } from './client.ts';
-import { FolderOpen, ArrowUp, Ellipsis, Plus, Laptop } from './icons.tsx';
+import { ArrowUp, Ellipsis, Folder, FolderOpen, Laptop, Plus, Server } from './icons.tsx';
 import { Button, IconButton, Menu, Modal, Switch } from './ui.tsx';
 import type { MenuPosition } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
@@ -30,6 +30,43 @@ const stageText = {
   tunnel: '正在建立 Ubuntu 开发通道…',
   ready: '已连接',
 };
+const on = (entry: SshTarget) =>
+  ['connecting', 'ssh-connected', 'connected'].includes(entry.status);
+// The colour of a row's dot: ready, on its way (breathing), failed, or idle.
+function tone(entry: SshTarget) {
+  if (entry.status === 'connected') return 'ok';
+  if (entry.status === 'failed') return 'error';
+  if (entry.status === 'connecting' || entry.status === 'ssh-connected') return 'busy';
+  return 'off';
+}
+function status(entry: SshTarget) {
+  if (!entry.available && entry.status === 'disconnected') return '不在当前 Ubuntu 工作空间';
+  return entry.status !== 'failed' && entry.status !== 'disconnected' && entry.stage
+    ? stageText[entry.stage]
+    : statusText[entry.status];
+}
+// user@host, with the port only when it is not SSH's own.
+const address = (entry: Pick<SshTarget, 'username' | 'host' | 'port'>) =>
+  `${entry.username}@${entry.host}${Number(entry.port) === 22 ? '' : `:${entry.port}`}`;
+const fileName = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path;
+
+// The device a dialog acts on: its name, address and how it signs in.
+function TargetSummary({ entry }: { entry: SshTarget }) {
+  return (
+    <div className="ssh-target">
+      <Server />
+      <span>
+        <strong>{entry.name}</strong>
+        <small>
+          {address(entry)} ·{' '}
+          {entry.auth === 'key'
+            ? `身份文件 ${entry.identityFile ? fileName(entry.identityFile) : ''}`.trim()
+            : '密码登录'}
+        </small>
+      </span>
+    </div>
+  );
+}
 
 export default function SshConnectionsSettings({
   client,
@@ -99,6 +136,12 @@ export default function SshConnectionsSettings({
     setError('');
     setLogin(entry);
   }
+  function startAdding() {
+    setForm({ ...initial });
+    setSecret('');
+    setError('');
+    setAdding(true);
+  }
   async function disconnect(entry: SshTarget, remove = false) {
     const running = client.state.sessions.some((s) => s.device?.id === entry.id && s.activeRun);
     if (
@@ -122,22 +165,32 @@ export default function SshConnectionsSettings({
       await openSession?.(result.sessionId, result.created);
     });
   }
-  async function browse(path?: string) {
-    if (!api || !project) return;
+  // Lists a folder on the target. Opening the dialog lists its first folder quietly: if that fails, the
+  // field stays as it was and 浏览 still says why.
+  async function browse(entry: SshTarget, path?: string, quiet = false) {
+    if (!api) return;
     const turn = ++browseTurn.current;
     setListingBusy(true);
     setError('');
     try {
-      const result = await api.directories(project.id, path);
+      const result = await api.directories(entry.id, path);
       if (turn !== browseTurn.current) return;
       setListing(result);
       setDirectory(result.path);
     } catch {
-      if (turn === browseTurn.current)
+      if (turn === browseTurn.current && !quiet)
         setError('无法浏览目录，请检查 SSH 连接、目录路径及访问权限。');
     } finally {
       if (turn === browseTurn.current) setListingBusy(false);
     }
+  }
+  function chooseProject(entry: SshTarget) {
+    const recent = entry.projects[0] ?? '';
+    setDirectory(recent);
+    setListing(null);
+    setProject(entry);
+    setError('');
+    void browse(entry, recent || undefined, true);
   }
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -165,6 +218,12 @@ export default function SshConnectionsSettings({
       }
     });
   }
+  // A pasted “user@host” fills both fields: the host field itself only takes a name or an address.
+  function changeHost(value: string) {
+    const split = /^([^@\s]+)@([^@\s]+)$/.exec(value.trim());
+    if (split && !form.username.trim()) setForm({ ...form, username: split[1], host: split[2] });
+    else setForm({ ...form, host: value });
+  }
   return (
     <section className="page ssh-settings" aria-label="SSH 连接设置">
       <div className="page-body">
@@ -172,91 +231,92 @@ export default function SshConnectionsSettings({
         <p className="muted">通过 SSH 连接其他设备，在远程项目中开发。</p>
         <div className="ssh-heading">
           <h2 className="page-heading">来自此电脑的 SSH 连接</h2>
-          <Button
-            size="sm"
-            disabled={!api || busy}
-            onClick={() => {
-              setForm({ ...initial });
-              setSecret('');
-              setError('');
-              setAdding(true);
-            }}
-          >
-            <Plus />
-            添加
-          </Button>
+          {entries.length > 0 && (
+            <Button size="sm" disabled={!api || busy} onClick={startAdding}>
+              <Plus />
+              添加
+            </Button>
+          )}
         </div>
-        <div className="card">
-          {!entries.length && <p className="muted ssh-empty">尚未添加 SSH 连接</p>}
-          {entries.map((entry) => (
-            <div className="setting-row ssh-row" key={entry.id}>
-              <Switch
-                small
-                label={`连接 ${entry.name}`}
-                checked={['connecting', 'ssh-connected', 'connected'].includes(entry.status)}
-                disabled={busy || !api || (!entry.available && entry.status === 'disconnected')}
-                onChange={(on) => (on ? credentials(entry) : void disconnect(entry))}
-              />
+        {!entries.length ? (
+          <div className="ssh-empty">
+            <span className="ssh-empty-art" aria-hidden="true">
               <Laptop />
-              <span className="ssh-detail">
-                <strong>{entry.name}</strong>
-                <small className="ssh-address">
-                  {entry.username}@{entry.host}:{entry.port}
-                </small>
-                <small className={entry.status === 'connected' ? 'ssh-ready' : ''}>
-                  {entry.status !== 'failed' && entry.status !== 'disconnected' && entry.stage
-                    ? stageText[entry.stage]
-                    : statusText[entry.status]}
-                </small>
-                {!entry.available && <small>请连接此配置所属的 Ubuntu 工作空间</small>}
-                {entry.projects[0] && (
-                  <small className="ssh-address" title={entry.projects[0]}>
-                    最近项目：{entry.projects[0]}
+              <i />
+              <Server />
+            </span>
+            <strong>尚未添加 SSH 连接</strong>
+            <p className="muted">
+              添加一台 Linux 设备，即可在它的项目里开发；Claude 仍运行在 Ubuntu 工作空间。
+            </p>
+            <Button size="sm" disabled={!api || busy} onClick={startAdding}>
+              <Plus />
+              添加连接
+            </Button>
+          </div>
+        ) : (
+          <div className="card ssh-list">
+            {entries.map((entry) => (
+              <div className="setting-row ssh-row" key={entry.id} data-tone={tone(entry)}>
+                <Switch
+                  small
+                  label={`连接 ${entry.name}`}
+                  checked={on(entry)}
+                  disabled={busy || !api || (!entry.available && entry.status === 'disconnected')}
+                  onChange={(value) => (value ? credentials(entry) : void disconnect(entry))}
+                />
+                <span className="ssh-detail">
+                  <strong title={entry.name}>{entry.name}</strong>
+                  <small className="ssh-status">
+                    <i className="ssh-dot" aria-hidden="true" />
+                    <span>{status(entry)}</span>
+                    <span className="ssh-address">{address(entry)}</span>
                   </small>
-                )}
-                {entry.error && <small className="error-text">{entry.error}</small>}
-              </span>
-              <div className="setting-actions">
-                {entry.projects.length > 0 && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    disabled={busy || entry.status !== 'connected' || !openSession}
-                    onClick={() => void openProject(entry, entry.projects[0])}
+                  {!entry.available && (
+                    <small className="ssh-note">请连接此配置所属的 Ubuntu 工作空间</small>
+                  )}
+                  {entry.projects[0] && (
+                    <small className="ssh-recent" title={entry.projects[0]}>
+                      最近项目：<code>{entry.projects[0]}</code>
+                    </small>
+                  )}
+                  {entry.error && <small className="error-text">{entry.error}</small>}
+                </span>
+                <div className="setting-actions">
+                  {entry.status === 'connected' && openSession && (
+                    <>
+                      {entry.projects.length > 0 && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy}
+                          onClick={() => void openProject(entry, entry.projects[0])}
+                        >
+                          继续上次
+                        </Button>
+                      )}
+                      <Button size="sm" disabled={busy} onClick={() => chooseProject(entry)}>
+                        <FolderOpen />
+                        打开项目
+                      </Button>
+                    </>
+                  )}
+                  <IconButton
+                    title={`${entry.name} 的更多操作`}
+                    onClick={(event) => {
+                      const rect = event.currentTarget.getBoundingClientRect();
+                      setMenu({ entry, x: rect.right - 160, y: rect.bottom + 4 });
+                    }}
                   >
-                    继续上次
-                  </Button>
-                )}
-                <Button
-                  size="sm"
-                  disabled={busy || entry.status !== 'connected' || !openSession}
-                  onClick={() => {
-                    setDirectory(entry.projects[0] ?? '');
-                    browseTurn.current++;
-                    setListing(null);
-                    setListingBusy(false);
-                    setProject(entry);
-                    setError('');
-                  }}
-                >
-                  <FolderOpen />
-                  打开项目
-                </Button>
-                <IconButton
-                  title={`${entry.name} 的更多操作`}
-                  onClick={(event) => {
-                    const rect = event.currentTarget.getBoundingClientRect();
-                    setMenu({ entry, x: rect.right - 160, y: rect.bottom + 4 });
-                  }}
-                >
-                  <Ellipsis />
-                </IconButton>
+                    <Ellipsis />
+                  </IconButton>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
         {!dialog && error && (
-          <p className="error-text" role="alert">
+          <p className="error-text ssh-page-error" role="alert">
             {error}
           </p>
         )}
@@ -297,16 +357,23 @@ export default function SshConnectionsSettings({
           }
           onClose={close}
         >
-          <form className="ssh-form" onSubmit={submit}>
+          <form className="dialog-form ssh-form" onSubmit={submit}>
             <fieldset disabled={busy}>
               {adding && (
                 <>
                   <label>
-                    显示名称
+                    <span>
+                      显示名称<span className="ssh-optional">（可选）</span>
+                    </span>
                     <input
+                      aria-label="显示名称"
                       value={form.name}
                       maxLength={120}
-                      placeholder="例如：实验室 Ubuntu"
+                      placeholder={
+                        form.username && form.host
+                          ? address({ ...form, port: 22 })
+                          : '例如：实验室 Ubuntu'
+                      }
                       onChange={(e) => setForm({ ...form, name: e.target.value })}
                     />
                   </label>
@@ -316,7 +383,8 @@ export default function SshConnectionsSettings({
                       required
                       value={form.host}
                       placeholder="host.com 或 10.0.0.20"
-                      onChange={(e) => setForm({ ...form, host: e.target.value })}
+                      spellCheck={false}
+                      onChange={(e) => changeHost(e.target.value)}
                     />
                   </label>
                   <div className="ssh-login-fields">
@@ -326,6 +394,7 @@ export default function SshConnectionsSettings({
                         required
                         value={form.username}
                         autoComplete="username"
+                        spellCheck={false}
                         onChange={(e) => setForm({ ...form, username: e.target.value })}
                       />
                     </label>
@@ -341,30 +410,34 @@ export default function SshConnectionsSettings({
                       />
                     </label>
                   </div>
-                  <SegmentedControl
-                    label="身份验证"
-                    value={form.auth}
-                    options={[
-                      { value: 'key', label: '身份文件' },
-                      { value: 'password', label: '密码' },
-                    ]}
-                    onChange={(auth) => {
-                      setForm({ ...form, auth });
-                      setSecret('');
-                    }}
-                  />
+                  <div className="ssh-auth">
+                    <span className="ssh-field-label">身份验证</span>
+                    <SegmentedControl
+                      label="身份验证"
+                      value={form.auth}
+                      options={[
+                        { value: 'key', label: '身份文件' },
+                        { value: 'password', label: '密码' },
+                      ]}
+                      onChange={(auth) => {
+                        setForm({ ...form, auth });
+                        setSecret('');
+                      }}
+                    />
+                  </div>
                   {form.auth === 'key' && (
                     <label>
                       身份文件路径
-                      <div className="ssh-identity">
+                      <div className="ssh-field-row">
                         <input
                           aria-label="身份文件路径"
                           required
                           value={form.identityFile}
+                          placeholder="C:\Users\me\.ssh\id_ed25519"
+                          spellCheck={false}
                           onChange={(e) => setForm({ ...form, identityFile: e.target.value })}
                         />
                         <Button
-                          size="sm"
                           onClick={() =>
                             void api!
                               .chooseIdentity()
@@ -378,6 +451,7 @@ export default function SshConnectionsSettings({
                   )}
                 </>
               )}
+              {login && !adding && <TargetSummary entry={login} />}
               {(adding || login) && (
                 <label>
                   {(adding ? form.auth : login!.auth) === 'key' ? '私钥口令（如有）' : 'SSH 密码'}
@@ -387,20 +461,21 @@ export default function SshConnectionsSettings({
                     value={secret}
                     onChange={(e) => setSecret(e.target.value)}
                   />
-                  <small className="muted">仅用于本次连接，不保存密码或口令。</small>
+                  <small className="ssh-hint">仅用于本次连接，不保存密码或口令。</small>
                 </label>
               )}
               {project && (
                 <div className="ssh-project-choice">
+                  <TargetSummary entry={project} />
                   <label>
                     项目绝对路径
-                    <div className="ssh-identity">
+                    <div className="ssh-field-row">
                       <input
                         aria-label="项目绝对路径"
                         required
-                        list="ssh-project-paths"
                         value={directory}
                         placeholder="/home/dev/project"
+                        spellCheck={false}
                         onChange={(e) => {
                           setDirectory(e.target.value);
                           browseTurn.current++;
@@ -409,59 +484,82 @@ export default function SshConnectionsSettings({
                         }}
                       />
                       <Button
-                        size="sm"
                         disabled={listingBusy}
-                        onClick={() => void browse(directory.trim() || undefined)}
+                        onClick={() => void browse(project, directory.trim() || undefined)}
                       >
                         浏览
                       </Button>
                     </div>
-                    <datalist id="ssh-project-paths">
-                      {project.projects.map((path) => (
-                        <option key={path} value={path} />
-                      ))}
-                    </datalist>
                   </label>
-                  <p className="muted">
-                    优先继续该目录最近使用的会话；需要独立对话时选择“新建会话”。
-                  </p>
-                  {listingBusy && (
-                    <p className="muted" role="status">
-                      正在读取目标设备的目录…
-                    </p>
-                  )}
-                  {listing && (
-                    <div className="ssh-directory-browser" aria-label="远程目录选择">
-                      <div className="ssh-directory-heading">
-                        <small title={listing.path}>{listing.path}</small>
-                        <IconButton
-                          title="上一级目录"
-                          disabled={listingBusy || listing.parent === listing.path}
-                          onClick={() => void browse(listing.parent)}
+                  {project.projects.length > 0 && (
+                    <div className="ssh-recent-list" role="group" aria-label="最近项目">
+                      <span className="ssh-field-label">最近项目</span>
+                      {project.projects.slice(0, 5).map((path) => (
+                        <button
+                          type="button"
+                          key={path}
+                          className="ssh-folder"
+                          aria-pressed={directory === path}
+                          title={path}
+                          onClick={() => {
+                            setDirectory(path);
+                            void browse(project, path, true);
+                          }}
                         >
-                          <ArrowUp />
-                        </IconButton>
-                      </div>
-                      <div className="ssh-directories" role="group" aria-label="远程文件夹">
-                        {listing.directories.map((folder) => (
-                          <Button
-                            key={folder.path}
-                            variant="ghost"
-                            size="sm"
-                            disabled={listingBusy}
-                            title={folder.path}
-                            onClick={() => void browse(folder.path)}
-                          >
-                            <FolderOpen />
-                            <span>{folder.name}</span>
-                          </Button>
-                        ))}
-                        {!listing.directories.length && (
-                          <p className="muted">此目录下没有可浏览的文件夹，可直接打开当前目录。</p>
-                        )}
-                      </div>
+                          <FolderOpen />
+                          <span>{path}</span>
+                        </button>
+                      ))}
                     </div>
                   )}
+                  <div className="ssh-directory-browser" aria-label="远程目录选择">
+                    <div className="ssh-directory-heading">
+                      <IconButton
+                        title="上一级目录"
+                        size="sm"
+                        disabled={listingBusy || !listing || listing.parent === listing.path}
+                        onClick={() => listing && void browse(project, listing.parent)}
+                      >
+                        <ArrowUp />
+                      </IconButton>
+                      <code title={listing?.path ?? directory}>
+                        <bdi>{listing?.path ?? (directory || '~')}</bdi>
+                      </code>
+                    </div>
+                    <div className="ssh-directories" role="group" aria-label="远程文件夹">
+                      {listingBusy && (
+                        <p className="ssh-directories-note" role="status">
+                          正在读取目标设备的目录…
+                        </p>
+                      )}
+                      {!listingBusy &&
+                        listing?.directories.map((folder) => (
+                          <button
+                            type="button"
+                            key={folder.path}
+                            className="ssh-folder"
+                            title={folder.path}
+                            onClick={() => void browse(project, folder.path)}
+                          >
+                            <Folder />
+                            <span>{folder.name}</span>
+                          </button>
+                        ))}
+                      {!listingBusy && listing && !listing.directories.length && (
+                        <p className="ssh-directories-note">
+                          此目录下没有可浏览的文件夹，可直接打开当前目录。
+                        </p>
+                      )}
+                      {!listingBusy && !listing && (
+                        <p className="ssh-directories-note">
+                          填写路径后选择“浏览”，查看目标设备上的文件夹。
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <small className="ssh-hint">
+                    “打开项目”优先继续该目录最近的会话；需要独立对话时选择“新建会话”。
+                  </small>
                 </div>
               )}
               {rename && (
@@ -485,6 +583,7 @@ export default function SshConnectionsSettings({
               {project && (
                 <Button
                   variant="ghost"
+                  className="ssh-new-session"
                   disabled={busy || listingBusy || !directory.trim()}
                   onClick={() => void openProject(project, directory, true)}
                 >
