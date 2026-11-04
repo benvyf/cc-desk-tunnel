@@ -627,7 +627,13 @@ export class ProxyClient {
           this.activity.set(message.event.sessionId, at);
         if (payload.type === 'native.capabilities') this.update({ capabilities: payload });
         if (payload.type === 'native.metrics') this.update({ metrics: payload });
-        if (!this.cacheOrder.includes(message.event.sessionId)) return;
+        // Only subscribed histories receive a complete stream. Account-wide terminal quota broadcasts must not
+        // advance a background cache past turns it never received. Side panes retain their own subscriptions.
+        if (
+          message.event.sessionId !== this.state.selectedId &&
+          !this.observers.has(message.event.sessionId)
+        )
+          return;
         this.streamEvents.push(message.event);
         this.streamTimer ??= setTimeout(() => this.flushStream(), 32);
       } else if (message.type === 'session.fragment') {

@@ -95,6 +95,34 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 45));
 const subscriptions = (socket: Socket) =>
   socket.sent.filter((frame) => frame.type === 'session.subscribe');
 
+test('quota broadcasts after closing a side pane do not skip its unseen history', async (t) => {
+  const { client, socket, sessions, snapshot } = fixture(t);
+  client.select(sessions[0].id);
+  snapshot(socket, sessions[0]);
+  const close = client.observeSession(sessions[1].id);
+  snapshot(socket, sessions[1]);
+  socket.message({ type: 'session.event', event: event(sessions[1].id, 2) });
+  await settle();
+  close();
+  socket.message({
+    type: 'session.event',
+    event: {
+      ...event(sessions[1].id, 4),
+      payload: { type: 'native.metrics', context: null, usage: null, rateLimits: null },
+    },
+  });
+  await settle();
+  assert.deepEqual(
+    client.state.events[sessions[1].id].map((item) => item.sequence),
+    [1, 2],
+  );
+  const reopen = client.observeSession(sessions[1].id);
+  const request = socket.sent.at(-1)! as Frame & { afterSequence: number };
+  assert.equal(request.sessionId, sessions[1].id);
+  assert.equal(request.afterSequence, 2);
+  reopen();
+});
+
 test('main and two observed sessions receive independent histories, events and fragments without selecting side chats', async (t) => {
   const { client, socket, sessions, snapshot } = fixture(t);
   client.select(sessions[0].id);

@@ -436,9 +436,10 @@ export function App({
       ? { ...(metrics ?? state.metrics)!, rateLimits: quota.rateLimits }
       : (metrics ?? state.metrics);
   const canCompact = !!latest(events, 'native.context')?.persisted;
-  // A native terminal anywhere keeps what the CLI holds for all sessions, the account and its status, from
-  // being read or changed; this window's active terminals also take the window.
-  const anyTerminal = state.sessions.some((session) => session.activeRun?.surface === 'terminal');
+  // Chat runs hold shared CLI state; a terminal holds only its own native session.
+  const anyChat = state.sessions.some(
+    (session) => session.activeRun && session.activeRun.surface !== 'terminal',
+  );
   const updateBlocked =
     serverUpgradeWorking ||
     state.status !== 'disconnected' ||
@@ -752,7 +753,7 @@ export function App({
       selected.activeRun ||
       refreshing ||
       terminalsActive ||
-      anyTerminal ||
+      anyChat ||
       refreshed.current.has(selected.id)
     )
       return;
@@ -765,7 +766,7 @@ export function App({
     history?.loading,
     selected?.activeRun,
     refreshing,
-    anyTerminal,
+    anyChat,
     terminalsActive,
   ]);
   useEffect(() => {
@@ -778,24 +779,16 @@ export function App({
   useEffect(() => {
     if (
       !accountOpen ||
-      terminalsActive ||
       !nativeMode ||
       !connected ||
       state.capabilities ||
       state.account?.loggedIn !== true ||
       refreshing ||
-      state.sessions.some((session) => session.activeRun)
+      anyChat
     )
       return;
     void refreshStatus();
-  }, [
-    accountOpen,
-    nativeMode,
-    connected,
-    state.capabilities,
-    state.account?.loggedIn,
-    terminalsActive,
-  ]);
+  }, [accountOpen, nativeMode, connected, state.capabilities, state.account?.loggedIn, anyChat]);
 
   async function act(action: () => Promise<void>) {
     setError(null);
@@ -1003,7 +996,7 @@ export function App({
     visit({ page, section, sessionId: client.state.selectedId });
   };
   async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id, quota = false) {
-    if (!sessionId || statusReading.current || (terminalsActive && !quota)) return;
+    if (!sessionId || statusReading.current) return;
     statusReading.current = true;
     setRefreshing(true);
     try {
@@ -1313,7 +1306,6 @@ export function App({
   }
   function sessionMenu(session: Session): MenuItem[] {
     const idle = connected && !busy && !terminalsActive;
-    const anyRun = state.sessions.some((item) => !!item.activeRun);
     const pinned = prefs.pinnedSessions.includes(session.id);
     return [
       {
@@ -1387,7 +1379,7 @@ export function App({
             {
               label: '刷新状态',
               icon: <RefreshCw />,
-              disabled: !idle || anyRun || refreshing || !!history?.loading,
+              disabled: !idle || anyChat || refreshing || !!history?.loading,
               run: () => {
                 void refreshStatus(session.id);
               },

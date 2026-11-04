@@ -771,7 +771,8 @@ export function createProxyServer(options: ServerOptions) {
       await active.controls.refresh(command.quota);
       return;
     }
-    if ((terminals.size && !command.quota) || runs.size || mutations.size)
+    // Read a terminal's status through a separate CLI without resuming its native session.
+    if (runs.size || mutations.size)
       throw new DomainError('native_busy', '运行结束后再刷新原生状态。');
     const resume = !terminalForNative(command.sessionId);
     const last = resume ? null : store.lastMetrics(command.sessionId);

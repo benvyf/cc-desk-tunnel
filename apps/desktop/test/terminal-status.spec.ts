@@ -18,6 +18,17 @@ test('terminal entry waits for status reading and does not start another read on
     updatedAt: now,
     activeRun: null,
   }));
+  sessions.push({
+    ...sessions[0],
+    id: randomUUID(),
+    title: '另一连接的终端',
+    activeRun: {
+      id: randomUUID(),
+      status: 'running',
+      connectionId: randomUUID(),
+      surface: 'terminal',
+    },
+  });
   const commands: { type: string; sessionId?: string; requestId: string }[] = [];
   let finishStatus = (_ok = true) => {};
   let endTerminal = () => {};
@@ -75,6 +86,7 @@ test('terminal entry waits for status reading and does not start another read on
   await page.getByRole('button', { name: '连接', exact: true }).click();
   const row = page.locator('.session-row').filter({ hasText: '当前会话' });
   await row.click();
+  // A terminal in another session must not suppress this idle session's status read (#157).
   await expect.poll(() => commands.filter((c) => c.type === 'session.status').length).toBe(1);
   const terminal = page.getByRole('button', { name: '终端', exact: true });
   await expect(terminal).toBeDisabled();

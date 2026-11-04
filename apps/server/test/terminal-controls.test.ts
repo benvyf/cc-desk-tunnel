@@ -18,6 +18,7 @@ const state = {
   kills: 0,
   args: [] as string[][],
   onboardingReads: 0,
+  statusReads: [] as { sessionId: string; resume: boolean }[],
 };
 const key = Symbol.for('cc-terminal-control-test');
 Reflect.set(globalThis, key, state);
@@ -29,6 +30,24 @@ const hooks = registerHooks({
   load(url, context, next) {
     let source: string | undefined;
     const shared = `const state = globalThis[Symbol.for('cc-terminal-control-test')];`;
+    if (url.endsWith('/claude.ts')) {
+      const loaded = next(url, context);
+      const original = String(loaded.source).replace(
+        'export async function readNativeStatus(',
+        'async function unusedReadNativeStatus(',
+      );
+      return {
+        ...loaded,
+        source:
+          original +
+          `
+          export async function readNativeStatus(options, dataDir, root, sessionId, signal, status) {
+            const state = globalThis[Symbol.for('cc-terminal-control-test')];
+            state.statusReads.push({ sessionId, resume: status.resume });
+            return [{type:'native.metrics',context:null,usage:null,rateLimits:null}];
+          }`,
+      };
+    }
     if (url === 'test:terminal-pty')
       source =
         shared +
@@ -152,6 +171,17 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   const opened = await owner.wait((message) => message.type === 'terminal.opened');
   assert.equal(opened.type, 'terminal.opened');
   const terminalId = opened.terminalId;
+  const separate = await other.request({ type: 'server.session.create', title: 'status only' });
+  assert.equal(separate.ok, true);
+  assert.equal(
+    (await other.request({ type: 'session.status', sessionId: separate.sessionId })).ok,
+    true,
+  );
+  assert.deepEqual(state.statusReads.at(-1), { sessionId: separate.sessionId, resume: true });
+  assert.equal((await other.request({ type: 'session.status', sessionId })).ok, true);
+  assert.deepEqual(state.statusReads.at(-1), { sessionId, resume: false });
+  assert.equal(state.kills, 0, 'status reads must leave the existing terminal running');
+  assert.equal(state.args.length, 1, 'status reads must not open another terminal');
   assert.ok(
     state.args.at(-1)?.includes(sessionId),
     'new terminals share the chat native session ID',
