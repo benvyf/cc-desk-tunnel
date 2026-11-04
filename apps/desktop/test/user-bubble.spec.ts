@@ -109,7 +109,7 @@ test('a question is Markdown on a Claude-shaped bubble and copies as it was writ
   const bubble = first.locator('.user-bubble');
   await expect(bubble).toHaveCSS('border-radius', '12px');
   await expect(bubble).toHaveCSS('padding', '10px 14px');
-  await expect(bubble).toHaveCSS('background-color', 'rgb(240, 239, 236)');
+  await expect(bubble).toHaveCSS('background-color', 'rgb(240, 240, 239)');
   await expect(bubble.locator('p').first()).toHaveCSS('font-size', '14px');
   // A typed line break stays one; a list and a block of code are themselves.
   await expect(bubble.locator('p').first()).toHaveText(
