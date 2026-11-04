@@ -25,6 +25,10 @@ const selected = (path) =>
     'apps/desktop/package.json',
     'packages/protocol/package.json',
     'scripts/install-linux.sh',
+    'scripts/upgrade-message-review.py',
+    'scripts/install-cc-space-037.py',
+    'apps/update-service/web/server-bootstrap.py',
+    'apps/update-service/web/fresh-install.py',
   ].includes(path) ||
   ['apps/server/src/', 'packages/protocol/src/', 'packages/managed-server/src/', 'deploy/'].some(
     (prefix) => path.startsWith(prefix),

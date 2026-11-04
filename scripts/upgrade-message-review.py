@@ -37,6 +37,15 @@ def need(condition, message):
         raise RuntimeError(message)
 
 
+def same_mounts(left, right):
+    # Docker inspect does not guarantee mount order; retain every entry and field.
+    return sorted(json.dumps(m, sort_keys=True) for m in left) == sorted(json.dumps(m, sort_keys=True) for m in right)
+
+
+def same_configuration(current, original):
+    return all(current[k] == original[k] for k in ('Id', 'Image', 'Config', 'HostConfig')) and same_mounts(current['Mounts'], original['Mounts'])
+
+
 def load(name, path):
     spec = importlib.util.spec_from_file_location(name, path)
     module = importlib.util.module_from_spec(spec)
@@ -64,7 +73,7 @@ def adapt(support, original):
 
     def validate_current(value):
         need(value['Id'] == original['Id'] and value['Image'] == original['Image'] and
-             value['Mounts'] == mounts, 'Original container or mounts changed')
+             same_mounts(value['Mounts'], mounts), 'Original container or mounts changed')
         normalized = copy.deepcopy(value)
         for mount in normalized['Mounts']:
             if mount['Destination'] == '/etc/claude-code':
@@ -238,7 +247,7 @@ def main():
         legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': BUILD, 'protocol': 22}
         clone = b.clone_config
         def clone_candidate(current, target):
-            need(all(current[k] == original[k] for k in ('Id', 'Image', 'Config', 'HostConfig', 'Mounts')),
+            need(same_configuration(current, original),
                  'Original configuration changed')
             now = {str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest()
                    for p in source.rglob('*') if p.is_file()}

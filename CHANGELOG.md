@@ -6,6 +6,8 @@
 
 ## 待发布
 
+Linux 服务端 Build 11（协议 23）：补齐侧边聊天原生分支、安全截点与首次发送/重试，并修复终端并存时的会话同步和状态读取。兼容 Windows v0.3.9 / Build 27；三台已接入 Ubuntu 可在控制中心逐台确认升级。旧 Build 10 需要随签名包附带的镜像迁移，保留现有 Node、官方 CLI、账号、聊天数据和离线回退。详见[服务端 Build 11](docs/RELEASE-SERVER-BUILD11.md)。
+
 Windows Build 25 / Linux 服务端 Build 10，协议 23；源码候选，尚未发布或部署。配套要求见[统一升级准备](docs/UPSTREAM-0.3.9-INTEGRATION.md)。
 
 - 更新安全依赖补丁：Electron 44.10.1、Node.js 24.22.2，以及 zod、body-parser、qs、fast-uri、ip-address 和 undici。
