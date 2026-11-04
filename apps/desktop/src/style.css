@@ -39,9 +39,10 @@
 :root,
 .theme-preview {
   /* The frame (title bar, rail and side column), the page that rests on it, then cards, inputs and popovers. */
-  --frame: light-dark(#f5f4ed, #1f1e1d);
+  /* Light: the near-neutral whites of Claude Desktop (sidebar #fbfbf9, conversation #fcfcfb), a touch warm. */
+  --frame: light-dark(#fbfbf9, #1f1e1d);
   --surface-0: var(--frame);
-  --surface-1: light-dark(#faf9f5, #262624);
+  --surface-1: light-dark(#fcfcfb, #262624);
   --surface-2: light-dark(#ffffff, #30302e);
   --surface-3: light-dark(#ffffff, #30302e);
   --chrome: var(--frame);
@@ -181,9 +182,9 @@
   --button-sm: 28px;
   --button-md: 32px;
   --button-lg: 40px;
-  --user-bubble: light-dark(#f0eee6, #141413);
+  --user-bubble: light-dark(#f0efec, #141413);
   /* Inside a question: a block of code is a well a step towards the page, and a link is blue, as in Claude. */
-  --user-code-bg: light-dark(#faf9f5, #1f1e1d);
+  --user-code-bg: light-dark(#fcfcfb, #1f1e1d);
   --user-link: light-dark(#2d5f99, #8fb8e6);
   /* Code keeps a dark canvas in either app theme, on Claude's warm charcoal. */
   --code-bg: #1d1c1a;

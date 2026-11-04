@@ -270,9 +270,9 @@ test('mainline themes and browser access settings coexist and retain the chosen 
     'background-color',
     'rgba(0, 0, 0, 0)',
   );
-  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(245, 244, 237)');
-  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(245, 244, 237)');
-  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(250, 249, 245)');
+  await expect(page.locator('.sidebar')).toHaveCSS('background-color', 'rgb(251, 251, 249)');
+  await expect(page.locator('.rail')).toHaveCSS('background-color', 'rgb(251, 251, 249)');
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(252, 252, 251)');
   await expect(page.locator('[data-preview="dark"] .theme-preview-side')).toHaveCSS(
     'background-color',
     'rgb(31, 30, 29)',
@@ -286,7 +286,7 @@ test('mainline themes and browser access settings coexist and retain the chosen 
   await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await expect(page.locator('[data-preview="light"] .theme-preview-side')).toHaveCSS(
     'background-color',
-    'rgb(245, 244, 237)',
+    'rgb(251, 251, 249)',
   );
   await expect(page.locator('.web-access-settings')).toHaveCSS(
     'background-color',
@@ -349,7 +349,7 @@ test('mainline themes and browser access settings coexist and retain the chosen 
   await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await page.getByRole('radio', { name: '跟随系统', exact: true }).click();
   await page.emulateMedia({ colorScheme: 'light' });
-  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(250, 249, 245)');
+  await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(252, 252, 251)');
   await page.emulateMedia({ colorScheme: 'dark' });
   await expect(page.locator('.workspace')).toHaveCSS('background-color', 'rgb(38, 38, 36)');
   await expect(page.locator('[data-preview="system"] .theme-preview-side')).toHaveCSS(
