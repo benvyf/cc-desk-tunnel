@@ -20,10 +20,13 @@ export function releaseSection(changelog: string, version: string) {
   );
 }
 // For the in-app notes: a link to a file of the repository or to a GitHub page becomes its words only, so the
-// dialog sends nobody to GitHub; other links stay.
+// dialog sends nobody to GitHub; other links stay. Repository attribution is not product update copy.
 export function withoutRepositoryLinks(text: string) {
-  return text.replace(
-    /\[([^\]]*)\]\((?:https?:\/\/(?:www\.)?github\.com\/[^)\s]*|(?!https?:|#|mailto:)[^)\s]+)\)/g,
-    '$1',
-  );
+  return text
+    .replace(
+      /\[([^\]]*)\]\((?:https?:\/\/(?:www\.)?github\.com\/[^)\s]*|(?!https?:|#|mailto:)[^)\s]+)\)/g,
+      '$1',
+    )
+    .replace(/[（(](?:上游\s*|想法出自\s*)?#\d+[^）)\n]*[）)]/g, '')
+    .replace(/上游\s*#\d+(?:\s*[、，,]\s*#\d+)*/g, '');
 }

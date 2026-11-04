@@ -72,4 +72,16 @@ test('in-app notes keep the words of repository and GitHub links, and other link
     ),
     '见议题、文档、[站点](https://example.com)、[锚](#a)',
   );
+  assert.equal(
+    withoutRepositoryLinks(
+      '- 额度读取已优化。（上游 #143）\n- 终端同步已修复。（上游 #141、#150、#151）\n- 历史同步已修复。(上游#157)\n- 浏览器访问已改进。（#110，贡献者）',
+    ),
+    '- 额度读取已优化。\n- 终端同步已修复。\n- 历史同步已修复。\n- 浏览器访问已改进。',
+  );
+  assert.equal(
+    withoutRepositoryLinks(
+      '修复说明：上游 #157\n协议 23（需配套升级），每分钟读取一次，见[锚](#a)。',
+    ),
+    '修复说明：\n协议 23（需配套升级），每分钟读取一次，见[锚](#a)。',
+  );
 });

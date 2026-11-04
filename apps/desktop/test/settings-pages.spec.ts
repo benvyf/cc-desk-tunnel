@@ -159,6 +159,7 @@ test('about names the web version and opens the release notes; help has contents
   await expect(notes).toBeVisible();
   // The notes stay in the window: no button or link to GitHub.
   await expect(notes).not.toContainText(/GitHub/i);
+  await expect(notes).not.toContainText(/(?:上游\s*)?#\d+/);
   await expect(notes.locator('a[href*="github.com"]')).toHaveCount(0);
   await expect(notes.getByRole('button')).toHaveText(['', '关闭']);
   await notes.getByRole('button', { name: '关闭', exact: true }).last().click();
