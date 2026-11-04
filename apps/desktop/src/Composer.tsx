@@ -451,14 +451,13 @@ export default function Composer({
             submit();
           }}
           onDragOver={(event) => {
-            if (
-              !window.desktop ||
-              remoteSsh ||
-              inputDisabled ||
-              !event.dataTransfer.types.includes('Files')
-            )
+            if (!window.desktop || inputDisabled || !event.dataTransfer.types.includes('Files'))
               return;
             event.preventDefault();
+            if (remoteSsh) {
+              setAttachmentError('SSH 项目暂不支持图片或文件附件，可继续输入或粘贴文字。');
+              return;
+            }
             setDropping(true);
           }}
           onDragLeave={() => setDropping(false)}
@@ -466,7 +465,10 @@ export default function Composer({
             setDropping(false);
             if (!window.desktop || inputDisabled || !event.dataTransfer.files.length) return;
             event.preventDefault();
-            if (remoteSsh) return;
+            if (remoteSsh) {
+              setAttachmentError('SSH 项目暂不支持图片或文件附件，可继续输入或粘贴文字。');
+              return;
+            }
             void paste([...event.dataTransfer.files]);
           }}
         >
@@ -529,6 +531,7 @@ export default function Composer({
                 composition.current.until = performance.now() + 10;
               }}
               onChange={(event) => {
+                if (remoteSsh) setAttachmentError(null);
                 recall.reset();
                 setDraft(event.target.value);
                 setSlashOpen(native && slashDraft.test(event.target.value));
@@ -536,7 +539,12 @@ export default function Composer({
               }}
               onPaste={(event) => {
                 if (remoteSsh && event.clipboardData.files.length) {
+                  if (event.clipboardData.getData('text/plain')) {
+                    setAttachmentError(null);
+                    return;
+                  }
                   event.preventDefault();
+                  setAttachmentError('SSH 项目暂不支持图片或文件附件，可继续输入或粘贴文字。');
                   return;
                 }
                 // Pasted text is left to the browser, also when a program put a picture of it beside the text.

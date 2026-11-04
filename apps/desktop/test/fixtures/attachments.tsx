@@ -59,7 +59,23 @@ export function mount() {
           更多附件
         </button>
         <Composer
-          session={{ id, projectPath: 'C:\\项目', permissionMode: 'default' } as Session}
+          session={
+            {
+              id,
+              projectPath: 'C:\\项目',
+              permissionMode: 'default',
+              ...(new URL(location.href).searchParams.has('ssh')
+                ? {
+                    device: {
+                      id: '22222222-2222-4222-8222-222222222222',
+                      name: 'SSH target',
+                      platform: 'linux',
+                      viaSsh: true,
+                    },
+                  }
+                : {}),
+            } as Session
+          }
           draft={drafts[id] ?? ''}
           history={new URL(location.href).searchParams.has('history') ? ['existing command'] : []}
           historyReady={draftsReady}

@@ -5,6 +5,57 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/test/fixtures/attachments.html');
 });
 
+test('SSH keeps mixed Office-style clipboard text and explicitly rejects unsupported attachments', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/attachments.html?ssh');
+  const input = page.getByRole('textbox', { name: '消息', exact: true });
+  const allowed = await input.evaluate((box) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', 'Office copied text');
+    data.items.add(new File(['image'], 'office-preview.png', { type: 'image/png' }));
+    const event = new ClipboardEvent('paste', {
+      clipboardData: data,
+      bubbles: true,
+      cancelable: true,
+    });
+    box.dispatchEvent(event);
+    return !event.defaultPrevented;
+  });
+  expect(allowed).toBe(true);
+  // Synthetic clipboard events do not perform the browser's default insertion.
+  // Insert only after verifying that the real handler allowed that default.
+  await input.focus();
+  await page.keyboard.insertText('Office copied text');
+  await expect(input).toHaveValue('Office copied text');
+  await expect(page.locator('.attachment-tile')).toHaveCount(0);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await input.evaluate((box) => {
+    const data = new DataTransfer();
+    data.items.add(new File(['image'], 'image.png', { type: 'image/png' }));
+    box.dispatchEvent(
+      new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect(page.getByRole('alert')).toContainText('SSH');
+  await expect(input).toHaveValue('Office copied text');
+  await input.fill('plain text still works');
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await page.locator('.composer').evaluate((box) => {
+    const data = new DataTransfer();
+    data.items.add(new File(['file'], 'file.txt', { type: 'text/plain' }));
+    box.dispatchEvent(
+      new DragEvent('dragover', { dataTransfer: data, bubbles: true, cancelable: true }),
+    );
+    box.dispatchEvent(
+      new DragEvent('drop', { dataTransfer: data, bubbles: true, cancelable: true }),
+    );
+  });
+  await expect(page.getByRole('alert')).toContainText('SSH');
+  await expect(page.locator('.attachment-tile')).toHaveCount(0);
+  await expect(input).toHaveValue('plain text still works');
+});
+
 test('files become removable tiles, images have thumbnails and attachment-only messages send paths', async ({
   page,
 }) => {
