@@ -24,6 +24,7 @@ export {
 } from './secure-service.mjs';
 export { createManagedServerClient } from './managed-server-client.mjs';
 export { serviceJson } from './secure-service.mjs';
+export { createSshTargets } from './ssh-targets.mjs';
 import { channelFailure, controlFailure, passing } from './connect-errors.mjs';
 // Loaded by the main process from here, so that the package's bundle of this module holds it.
 export { upgradeService } from './service-upgrade.mjs';
@@ -210,11 +211,14 @@ export async function openProxyBridge(
         if (message.type === 'auth') {
           message.tunnel = true;
           token = String(message.token);
+          binaries.onAuth?.(token);
         }
         // The system this computer runs is said here, not by the page. Windows is what none means.
         if (message.type === 'device') {
           delete message.platform;
-          if (process.platform !== 'win32') message.platform = process.platform;
+          delete message.viaSsh;
+          if (binaries.device) Object.assign(message, binaries.device);
+          else if (process.platform !== 'win32') message.platform = process.platform;
         }
         if (verified && remote.readyState === WebSocket.OPEN) remote.send(JSON.stringify(message));
         else queue.push(JSON.stringify(message));
@@ -243,7 +247,7 @@ export async function openProxyBridge(
           return;
         }
         offerReceived = true;
-        current.preparing = startLocalSsh(
+        current.preparing = (binaries.startSsh ?? startLocalSsh)(
           message.connectionId,
           binaries,
           current.controller.signal,

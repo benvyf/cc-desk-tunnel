@@ -67,6 +67,9 @@ export async function stageDesktop(
     architecture = process.arch,
   },
 ) {
+  // SSH targets use the same library on Windows as on POSIX. Keep its optional
+  // native modules out of the JS bundle and copy its ordinary runtime package.
+  dependencies = [...new Set([...dependencies, 'ssh2'])];
   assertDesktopModelBoundary(root);
   mkdirSync(app, { recursive: true });
   rmSync(join(app, 'node_modules'), { recursive: true, force: true });

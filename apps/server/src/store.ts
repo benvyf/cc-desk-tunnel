@@ -1013,7 +1013,7 @@ export class SessionStore {
     const platform = platformOf(session.device);
     said.told = { projectPath: session.projectPath, device, platform };
     this.save(session);
-    const terms = deviceTerms(platform, session.projectPath);
+    const terms = deviceTerms(platform, session.projectPath, session.device?.viaSsh);
     // The prompt's account of scripts and command lines holds for one system only.
     const system =
       (known.platform ?? 'win32') === platform

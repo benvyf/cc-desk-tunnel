@@ -1,5 +1,35 @@
 /// <reference types="vite/client" />
 export {};
+export type SshTarget = {
+  id: string;
+  name: string;
+  host: string;
+  port: number;
+  username: string;
+  auth: 'key' | 'password';
+  identityFile?: string;
+  projects: string[];
+  available: boolean;
+  status: 'disconnected' | 'connecting' | 'ssh-connected' | 'connected' | 'failed';
+  error: string;
+  stage?: 'ssh' | 'capabilities' | 'sftp' | 'authorization' | 'tunnel' | 'ready';
+  errorCode?: string;
+  lastSessionId?: string;
+};
+export type SshDirectoryList = {
+  path: string;
+  parent: string;
+  directories: { name: string; path: string }[];
+};
+export type SshTargetInput = {
+  id?: string;
+  name: string;
+  host: string;
+  port: number | string;
+  username: string;
+  auth: 'key' | 'password';
+  identityFile: string;
+};
 declare global {
   interface Window {
     desktop?: {
@@ -16,6 +46,22 @@ declare global {
       // Run from the source tree, not installed: the login page then also offers the simulation service.
       dev: boolean;
       platform: 'win32' | 'darwin' | 'linux';
+      ssh?: {
+        list: () => Promise<SshTarget[]>;
+        save: (input: SshTargetInput) => Promise<string>;
+        connect: (id: string, secret: string) => Promise<void>;
+        disconnect: (id: string) => Promise<void>;
+        remove: (id: string) => Promise<void>;
+        openProject: (
+          id: string,
+          path: string,
+          forceNew?: boolean,
+        ) => Promise<{ sessionId: string; created: boolean }>;
+        directories: (id: string, path?: string) => Promise<SshDirectoryList>;
+        forkSession: (id: string, sessionId: string, beforeMessageId?: string) => Promise<string>;
+        chooseIdentity: () => Promise<string | null>;
+        onChanged: (callback: (entries: SshTarget[]) => void) => () => void;
+      };
       preview: {
         list: (input: {
           root: string;
@@ -213,6 +259,7 @@ declare global {
         callback: (update: import('@cc-desk-tunnel/protocol').ServiceUpdate) => void,
       ) => () => void;
       connectProxy: (config: {
+        nodeId?: string;
         url: string;
         fingerprint: string;
         // Seconds allowed for reaching the service, for the local SSH service to start, and for the whole.

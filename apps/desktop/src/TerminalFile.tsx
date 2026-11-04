@@ -53,6 +53,8 @@ export default function TerminalFile({
       if (disposed) return;
       try {
         if (!connected) throw new Error('连接已变化或已断开，请在当前终端重新打开预览。');
+        if (session.device?.viaSsh)
+          throw new Error('SSH 项目暂不提供文件预览，请复制路径并让 Claude 在目标设备上读取。');
         if (target.kind !== 'path')
           throw new Error('无法确定来源或实际工作目录，请复制后在终端中确认。');
         if (windows) {

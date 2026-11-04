@@ -101,6 +101,21 @@ test('commands share one SSH connection where the platform and the length of the
   assert.doesNotMatch(config('/tmp/private', 'win32'), /Control/);
   assert.doesNotMatch(config(`/srv/${'long-name/'.repeat(9)}connections/id`, 'linux'), /Control/);
 });
+test('SSH targets use Bash SSH environment and never point at desktop schedules or local model execution', () => {
+  const prompt = remotePrompt(
+    '/home/dev/project',
+    { configPath: '/private/target.conf' },
+    randomUUID(),
+    'linux',
+    true,
+  );
+  assert.match(prompt, /Bash with the non-interactive SSH environment/);
+  assert.match(prompt, /Do not install or run Claude/);
+  assert.match(prompt, /model traffic belongs to this Linux host/);
+  assert.doesNotMatch(prompt, /CC_DESK_TUNNEL_SCHEDULES|the environment of their terminal/);
+  assert.match(prompt, /never fall back to this host/);
+});
+
 test('context references native SSH configuration without inventing execution tools', () => {
   const prompt = remotePrompt(
     "D:\\中文 空格\\it's",

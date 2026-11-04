@@ -47,6 +47,34 @@ const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
+let sshTargetsLoading;
+function sshTargets() {
+  sshTargetsLoading ??= import(pathToFileURL(path.join(__dirname, 'proxy-bridge.mjs')).href).then(
+    ({ createSshTargets }) =>
+      createSshTargets({
+        read: () => readSettings().sshTargets,
+        write: (sshTargets) => writeSettings({ sshTargets }),
+        changed: (entries) => {
+          for (const window of BrowserWindow.getAllWindows())
+            if (!window.isDestroyed()) window.webContents.send('ssh:changed', entries);
+        },
+        log,
+        confirmHost: async (entry, fingerprint) => {
+          const { response } = await dialog.showMessageBox(primaryWindow, {
+            type: 'question',
+            title: '确认 SSH 主机',
+            message: `信任 ${entry.username}@${entry.host}:${entry.port}？`,
+            detail: `请通过可信渠道核对主机 SHA256 指纹：\n${fingerprint}`,
+            buttons: ['取消', '信任并连接'],
+            defaultId: 0,
+            cancelId: 0,
+          });
+          return response === 1;
+        },
+      }),
+  );
+  return sshTargetsLoading;
+}
 // A terminal is another top-level window; never infer the connection window from array order.
 let primaryWindow;
 let connectionGeneration = 0;
@@ -565,6 +593,7 @@ handle('proxy:connect', async (event, config) => {
     if (!config || typeof config.url !== 'string' || typeof config.fingerprint !== 'string')
       throw new Error('Invalid proxy configuration');
     const generation = ++connectionGeneration;
+    await (await sshTargets()).setService(null);
     const previous = bridge;
     bridge = null;
     await previous?.close();
@@ -579,23 +608,44 @@ handle('proxy:connect', async (event, config) => {
         : path.join(__dirname, '../vendor'));
     const openssh = process.env.PROXY_OPENSSH_DIR ?? path.join(vendor, 'openssh');
     const powershell = app.isPackaged ? path.join(vendor, 'pwsh/pwsh.exe') : 'pwsh.exe';
+    const binaries = {
+      openssh,
+      powershell,
+      scriptDirectory: app.isPackaged
+        ? path.join(process.resourcesPath, 'app.asar.unpacked/electron')
+        : undefined,
+      // Where Claude finds the scheduled tasks to edit; the service names the variable, not the path.
+      environment: { CC_DESK_TUNNEL_SCHEDULES: schedulesPath() },
+      log,
+      // The system's proxy settings (manual, script or automatic detection) as Chromium reads them.
+      resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+    };
     const connection = await openProxyBridge(
       config,
       {
-        openssh,
-        powershell,
-        scriptDirectory: app.isPackaged
-          ? path.join(process.resourcesPath, 'app.asar.unpacked/electron')
-          : undefined,
-        // Where Claude finds the scheduled tasks to edit; the service names the variable, not the path.
-        environment: { CC_DESK_TUNNEL_SCHEDULES: schedulesPath() },
-        log,
-        // The system's proxy settings (manual, script or automatic detection) as Chromium reads them.
-        resolveProxy: (url) => session.defaultSession.resolveProxy(url),
+        ...binaries,
+        onAuth: (token) => {
+          if (generation !== connectionGeneration) return;
+          void sshTargets().then((targets) => {
+            if (generation !== connectionGeneration) return;
+            return targets.setService({
+              config,
+              binaries,
+              credentials: async () => {
+                if (!config.nodeId) return { token };
+                const fresh = await desktopAccess.ticket(config.nodeId);
+                if (fresh.url !== config.url || fresh.fingerprint !== config.fingerprint)
+                  throw new Error('Ubuntu 工作空间地址或证书已变化，请重新连接工作空间。');
+                return fresh;
+              },
+            });
+          });
+        },
       },
       () => {
         if (bridge !== connection) return;
         bridge = null;
+        void sshTargets().then((targets) => targets.setService(null));
         keepAwake(false);
         if (!event.sender.isDestroyed()) event.sender.send('proxy:closed');
       },
@@ -719,8 +769,9 @@ handle('access:ticket', async (_event, nodeId) => {
     return { error: error.message, retryable: error.retryable === true };
   }
 });
-handle('access:logout', () => {
+handle('access:logout', async () => {
   serverClient?.cancel();
+  await (await sshTargets()).setService(null);
   return desktopAccess.logout();
 });
 handle('login:load', () => {
@@ -993,9 +1044,31 @@ async function disconnectProxy() {
   connectionGeneration++;
   const previous = bridge;
   bridge = null;
+  await (await sshTargets()).setService(null);
   await previous?.close();
 }
 handle('proxy:disconnect', disconnectProxy);
+handle('ssh:list', async () => (await sshTargets()).list());
+handle('ssh:save', async (_event, input) => (await sshTargets()).save(input));
+handle('ssh:connect', async (_event, id, secret) => (await sshTargets()).connect(id, secret));
+handle('ssh:disconnect', async (_event, id) => (await sshTargets()).disconnect(id));
+handle('ssh:remove', async (_event, id) => (await sshTargets()).remove(id));
+handle('ssh:open-project', async (_event, id, directory, forceNew) =>
+  (await sshTargets()).openProject(id, directory, forceNew === true),
+);
+handle('ssh:directories', async (_event, id, directory) =>
+  (await sshTargets()).directories(id, directory),
+);
+handle('ssh:fork-session', async (_event, id, sessionId, beforeMessageId) =>
+  (await sshTargets()).forkSession(id, sessionId, beforeMessageId),
+);
+handle('ssh:identity-file', async (event) => {
+  const result = await dialog.showOpenDialog(BrowserWindow.fromWebContents(event.sender), {
+    title: '选择 SSH 身份文件',
+    properties: ['openFile'],
+  });
+  return result.canceled ? null : result.filePaths[0];
+});
 
 // Windows files notifications under this identity; the installer gives the shortcut the same one.
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? appId : process.execPath);
@@ -1206,7 +1279,7 @@ app.on('before-quit', (event) => {
   exiting = true;
   for (const controller of allWorkspaceFiles) controller.close();
   // Join canceled preview helpers before window destruction and will-quit.
-  void Promise.allSettled([previewFiles.close(), bridge?.close()]).finally(() => app.quit());
+  void Promise.allSettled([previewFiles.close(), disconnectProxy()]).finally(() => app.quit());
 });
 app.on('window-all-closed', () => app.quit());
 app.on('quit', () => {

@@ -867,6 +867,7 @@ export function App({
         if ('error' in connection)
           throw Object.assign(new Error(connection.error), { retryable: connection.retryable });
         const bridge = await window.desktop!.connectProxy({
+          nodeId,
           url: connection.url,
           fingerprint: connection.fingerprint,
           waits: getPrefs().connection,
@@ -1181,14 +1182,23 @@ export function App({
     const startedAt = navigation.current;
     await act(async () => {
       // The copy of a session that is on another computer needs a directory on this one.
-      const projectPath = onThis(session) ? undefined : await placeHere(session);
+      const projectPath =
+        onThis(session) || session.device?.viaSsh ? undefined : await placeHere(session);
       if (projectPath === null) return;
-      const response = await client.request({
-        type: 'session.fork',
-        sessionId: session.id,
-        ...(before ? { beforeMessageId: before.id } : {}),
-        ...(projectPath ? { projectPath } : {}),
-      });
+      const response = session.device?.viaSsh
+        ? {
+            sessionId: await window.desktop!.ssh!.forkSession(
+              session.device.id,
+              session.id,
+              before?.id,
+            ),
+          }
+        : await client.request({
+            type: 'session.fork',
+            sessionId: session.id,
+            ...(before ? { beforeMessageId: before.id } : {}),
+            ...(projectPath ? { projectPath } : {}),
+          });
       if (!response.sessionId) return;
       if (before) {
         const attached = splitAttachmentMessage(before.text);
@@ -1999,6 +2009,7 @@ export function App({
     account: '账号与额度',
     claude: 'Claude Code 设置',
     general: '常规设置',
+    connections: '连接',
     notifications: '通知设置',
     shortcuts: '快捷键',
     help: '帮助',
@@ -2080,6 +2091,10 @@ export function App({
       </Presence>
       {place.page === 'settings' ? (
         <SettingsPage
+          openSshSession={async (id, created) => {
+            if (created) await initializeSession(id);
+            else show(id);
+          }}
           sideOpen={sideOpen}
           checkUpdate={window.desktop?.managedUpdate ? () => setManagedUpdateOpen(true) : undefined}
           client={client}
@@ -2250,7 +2265,7 @@ export function App({
               fresh={fresh}
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={
-                controlsDisabled || away
+                controlsDisabled || (away && !(selected?.device?.viaSsh && window.desktop?.ssh))
                   ? undefined
                   : (id, text) => {
                       void fork(selected!, { id, text });
@@ -2317,7 +2332,14 @@ export function App({
             {selected && away && host.localProjects && (
               <div className="elsewhere-bar" role="status">
                 <Laptop />
-                {remote ? (
+                {selected.device?.viaSsh ? (
+                  <p>
+                    SSH 项目：<code>{selected.projectPath}</code> · {selected.device.name}。
+                    {remote
+                      ? '文件和命令在目标设备执行，Claude 仍在 Ubuntu 运行。'
+                      : '执行设备未连接，请在设置 → 连接中重新连接。'}
+                  </p>
+                ) : remote ? (
                   <p>
                     这个会话在设备“{selected.device?.name}”上，项目目录是{' '}
                     <code>{selected.projectPath}</code>
@@ -2331,35 +2353,39 @@ export function App({
                     Claude 换了电脑。
                   </p>
                 )}
-                <button
-                  type="button"
-                  className="button primary"
-                  disabled={controlsDisabled}
-                  onClick={(event) => {
-                    // With projects here the session goes into one of them, or into a folder chosen there.
-                    if (!herePaths().length) return void takeOver(selected);
-                    const box = event.currentTarget.getBoundingClientRect();
-                    setMenu({
-                      kind: 'move',
-                      sessionId: selected.id,
-                      x: box.left,
-                      y: box.top - 6,
-                      above: true,
-                    });
-                  }}
-                >
-                  在本机继续…
-                </button>
-                <button
-                  type="button"
-                  className="button secondary"
-                  disabled={controlsDisabled}
-                  onClick={() => {
-                    void fork(selected);
-                  }}
-                >
-                  分叉到本机…
-                </button>
+                {!selected.device?.viaSsh && (
+                  <>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={controlsDisabled}
+                      onClick={(event) => {
+                        // With projects here the session goes into one of them, or into a folder chosen there.
+                        if (!herePaths().length) return void takeOver(selected);
+                        const box = event.currentTarget.getBoundingClientRect();
+                        setMenu({
+                          kind: 'move',
+                          sessionId: selected.id,
+                          x: box.left,
+                          y: box.top - 6,
+                          above: true,
+                        });
+                      }}
+                    >
+                      在本机继续…
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={controlsDisabled}
+                      onClick={() => {
+                        void fork(selected);
+                      }}
+                    >
+                      分叉到本机…
+                    </button>
+                  </>
+                )}
               </div>
             )}
             {browser && selected && away && !remote && (

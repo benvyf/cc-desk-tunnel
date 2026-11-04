@@ -2,10 +2,10 @@ import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-function generate(supervisor, path) {
+function generate(supervisor, path, keygen) {
   return new Promise((resolve, reject) => {
     const child = supervisor.spawn(
-      '/usr/bin/ssh-keygen',
+      keygen,
       ['-q', '-t', 'ed25519', '-N', '', '-C', 'cc-desk-tunnel', '-f', path],
       {
         stdio: 'ignore',
@@ -21,13 +21,13 @@ function generate(supervisor, path) {
 // ssh2 1.17's Ed25519 converter drops leading zero bytes from the public key.
 // Use the system OpenSSH encoder, then remove its private temporary files before
 // announcing credentials. mkdtemp uses mode 700; ssh-keygen writes private keys 600.
-export async function connectionKeys(supervisor, signal) {
+export async function connectionKeys(supervisor, signal, keygen = '/usr/bin/ssh-keygen') {
   const directory = await mkdtemp(join(tmpdir(), 'cc-keys-'));
   try {
     if (signal.aborted) throw new Error('Tunnel cancelled');
-    await generate(supervisor, join(directory, 'host'));
+    await generate(supervisor, join(directory, 'host'), keygen);
     if (signal.aborted) throw new Error('Tunnel cancelled');
-    await generate(supervisor, join(directory, 'login'));
+    await generate(supervisor, join(directory, 'login'), keygen);
     if (signal.aborted) throw new Error('Tunnel cancelled');
     const [hostPrivate, hostPublic, loginPrivate, loginPublic] = await Promise.all([
       readFile(join(directory, 'host'), 'utf8'),

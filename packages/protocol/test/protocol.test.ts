@@ -36,10 +36,14 @@ test('upstream version history and managed build history describe their respecti
   const latest = history.at(-1);
   assert.equal(PROTOCOL_HISTORY[first.appVersion], first.protocol);
   assert.equal(Object.values(PROTOCOL_HISTORY).at(-1), first.protocol);
-  assert.equal(latest.protocol, PROTOCOL_VERSION);
+  // Source may introduce the next wire version before a release is assigned.
+  // Never relabel already-issued build numbers as that unreleased protocol.
+  assert.ok(PROTOCOL_VERSION === latest.protocol || PROTOCOL_VERSION === latest.protocol + 1);
   assert.equal(latest.appVersion, read('apps/desktop/package.json').version);
   assert.ok(latest.windowsBuilds.includes(read('deploy/managed-client.json').build));
-  assert.equal(latest.serverBuild, read('deploy/managed-server.json').build);
+  if (PROTOCOL_VERSION === latest.protocol)
+    assert.equal(latest.serverBuild, read('deploy/managed-server.json').build);
+  else assert.ok(latest.serverBuild <= read('deploy/managed-server.json').build);
 });
 test('authentication version and event ordering are explicit', () => {
   const auth = {

@@ -64,7 +64,13 @@ export function terminalArguments(
     ...(ssh
       ? [
           '--append-system-prompt',
-          remotePrompt(session.projectPath, ssh, session.id, platformOf(session.device)),
+          remotePrompt(
+            session.projectPath,
+            ssh,
+            session.id,
+            platformOf(session.device),
+            session.device?.viaSsh,
+          ),
         ]
       : []),
     ...((session.model ?? options.model) ? ['--model', session.model ?? options.model!] : []),

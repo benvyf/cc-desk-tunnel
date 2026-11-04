@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-04 SSH 远程开发源码与 review 修复（尚未发布）
+
+按用户要求实现「设置 → 连接」，本机 SSH 直连 Linux 开发设备，通过现有 WSS/Tunnel 让 Ubuntu 上的 Claude 操作远程项目；Claude、SDK、账号和模型出口仍仅在 Ubuntu。包含密钥/密码认证、指纹确认、目录选择、最近项目/会话恢复和分阶段诊断。源码协议升级为 24，后续需桌面与服务端配套发行；未改已发布 Build 编号或生产节点。
+
+再次 review 修复退出期间旧重连继续登录、目标断线后迟到桥接端口未关闭、SSH 编辑重发入口被隐藏、退出码先于完整输出返回四处问题。46 项核心/边界测试、5 项界面与跨设备回归、类型检查、桌面构建及 SSR bridge 导入通过。用户暂时没有真实测试条件，真实 Linux 编译与 Ubuntu 实际模型出口仍待验收，不能将隔离夹具当作实机证据。详见 [技术方案](docs/SSH-REMOTE-DEVELOPMENT-DESIGN.md)与[实施及 review 记录](docs/SSH-REMOTE-DEVELOPMENT-STATUS.md)。本次用户授权提交并推送 main，不包含打包、发布或部署。
+
 ### 2026-11-04 Linux Build 11 已发布，等待用户逐台点击升级
 
 按用户要求发布包含侧聊原生分支、安全截点和终端同步修复的 Linux Build 11 / 协议 23（源码 `2cd22ef`，pilot revision 16），兼容 Windows v0.3.9 Build 27。旧 Build 10 的存储和原生调用兼容摘要不同，不能直接替换程序；签名归档附带 Build 10→11 的宿主机迁移程序，复用线上已验证的策略保留、冷备份、空闲检查和回退支持脚本，保留现有 Node/CLI。已接入通道自动识别签名包内的迁移，无需重装 agent。42 项 Node 回归通过、1 项 Windows 平台跳过，TypeScript 和 Linux 20 项迁移/策略测试通过；迁移中的 Docker 操作为模拟，未升级生产 Ubuntu。

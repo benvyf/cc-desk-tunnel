@@ -50,10 +50,13 @@ function fitDraft(box: HTMLTextAreaElement | null) {
 
 // The branch the project's working tree is on, read from the project by the desktop; it is looked at again
 // whenever the window comes back to the front or a run ends, the moments it may have changed.
-function useBranch(path: string, running: boolean) {
+function useBranch(path: string, running: boolean, remoteSsh = false) {
   const [branch, setBranch] = useState<string | null>(null);
   useEffect(() => {
-    if (!window.desktop) return;
+    if (!window.desktop || remoteSsh) {
+      setBranch(null);
+      return;
+    }
     let current = true;
     const read = () =>
       void window.desktop!.gitBranch(path).then(
@@ -66,7 +69,7 @@ function useBranch(path: string, running: boolean) {
       current = false;
       window.removeEventListener('focus', read);
     };
-  }, [path, running]);
+  }, [path, running, remoteSsh]);
   return branch;
 }
 
@@ -175,7 +178,8 @@ export default function Composer({
     sendMenuOpen.current = false;
     setSendMenu(null);
   }, [following]);
-  const branch = useBranch(session.projectPath, !!session.activeRun);
+  const remoteSsh = !!session.device?.viaSsh;
+  const branch = useBranch(session.projectPath, !!session.activeRun, remoteSsh);
   const [dropping, setDropping] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const attachmentBlocked = attachments.some((item) => item.status !== 'ready');
@@ -311,6 +315,7 @@ export default function Composer({
   const shown = useRef(session.id);
   shown.current = session.id;
   async function chooseFiles() {
+    if (remoteSsh) return;
     const target = session.id;
     setAttachmentError(null);
     try {
@@ -446,7 +451,12 @@ export default function Composer({
             submit();
           }}
           onDragOver={(event) => {
-            if (!window.desktop || inputDisabled || !event.dataTransfer.types.includes('Files'))
+            if (
+              !window.desktop ||
+              remoteSsh ||
+              inputDisabled ||
+              !event.dataTransfer.types.includes('Files')
+            )
               return;
             event.preventDefault();
             setDropping(true);
@@ -456,6 +466,7 @@ export default function Composer({
             setDropping(false);
             if (!window.desktop || inputDisabled || !event.dataTransfer.files.length) return;
             event.preventDefault();
+            if (remoteSsh) return;
             void paste([...event.dataTransfer.files]);
           }}
         >
@@ -524,6 +535,10 @@ export default function Composer({
                 setPick(null);
               }}
               onPaste={(event) => {
+                if (remoteSsh && event.clipboardData.files.length) {
+                  event.preventDefault();
+                  return;
+                }
                 // Pasted text is left to the browser, also when a program put a picture of it beside the text.
                 if (!window.desktop || inputDisabled || !event.clipboardData.files.length) return;
                 const files = [...event.clipboardData.files];
@@ -586,7 +601,7 @@ export default function Composer({
             />
           </div>
           <div className="composer-toolbar">
-            {window.desktop && (
+            {window.desktop && !remoteSsh && (
               <IconButton
                 title="添加附件"
                 className="attach-button"

@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Bell,
   Check,
+  Globe,
   CircleHelp,
   Info,
   Keyboard,
@@ -13,6 +14,7 @@ import {
 } from './icons.tsx';
 import type { ProxyClient } from './client.ts';
 import WebAccessSettings from './WebAccessSettings.tsx';
+import SshConnectionsSettings from './SshConnectionsSettings.tsx';
 import Help from './Help.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { connectionWaits, replyFonts, setPrefs, themes, usePrefs, waitRange } from './prefs.ts';
@@ -35,7 +37,14 @@ import { IconButton, Switch } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 
 export type Section =
-  'account' | 'claude' | 'general' | 'notifications' | 'shortcuts' | 'help' | 'about';
+  | 'account'
+  | 'claude'
+  | 'general'
+  | 'connections'
+  | 'notifications'
+  | 'shortcuts'
+  | 'help'
+  | 'about';
 // `words` is what the search box matches besides the name: the settings found inside.
 const sections: { id: Section; name: string; group: string; icon: typeof Bell; words: string }[] = [
   {
@@ -59,6 +68,13 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     icon: SlidersHorizontal,
     words:
       '主题 外观 Clawd 小人 吉祥物 动画 字体 回复字体 衬线 混排 宋体 字号 代码 大小 浅色 深色 跟随系统 默认模型 推理强度 额度 输入框 托盘 后台 记住凭据 自动登录 启动 普通会话 文件夹 连接 超时 等待 SSH 回复小结 会话栏 用量 首字 速度 缓存 多开 多个连接 窗口 服务端 消息 发送 排队 插话 Enter 终端 预测 回显',
+  },
+  {
+    id: 'connections',
+    name: '连接',
+    group: '客户端',
+    icon: Globe,
+    words: 'SSH 主机 设备 密钥 远程 连接',
   },
   {
     id: 'notifications',
@@ -953,6 +969,7 @@ export default function SettingsPage({
   footer,
   browser = false,
   checkUpdate,
+  openSshSession,
 }: {
   sideOpen?: boolean;
   // Given before a connection exists: only this computer's own settings are shown, and this leaves them.
@@ -976,13 +993,14 @@ export default function SettingsPage({
   service: string | null;
   // Opens the client's update dialog; only the desktop client updates itself.
   checkUpdate?: () => void;
+  openSshSession?: (id: string, created: boolean) => Promise<void>;
 }) {
   const [search, setSearch] = useState('');
   const term = search.trim().toLowerCase();
   const shown = sections.filter(
     (item) =>
       (!back || item.group === '客户端' || item.id === 'about') &&
-      (!browser || !['account', 'claude'].includes(item.id)) &&
+      (!browser || !['account', 'claude', 'connections'].includes(item.id)) &&
       `${item.name} ${item.words}`.toLowerCase().includes(term),
   );
   return (
@@ -1055,6 +1073,8 @@ export default function SettingsPage({
             workspaceRoot={workspaceRoot}
             chooseWorkspace={chooseWorkspace}
           />
+        ) : section === 'connections' && !browser ? (
+          <SshConnectionsSettings client={client} openSession={openSshSession} />
         ) : section === 'notifications' ? (
           <Notices />
         ) : section === 'shortcuts' ? (

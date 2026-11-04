@@ -4,7 +4,7 @@ import { webCertificateStateSchema } from './web-certificate.ts';
 export * from './web.ts';
 export * from './web-certificate.ts';
 
-export const PROTOCOL_VERSION = 23;
+export const PROTOCOL_VERSION = 24;
 // The release each protocol version began with, from 0.2.4 on: a client newer than its service signs in with
 // the service's number to have it upgrade (see the README). A new number adds its line here.
 export const PROTOCOL_HISTORY: Readonly<Record<string, number>> = {
@@ -415,6 +415,7 @@ export const deviceSchema = z.object({
   id,
   name: z.string().trim().min(1).max(120),
   platform: devicePlatformSchema.optional(),
+  viaSsh: z.literal(true).optional(),
 });
 export const platformOf = (device?: { platform?: DevicePlatform } | null): DevicePlatform =>
   device?.platform ?? 'win32';
@@ -798,7 +799,12 @@ export const authSchema = z
 // frame of its own because the frame of `auth` has to stay what every version reads.
 // The system is not the page's to say: the desktop's main process writes it into the frame on its way out.
 export const deviceIdentitySchema = z
-  .object({ type: z.literal('device'), id, platform: devicePlatformSchema.optional() })
+  .object({
+    type: z.literal('device'),
+    id,
+    platform: devicePlatformSchema.optional(),
+    viaSsh: z.literal(true).optional(),
+  })
   .strict();
 // The client is closing the connection on purpose. Without it a connection that ends is taken for a fault on
 // the way, and what the device was running is kept for it to come back to.

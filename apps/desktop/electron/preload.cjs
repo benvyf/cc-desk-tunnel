@@ -24,6 +24,23 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   dev: process.argv.includes('--cc-desk-tunnel-dev'),
   platform: process.platform,
+  ssh: {
+    list: () => ipcRenderer.invoke('ssh:list'),
+    save: (input) => ipcRenderer.invoke('ssh:save', input),
+    connect: (id, secret) => ipcRenderer.invoke('ssh:connect', id, secret),
+    disconnect: (id) => ipcRenderer.invoke('ssh:disconnect', id),
+    remove: (id) => ipcRenderer.invoke('ssh:remove', id),
+    openProject: (id, path, forceNew) => ipcRenderer.invoke('ssh:open-project', id, path, forceNew),
+    directories: (id, path) => ipcRenderer.invoke('ssh:directories', id, path),
+    forkSession: (id, sessionId, beforeMessageId) =>
+      ipcRenderer.invoke('ssh:fork-session', id, sessionId, beforeMessageId),
+    chooseIdentity: () => ipcRenderer.invoke('ssh:identity-file'),
+    onChanged: (callback) => {
+      const listener = (_event, entries) => callback(entries);
+      ipcRenderer.on('ssh:changed', listener);
+      return () => ipcRenderer.removeListener('ssh:changed', listener);
+    },
+  },
   preview: {
     list: (input) => ipcRenderer.invoke('preview:list', input),
     watch: (input) => ipcRenderer.invoke('preview:watch', input),

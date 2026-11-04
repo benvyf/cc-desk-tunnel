@@ -693,6 +693,7 @@ export function createProxyServer(options: ServerOptions) {
         nativeRoot: session.nativeRoot ?? session.id,
         projectPath: said.projectPath,
         platform: said.platform,
+        ...(session.device?.viaSsh ? { viaSsh: true } : {}),
         permissionMode: session.permissionMode,
         model: session.model,
         effort: session.effort,
@@ -1697,6 +1698,8 @@ export function createProxyServer(options: ServerOptions) {
       case 'terminal.file.read': {
         const session = store.get(command.sessionId).session;
         target(peer, session);
+        if (session.device?.viaSsh)
+          throw new DomainError('terminal_file_unavailable', 'SSH 项目暂不提供文件预览。');
         try {
           const roots = [
             nativeDirectory(store.directory, nativeRoot(session.id)),
@@ -2487,6 +2490,7 @@ export function createProxyServer(options: ServerOptions) {
             id: identity.data.id,
             name: peer.name,
             ...(identity.data.platform ? { platform: identity.data.platform } : {}),
+            ...(identity.data.viaSsh ? { viaSsh: true } : {}),
           };
           // With the line written when it closes, this tells which computer a connection was and how long it held.
           if (!closing)
