@@ -376,14 +376,20 @@ test('an event of a session not shown, as the quota of a terminal sent to all, l
   client.select(shown.id);
   snapshot(shown, []);
   // While another session is shown, the terminal's turn is recorded (2) and its quota sent to every connection (3).
+  const quota = { type: 'native.metrics', context: null, usage: null, rateLimits: null };
   socket.message({
     type: 'session.event',
     event: {
       ...event(held.id, 3),
-      payload: { type: 'native.metrics', context: null, usage: null, rateLimits: null },
+      payload: quota,
     },
   });
   await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.deepEqual(
+    client.state.metrics,
+    quota,
+    'account metrics still update outside the selected session',
+  );
   assert.deepEqual(
     client.state.events[held.id].map((item) => item.sequence),
     [1],

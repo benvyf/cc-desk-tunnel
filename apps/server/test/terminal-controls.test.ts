@@ -19,6 +19,8 @@ const state = {
   args: [] as string[][],
   onboardingReads: 0,
   statusReads: [] as { sessionId: string; resume: boolean }[],
+  statusWait: undefined as Promise<void> | undefined,
+  statusFailure: false,
 };
 const key = Symbol.for('cc-terminal-control-test');
 Reflect.set(globalThis, key, state);
@@ -44,6 +46,8 @@ const hooks = registerHooks({
           export async function readNativeStatus(options, dataDir, root, sessionId, signal, status) {
             const state = globalThis[Symbol.for('cc-terminal-control-test')];
             state.statusReads.push({ sessionId, resume: status.resume });
+            await state.statusWait;
+            if (state.statusFailure) throw new Error('fixture: status read failed');
             return [{type:'native.metrics',context:null,usage:null,rateLimits:null}];
           }`,
       };
@@ -182,6 +186,43 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   assert.deepEqual(state.statusReads.at(-1), { sessionId, resume: false });
   assert.equal(state.kills, 0, 'status reads must leave the existing terminal running');
   assert.equal(state.args.length, 1, 'status reads must not open another terminal');
+  // Allowing reads alongside a terminal must not remove the existing mutation lock.
+  let releaseStatus!: () => void;
+  state.statusWait = new Promise<void>((resolve) => {
+    releaseStatus = resolve;
+  });
+  const beforeReads = state.statusReads.length;
+  const pendingStatus = owner.request({ type: 'session.status', sessionId: separate.sessionId });
+  try {
+    for (let i = 0; i < 100 && state.statusReads.length === beforeReads; i++) await delay(5);
+    assert.equal(state.statusReads.length, beforeReads + 1);
+    assert.equal(
+      (await other.request({ type: 'session.status', sessionId: separate.sessionId })).code,
+      'session_busy',
+    );
+    assert.equal((await other.request({ type: 'session.status', sessionId })).code, 'native_busy');
+    assert.equal(
+      state.statusReads.length,
+      beforeReads + 1,
+      'concurrent reads cannot start a second CLI',
+    );
+  } finally {
+    state.statusWait = undefined;
+    releaseStatus();
+  }
+  assert.equal((await pendingStatus).ok, true);
+  state.statusFailure = true;
+  assert.equal(
+    (await owner.request({ type: 'session.status', sessionId: separate.sessionId })).ok,
+    false,
+  );
+  state.statusFailure = false;
+  assert.equal(
+    (await owner.request({ type: 'session.status', sessionId: separate.sessionId })).ok,
+    true,
+    'a failed status read releases its mutation lock',
+  );
+  assert.equal(state.kills, 0, 'read failures must not stop the existing terminal');
   assert.ok(
     state.args.at(-1)?.includes(sessionId),
     'new terminals share the chat native session ID',
