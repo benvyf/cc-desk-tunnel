@@ -107,7 +107,7 @@ test('side creation freezes busy text and tool records without mutating or copyi
   assert.equal(f.store.sideContext(child.id), '');
 });
 
-test('oversize snapshots reject atomically instead of truncating', (t) => {
+test('legacy oversize snapshots without native context reject atomically instead of truncating', (t) => {
   const { f, parent } = fixture(t);
   f.store.append(parent.id, randomUUID(), {
     type: 'text.delta',
@@ -121,6 +121,70 @@ test('oversize snapshots reject atomically instead of truncating', (t) => {
   });
   assert.deepEqual(f.store.list(), before);
   assert.equal(f.store.created(requestId), undefined);
+});
+
+test('native side descriptors bypass the legacy character budget without copying proxy events', (t) => {
+  const { f, parent } = fixture(t);
+  f.store.append(parent.id, randomUUID(), {
+    type: 'tool.output',
+    toolId: 'large-output',
+    stream: 'stdout',
+    text: 'Large proxy history'.repeat(30_000),
+  });
+  const before = f.store.snapshot(parent.id);
+  const requestId = randomUUID();
+  const native = {
+    id: randomUUID(),
+    boundary: randomUUID(),
+    throughSequence: f.store.lastSequence(parent.id),
+  };
+  const child = f.store.createSide(requestId, parent.id, 'Native side', undefined, native);
+  assert.equal(child.id, native.id);
+  assert.equal(child.sideConversation?.throughSequence, native.throughSequence);
+  assert.equal(child.nativeRoot, parent.nativeRoot);
+  assert.equal(child.activeRun, null);
+  assert.deepEqual(f.store.snapshot(parent.id), before);
+  assert.deepEqual(f.store.snapshot(child.id).events, []);
+  assert.equal(f.store.hasNativeContext(child.id), true);
+  assert.equal(f.store.isNativeSide(child.id), true);
+  assert.deepEqual(JSON.parse(f.store.sideContext(child.id)), {
+    kind: 'native-fork',
+    boundary: native.boundary,
+  });
+  const guard = f.store.sidePrompt(child.id);
+  assert.ok(guard.length < 1000);
+  assert.match(guard, /Do not continue/);
+  assert.ok(!guard.includes('Large proxy history'));
+  assert.equal(f.store.sideCreated(requestId, parent.id, 'Native side')?.id, child.id);
+  assert.throws(() => f.store.sideCreated(requestId, parent.id, 'Other'), {
+    code: 'request_conflict',
+  });
+  const nested = f.store.createSide(randomUUID(), child.id, 'Nested', undefined, {
+    ...native,
+    id: randomUUID(),
+    throughSequence: 0,
+  });
+  assert.notEqual(
+    f.store.sidePrompt(nested.id),
+    guard,
+    'inherited parent guard cannot consume the child guard',
+  );
+  f.store.close();
+  f.store = new SessionStore(f.directory);
+  assert.equal(
+    f.store.move(child.id, 'E:\\moved-side-project', parent.device!).nativeRoot,
+    child.nativeRoot,
+    'an unused native side keeps its real history directory when moved after restart',
+  );
+  f.store.delete(parent.id);
+  assert.equal(f.store.hasNativeContext(child.id), true);
+  assert.equal(f.store.sidePrompt(child.id), guard);
+  f.store.append(child.id, randomUUID(), {
+    type: 'message.delivery',
+    messageId: randomUUID(),
+    status: 'received',
+  });
+  assert.equal(f.store.sidePrompt(child.id), '');
 });
 
 test('side snapshots preserve dialogue while skipping large state rows before JavaScript decoding', (t) => {
@@ -279,6 +343,17 @@ test('fake SDK receives inherited background only through the real explicit-send
       fileURLToPath(new URL('./fixtures/side-native.mjs', import.meta.url)),
     ],
     { timeout: 15000 },
+  );
+});
+
+test('native side creation uses real SDK forks with long histories, frozen boundaries and independent retry', async () => {
+  await promisify(execFile)(
+    process.execPath,
+    [
+      '--experimental-test-module-mocks',
+      fileURLToPath(new URL('./fixtures/side-native-fork.mjs', import.meta.url)),
+    ],
+    { timeout: 20000 },
   );
 });
 

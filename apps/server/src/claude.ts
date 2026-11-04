@@ -50,6 +50,8 @@ export type ClaudeRun = {
   resume: boolean;
   // A side conversation whose first input has not been received can retry an initialization that left no history.
   sideContext?: string;
+  // Its inherited history is already persisted under this ID; never replace a missing fork with a new session.
+  nativeSide?: boolean;
   signal: AbortSignal;
   emit: (event: EventPayload) => void;
   // Asks the user about a tool call. A question Claude asks comes back with the answers chosen.
@@ -138,7 +140,7 @@ export async function runClaude(
   const cwd = prepareNativeDirectory(options, run.dataDir, run.nativeRoot);
   let resume = run.resume;
   if (resume && !(await getSessionInfo(run.sessionId, { dir: cwd }))) {
-    if (run.sideContext) resume = false;
+    if (run.sideContext && !run.nativeSide) resume = false;
     else {
       run.emit({
         type: 'run.error',

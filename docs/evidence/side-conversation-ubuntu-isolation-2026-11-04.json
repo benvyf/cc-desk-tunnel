@@ -1,0 +1,138 @@
+{
+  "date": "2026-11-04",
+  "timezone": "Asia/Hong_Kong",
+  "step1": {
+    "nodeReports": [
+      {
+        "nodeId": "ubuntu-cc",
+        "lastSeen": "2026-11-04T07:24:42.241000+00:00",
+        "current": {
+          "build": 10,
+          "protocol": 23,
+          "phase": "idle"
+        }
+      },
+      {
+        "nodeId": "ubuntu-cc-02",
+        "lastSeen": "2026-11-04T07:24:42.252000+00:00",
+        "current": {
+          "build": 10,
+          "protocol": 23,
+          "phase": "idle"
+        }
+      },
+      {
+        "nodeId": "ubuntu-cc-03",
+        "lastSeen": "2026-11-04T07:24:42.247000+00:00",
+        "current": {
+          "build": 10,
+          "protocol": 23,
+          "phase": "idle"
+        }
+      }
+    ],
+    "observedAt": "2026-11-04T07:24:51.787106+00:00",
+    "publishedSdk": "0.3.286",
+    "publishedRuntime": {
+      "node": "24.22.2",
+      "sdk": "0.3.286",
+      "cli": "2.1.295"
+    },
+    "productionBinaryVersionsDirectlyVerified": false,
+    "reason": "ubuntu-cc-02 verified from user-returned read-only console JSON; the user confirmed ubuntu-cc and ubuntu-cc-03 use the same environment. Separate direct outputs for those two nodes were not collected.",
+    "productionNodeObservations": {
+      "ubuntu-cc-02": {
+        "hostname": "ubuntu-cc-02",
+        "container": "cc-desk-tunnel-96ccb91a-proxy-1",
+        "versions": {
+          "node": "v24.22.2",
+          "sdk": "0.3.286",
+          "cli": "2.1.295 (Claude Code)",
+          "cliSha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
+          "cliProbePath": "/opt/runtime/cli/bin/claude",
+          "programPid": 23,
+          "nodeExecutable": "/opt/runtime/node/bin/node",
+          "programEntry": "/app/apps/server/src/managed-main.ts",
+          "sdkEntry": "/app/node_modules/@anthropic-ai/claude-agent-sdk/sdk.mjs"
+        },
+        "businessProcessNodeVersionVerified": true,
+        "sdkAndCliVersionsVerified": true,
+        "cliShaMatchesPublishedAndLab": true,
+        "source": "User returned JSON from the corrected read-only runtime probe",
+        "recordedDate": "2026-11-04"
+      }
+    },
+    "probeCorrection": {
+      "recognizes": [
+        "main.ts",
+        "managed-main.ts",
+        "managed-server-main.ts",
+        "managed-server-child.ts"
+      ],
+      "usesActualProcessCwd": true,
+      "selectsUniqueBusinessLeaf": true,
+      "usesProcessExecutable": true,
+      "isolatedLinuxLayoutCasesPassed": 5,
+      "layoutCases": [
+        "standalone-main",
+        "relative-managed-main",
+        "legacy-managed-child",
+        "managed-supervisor-and-business-child",
+        "ambiguous-business-processes-rejected"
+      ],
+      "layoutValidationUsedFixtureSdkAndCli": true,
+      "productionRetestPending": true,
+      "node02ProductionRetestPassed": true
+    },
+    "directlyVerifiedNodes": ["ubuntu-cc-02"],
+    "pendingDirectVerificationNodes": ["ubuntu-cc", "ubuntu-cc-03"],
+    "userConfirmedMatchingEnvironmentNodes": ["ubuntu-cc", "ubuntu-cc-03"],
+    "userConfirmation": "User confirmed the first and third Ubuntu environments match the directly verified second node.",
+    "versionCompatibilityAcceptedForTargets": true
+  },
+  "step2": {
+    "scope": "Isolated Ubuntu 24.04 Docker container on VPS, network none, no production data mounted",
+    "versions": {
+      "node": "v24.22.2",
+      "sdk": "0.3.286",
+      "cli": "2.1.295 (Claude Code)",
+      "ubuntu": "\"24.04\""
+    },
+    "ubuntuImage": "sha256:fe81560990fae86dc4743202b2cb4d3df98d0bcf949173cecef15ce1127ef852",
+    "cliSha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
+    "relatedTestsPassed": 59,
+    "actualCliCases": [
+      "create during active tool wait without changing parent or requesting model",
+      "first explicit send restores independent native fork through real runClaude/CLI",
+      "server restart resumes the same child without duplicating the initial guard",
+      "real CLI compaction and subsequent native resume",
+      "fork from compacted history and first explicit nested-side send",
+      "provider rejection remains isolated and explicit retry resumes the same child"
+    ],
+    "actualCliCasesPassed": 6,
+    "simulatedApiRequests": 8,
+    "realProviderRequests": 0,
+    "externalNetworkingDisabled": true,
+    "productionDataMounted": false,
+    "productionContainersUnchanged": true,
+    "temporaryFilesRemoved": true,
+    "harnessNote": "A single 400 response was absorbed by CLI compatibility retry. Sustained synthetic provider rejection and explicit recovery then passed; application source unchanged for this adjustment."
+  },
+  "candidate": {
+    "baseCommit": "eabc6057e68ca9521cf3718410aeb02c26fe118b",
+    "workingTreeChanges": true,
+    "files": {
+      "apps/server/src/server.ts": "2e372099c249cff234880ddc9823b366c313fb9f7bd74a0372116f59567cbd64",
+      "apps/server/src/side-fork.ts": "284cf5a3d7bb54fa4c08b855246ffbb898b7d51798a53c5c7f6d27836cd4b0fb",
+      "apps/server/src/store.ts": "c2aab99b4a302975869f6afb3e944e4a527dd5747416172269f16f39fb199ad7",
+      "apps/server/src/claude.ts": "be221236304d21437f9785873b61ab1b2d8377dc79f792ebb7e50bc82420b396",
+      "packages/protocol/src/index.ts": "3929232ebe04d430f02266d2ed4fd863206986c958ddd553cf39765717713efb"
+    }
+  },
+  "notPerformed": [
+    "Agent SSH execution on production Ubuntu nodes",
+    "Production deployment",
+    "Real-model request",
+    "Cache behavior modification"
+  ]
+}

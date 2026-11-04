@@ -425,7 +425,8 @@ test('a side conversation names its source in one line that also holds its find 
     .click();
   const side = page.getByRole('region', { name: '侧边会话', exact: true });
   const source = side.locator('.side-conversation-source');
-  await expect(source).toContainText(`继承“${f.parent.title}”的快照`);
+  await expect(source).toContainText(`继承“${f.parent.title}”的上下文`);
+  await expect(source).toHaveAttribute('title', /已保存的上下文.*未保存的选区随问题发送/);
   await expect(source).toHaveAttribute('title', /后续追问独立保存/);
   const line = (await source.boundingBox())!;
   expect(line.height).toBeLessThanOrEqual(40);

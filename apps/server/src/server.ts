@@ -74,6 +74,7 @@ import type { NativeTerminal } from './native-terminal.ts';
 import { inOrder } from './question.ts';
 import { simulate } from './simulation.ts';
 import { SessionStore } from './store.ts';
+import { sideForkBoundary } from './side-fork.ts';
 import { Throttle } from './throttle.ts';
 import { Door, Tunnel, sessionSsh, sessionSshPath } from './tunnel.ts';
 import type { TunnelOptions } from './tunnel.ts';
@@ -708,6 +709,7 @@ export function createProxyServer(options: ServerOptions) {
         dataDir: store.directory,
         resume: store.hasNativeContext(run.sessionId),
         sideContext: store.sidePrompt(run.sessionId),
+        nativeSide: store.isNativeSide(run.sessionId),
         signal: run.controller.signal,
         ssh: ssh ? sessionSsh(store.directory, run.sessionId, ssh) : undefined,
         emit: (event) => emit(run, event),
@@ -1293,6 +1295,83 @@ export function createProxyServer(options: ServerOptions) {
       mutations.delete(command.sessionId);
     }
   }
+  // Freeze a native prefix now; resuming the child later never rereads the growing parent. The UI's
+  // selected quote carries any visible output that the CLI has not yet persisted in that prefix.
+  async function createSide(command: CommandOf<'session.side.create'>) {
+    const previous = store.sideCreated(command.requestId, command.sessionId, command.title);
+    if (previous) return previous;
+    const { session: parent } = store.get(command.sessionId);
+    if (mutations.has(parent.id) || reviewing.has(parent.id) || terminals.has(parent.id))
+      throw new DomainError('session_busy', '来源会话正在更新或使用原生终端，请稍后重试。');
+    if (!options.claude || !store.hasNativeContext(parent.id))
+      return store.createSide(
+        command.requestId,
+        parent.id,
+        command.title,
+        runs.get(parent.id)?.open,
+      );
+    mutations.add(parent.id);
+    const dir = nativeDirectory(store.directory, nativeRoot(parent.id));
+    const throughSequence = store.lastSequence(parent.id);
+    let id: string | undefined;
+    try {
+      const messages = await getSessionMessages(parent.id, { dir, includeSystemMessages: true });
+      if (!messages.length)
+        throw new DomainError(
+          'native_context_missing',
+          '来源会话尚无可分叉的原生记录；请等待当前回答保存后重试。',
+        );
+      const boundary = sideForkBoundary(messages);
+      if (!boundary)
+        throw new DomainError(
+          'native_side_no_safe_boundary',
+          '来源会话尚无工具记录完整的安全截点，未创建侧边会话；请等待当前工具调用结束后重试。',
+        );
+      id = (await forkSession(parent.id, { dir, upToMessageId: boundary, title: command.title }))
+        .sessionId;
+      // The SDK reconstructs sibling tool blocks for display, while forkSession cuts physical file
+      // order. Validate the independent copy too, including source changes during the async fork.
+      const copied = await getSessionMessages(id, { dir, includeSystemMessages: true });
+      const end = copied.findLast((entry) => entry.type !== 'system' && !entry.parent_tool_use_id);
+      if (!end || sideForkBoundary(copied) !== end.uuid) {
+        console.warn('side_fork_unsafe_copy', {
+          sessionId: id,
+          parentSessionId: parent.id,
+          boundary,
+        });
+        throw new DomainError(
+          'native_side_unsafe_copy',
+          '原生分叉副本的工具记录不完整，已取消创建；请等待主对话完成当前回答后重试。',
+        );
+      }
+      return store.createSide(command.requestId, parent.id, command.title, undefined, {
+        id,
+        boundary,
+        throughSequence,
+      });
+    } catch (error) {
+      if (id) {
+        try {
+          await deleteSession(id, { dir });
+        } catch (cleanupError) {
+          console.error('side_fork_cleanup_failed', {
+            sessionId: id,
+            parentSessionId: parent.id,
+            error: cleanupError,
+          });
+        }
+      }
+      if (error instanceof DomainError) throw error;
+      console.error('side_fork_failed', { parentSessionId: parent.id, error });
+      throw new DomainError(
+        'native_side_fork_failed',
+        '原生侧边会话分叉失败，未创建侧边会话；请检查来源原生记录与服务端日志。',
+      );
+    } finally {
+      mutations.delete(parent.id);
+    }
+  }
+
   // A message starts a run on the computer the session is on, or joins the native run going there. Compacting
   // is the native /compact command sent as a message.
   async function submit(
@@ -1752,12 +1831,7 @@ export function createProxyServer(options: ServerOptions) {
         return undefined;
       }
       case 'session.side.create': {
-        const session = store.createSide(
-          command.requestId,
-          command.sessionId,
-          command.title,
-          runs.get(command.sessionId)?.open,
-        );
+        const session = await createSide(command);
         broadcast({ type: 'session.updated', session });
         return session.id;
       }

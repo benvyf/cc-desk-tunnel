@@ -200,10 +200,10 @@ export default function SideConversation({
           button sits at the end of this line (style.css). */}
       <header
         className="side-conversation-source"
-        title={`继承${parent ? `“${parent.title}”` : '来源会话'}创建时的快照，后续追问独立保存。`}
+        title={`继承${parent ? `“${parent.title}”` : '来源会话'}创建时已保存的上下文；生成中可能退回工具记录完整的位置，未保存的选区随问题发送；后续追问独立保存。`}
       >
         <GitBranch />
-        <span>继承{parent ? `“${parent.title}”` : '来源会话'}的快照 · 后续追问独立保存</span>
+        <span>继承{parent ? `“${parent.title}”` : '来源会话'}的上下文 · 后续追问独立保存</span>
       </header>
       {!connected && (
         <p className="connection-banner" role="status">
