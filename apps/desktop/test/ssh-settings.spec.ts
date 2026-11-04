@@ -10,13 +10,21 @@ test('SSH settings use manual connection and project paths with the existing set
   const nav = page.getByRole('navigation', { name: '设置分类' });
   await expect(nav.getByRole('button', { name: '连接', exact: true })).toBeVisible();
   await expect(page.getByText('尚未添加 SSH 连接', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: '添加', exact: true }).click();
+  await expect(page.getByRole('button', { name: '添加', exact: true })).toHaveCount(0);
+  await mkdir(resolve('.local/screenshots/ssh'), { recursive: true });
+  await page.screenshot({
+    path: resolve('.local/screenshots/ssh/empty-light.png'),
+    animations: 'disabled',
+  });
+  await page.getByRole('button', { name: '添加连接', exact: true }).click();
   const dialog = page.getByRole('dialog', { name: '添加 SSH 连接' });
   await expect(dialog).toBeVisible();
   await expect(page.getByText('未发现 SSH 连接', { exact: true })).toHaveCount(0);
   await dialog.getByLabel('显示名称', { exact: true }).fill('实验室 Ubuntu');
-  await dialog.getByLabel('主机名', { exact: true }).fill('10.0.0.20');
-  await dialog.getByLabel('用户名', { exact: true }).fill('dev');
+  // A pasted user@host fills the user name as well; the host field keeps only the address.
+  await dialog.getByLabel('主机名', { exact: true }).fill('dev@10.0.0.20');
+  await expect(dialog.getByLabel('主机名', { exact: true })).toHaveValue('10.0.0.20');
+  await expect(dialog.getByLabel('用户名', { exact: true })).toHaveValue('dev');
   await dialog.getByRole('button', { name: '选择文件', exact: true }).click();
   await expect(dialog.getByLabel('身份文件路径', { exact: true })).toHaveValue(
     'C:\\Users\\dev\\.ssh\\id_ed25519',
@@ -29,7 +37,9 @@ test('SSH settings use manual connection and project paths with the existing set
   await dialog.getByRole('button', { name: '保存并连接', exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page.locator('.ssh-detail')).toContainText('已连接');
+  await expect(page.locator('.ssh-detail')).toContainText('dev@10.0.0.20');
   await page.getByRole('button', { name: '打开项目', exact: true }).click();
+  await expect(page.getByRole('dialog').locator('.ssh-target')).toContainText('实验室 Ubuntu');
   await page.getByLabel('项目绝对路径', { exact: true }).fill('/home/dev/project');
   await page.getByRole('dialog').getByRole('button', { name: '打开项目', exact: true }).click();
   await expect
@@ -63,6 +73,18 @@ test('SSH settings use manual connection and project paths with the existing set
   await expect(page.getByRole('button', { name: '打开项目', exact: true })).toBeInViewport();
   await page.getByRole('switch', { name: '连接 实验室 Ubuntu', exact: true }).click();
   await expect(page.locator('.ssh-detail')).toContainText('已断开');
+  // Project actions only appear while the device is connected.
+  await expect(page.getByRole('button', { name: '打开项目', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '继续上次', exact: true })).toHaveCount(0);
+  await page.getByRole('switch', { name: '连接 实验室 Ubuntu', exact: true }).click();
+  const login = page.getByRole('dialog', { name: '连接 实验室 Ubuntu' });
+  await expect(login.locator('.ssh-target')).toContainText('dev@10.0.0.20 · 身份文件 id_ed25519');
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.screenshot({
+    path: resolve('.local/screenshots/ssh/login-dark.png'),
+    animations: 'disabled',
+  });
+  await login.getByRole('button', { name: '取消', exact: true }).click();
 });
 
 test('remote directory navigation stays on the target and ignores a canceled listing', async ({
@@ -90,6 +112,9 @@ test('remote directory navigation stays on the target and ignores a canceled lis
   );
   await page.getByRole('button', { name: '打开项目', exact: true }).click();
   let dialog = page.getByRole('dialog', { name: '打开远程项目' });
+  // The dialog lists the target's home folder on opening, without pressing 浏览.
+  await expect(dialog.getByLabel('项目绝对路径', { exact: true })).toHaveValue('/home/dev');
+  await expect(dialog.getByRole('button', { name: 'project', exact: true })).toBeVisible();
   await dialog.getByRole('button', { name: '浏览', exact: true }).click();
   await expect(dialog.getByLabel('项目绝对路径', { exact: true })).toHaveValue('/home/dev');
   await mkdir(resolve('.local/screenshots/ssh'), { recursive: true });
@@ -128,7 +153,10 @@ test('remote directory navigation stays on the target and ignores a canceled lis
       window as unknown as { sshFixture: { releaseDirectories: () => void } }
     ).sshFixture.releaseDirectories(),
   );
-  await expect(dialog.getByLabel('项目绝对路径', { exact: true })).toHaveValue('');
+  // The late listing of the closed dialog does not land in the new one.
+  await expect(dialog.getByLabel('项目绝对路径', { exact: true })).toHaveValue('/home/dev');
+  await page.waitForTimeout(100);
+  await expect(dialog.getByLabel('项目绝对路径', { exact: true })).toHaveValue('/home/dev');
   await dialog.getByLabel('项目绝对路径', { exact: true }).fill('/home/dev/manual');
   await dialog.getByRole('button', { name: '新建会话', exact: true }).click();
   await expect(dialog).not.toBeVisible();
