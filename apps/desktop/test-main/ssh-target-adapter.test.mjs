@@ -18,6 +18,7 @@ import { createSshTargets } from '../electron/ssh-targets.mjs';
 import { createProxyServer } from '../../server/src/server.ts';
 import { defaultCertificate } from '../../server/test/fixtures/web-certificates.ts';
 import { repairChannelOutput } from '../electron/ssh-channel-output.mjs';
+import { createSshTargetPool } from '../electron/ssh-target-pool.mjs';
 import { setTimeout as delay } from 'node:timers/promises';
 import {
   connectSshTarget,
@@ -185,7 +186,8 @@ test(
             );
             channel.on('error', () => {});
             channel.resume();
-            channel.stderr.resume();
+            const errorText = [];
+            channel.stderr.on('data', (data) => errorText.push(data));
             const closed = once(channel, 'close');
             if (closeFirst) {
               channel.close();
@@ -195,6 +197,11 @@ test(
               fail();
               const [code] = await closed;
               if (kind === 'exec') assert.equal(code, 255);
+              assert.match(
+                Buffer.concat(errorText).toString(),
+                /SSH|SFTP/,
+                'opening failures must contain a useful error instead of a silent exit',
+              );
             }
             target[method] = original;
             const result = await new Promise((resolve, reject) =>
@@ -232,8 +239,14 @@ async function fixture(t, loginKey) {
     earlyExit: false,
     inputBytes: 0,
     sftpInits: 0,
+    maxSessions: Infinity,
+    peakSessions: 0,
+    heldExec: null,
+    earlyOutput: false,
+    rejectExec: false,
   };
   server.on('connection', (client) => {
+    let sessions = 0;
     client.once('ready', () => controls.logins++);
     peers.add(client);
     client.on('error', () => {});
@@ -252,14 +265,28 @@ async function fixture(t, loginKey) {
         return ctx.accept();
       ctx.reject();
     });
-    client.on('session', (accept) => {
+    client.on('session', (accept, reject) => {
+      if (sessions >= controls.maxSessions) return reject();
+      controls.peakSessions = Math.max(controls.peakSessions, ++sessions);
       const session = accept();
-      session.on('exec', (acceptCommand, _reject, { command }) => {
+      session.once('close', () => {
+        sessions--;
+        if (!session._channel) client._protocol.channelClose(session._chanInfo.outgoing.id);
+      });
+      session.on('exec', (acceptCommand, reject, { command }) => {
+        if (controls.rejectExec) return reject();
         commands.push(command);
         const stream = acceptCommand();
         stream.on('error', () => {});
         stream.stderr.on('error', () => {});
         repairChannelOutput(stream);
+        if (controls.earlyOutput) {
+          stream.write('late stdout');
+          stream.stderr.end('late stderr');
+          stream.exit(7);
+          stream.end();
+          return;
+        }
         const parts = [];
         stream.on('data', (chunk) => {
           parts.push(chunk);
@@ -279,7 +306,8 @@ async function fixture(t, loginKey) {
               stream.end();
             });
           };
-          if (!check && controls.earlyExit) {
+          if (!check && controls.heldExec) controls.heldExec.push(output);
+          else if (!check && controls.earlyExit) {
             stream.exit(7);
             setImmediate(output);
           } else output();
@@ -289,6 +317,9 @@ async function fixture(t, loginKey) {
         if (!controls.sftp) return reject();
         const sftp = acceptSftp();
         sftp.on('ready', () => controls.sftpInits++);
+        // ssh2's low-level SFTP server requires the application to acknowledge
+        // channel close; real OpenSSH does so before a session slot is reusable.
+        sftp.once('close', () => sftp.end());
         const { STATUS_CODE } = ssh2.utils.sftp;
         sftp.on('REALPATH', (id, path) => {
           const canonical = path === '.' ? '/home/dev' : path;
@@ -356,14 +387,22 @@ async function fixture(t, loginKey) {
   };
 }
 
-async function adapterOf(t, f) {
+async function adapterOf(t, f, limits) {
   const controller = new AbortController();
-  const target = await connectSshTarget(
+  const connection = await connectSshTarget(
     f.config,
     'test-password',
     async () => true,
     controller.signal,
   );
+  const target = limits
+    ? createSshTargetPool(
+        connection,
+        () => assert.fail('unexpected extra transport'),
+        controller.signal,
+        limits,
+      )
+    : connection;
   t.after(() => target.destroy());
   const adapter = await startTargetAdapter(randomUUID(), target, {}, controller.signal, () => {});
   t.after(() => adapter.close());
@@ -975,6 +1014,224 @@ test('concurrent target connects cannot leave a superseded authentication alive'
   await manager.disconnect(id);
   assert.ok(clients.every((client) => client.auditDestroyed));
 });
+
+test(
+  'fourteen held commands and directory browsing fit the default ten sessions per target transport',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t);
+    f.controls.maxSessions = 10;
+    f.controls.heldExec = [];
+    const { target, client } = await adapterOf(t, f);
+    const finished = [];
+    const pending = Array.from(
+      { length: 14 },
+      (_, index) =>
+        new Promise((resolve, reject) => {
+          client.exec('held-command', (error, channel) => {
+            if (error) return reject(error);
+            const output = [];
+            channel.on('data', (data) => output.push(data));
+            channel.stderr.resume();
+            channel.on('error', reject);
+            channel.once('close', (code) => {
+              const result = { code, text: Buffer.concat(output).toString() };
+              finished.push(result);
+              resolve(result);
+            });
+            channel.end(`command ${index}`);
+          });
+        }),
+    );
+    t.after(async () => {
+      for (const done of f.controls.heldExec.splice(0)) done();
+      await Promise.allSettled(pending);
+    });
+    const deadline = Date.now() + 3000;
+    while (Date.now() < deadline && f.controls.heldExec.length < 14 && !finished.length)
+      await delay(10);
+    assert.equal(
+      f.controls.heldExec.length,
+      14,
+      'all fourteen commands must start without immediate session failures',
+    );
+    assert.equal(
+      await targetDirectory(target, '/home/dev/project'),
+      '/home/dev/project',
+      'background commands must leave capacity for directory browsing',
+    );
+    assert.ok(f.controls.peakSessions <= 10);
+    for (const done of f.controls.heldExec.splice(0)) done();
+    const results = await Promise.all(pending);
+    assert.ok(results.every((result) => result.code === 7));
+    assert.deepEqual(
+      results.map((result) => result.text),
+      Array.from({ length: 14 }, (_, index) => `command ${index}`),
+    );
+  },
+);
+
+test(
+  'closing a queued command with buffered stdin removes it before a target session opens',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t);
+    f.controls.heldExec = [];
+    const { client } = await adapterOf(t, f, { connections: 1, work: 1 });
+    const first = new Promise((resolve, reject) =>
+      client.exec('held-first', (error, channel) => {
+        if (error) return reject(error);
+        channel.resume();
+        channel.stderr.resume();
+        channel.once('close', resolve);
+        channel.end('held');
+      }),
+    );
+    t.after(async () => {
+      if (f.controls.heldExec) for (const done of f.controls.heldExec.splice(0)) done();
+      await first;
+    });
+    while (!f.controls.heldExec.length) await delay(5);
+    const queued = await new Promise((resolve, reject) =>
+      client.exec('canceled-while-queued', (error, channel) =>
+        error ? reject(error) : resolve(channel),
+      ),
+    );
+    queued.on('error', () => {});
+    queued.resume();
+    queued.stderr.resume();
+    queued.write('must not run');
+    const closed = once(queued, 'close');
+    queued.close();
+    await closed;
+    for (const done of f.controls.heldExec.splice(0)) done();
+    await first;
+    f.controls.heldExec = null;
+    await new Promise((resolve, reject) =>
+      client.exec('after-cancellation', (error, channel) => {
+        if (error) return reject(error);
+        channel.resume();
+        channel.stderr.resume();
+        channel.once('close', resolve);
+        channel.end('after');
+      }),
+    );
+    assert.ok(
+      !f.commands.some((command) => command.includes('canceled-while-queued')),
+      'a canceled queued command must never reach the target',
+    );
+  },
+);
+
+test(
+  'discarding a canceled late channel drains buffered output and restores its lease',
+  { timeout: 15000 },
+  async (t) => {
+    const f = await fixture(t);
+    f.controls.earlyOutput = true;
+    const target = await connectSshTarget(
+      f.config,
+      'test-password',
+      async () => true,
+      new AbortController().signal,
+    );
+    const pool = createSshTargetPool(target, () => assert.fail(), null, {
+      connections: 1,
+      work: 1,
+      waitMs: 100,
+    });
+    t.after(() => pool.destroy());
+    const original = ssh2.Client.prototype.exec;
+    let release, raw, late;
+    let opened;
+    const opening = new Promise((resolve) => (opened = resolve));
+    t.mock.method(ssh2.Client.prototype, 'exec', function (command, callback) {
+      if (this.config.username !== 'dev' || command !== 'late-output')
+        return original.call(this, command, callback);
+      raw = this;
+      return original.call(this, command, (error, channel) => {
+        assert.ifError(error);
+        late = channel;
+        release = () => callback(error, channel);
+        opened();
+      });
+    });
+    const controller = new AbortController();
+    const canceled = assert.rejects(
+      new Promise((resolve, reject) =>
+        pool.exec('late-output', (error, channel) => (error ? reject(error) : resolve(channel)), {
+          signal: controller.signal,
+        }),
+      ),
+      (error) => error.code === 'ABORT_ERR',
+    );
+    await opening;
+    await new Promise((resolve, reject) =>
+      original.call(raw, 'barrier', (error, channel) => {
+        if (error) return reject(error);
+        channel.resume();
+        channel.stderr.resume();
+        channel.once('close', resolve);
+        channel.end();
+      }),
+    );
+    assert.ok(late.readableLength > 0);
+    controller.abort();
+    await canceled;
+    release();
+    f.controls.earlyOutput = false;
+    const after = await new Promise((resolve, reject) =>
+      pool.exec('after-late-cancel', (error, channel) => {
+        if (error) return reject(error);
+        channel.resume();
+        channel.stderr.resume();
+        channel.once('close', resolve);
+        channel.end('after');
+      }),
+    );
+    assert.equal(after, 7);
+    assert.equal(late.readableLength, 0);
+    assert.equal(late.stderr.readableLength, 0);
+  },
+);
+
+test(
+  'rejected exec and subsystem requests close their already-open SSH sessions',
+  { timeout: 15000 },
+  async (t) => {
+    for (const kind of ['exec', 'sftp']) {
+      await t.test(kind, async (t) => {
+        const f = await fixture(t);
+        f.controls.maxSessions = 1;
+        const { client } = await adapterOf(t, f, { connections: 1, work: 1 });
+        f.controls.rejectExec = kind === 'exec';
+        f.controls.sftp = kind !== 'sftp';
+        const method = kind === 'exec' ? 'exec' : 'subsys';
+        await new Promise((resolve, reject) =>
+          client[method](kind === 'exec' ? 'rejected' : 'sftp', (error, channel) => {
+            if (error) return reject(error);
+            channel.resume();
+            channel.stderr.resume();
+            channel.once('close', resolve);
+            channel.end();
+          }),
+        );
+        f.controls.rejectExec = false;
+        f.controls.sftp = true;
+        const code = await new Promise((resolve, reject) =>
+          client.exec('after-rejection', (error, channel) => {
+            if (error) return reject(error);
+            channel.resume();
+            channel.stderr.resume();
+            channel.once('close', resolve);
+            channel.end('after');
+          }),
+        );
+        assert.equal(code, 7, 'a rejected request must not strand a remote session');
+      });
+    }
+  },
+);
 
 test(
   'connection diagnostics identify the failed stage without leaking credentials or reviving removed connections',

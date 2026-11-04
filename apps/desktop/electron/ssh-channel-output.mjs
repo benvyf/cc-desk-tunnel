@@ -4,6 +4,42 @@ const { version } = createRequire(import.meta.url)('ssh2/package.json');
 if (version !== '1.17.0')
   throw new Error('SSH channel output adapter requires review for ssh2 upgrades.');
 
+const discarded = new WeakSet();
+export function discardChannel(channel) {
+  if (!channel || discarded.has(channel)) return;
+  discarded.add(channel);
+  channel.on('error', () => {});
+  channel.stderr?.on('error', () => {});
+  // ssh2 delays Channel.close until unread stdout/stderr have drained, and its
+  // destroy() does not set Node's destroyed flag. Discard both outputs so an
+  // abandoned channel can finish its close handshake and release its lease.
+  channel.resume?.();
+  channel.stderr?.resume?.();
+  channel.destroy();
+}
+
+export function openChannelRequest(client, open, callback) {
+  const manager = client._chanMgr;
+  if (!manager) return open(callback);
+  const add = manager.add;
+  let id;
+  // exec/subsys can reject after CHANNEL_OPEN_CONFIRMATION without returning
+  // or closing that Channel in ssh2 1.17. Capture this synchronous allocation
+  // only; concurrent requests retain separate IDs and unrelated work stays live.
+  manager.add = function (...args) {
+    id = add.apply(this, args);
+    return id;
+  };
+  try {
+    return open((error, channel) => {
+      const failed = error && id !== undefined ? manager.get(id) : null;
+      callback(error, channel, failed && typeof failed === 'object' ? failed : null);
+    });
+  } finally {
+    manager.add = add;
+  }
+}
+
 // ssh2 1.17.0 shares one send window between stdout and stderr, but keeps stale
 // pending-write fields after completion and resumes only one stream per window
 // adjustment. An old stdout callback can therefore starve stderr indefinitely.
