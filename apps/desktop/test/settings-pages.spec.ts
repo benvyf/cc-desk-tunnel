@@ -47,7 +47,7 @@ async function connect(page: Page) {
 const section = (page: Page, name: string) =>
   page.getByRole('navigation', { name: '设置分类' }).getByRole('button', { name, exact: true });
 
-test('terminal prediction is opt-in, persists locally and reports storage failure', async ({
+test('terminal prediction defaults on, persists locally and reports storage failure', async ({
   page,
 }) => {
   await connect(page);
@@ -55,21 +55,21 @@ test('terminal prediction is opt-in, persists locally and reports storage failur
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
   await section(page, '常规').click();
   const toggle = page.getByRole('switch', { name: '终端输入预测（实验性）', exact: true });
-  await expect(toggle).toHaveAttribute('aria-checked', 'false');
-  await toggle.click();
   await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await toggle.click();
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
   expect(
     await page.evaluate(
       () => JSON.parse(localStorage.getItem('proxy-prefs')!).terminalPredictiveEcho,
     ),
-  ).toBe(true);
+  ).toBe(false);
   await page.reload();
   expect(
     await page.evaluate(async () => {
       const path = '/src/prefs.ts';
       return (await import(path)).getPrefs().terminalPredictiveEcho;
     }),
-  ).toBe(true);
+  ).toBe(false);
   await connect(page);
   await page.getByRole('button', { name: '设置与账号', exact: true }).click();
   await page.getByRole('menuitem', { name: '设置', exact: true }).click();
@@ -86,7 +86,7 @@ test('terminal prediction is opt-in, persists locally and reports storage failur
   await expect(
     page.getByRole('alert').filter({ hasText: '无法保存终端输入预测设置' }),
   ).toBeVisible();
-  await expect(toggle).toHaveAttribute('aria-checked', 'true');
+  await expect(toggle).toHaveAttribute('aria-checked', 'false');
 });
 
 test('invalid terminal prediction preference stays off', async ({ page }) => {

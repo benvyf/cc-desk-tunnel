@@ -107,7 +107,7 @@ const defaults: Prefs = {
   quota: false,
   quotaReads: true,
   mascot: true,
-  terminalPredictiveEcho: false,
+  terminalPredictiveEcho: true,
   view: defaultView,
   sessionBar: { enabled: false, summary: {} },
   theme: 'system',
@@ -169,7 +169,10 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
       quota: saved.quota === true,
       quotaReads: saved.quotaReads !== false,
       mascot: saved.mascot !== false,
-      terminalPredictiveEcho: saved.terminalPredictiveEcho === true,
+      terminalPredictiveEcho:
+        saved.terminalPredictiveEcho === undefined
+          ? defaults.terminalPredictiveEcho
+          : saved.terminalPredictiveEcho === true,
       view: {
         mode: viewModes.find((entry) => entry.mode === saved.view?.mode)?.mode ?? defaultView.mode,
       },
