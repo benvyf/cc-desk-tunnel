@@ -49,6 +49,8 @@
 !deploy/manage.sh
 !deploy/managed-client.json
 !deploy/managed-protocol-history.json
+!deploy/host-update/
+!deploy/host-update/apply.py
 !deploy/nginx.conf.example
 !deploy/nginx.md
 !deploy/test.sh
