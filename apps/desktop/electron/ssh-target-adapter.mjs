@@ -193,21 +193,45 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
     });
     client.on('session', (accept) => {
       const session = accept();
-      session.on('exec', (acceptCommand, reject, { command }) => {
-        target.exec(`export CC_DESK_TUNNEL_SHELL=/bin/bash; ${command}`, (error, remote) =>
-          error ? reject() : attach(acceptCommand(), remote),
-        );
+      session.on('exec', (acceptCommand, _reject, { command }) => {
+        // OpenSSH can send stdin and EOF before the target acknowledges exec.
+        // Accept now so ssh2 buffers that input instead of discarding it.
+        const local = acceptCommand();
+        if (!local) return;
+        local.on('error', () => {});
+        target.exec(`export CC_DESK_TUNNEL_SHELL=/bin/bash; ${command}`, (error, remote) => {
+          if (error) {
+            if (!local.destroyed) {
+              local.exit(255);
+              local.close();
+            }
+          } else attach(local, remote);
+        });
       });
       session.on('subsystem', (acceptSubsystem, reject, { name }) => {
         if (name !== 'sftp') return reject();
-        target.subsys('sftp', (error, remote) =>
-          error ? reject() : attach(acceptSubsystem(), remote),
-        );
+        // SFTP clients can pipeline their INIT packet before confirmation too.
+        const local = acceptSubsystem();
+        if (!local) return;
+        local.on('error', () => {});
+        target.subsys('sftp', (error, remote) => {
+          if (error) local.close();
+          else attach(local, remote);
+        });
       });
     });
   });
   function attach(local, remote) {
-    if (!local || closed) return remote.destroy();
+    // ssh2 can mark an SSH channel closed without setting stream.destroyed.
+    // An incoming EOF is valid stdin completion; a full close cancels input.
+    if (
+      !local ||
+      local.destroyed ||
+      closed ||
+      local.incoming.state === 'closed' ||
+      local.outgoing.state !== 'open'
+    )
+      return remote.destroy();
     repairChannelOutput(local);
     local.on('error', () => remote.destroy());
     remote.on('error', () => local.destroy());

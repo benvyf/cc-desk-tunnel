@@ -24,6 +24,66 @@ import {
   targetDirectory,
 } from '../electron/ssh-target-adapter.mjs';
 
+test(
+  'pipelined exec input and SFTP INIT survive delayed target acknowledgements',
+  { timeout: 15000 },
+  async (t) => {
+    for (const kind of ['exec', 'sftp']) {
+      await t.test(kind, async (t) => {
+        const f = await fixture(t);
+        const { target, client } = await adapterOf(t, f);
+        const method = kind === 'exec' ? 'exec' : 'subsys';
+        const original = target[method].bind(target);
+        target[method] = (command, callback) => setTimeout(() => original(command, callback), 100);
+        const request = kind === 'exec' ? 'exec' : 'subsystem';
+        const send = client._protocol[request].bind(client._protocol);
+        const input =
+          kind === 'exec'
+            ? Buffer.from('pipelined stdin 中文\n')
+            : Buffer.from([0, 0, 0, 5, 1, 0, 0, 0, 3]);
+        client._protocol[request] = (recipient, command, wantReply) => {
+          send(recipient, command, wantReply);
+          // Model OpenSSH's legal pipelining, without waiting for CHANNEL_SUCCESS.
+          client._protocol.channelData(recipient, input);
+          if (kind === 'exec') client._protocol.channelEOF(recipient);
+        };
+        const result = await new Promise((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('Pipelined input was lost')), 2000);
+          client[method](kind === 'exec' ? 'target-command' : 'sftp', (error, channel) => {
+            if (error) {
+              clearTimeout(timer);
+              return reject(error);
+            }
+            channel.on('error', () => {});
+            channel.stderr.resume();
+            const output = [];
+            channel.on('data', (data) => {
+              output.push(data);
+              if (kind === 'sftp') {
+                clearTimeout(timer);
+                resolve({ bytes: Buffer.concat(output) });
+                channel.close();
+              }
+            });
+            if (kind === 'exec')
+              channel.once('close', (code) => {
+                clearTimeout(timer);
+                resolve({ code, bytes: Buffer.concat(output) });
+              });
+          });
+        });
+        if (kind === 'exec') {
+          assert.equal(result.code, 7);
+          assert.deepEqual(result.bytes, input);
+        } else {
+          assert.equal(result.bytes[4], 2);
+          assert.equal(result.bytes.readUInt32BE(5), 3);
+        }
+      });
+    }
+  },
+);
+
 async function nativeProbeOnTestHost(configPath) {
   // Production is Linux. This gives Windows test keys the equivalent of 0600.
   if (process.platform === 'win32') {
@@ -41,6 +101,121 @@ async function nativeProbeOnTestHost(configPath) {
   return sshProbe(configPath);
 }
 
+test(
+  'closing a caller before target acknowledgement never forwards its buffered input',
+  { timeout: 15000 },
+  async (t) => {
+    for (const kind of ['exec', 'sftp']) {
+      await t.test(kind, async (t) => {
+        const f = await fixture(t);
+        const { target, client } = await adapterOf(t, f);
+        const method = kind === 'exec' ? 'exec' : 'subsys';
+        const original = target[method].bind(target);
+        const barrier = target.exec.bind(target);
+        let release;
+        const opening = new Promise((resolve) => {
+          target[method] = (command, callback) =>
+            original(command, (error, remote) => {
+              assert.ifError(error);
+              release = () => callback(error, remote);
+              resolve();
+            });
+        });
+        const channel = await new Promise((resolve, reject) =>
+          client[method](kind === 'exec' ? 'canceled-command' : 'sftp', (error, value) =>
+            error ? reject(error) : resolve(value),
+          ),
+        );
+        channel.on('error', () => {});
+        channel.resume();
+        channel.stderr.resume();
+        await opening;
+        const input =
+          kind === 'exec'
+            ? Buffer.from('canceled stdin must never reach the target')
+            : Buffer.from([0, 0, 0, 5, 1, 0, 0, 0, 3]);
+        channel.write(input);
+        const closed = once(channel, 'close');
+        channel.close();
+        await closed;
+        assert.equal(f.controls.inputBytes, 0);
+        assert.equal(f.controls.sftpInits, 0);
+        release();
+        // A subsequent channel on the same target SSH transport is a barrier:
+        // any canceled input forwarded before it must already have arrived.
+        await new Promise((resolve, reject) =>
+          barrier('barrier', (error, value) => {
+            if (error) return reject(error);
+            value.on('error', reject);
+            value.resume();
+            value.stderr.resume();
+            value.once('close', resolve);
+            value.end();
+          }),
+        );
+        assert.equal(f.controls.inputBytes, 0, 'closed exec must discard buffered stdin');
+        assert.equal(f.controls.sftpInits, 0, 'closed SFTP must discard buffered INIT');
+      });
+    }
+  },
+);
+
+test(
+  'forwarding failures close their channel without breaking the adapter',
+  { timeout: 15000 },
+  async (t) => {
+    for (const kind of ['exec', 'sftp']) {
+      for (const closeFirst of [false, true]) {
+        await t.test(
+          `${kind} ${closeFirst ? 'caller already closed' : 'open failed'}`,
+          async (t) => {
+            const f = await fixture(t);
+            const { target, client } = await adapterOf(t, f);
+            const method = kind === 'exec' ? 'exec' : 'subsys';
+            const original = target[method].bind(target);
+            let fail;
+            target[method] = (_command, callback) => {
+              fail = () => callback(new Error('target refused'));
+            };
+            const channel = await new Promise((resolve, reject) =>
+              client[method](kind === 'exec' ? 'failing-command' : 'sftp', (error, value) =>
+                error ? reject(error) : resolve(value),
+              ),
+            );
+            channel.on('error', () => {});
+            channel.resume();
+            channel.stderr.resume();
+            const closed = once(channel, 'close');
+            if (closeFirst) {
+              channel.close();
+              await closed;
+              fail();
+            } else {
+              fail();
+              const [code] = await closed;
+              if (kind === 'exec') assert.equal(code, 255);
+            }
+            target[method] = original;
+            const result = await new Promise((resolve, reject) =>
+              client.exec('still-usable', (error, value) => {
+                if (error) return reject(error);
+                const output = [];
+                value.on('data', (data) => output.push(data));
+                value.stderr.resume();
+                value.once('close', (code) =>
+                  resolve({ code, text: Buffer.concat(output).toString() }),
+                );
+                value.end('still usable');
+              }),
+            );
+            assert.deepEqual(result, { code: 7, text: 'still usable' });
+          },
+        );
+      }
+    }
+  },
+);
+
 // Real SSH transports and SFTP packets. The target's command handler is a fixture:
 // no test starts a local project command or contacts a model provider.
 async function fixture(t, loginKey) {
@@ -49,7 +224,14 @@ async function fixture(t, loginKey) {
   const peers = new Set();
   const commands = [];
   const files = new Map();
-  const controls = { capabilities: true, sftp: true, logins: 0, earlyExit: false };
+  const controls = {
+    capabilities: true,
+    sftp: true,
+    logins: 0,
+    earlyExit: false,
+    inputBytes: 0,
+    sftpInits: 0,
+  };
   server.on('connection', (client) => {
     client.once('ready', () => controls.logins++);
     peers.add(client);
@@ -78,7 +260,10 @@ async function fixture(t, loginKey) {
         stream.stderr.on('error', () => {});
         repairChannelOutput(stream);
         const parts = [];
-        stream.on('data', (chunk) => parts.push(chunk));
+        stream.on('data', (chunk) => {
+          parts.push(chunk);
+          controls.inputBytes += chunk.length;
+        });
         stream.on('end', () => {
           if (stream.destroyed || stream.writableEnded || stream.outgoing.state !== 'open') return;
           const input = Buffer.concat(parts);
@@ -102,6 +287,7 @@ async function fixture(t, loginKey) {
       session.on('sftp', (acceptSftp, reject) => {
         if (!controls.sftp) return reject();
         const sftp = acceptSftp();
+        sftp.on('ready', () => controls.sftpInits++);
         const { STATUS_CODE } = ssh2.utils.sftp;
         sftp.on('REALPATH', (id, path) => {
           const canonical = path === '.' ? '/home/dev' : path;
