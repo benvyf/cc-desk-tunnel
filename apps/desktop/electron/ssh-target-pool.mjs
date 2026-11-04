@@ -123,7 +123,13 @@ export function createSshTargetPool(
     grow();
   }
   function request(kind, open, callback, options = {}) {
-    if (closed || options.signal?.aborted || queue.length >= pending) {
+    // Work must not exhaust admission for the reserved metadata/control slots.
+    // Each kind keeps the same finite waiting limit and deadline.
+    if (
+      closed ||
+      options.signal?.aborted ||
+      queue.filter((entry) => entry.kind === kind).length >= pending
+    ) {
       queueMicrotask(() =>
         callback(closed ? unavailable() : options.signal?.aborted ? canceled() : busy()),
       );

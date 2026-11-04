@@ -52,6 +52,75 @@ test('metadata and cancellation slots remain available while work is held', asyn
   assert.deepEqual(target.calls, ['held', 'metadata', 'cancel']);
 });
 
+test('a full work queue cannot consume reserved metadata or cancellation admission', async (t) => {
+  const target = new Target();
+  const pool = createSshTargetPool(target, () => assert.fail(), null, {
+    connections: 1,
+    work: 1,
+    pending: 1,
+  });
+  t.after(() => pool.destroy());
+  await open(pool, 'held');
+  const controller = new AbortController();
+  const queued = assert.rejects(
+    open(pool, 'queued', { signal: controller.signal }),
+    (error) => error.code === 'ABORT_ERR',
+  );
+  t.after(async () => {
+    controller.abort();
+    await queued;
+  });
+  await assert.rejects(open(pool, 'overflow'), (error) => error.code === 'SSH_TARGET_BUSY');
+  const metadata = await new Promise((resolve, reject) =>
+    pool.sftp((error, channel) => (error ? reject(error) : resolve(channel))),
+  );
+  const control = await new Promise((resolve, reject) =>
+    pool.execControl('cancel', (error, channel) => (error ? reject(error) : resolve(channel))),
+  );
+  assert.ok(metadata && control);
+  assert.deepEqual(target.calls, ['held', 'metadata', 'cancel']);
+  controller.abort();
+  await queued;
+});
+
+test('each reserved request kind has its own bounded queue and deadline behind full work', async (t) => {
+  const target = new Target();
+  const pool = createSshTargetPool(target, () => assert.fail(), null, {
+    connections: 1,
+    work: 1,
+    pending: 1,
+    waitMs: 30,
+  });
+  t.after(() => pool.destroy());
+  await open(pool, 'held');
+  const controller = new AbortController();
+  const queuedWork = assert.rejects(open(pool, 'queued', { signal: controller.signal }), (error) =>
+    ['ABORT_ERR', 'SSH_TARGET_BUSY'].includes(error.code),
+  );
+  t.after(async () => {
+    controller.abort();
+    await queuedWork;
+  });
+  for (const kind of ['sftp', 'execControl']) {
+    const request = () =>
+      new Promise((resolve, reject) => {
+        const callback = (error, channel) => (error ? reject(error) : resolve(channel));
+        if (kind === 'sftp') pool.sftp(callback);
+        else pool.execControl('cancel', callback);
+      });
+    const held = await request();
+    const deadline = assert.rejects(request(), (error) => error.code === 'SSH_TARGET_BUSY');
+    await assert.rejects(request(), (error) => error.code === 'SSH_TARGET_BUSY');
+    await deadline;
+    const closed = once(held, 'close');
+    held.destroy();
+    await closed;
+    assert.ok(await request(), 'timed-out request does not block new reserved work');
+  }
+  controller.abort();
+  await queuedWork;
+});
+
 test('late canceled supervised channels retain their cleanup hook and lease until actual close', async (t) => {
   const target = new Target();
   let acknowledge;

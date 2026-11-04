@@ -3,10 +3,9 @@ import { discardChannel } from './ssh-channel-output.mjs';
 
 const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
 const supervisor = String.raw`
-umask 077
 dir=/tmp/cc-space-$2
-mkdir "$dir" || exit 125
-mkfifo "$dir/cancel" || { rmdir "$dir"; exit 125; }
+mkdir -m 700 "$dir" || exit 125
+mkfifo -m 600 "$dir/cancel" || { rmdir "$dir"; exit 125; }
 leader=$BASHPID
 cleanup() {
   kill "$watcher" 2>/dev/null || :

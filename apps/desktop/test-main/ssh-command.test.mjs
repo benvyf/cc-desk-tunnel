@@ -2,6 +2,63 @@ import assert from 'node:assert/strict';
 import { PassThrough } from 'node:stream';
 import { test } from 'node:test';
 import { supervisedCommand } from '../electron/ssh-command.mjs';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
+import { mkdtemp, stat, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+test(
+  'project commands inherit caller umask while supervisor state stays private',
+  {
+    skip: process.platform !== 'linux',
+    timeout: 15000,
+  },
+  async () => {
+    const previous = process.umask();
+    const directory = await mkdtemp(join(tmpdir(), 'cc-ssh-umask-'));
+    const quote = (value) => `'${value.replaceAll("'", "'\\''")}'`;
+    try {
+      for (const mask of [0o022, 0o002, 0o000]) {
+        process.umask(mask);
+        const file = join(directory, `file-${mask}`);
+        const folder = join(directory, `folder-${mask}`);
+        const task = supervisedCommand(
+          `: > ${quote(file)}; mkdir ${quote(folder)}; printf CREATED; read -r done`,
+          {},
+        );
+        const child = spawn('/bin/bash', ['-c', task.command], { stdio: ['pipe', 'pipe', 'pipe'] });
+        const closed = once(child, 'close');
+        let stderr = '';
+        child.stderr.on('data', (data) => (stderr += data));
+        try {
+          await new Promise((resolve, reject) => {
+            let output = '';
+            child.once('error', reject);
+            child.once('close', () =>
+              reject(new Error(`Supervisor exited before probe: ${stderr}`)),
+            );
+            child.stdout.on('data', (data) => {
+              output += data;
+              if (output.includes('CREATED')) resolve();
+            });
+          });
+          assert.equal((await stat(file)).mode & 0o777, 0o666 & ~mask);
+          assert.equal((await stat(folder)).mode & 0o777, 0o777 & ~mask);
+          assert.equal((await stat(`/tmp/cc-space-${task.token}`)).mode & 0o777, 0o700);
+          assert.equal((await stat(`/tmp/cc-space-${task.token}/cancel`)).mode & 0o777, 0o600);
+        } finally {
+          child.stdin.end('finished\n');
+          const [code] = await closed;
+          assert.equal(code, 0, stderr);
+        }
+      }
+    } finally {
+      process.umask(previous);
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
 
 function channel() {
   const remote = new PassThrough();
