@@ -22,6 +22,7 @@ export function openChannels(
   onFailure,
   retryMs = 10000,
   heartbeatMs = 15000,
+  closingMs = 10000,
 ) {
   const open = new Set();
   let closed = false;
@@ -79,7 +80,14 @@ export function openChannels(
     });
     stream.on('error', () => local.destroy());
     local.on('error', () => stream.destroy());
-    local.once('close', () => stream.destroy());
+    local.once('close', (hadError) => {
+      if (closed || hadError || !local.readableEnded) return stream.destroy();
+      // Let the final bytes and WebSocket close handshake finish before releasing the channel.
+      if (stream.destroyed) return;
+      stream.end();
+      const cut = setTimeout(() => stream.destroy(), closingMs);
+      stream.once('close', () => clearTimeout(cut));
+    });
     stream.pipe(local);
     local.pipe(stream);
   }

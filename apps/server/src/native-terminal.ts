@@ -86,6 +86,9 @@ const RESET =
 // Keyboard modes a CLI may switch on that the screen model does not keep: the kitty keyboard protocol and xterm's
 // modifyOtherKeys.
 const KEYBOARD = /\x1b\[>(\d+)u|\x1b\[<\d*u|\x1b\[>4;(\d+)m/g;
+// Gather small CLI redraws once per interval; the length limit is UTF-16 code units, not bytes.
+const GATHER_MS = 5;
+const GATHER_LIMIT = 16384;
 
 // Native control sessions have their own CLI history; no terminal transcript is persisted by the proxy.
 //
@@ -106,6 +109,8 @@ export class NativeTerminal {
   private resolveClosed!: () => void;
   private killTimer?: ReturnType<typeof setTimeout>;
   private ackTimer?: ReturnType<typeof setTimeout>;
+  private gathered = '';
+  private gatherTimer?: ReturnType<typeof setTimeout>;
   private cols: number;
   private rows: number;
   private data: (text: string, bytes: number) => void;
@@ -165,9 +170,10 @@ export class NativeTerminal {
         }
       }
       if (this.pending) this.pending.push(text);
-      else if (this.attached) this.send(text);
+      else if (this.attached) this.gather(text);
     });
     this.process.onExit(({ exitCode }) => {
+      this.flush();
       this.exited = true;
       if (process.platform === 'linux') {
         try {
@@ -183,6 +189,18 @@ export class NativeTerminal {
         .catch((error) => console.error('Native terminal exit handling failed', error))
         .finally(() => this.resolveClosed());
     });
+  }
+  private gather(text: string) {
+    this.gathered += text;
+    if (this.gathered.length >= GATHER_LIMIT) this.flush();
+    else this.gatherTimer ??= setTimeout(() => this.flush(), GATHER_MS);
+  }
+  private flush() {
+    clearTimeout(this.gatherTimer);
+    this.gatherTimer = undefined;
+    const text = this.gathered;
+    this.gathered = '';
+    if (text) this.send(text);
   }
   private send(text: string) {
     // UTF-16 boundaries stay intact, while each frame is well below the control-frame limit.
@@ -209,6 +227,9 @@ export class NativeTerminal {
   // The CLI runs on unwatched: its output only updates the screen model.
   detach() {
     this.attached = false;
+    clearTimeout(this.gatherTimer);
+    this.gatherTimer = undefined;
+    this.gathered = '';
     this.outstanding = 0;
     clearTimeout(this.ackTimer);
     if (this.paused && !this.closing && !this.exited) {
@@ -270,6 +291,7 @@ export class NativeTerminal {
   }
   close(reason: 'user_close' | 'ack_timeout' | 'disconnected' | 'control_error' = 'user_close') {
     if (this.exited || this.closing) return this.closed;
+    this.flush();
     this.reason = reason;
     this.closing = true;
     clearTimeout(this.ackTimer);

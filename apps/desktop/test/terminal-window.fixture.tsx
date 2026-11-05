@@ -23,12 +23,12 @@ let predictiveRows = 35;
 if (new URLSearchParams(location.search).get('predictive') === '1') {
   // Match the recorded Linux PTY grid independently of the test browser's font metrics.
   FitAddon.prototype.proposeDimensions = () => ({ cols: 100, rows: predictiveRows });
-  const open = Terminal.prototype.open;
-  Terminal.prototype.open = function (parent) {
-    terminalInstances.push(this);
-    return open.call(this, parent);
-  };
 }
+const openTerminal = Terminal.prototype.open;
+Terminal.prototype.open = function (parent) {
+  terminalInstances.push(this);
+  return openTerminal.call(this, parent);
+};
 const requests: object[] = [];
 const controls: object[] = [];
 const listeners = new Set<(message: any) => void>();
@@ -57,6 +57,13 @@ let state: any = {
   connectionId: 'fixture-connection',
   terminalWorkspace: { version: 1, minRows: 1, resumable: true },
   browser: null,
+  ...(new URLSearchParams(location.search).has('waitExecution') && {
+    devices: [{ ...session.device, ready: false }],
+  }),
+  ...(new URLSearchParams(location.search).has('waitConnection') && {
+    status: 'connecting',
+    connectionId: null,
+  }),
 };
 function update(values: object) {
   state = { ...state, ...values };
@@ -213,6 +220,7 @@ Object.assign(window, {
     finishClose: (ok: boolean) => finishClose(ok),
     emit: (message: object) => emit({ sessionId: 'fixture', terminalId: 'pty', ...message }),
     update,
+    snapshot: () => state,
     setCreateMode: (mode: typeof createMode) => {
       createMode = mode;
     },

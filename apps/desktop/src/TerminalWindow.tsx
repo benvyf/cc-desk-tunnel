@@ -69,6 +69,7 @@ export default function TerminalWindow({
   const [fallback, setFallback] = useState(false);
   const [maximized, setMaximized] = useState(false);
   const [nativeControls, setNativeControls] = useState(false);
+  const [toolbar, setToolbar] = useState<HTMLDivElement | null>(null);
   const [menu, setMenu] = useState(false);
   const [filter, setFilter] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
@@ -463,6 +464,7 @@ export default function TerminalWindow({
         >
           <ChevronDown scale="sm" />
         </IconButton>
+        <div className="terminal-title-actions" ref={setToolbar} />
         {!fallback && !nativeControls && (
           <div className="terminal-window-controls">
             <IconButton
@@ -621,6 +623,7 @@ export default function TerminalWindow({
                 client={client}
                 sessionId={tab.sessionId}
                 active={tab.tabId === activeId}
+                toolbar={toolbar}
                 onClose={() => {
                   void remove([tab], false);
                 }}

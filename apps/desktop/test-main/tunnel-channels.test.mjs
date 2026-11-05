@@ -86,6 +86,61 @@ test('a requested channel signs in with the tunnel secret and joins the local SS
   await f.until(() => channels.size === 0, 'channels to be forgotten');
   assert.deepEqual(failures, []);
 });
+test('normal local EOF delivers the entire buffered tail and closes gracefully', async (t) => {
+  const f = await fixture(t);
+  const channels = openChannels(offer, f.port, f.dial, () => assert.fail('no failure'));
+  t.after(() => channels.close());
+  channels.open(randomUUID());
+  await f.until(() => f.arrivals[0]?.frames.length === 2);
+  const arrival = f.arrivals[0];
+  const tail = Buffer.from('末尾🙂'.repeat(100000));
+  const ended = once(arrival.socket, 'close');
+  f.locals[0].end(tail);
+  const [code] = await ended;
+  assert.deepEqual(Buffer.concat(arrival.frames.slice(2).map((frame) => frame.data)), tail);
+  assert.equal(
+    code,
+    1005,
+    'normal EOF completes the WebSocket close handshake without termination',
+  );
+  await f.until(() => channels.size === 0);
+});
+
+test('local EOF waits for a delayed close handshake, but has a bounded closing time', async (t) => {
+  const f = await fixture(t);
+  const channels = openChannels(
+    offer,
+    f.port,
+    f.dial,
+    () => assert.fail('no failure'),
+    10000,
+    15000,
+    100,
+  );
+  t.after(() => channels.close());
+  channels.open(randomUUID());
+  await f.until(() => f.arrivals[0]?.frames.length === 2);
+  const arrival = f.arrivals[0];
+  // Hold the receiver so the local socket can end before the close handshake answers.
+  arrival.socket._socket.pause();
+  const ended = once(arrival.socket, 'close');
+  f.locals[0].end();
+  await delay(35);
+  assert.equal(channels.size, 1, 'the unfinished channel remains available to explicit cleanup');
+  arrival.socket._socket.resume();
+  assert.equal((await ended)[0], 1005);
+  await f.until(() => channels.size === 0);
+
+  channels.open(randomUUID());
+  await f.until(() => f.arrivals[1]?.frames.length === 2);
+  f.arrivals[1].socket._socket.pause();
+  const stalled = once(f.arrivals[1].socket, 'close');
+  f.locals[1].end();
+  await f.until(() => channels.size === 0, 'the closing timeout');
+  f.arrivals[1].socket._socket.resume();
+  await stalled;
+});
+
 test('a channel that cannot connect is tried again, and given up without ending the connection', async (t) => {
   const f = await fixture(t);
   const failures = [];

@@ -32,6 +32,7 @@ test('terminal entry waits for status reading and does not start another read on
   const commands: { type: string; sessionId?: string; requestId: string }[] = [];
   let finishStatus = (_ok = true) => {};
   let endTerminal = () => {};
+  const contexts = new Map<string, object>();
   await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
     const send = (value: object) => route.send(JSON.stringify(value));
     route.onMessage((raw) => {
@@ -55,9 +56,9 @@ test('terminal entry waits for status reading and does not start another read on
           session: sessions.find((session) => session.id === command.sessionId),
           mode: 'replace',
           firstSequence: 0,
-          lastSequence: 0,
+          lastSequence: contexts.has(command.sessionId) ? 1 : 0,
           hasEarlier: false,
-          events: [],
+          events: contexts.has(command.sessionId) ? [contexts.get(command.sessionId)] : [],
         });
       if (command.type === 'session.status') {
         finishStatus = (ok = true) =>
@@ -72,8 +73,22 @@ test('terminal entry waits for status reading and does not start another read on
       if (command.type === 'terminal.open') {
         const terminalId = randomUUID();
         send({ type: 'terminal.opened', sessionId: command.sessionId, terminalId });
-        endTerminal = () =>
+        endTerminal = () => {
+          const event = {
+            sessionId: command.sessionId,
+            runId: terminalId,
+            sequence: 1,
+            createdAt: new Date().toISOString(),
+            payload: {
+              type: 'native.context',
+              nativeSessionId: command.sessionId,
+              persisted: true,
+            },
+          };
+          contexts.set(command.sessionId, event);
+          send({ type: 'session.event', event });
           send({ type: 'terminal.closed', sessionId: command.sessionId, terminalId, exitCode: 0 });
+        };
       }
       send({ type: 'response', requestId: command.requestId, ok: true });
     });
@@ -132,4 +147,8 @@ test('terminal entry waits for status reading and does not start another read on
   await expect(page.locator('.native-terminal')).toBeVisible();
   await page.getByRole('button', { name: /关闭terminal-test/ }).click();
   expect(commands.filter((c) => c.type === 'terminal.close')).toHaveLength(0);
+  await other.click();
+  await expect(page.locator('.composer textarea')).toBeEnabled();
+  await page.locator('.composer textarea').fill('/compact');
+  await expect(page.getByRole('option', { name: '压缩上下文', exact: false })).toBeEnabled();
 });

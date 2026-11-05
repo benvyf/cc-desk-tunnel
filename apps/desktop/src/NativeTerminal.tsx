@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Terminal } from '@xterm/xterm';
 import type { ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
+import { SearchAddon } from '@xterm/addon-search';
+import type { TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { X } from './icons.tsx';
+import { Bot, CircleAlert, Hand, LoaderCircle, Search, Server, Square, X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
 import { terminalLinks } from './terminalLinks.ts';
@@ -47,6 +50,7 @@ export default function NativeTerminal({
   onStatus,
   register,
   onLink,
+  toolbar,
 }: {
   client: ProxyClient;
   sessionId: string;
@@ -55,6 +59,7 @@ export default function NativeTerminal({
   onStatus?: (phase: TerminalPhase, detail: string) => void;
   register?: (handle: TerminalHandle | null) => void;
   onLink?: (target: string) => void;
+  toolbar?: HTMLElement | null;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onClose, onStatus, register, onLink });
@@ -67,10 +72,10 @@ export default function NativeTerminal({
   const readingLine = useRef<number | null>(null);
   const prefs = usePrefs();
   const executionReady = () => {
-    const deviceId = client.state.sessions.find((session) => session.id === sessionId)?.device?.id;
+    const deviceId = client.state?.sessions.find((session) => session.id === sessionId)?.device?.id;
     return (
       !deviceId ||
-      !client.state.devices ||
+      !client.state?.devices ||
       client.state.devices.some((device) => device.id === deviceId && device.ready)
     );
   };
@@ -79,6 +84,27 @@ export default function NativeTerminal({
   const [phase, setPhase] = useState<TerminalPhase>('opening');
   const [detail, setDetail] = useState('正在启动');
   const [error, setError] = useState<string | null>(null);
+  const [connection, setConnection] = useState({
+    status: client.state?.status ?? 'connected',
+    ready: executionReady(),
+    activity: null as TerminalActivity | null,
+  });
+  const [recovery, setRecovery] = useState<string | null>(null);
+  const [findOpen, setFindOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [found, setFound] = useState<boolean | null>(null);
+  const [reading, setReading] = useState(false);
+  const [unseenOutput, setUnseenOutput] = useState(false);
+  const toBottom = useRef(() => {});
+  const findInput = useRef<HTMLInputElement>(null);
+  const composingFind = useRef(false);
+  const find = useRef((_text: string, _previous = false, _incremental = false) => {});
+  useEffect(() => {
+    if (active && findOpen) {
+      findInput.current?.focus();
+      findInput.current?.select();
+    }
+  }, [active, findOpen]);
   useEffect(() => {
     if (active) activate.current(true);
     else predictionRef.current?.clear();
@@ -122,6 +148,18 @@ export default function NativeTerminal({
     terminal.open(host.current!);
     const links = terminal.registerLinkProvider(terminalLinks(terminal, followLink));
     terminalRef.current = terminal;
+    const updateReading = () => {
+      const aboveBottom = terminal.buffer.active.viewportY < terminal.buffer.active.baseY;
+      setReading(aboveBottom);
+      if (!aboveBottom) setUnseenOutput(false);
+    };
+    const scroll = terminal.onScroll(updateReading);
+    toBottom.current = () => {
+      terminal.scrollToBottom();
+      setReading(false);
+      setUnseenOutput(false);
+      terminal.focus();
+    };
     let id: string | null = null,
       disposed = false,
       opening = false,
@@ -142,6 +180,22 @@ export default function NativeTerminal({
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     let connectionId = client.state?.connectionId;
     let prediction: TerminalPrediction | null = null;
+    let search: SearchAddon | null = null;
+    find.current = (text, previous = false, incremental = false) => {
+      if (disposed) return;
+      if (!text) {
+        search?.clearDecorations();
+        terminal.clearSelection();
+        setFound(null);
+        return;
+      }
+      if (!search) {
+        search = new SearchAddon();
+        terminal.loadAddon(search);
+      }
+      // Selection only: no proposed decoration API or regex; search stays in this xterm buffer.
+      setFound(previous ? search.findPrevious(text) : search.findNext(text, { incremental }));
+    };
     const minimumRows = client.state?.terminalWorkspace?.minRows ?? 5;
     // A window opened for the terminal is handed the page's stylesheets as it opens; one that is still loading
     // has no tokens yet, so the colours are taken again once it has.
@@ -167,6 +221,7 @@ export default function NativeTerminal({
       if (next !== 'running') prediction?.clear();
       current = next;
       if (disposed) return;
+      if (next === 'ended' || next === 'failed') setRecovery(null);
       setPhase(next);
       setDetail(text);
       callbacks.current.onStatus?.(next, text);
@@ -186,13 +241,11 @@ export default function NativeTerminal({
     function write(frame: { terminalId: string; data: string; bytes: number }) {
       const generation = renderGeneration;
       terminal.write(frame.data, () => {
-        if (
-          disposed ||
-          generation !== renderGeneration ||
-          id !== frame.terminalId ||
-          closeRequested
-        )
-          return;
+        if (disposed || generation !== renderGeneration) return;
+        const aboveBottom = terminal.buffer.active.viewportY < terminal.buffer.active.baseY;
+        setReading(aboveBottom);
+        setUnseenOutput(aboveBottom);
+        if (id !== frame.terminalId || closeRequested) return;
         pendingBytes += frame.bytes;
         if (pendingBytes >= 16 * 1024) acknowledge();
         else ackTimer ??= setTimeout(acknowledge, 20);
@@ -230,7 +283,7 @@ export default function NativeTerminal({
           visible.current &&
           phaseNow() === 'running' &&
           !document?.querySelector('dialog[open]') &&
-          !document?.activeElement?.closest('.terminal-list, .terminal-draft')
+          !document?.activeElement?.closest('.terminal-list, .terminal-draft, .terminal-find')
         )
           terminal.focus();
       });
@@ -239,6 +292,8 @@ export default function NativeTerminal({
       prediction?.clear();
       id = terminalId;
       if (disposed) return;
+      setRecovery(reconnectTerminalId === terminalId ? '已接回原终端，未重发输入。' : null);
+      refreshConnection();
       opening = false;
       if (outputLost) {
         status('unknown', '输出未完整接收');
@@ -276,11 +331,12 @@ export default function NativeTerminal({
         (phaseNow() !== 'failed' && phaseNow() !== 'opening')
       )
         return;
+      if ((client.state && client.state.status !== 'connected') || !executionReady()) return;
       opening = true;
       const openingConnection = connectionId;
       closeRequested = false;
       setError(null);
-      status('opening', '正在启动');
+      status('opening', reconnectTerminalId ? '正在接回原终端' : '正在启动');
       try {
         resize();
         await client.request({
@@ -446,11 +502,35 @@ export default function NativeTerminal({
         id = null;
         opening = false;
         closeRequested = false;
+        setRecovery('终端暂时停止显示，重新连接会尝试接回原进程，不会重发输入。');
         status('disconnected', '终端暂时停止显示，可重新连接');
       } else if (message.type === 'connection.error' && message.terminalId === id)
         setError(message.message);
     });
+    function refreshConnection() {
+      const run = client.state?.sessions.find((session) => session.id === sessionId)?.activeRun;
+      const next = {
+        status: client.state?.status ?? 'connected',
+        ready: executionReady(),
+        activity: run?.surface === 'terminal' && run.id === id ? (run.activity ?? null) : null,
+      };
+      setConnection((previous) =>
+        previous.status === next.status &&
+        previous.ready === next.ready &&
+        previous.activity === next.activity
+          ? previous
+          : next,
+      );
+    }
     const disconnected = () => {
+      refreshConnection();
+      if (phaseNow() === 'opening' && !id && !opening && !reconnectTerminalId && !closeRequested) {
+        if (client.state.status === 'connected' && executionReady()) {
+          connectionId = client.state.connectionId;
+          openTask = start();
+        }
+        return;
+      }
       if (
         reconnecting &&
         executionReady() &&
@@ -464,6 +544,8 @@ export default function NativeTerminal({
         connectionId = client.state.connectionId;
         renderGeneration++;
         terminal.reset();
+        search?.clearDecorations();
+        setFound(null);
         pendingBytes = 0;
         bufferedBytes = 0;
         early.length = 0;
@@ -483,8 +565,12 @@ export default function NativeTerminal({
         opening = false;
         closeRequested = true;
         clearTimeout(ackTimer);
-        if (phaseNow() !== 'ended' && phaseNow() !== 'failed')
+        if (phaseNow() !== 'ended' && phaseNow() !== 'failed') {
           status('disconnected', '连接中断 · 正在等待恢复终端');
+          setRecovery('原终端状态尚未确认；恢复时不会重发输入。');
+        }
+      } else if (phaseNow() === 'opening' && !opening && !id && !closeRequested) {
+        openTask = start();
       }
     };
     const unwatch = client.subscribe?.(disconnected);
@@ -517,7 +603,7 @@ export default function NativeTerminal({
               client.state?.connectionId === connectionId &&
               phaseNow() === 'running' &&
               !host.current?.ownerDocument.activeElement?.closest(
-                '.terminal-draft, .terminal-list',
+                '.terminal-draft, .terminal-list, .terminal-find',
               ) &&
               !host.current?.ownerDocument.querySelector('dialog[open]')
             )
@@ -614,6 +700,8 @@ export default function NativeTerminal({
           connectionId = client.state.connectionId;
           renderGeneration++;
           terminal.reset();
+          search?.clearDecorations();
+          setFound(null);
           pendingBytes = 0;
           size = '';
           closeRequested = false;
@@ -658,11 +746,14 @@ export default function NativeTerminal({
       prediction?.dispose();
       if (predictionRef.current === prediction) predictionRef.current = null;
       links.dispose();
+      scroll.dispose();
+      toBottom.current = () => {};
       for (const link of loading) link.removeEventListener('load', repaint);
       unwatch?.();
       view.cancelAnimationFrame(resizeFrame);
       callbacks.current.register?.(null);
       handle.current = null;
+      find.current = () => {};
       // A late open still needs its listener until its request settles, then close only this instance.
       void openTask.finally(() => {
         if (id)
@@ -675,11 +766,96 @@ export default function NativeTerminal({
       if (terminalRef.current === terminal) terminalRef.current = null;
     };
   }, [client, sessionId]);
+  const connectionText =
+    connection.status === 'reconnecting'
+      ? '正在重连服务端'
+      : connection.status === 'connecting'
+        ? '正在连接服务端'
+        : connection.status === 'disconnected'
+          ? '服务端连接已断开'
+          : !connection.ready
+            ? '服务端已连接 · 等待执行通道就绪'
+            : '服务端已连接';
+  const activityText =
+    phase === 'running'
+      ? connection.activity === 'working'
+        ? 'Claude 正在运行'
+        : connection.activity === 'waiting'
+          ? 'Claude 等待确认或回答'
+          : connection.activity === 'idle'
+            ? 'Claude 等待输入'
+            : 'Claude 状态待同步'
+      : detail;
+  const closeFind = () => {
+    composingFind.current = false;
+    setFindOpen(false);
+    find.current('');
+    terminalRef.current?.focus();
+  };
+  const connectionState =
+    connection.status === 'connected'
+      ? connection.ready
+        ? 'ready'
+        : 'waiting'
+      : connection.status === 'disconnected'
+        ? 'disconnected'
+        : 'connecting';
+  const activityState = phase === 'running' ? (connection.activity ?? 'unknown') : phase;
+  const ActivityIcon =
+    activityState === 'working' || activityState === 'opening' || activityState === 'closing'
+      ? LoaderCircle
+      : activityState === 'waiting'
+        ? Hand
+        : activityState === 'failed'
+          ? CircleAlert
+          : activityState === 'ended'
+            ? Square
+            : Bot;
+  const indicators = (
+    <div className="terminal-runtime-status" aria-label="终端状态">
+      <span
+        className="terminal-state-icon"
+        data-state={connectionState}
+        role="status"
+        title={connectionText}
+        aria-label={connectionText}
+      >
+        <Server scale="sm" />
+        <span className="sr-only">{connectionText}</span>
+      </span>
+      <span
+        className="terminal-state-icon"
+        data-state={activityState}
+        role="status"
+        title={activityText}
+        aria-label={activityText}
+      >
+        <ActivityIcon
+          scale="sm"
+          className={ActivityIcon === LoaderCircle ? 'spinning' : undefined}
+        />
+        <span className="sr-only">{activityText}</span>
+      </span>
+      <IconButton
+        title="查找终端输出"
+        aria-expanded={findOpen}
+        onClick={() => {
+          setFindOpen(true);
+          findInput.current?.focus();
+          findInput.current?.select();
+          find.current(query, false, true);
+        }}
+      >
+        <Search scale="sm" />
+      </IconButton>
+    </div>
+  );
   return (
     <section className="native-terminal" aria-label="原生 Claude Code 终端">
       {!register ? (
         <header>
-          <span role="status">{detail}</span>
+          <span>Linux · Claude Code</span>
+          {indicators}
           <IconButton
             title="关闭原生终端"
             onClick={() => {
@@ -692,11 +868,11 @@ export default function NativeTerminal({
           </IconButton>
         </header>
       ) : (
-        <span className="sr-only" role="status">
-          {detail}
-        </span>
+        <span className="sr-only">Linux · Claude Code</span>
       )}
+      {register && active && toolbar && createPortal(indicators, toolbar)}
       {error && <p role="alert">{error}</p>}
+      {recovery && <div className="terminal-recovery-note">{recovery}</div>}
       {(phase === 'failed' || phase === 'unknown' || phase === 'disconnected') && (
         <div className="terminal-recovery">
           <Button
@@ -714,7 +890,60 @@ export default function NativeTerminal({
           </Button>
         </div>
       )}
-      <div className="terminal-host" ref={host} />
+      <div className="terminal-display">
+        <div className="terminal-host" ref={host} />
+        {reading && (
+          <Button className="terminal-to-bottom" size="sm" onClick={() => toBottom.current()}>
+            {unseenOutput ? '有新输出 · 回到底部' : '回到底部'}
+          </Button>
+        )}
+        {findOpen && (
+          <div
+            className="terminal-find"
+            role="search"
+            aria-label="查找终端输出"
+            onKeyDown={(event) => {
+              event.stopPropagation();
+              if (event.nativeEvent.isComposing || composingFind.current) return;
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                closeFind();
+              } else if (event.key === 'Enter' && event.target === findInput.current) {
+                event.preventDefault();
+                find.current(query, event.shiftKey);
+              }
+            }}
+          >
+            <input
+              ref={findInput}
+              aria-label="终端查找文字"
+              placeholder="查找当前保留的输出"
+              value={query}
+              onCompositionStart={() => {
+                composingFind.current = true;
+              }}
+              onCompositionEnd={(event) => {
+                composingFind.current = false;
+                find.current(event.currentTarget.value, false, true);
+              }}
+              onChange={(event) => {
+                setQuery(event.target.value);
+                if (!composingFind.current) find.current(event.target.value, false, true);
+              }}
+            />
+            <span role="status">{found === false ? '未找到' : found ? '已定位' : ''}</span>
+            <Button size="xs" disabled={!query} onClick={() => find.current(query, true)}>
+              上一个
+            </Button>
+            <Button size="xs" disabled={!query} onClick={() => find.current(query)}>
+              下一个
+            </Button>
+            <IconButton title="关闭终端查找" size="xs" onClick={closeFind}>
+              <X scale="sm" />
+            </IconButton>
+          </div>
+        )}
+      </div>
     </section>
   );
 }

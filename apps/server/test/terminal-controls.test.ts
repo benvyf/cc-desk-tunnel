@@ -248,7 +248,8 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
       uuid: questionId,
       parentUuid: null,
       sessionId,
-      message: { content: 'terminal fixture prompt' },
+      // A valid first JSONL record can exceed the title reader's 256 KiB preview (e.g. attachments).
+      message: { content: 'terminal fixture prompt', fixtureAttachment: 'x'.repeat(300_000) },
       timestamp: new Date().toISOString(),
     },
     {
@@ -317,9 +318,24 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   assert.equal(state.writes.length, 4);
   owner.send({ type: 'terminal.resize', sessionId, terminalId, cols: 100, rows: 35 });
   assert.equal((await owner.request({ type: 'terminal.close', sessionId, terminalId })).ok, true);
+  assert.ok(
+    server.store
+      .get(sessionId)
+      .events.some((event) => event.payload.type === 'native.context' && event.payload.persisted),
+    'a terminal-only conversation must expose its persisted context to the compact button',
+  );
   assert.deepEqual(state.sizes, [[100, 35]]);
   assert.equal(state.kills, 1);
   assert.equal((await open()).ok, true);
+  const reopenedArgs = state.args.at(-1)!;
+  assert.ok(
+    reopenedArgs.includes('--resume'),
+    'a large first record must resume the existing history',
+  );
+  const reopenedHooks = reopenedArgs[reopenedArgs.indexOf('--settings') + 1].replace(
+    /\.json$/,
+    '.hooks',
+  );
   // Creating a tab preserves the existing subscription and saves strict settings before spawn.
   const createId = randomUUID();
   const createTab = {
@@ -413,6 +429,10 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     (message) => message.type === 'terminal.opened' && message.sessionId === third.sessionId,
   );
   assert.equal(thirdOpened.type, 'terminal.opened');
+  assert.ok(
+    !server.store.get(secondId).events.some((event) => event.payload.type === 'native.context'),
+    'an empty terminal must not advertise a persisted context',
+  );
   const historyBinding = server.store.terminalHistory(third.sessionId!)!;
   const historyFile = join(
     directory,
@@ -445,6 +465,12 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     true,
     'a failed import cannot be treated as an empty native transcript',
   );
+  assert.ok(
+    !server.store
+      .get(third.sessionId!)
+      .events.some((event) => event.payload.type === 'native.context'),
+    'a corrupt transcript must not advertise a persisted context',
+  );
   assert.equal(state.onboardingReads, 0);
   owner.socket.terminate();
   await new Promise<void>((resolve) => owner.socket.once('close', resolve));
@@ -465,11 +491,24 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     terminalId: resumed.terminalId,
     data: 'after reconnect',
   });
+  const contextsBeforeResume = server.store
+    .get(sessionId)
+    .events.filter((event) => event.payload.type === 'native.context').length;
+  writeFileSync(
+    reopenedHooks,
+    JSON.stringify({ hook_event_name: 'Stop', session_id: randomUUID() }) + '\n',
+  );
   assert.equal(
     (await other.request({ type: 'terminal.close', sessionId, terminalId: resumed.terminalId })).ok,
     true,
   );
   assert.equal(state.writes.at(-1), 'after reconnect');
+  assert.equal(
+    server.store.get(sessionId).events.filter((event) => event.payload.type === 'native.context')
+      .length,
+    contextsBeforeResume,
+    'switching native history in the terminal must not publish context for the original chat',
+  );
   assert.equal(state.kills, 4);
   const spawnCount = state.args.length;
   assert.equal(

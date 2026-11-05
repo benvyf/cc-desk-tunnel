@@ -55,6 +55,7 @@ import {
   terminalHistoryContext,
   readTerminalHistory,
   readTerminalMessages,
+  readTerminalContext,
   terminalHistoryPath,
 } from './terminal-history.ts';
 import { statusLineQuota } from './native-controls.ts';
@@ -917,12 +918,14 @@ export function createProxyServer(options: ServerOptions) {
       )
         throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
       const cwd = prepareNativeDirectory(options.claude, store.directory, nativeRoot(session.id));
-      const saved = await readTerminalHistory(context.config, cwd, history.nativeId);
+      const messages = await readTerminalMessages(context.config, cwd, history.nativeId);
+      const saved =
+        (await readTerminalHistory(context.config, cwd, history.nativeId)) ??
+        (messages.length ? await readTerminalContext(context.config, cwd, history.nativeId) : null);
       if (history.mode === 'resume' && !saved)
         throw new DomainError('history_missing', '官方历史已删除或尚无有效消息，不会静默新建。');
       if (history.mode === 'new' && saved && history.nativeId !== session.id)
         throw new DomainError('history_exists', '此终端已有官方历史，请显式选择继续历史会话。');
-      const messages = await readTerminalMessages(context.config, cwd, history.nativeId);
       const directory = join(store.directory, 'terminal-runtime');
       mkdirSync(directory, { recursive: true, mode: 0o700 });
       current.continued = {
@@ -1089,7 +1092,7 @@ export function createProxyServer(options: ServerOptions) {
         interrupted &&= !hooks.length && continued.activity === 'working';
         if (interrupted) activity = 'idle';
         if (ended || interrupted || hooks.some((hook) => terminalActivity(hook) === 'idle'))
-          await importTerminal(terminal);
+          await importTerminal(terminal, ended);
         if (
           ended ||
           !activity ||
@@ -1153,7 +1156,7 @@ export function createProxyServer(options: ServerOptions) {
     });
     broadcast({ type: 'session.event', event });
   }
-  async function importTerminal(terminal: Terminal) {
+  async function importTerminal(terminal: Terminal, ended = false) {
     const continued = terminal.continued!;
     const { known } = continued;
     const { sessionId } = terminal;
@@ -1198,6 +1201,18 @@ export function createProxyServer(options: ServerOptions) {
         type: 'native.notice',
         text: '终端里换到了另一段对话（/clear 或 /resume），那之后的内容不在这个会话中。',
       });
+    }
+    // Only the successfully read, unchanged native history can enable chat compaction.
+    // Use the PTY's selected config directory, rather than the process-global SDK default.
+    if (ended && messages.length && !continued.elsewhere && continued.nativeId === sessionId) {
+      const history = await readTerminalContext(continued.config, dir, continued.nativeId);
+      if (history)
+        record(sessionId, terminal.id, {
+          type: 'native.context',
+          nativeSessionId: sessionId,
+          persisted: true,
+          updatedAt: history.updatedAt,
+        });
     }
   }
   // Rename and delete change the native session first; the proxy record follows only when that succeeded.

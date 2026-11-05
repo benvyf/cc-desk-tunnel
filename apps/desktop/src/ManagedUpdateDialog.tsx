@@ -30,13 +30,14 @@ export default function ManagedUpdateDialog({
     ? Math.min(100, Math.max(0, Math.round(((state.received ?? 0) / release.size) * 100)))
     : 0;
 
-  async function run(action: 'check' | 'download' | 'install' | 'cancel') {
+  async function run(action: 'check' | 'download' | 'install' | 'cancel' | 'open-package') {
     setPending(true);
     setError(null);
     try {
       const api = window.desktop!.managedUpdate;
       if (action === 'install') await api.activity({ blocked });
-      await api[action]();
+      if (action === 'open-package') await window.desktop!.access.openUpgrade(release!.protocol);
+      else await api[action]();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '更新失败，请重试。');
     } finally {
@@ -59,7 +60,10 @@ export default function ManagedUpdateDialog({
           </p>
         )}
         {incompatible ? (
-          <p role="status">此版本涉及协议变更，请联系管理员安排客户端与服务端配套升级。</p>
+          <p role="status">
+            此版本涉及协议变更，请联系管理员安排客户端与服务端配套升级。可先获取完整安装包，安装前请结束任务并关闭所有
+            CC Space 窗口。
+          </p>
         ) : phase !== 'error' ? (
           <p role="status">
             {phase === 'ready'
@@ -80,7 +84,10 @@ export default function ManagedUpdateDialog({
         )}
         {(error || phase === 'error') && (
           <p className="error-text" role="alert">
-            {(phase === 'error' ? state.message : error) || error || '更新失败，请重试。'}
+            {(incompatible && error) ||
+              (phase === 'error' ? state.message : error) ||
+              error ||
+              '更新失败，请重试。'}
           </p>
         )}
       </div>
@@ -125,6 +132,15 @@ export default function ManagedUpdateDialog({
           <button className="button" onClick={onClose}>
             关闭
           </button>
+          {incompatible && (
+            <button
+              className="button primary"
+              disabled={working}
+              onClick={() => void run('open-package')}
+            >
+              获取完整安装包
+            </button>
+          )}
           {phase === 'available' && !incompatible && (
             <button
               className="button primary"

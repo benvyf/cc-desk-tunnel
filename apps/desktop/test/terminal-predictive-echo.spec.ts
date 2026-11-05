@@ -424,6 +424,39 @@ test('queued characters converge when the real ANSI echo is split across escape 
   expect((await snapshot(page)).inputs).toEqual(['a', 'b', 'c']);
 });
 
+test('coalesced real redraws confirm queued predictions without duplicate input', async ({
+  page,
+}) => {
+  await mount(page);
+  await page.keyboard.type('abc');
+  await expect(spans(page)).toHaveText(['a', 'b', 'c']);
+  await emit(page, echo('ascii-a') + echo('ascii-b') + echo('ascii-c'));
+  await expect(spans(page)).toHaveCount(0);
+  expect((await snapshot(page)).line).toBe('❯\u00a0abc ');
+  await page.keyboard.press('d');
+  await expect(spans(page)).toHaveText(['d']);
+  expect((await snapshot(page)).inputs).toEqual(['a', 'b', 'c', 'd']);
+});
+
+test('coalesced history redraws cannot confirm a newer ambiguous repeated character', async ({
+  page,
+}) => {
+  await mount(page);
+  const row = (await snapshot(page)).rows - 2;
+  const redraw = (text: string) =>
+    `\x1b[${row};1H\x1b[2K❯\u00a0${text}\x1b[7m \x1b[27m\x1b[${row};${text.length + 3}H`;
+  await page.keyboard.press('ArrowUp');
+  await page.keyboard.press('b');
+  await emit(page, redraw('ab') + redraw('ab'));
+  await page.keyboard.press('c');
+  await expect(spans(page)).toHaveCount(0);
+  await emit(page, redraw('abb') + redraw('abbc'));
+  await expect.poll(async () => (await snapshot(page)).line).toBe('❯\u00a0abbc ');
+  await page.keyboard.press('d');
+  await expect(spans(page)).toHaveText(['d']);
+  expect((await snapshot(page)).inputs).toEqual(['\x1b[A', 'b', 'c', 'd']);
+});
+
 test('real reply history is allowed but menus, multiline editing and dialog focus are rejected', async ({
   page,
 }) => {
@@ -636,6 +669,75 @@ test('enabled and disabled prediction send identical keyboard, paste and focus f
     }
   }
   expect(wires[1]).toEqual(wires[0]);
+});
+
+test('fragmented and coalesced redraws preserve the same screen with measured xterm processing', async ({
+  page,
+}, testInfo) => {
+  const measurements = [];
+  for (const grouped of [false, true]) {
+    await mount(page);
+    const result = await page.evaluate(async (grouped) => {
+      const api = (window as any).terminalTest;
+      const terminal = api.terminalInstances.at(-1);
+      const original = terminal.write;
+      const times: number[] = [];
+      const frameIntervals: number[] = [];
+      let lastFrame = performance.now(),
+        active = true,
+        writes = 0;
+      const observe = (now: number) => {
+        frameIntervals.push(now - lastFrame);
+        lastFrame = now;
+        if (active) requestAnimationFrame(observe);
+      };
+      requestAnimationFrame(observe);
+      terminal.write = function (data: string, callback?: () => void) {
+        const start = performance.now();
+        writes++;
+        return original.call(this, data, () => {
+          times.push(performance.now() - start);
+          callback?.();
+        });
+      };
+      try {
+        for (let burst = 0; burst < 20; burst++) {
+          const pieces = Array.from({ length: 20 }, (_, index) => {
+            const text = `render-${burst * 20 + index}`;
+            return `\x1b[33;1H\x1b[2K❯\u00a0${text}\x1b[7m \x1b[27m\x1b[33;${text.length + 3}H`;
+          });
+          for (const data of grouped ? [pieces.join('')] : pieces)
+            api.emit({ type: 'terminal.data', data, bytes: new TextEncoder().encode(data).length });
+          await new Promise((resolve) => setTimeout(resolve, 8));
+        }
+        await new Promise<void>((resolve) => original.call(terminal, '', resolve));
+        const percentile = (values: number[], fraction: number) => {
+          const sorted = values.toSorted((a, b) => a - b);
+          return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * fraction))];
+        };
+        const buffer = terminal.buffer.active;
+        return {
+          grouped,
+          writes,
+          samples: times.length,
+          processingP50Ms: percentile(times, 0.5),
+          processingP95Ms: percentile(times, 0.95),
+          animationFrameP95Ms: percentile(frameIntervals, 0.95),
+          line: buffer.getLine(buffer.baseY + buffer.cursorY)?.translateToString(true),
+        };
+      } finally {
+        active = false;
+        terminal.write = original;
+      }
+    }, grouped);
+    expect(result.line).toBe('❯\u00a0render-399 ');
+    expect(result.samples).toBe(result.writes);
+    measurements.push(result);
+  }
+  writeFileSync(
+    testInfo.outputPath('redraw-processing.json'),
+    JSON.stringify(measurements, null, 2),
+  );
 });
 
 test('one hundred ordinary inputs predict within a frame before delayed remote echo', async ({

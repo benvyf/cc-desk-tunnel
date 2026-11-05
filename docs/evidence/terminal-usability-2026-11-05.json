@@ -1,0 +1,473 @@
+{
+  "date": "2026-11-05",
+  "timezone": "Asia/Hong_Kong",
+  "baseCommit": "12ac488cef9ca6abead7468caee17054a0891cf7",
+  "scope": "client terminal usability on top of earlier uncommitted optimizations",
+  "retained": [
+    "separate connection and reported Claude activity",
+    "launch waits for initial service and execution readiness",
+    "local literal search in active xterm buffer",
+    "ordinary scrollback reading position and unread hint",
+    "explicit original-process recovery without input replay"
+  ],
+  "notRetained": [
+    "WebGL: no consistent improvement in three alternating rounds",
+    "2ms gather: more dispersed-output messages without proven input feel benefit"
+  ],
+  "productNetworkEndpointsAdded": 0,
+  "productModelRuntimeDependenciesAdded": 0,
+  "realClaudeInvokedDuringTests": false,
+  "productionCredentialsRead": false,
+  "productionConfigChanged": false,
+  "serverRuntimeSha256": {
+    "apps/server/src/native-terminal.ts": "514d36ace2d44773bdaadeb54bd696265d7d4f07a15c90d417720dda3122a9b3",
+    "apps/server/src/server.ts": "d36bda3df047ee3b4e38724a1bc90c34de6300323aa18f812d80188416408749",
+    "apps/server/src/terminal-history.ts": "ff2855778c68480e82850d4f6e4e13d664fd8ec1a685d9302e10ea03d41de04e"
+  },
+  "clientSha256": {
+    "apps/desktop/src/NativeTerminal.tsx": "61446349cdc1f0284d2dbc99dccda4e33331267e63a84d318b9735da79d08642",
+    "apps/desktop/src/style.css": "7be7f54902e60083d3ad92210597d6642962bd391f26fdee1675f62a590c8ab5",
+    "apps/desktop/package.json": "38976b7cf9f3a7ae82f862549e6f829645e330ccfe2dddeb6e7bdfb9b86c6a37",
+    "package-lock.json": "71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c",
+    "apps/desktop/public/third-party/xterm-addon-search.txt": "689ceb10716bd7a87a804c14951d7c2b818cbd60aab83d540902470ce3b13444"
+  },
+  "tests": {
+    "coreNode": {
+      "passed": 120,
+      "skipped": 0,
+      "failed": 0
+    },
+    "initialCombinedUi": {
+      "passed": 79,
+      "failed": 1,
+      "total": 80,
+      "finding": "duplicate exit-status display; fixed and retested"
+    },
+    "followupGroups": [
+      {
+        "passed": 15,
+        "scope": "usability, exit and real Electron after display correction",
+        "failed": 0
+      },
+      {
+        "passed": 14,
+        "scope": "usability after keyboard and composition fixes",
+        "failed": 0
+      },
+      {
+        "passed": 6,
+        "scope": "search layout, focus and Electron after narrow-window layout change",
+        "failed": 0
+      },
+      {
+        "passed": 2,
+        "scope": "late open cleanup and process exit after disposed guards",
+        "failed": 0
+      },
+      {
+        "passed": 1,
+        "scope": "refocus, buttons and narrow layout in final range run",
+        "failed": 0
+      },
+      {
+        "passed": 1,
+        "scope": "recorded alternate screen after selecting the ascii-a checkpoint",
+        "failed": 0
+      }
+    ],
+    "countsOverlap": true,
+    "fixtureCorrections": [
+      "exclude disposed xterm instances using public element.isConnected",
+      "use recorded ascii-a checkpoint, not the first launch input"
+    ],
+    "typecheck": "passed",
+    "frontendBuild": "passed",
+    "modelBoundary": "passed",
+    "licenseIncludedInBuild": true,
+    "formatter": "passed"
+  },
+  "predictionLatency": {
+    "samples": 100,
+    "p95DomMilliseconds": 0.5,
+    "maximumDomMilliseconds": 1.4000000022351742,
+    "simulatedEchoMilliseconds": 200
+  },
+  "webglTrial": {
+    "electron": true,
+    "controlledOutput": true,
+    "modelInvoked": false,
+    "gpu": {
+      "2d_canvas": "enabled",
+      "direct_rendering_display_compositor": "disabled_off_ok",
+      "gpu_compositing": "enabled",
+      "multiple_raster_threads": "enabled_on",
+      "opengl": "enabled_on",
+      "rasterization": "enabled",
+      "raw_draw": "disabled_off_ok",
+      "skia_graphite": "disabled_off",
+      "trees_in_viz": "disabled_off",
+      "video_decode": "enabled",
+      "video_encode": "enabled",
+      "webgl": "enabled",
+      "webgpu": "enabled",
+      "webnn": "disabled_off"
+    },
+    "metrics": [
+      {
+        "mode": "default",
+        "samples": 60,
+        "p50ParseAndFrameMs": 6.900000002235174,
+        "p95ParseAndFrameMs": 7.800000000745058,
+        "maxMs": 21.600000001490116,
+        "screen": "row 0 frame 61 中文 output ........................................................................."
+      },
+      {
+        "mode": "webgl",
+        "samples": 60,
+        "p50ParseAndFrameMs": 6.899999998509884,
+        "p95ParseAndFrameMs": 8.099999997764826,
+        "maxMs": 14.899999998509884,
+        "screen": "row 0 frame 61 中文 output ........................................................................."
+      },
+      {
+        "mode": "default",
+        "samples": 60,
+        "p50ParseAndFrameMs": 6.900000002235174,
+        "p95ParseAndFrameMs": 7.599999997764826,
+        "maxMs": 7.899999998509884,
+        "screen": "row 0 frame 61 中文 output ........................................................................."
+      },
+      {
+        "mode": "webgl",
+        "samples": 60,
+        "p50ParseAndFrameMs": 6.899999998509884,
+        "p95ParseAndFrameMs": 8.100000001490116,
+        "maxMs": 8.400000002235174,
+        "screen": "row 0 frame 61 中文 output ........................................................................."
+      },
+      {
+        "mode": "default",
+        "samples": 60,
+        "p50ParseAndFrameMs": 7,
+        "p95ParseAndFrameMs": 7.699999999254942,
+        "maxMs": 8.400000002235174,
+        "screen": "row 0 frame 61 中文 output ........................................................................."
+      },
+      {
+        "mode": "webgl",
+        "samples": 60,
+        "p50ParseAndFrameMs": 7,
+        "p95ParseAndFrameMs": 8.5,
+        "maxMs": 11.100000001490116,
+        "screen": "row 0 frame 61 中文 output ........................................................................."
+      }
+    ],
+    "predictionWithWebgl": true,
+    "disposeFallbackWithPrediction": true
+  },
+  "gatherTrial": {
+    "node": "v24.22.1",
+    "modelInvoked": false,
+    "results": [
+      {
+        "name": "2ms",
+        "profile": "isolated",
+        "writes": 20,
+        "frames": 20,
+        "p50Ms": 3.427000000000021,
+        "p95Ms": 4.566799999999944
+      },
+      {
+        "name": "2ms",
+        "profile": "dense",
+        "writes": 400,
+        "frames": 20,
+        "p50Ms": 3.3654999999999973,
+        "p95Ms": 3.985500000000002
+      },
+      {
+        "name": "2ms",
+        "profile": "spread",
+        "writes": 400,
+        "frames": 200,
+        "p50Ms": 1.9184000000000196,
+        "p95Ms": 3.078800000000001
+      },
+      {
+        "name": "5ms",
+        "profile": "isolated",
+        "writes": 20,
+        "frames": 20,
+        "p50Ms": 5.739100000000008,
+        "p95Ms": 6.96309999999994
+      },
+      {
+        "name": "5ms",
+        "profile": "dense",
+        "writes": 400,
+        "frames": 20,
+        "p50Ms": 5.99810000000025,
+        "p95Ms": 7.492200000000139
+      },
+      {
+        "name": "5ms",
+        "profile": "spread",
+        "writes": 400,
+        "frames": 122,
+        "p50Ms": 3.5868000000000393,
+        "p95Ms": 6.162600000000111
+      }
+    ]
+  },
+  "limits": [
+    "Search covers active retained xterm content; alternate-screen CLI history is not searched",
+    "Return-to-bottom is for actual xterm scrollback, not CLI-internal alternate-screen scrolling",
+    "No physical IME, all-driver or physical multi-monitor certification",
+    "Actual production credential authorization and model egress remain outside this local UI validation"
+  ],
+  "packagedOrPublished": false,
+  "productionDeployed": false,
+  "titlebarRefinement": {
+    "date": "2026-11-05",
+    "controls": ["service status icon", "Claude activity icon", "existing local search"],
+    "location": "title bar right, before system window buttons",
+    "separateStatusRowRemoved": true,
+    "testsPassed": 6,
+    "failed": 0,
+    "electronVisual": {
+      "electron": true,
+      "modelInvoked": false,
+      "results": [
+        {
+          "width": 1000,
+          "x": 765,
+          "right": 857,
+          "y": 4,
+          "bottom": 36,
+          "headerTop": 0,
+          "headerBottom": 40,
+          "insideHeader": true
+        },
+        {
+          "width": 480,
+          "x": 245,
+          "right": 337,
+          "y": 4,
+          "bottom": 36,
+          "headerTop": 0,
+          "headerBottom": 40,
+          "insideHeader": true
+        }
+      ],
+      "searchFromCaption": true,
+      "processOpens": 1
+    },
+    "sourceSha256": {
+      "apps/desktop/src/NativeTerminal.tsx": "97ddf47285a929babd2fd41a1045831be07183f37bbf4326b15e2ddf119f63dc",
+      "apps/desktop/src/TerminalWindow.tsx": "24511ae848b5ca8baae69d4148f4d02fbae9c082d1dc5888c1920a499872f523",
+      "apps/desktop/src/style.css": "7506f20bb0dd58b43843de50ede4d1b1ebacd566af840ada713229ef45a34173"
+    },
+    "typecheck": "passed",
+    "frontendBuild": "passed",
+    "modelBoundary": "passed",
+    "modelInvoked": false,
+    "published": false,
+    "review": {
+      "date": "2026-11-05",
+      "sameSourceAsPriorValidation": true,
+      "newBlockingFindings": 0,
+      "runtime": {
+        "electron": true,
+        "modelInvoked": false,
+        "results": [
+          {
+            "width": 1000,
+            "x": 765,
+            "right": 857,
+            "y": 4,
+            "bottom": 36,
+            "headerTop": 0,
+            "headerBottom": 40,
+            "insideHeader": true
+          },
+          {
+            "width": 480,
+            "x": 245,
+            "right": 337,
+            "y": 4,
+            "bottom": 36,
+            "headerTop": 0,
+            "headerBottom": 40,
+            "insideHeader": true
+          }
+        ],
+        "searchFromCaption": true,
+        "activeTabStatusIsolated": true,
+        "closedTabStatusRemoved": true,
+        "reducedMotionRespected": true,
+        "titleActionsNoDrag": true,
+        "processOpens": 2
+      },
+      "processCounterMeaning": "terminal.open requests against simulated PTY, not real Claude processes",
+      "productCodeChanged": false,
+      "realClaudeInvoked": false
+    }
+  },
+  "uncommittedReview": {
+    "date": "2026-11-05",
+    "scope": "all modified and untracked workspace files",
+    "newBlockingFindings": 0,
+    "productCodeChanged": false,
+    "coreTests": {
+      "skipped": 0,
+      "files": 14,
+      "failed": 0,
+      "passed": 194
+    },
+    "uiTests": {
+      "skipReason": "CC_LIVE_UPDATE_STATE not supplied; public signed-state scenario had prior isolated evidence, not rerun here",
+      "skipped": 1,
+      "files": 7,
+      "failed": 0,
+      "passed": 108
+    },
+    "typecheck": "passed",
+    "frontendBuild": "passed",
+    "format": "passed",
+    "diffCheck": "passed",
+    "changedAndUntrackedJson": "passed",
+    "localDocumentLinks": "passed",
+    "dependencyLicenseAndBuiltCopy": "passed",
+    "modelBoundary": "passed",
+    "filesAtReviewStart": [
+      {
+        "path": "DEVELOPMENT-HANDOFF.md",
+        "sha256": "7a7c03c6a9e86a6353efd10f1cc01067da14b59f5a7720fe73c637cc47814878"
+      },
+      {
+        "path": "apps/desktop/electron/tunnel-channels.mjs",
+        "sha256": "0f7408ae1e1c4b57403ce84de7f19aa0d4aa98423599b0f0cf16c6e01107a6bd"
+      },
+      {
+        "path": "apps/desktop/package.json",
+        "sha256": "38976b7cf9f3a7ae82f862549e6f829645e330ccfe2dddeb6e7bdfb9b86c6a37"
+      },
+      {
+        "path": "apps/desktop/src/ManagedUpdateDialog.tsx",
+        "sha256": "361726cfc292d760a7b4b6e5789221647a29da24b85882ec249f905fc99d86c7"
+      },
+      {
+        "path": "apps/desktop/src/NativeTerminal.tsx",
+        "sha256": "97ddf47285a929babd2fd41a1045831be07183f37bbf4326b15e2ddf119f63dc"
+      },
+      {
+        "path": "apps/desktop/src/TerminalWindow.tsx",
+        "sha256": "24511ae848b5ca8baae69d4148f4d02fbae9c082d1dc5888c1920a499872f523"
+      },
+      {
+        "path": "apps/desktop/src/style.css",
+        "sha256": "7506f20bb0dd58b43843de50ede4d1b1ebacd566af840ada713229ef45a34173"
+      },
+      {
+        "path": "apps/desktop/test-main/tunnel-channels.test.mjs",
+        "sha256": "96233aed8d0b6aeec749a85fdbaee2f286789f8cc27a594ab4a8f68998a65f1a"
+      },
+      {
+        "path": "apps/desktop/test/managed-client-update-ui.spec.ts",
+        "sha256": "f4e3d06f266c0d66b52cd3efd928de209ec5fa0ab3b5728bf64122898fcf1187"
+      },
+      {
+        "path": "apps/desktop/test/terminal-predictive-echo.spec.ts",
+        "sha256": "7ee29713258659c1bb7cabd75a50afa4fe0db92e571263f7e112330d540ee595"
+      },
+      {
+        "path": "apps/desktop/test/terminal-status.spec.ts",
+        "sha256": "9dda799d3c957581d59d0b28c24bbf3ae9cd23ed45887de8aa9102753c32abb2"
+      },
+      {
+        "path": "apps/desktop/test/terminal-window.fixture.tsx",
+        "sha256": "d53782159d28b92f8a23917b13e29abf640ee73aaeaba4ae0997fa3c58e71bdc"
+      },
+      {
+        "path": "apps/desktop/test/terminal-window.spec.ts",
+        "sha256": "1123970ba64a5ad24571100a2a5d2462db7fb2aade3db5faba6a9c7d390d8e03"
+      },
+      {
+        "path": "apps/server/src/native-terminal.ts",
+        "sha256": "514d36ace2d44773bdaadeb54bd696265d7d4f07a15c90d417720dda3122a9b3"
+      },
+      {
+        "path": "apps/server/src/server.ts",
+        "sha256": "d36bda3df047ee3b4e38724a1bc90c34de6300323aa18f812d80188416408749"
+      },
+      {
+        "path": "apps/server/src/terminal-history.ts",
+        "sha256": "ff2855778c68480e82850d4f6e4e13d664fd8ec1a685d9302e10ea03d41de04e"
+      },
+      {
+        "path": "apps/server/test/native-terminal.test.ts",
+        "sha256": "afc8fec13627ac7440841453af14a5ad55c0fbc1f1fe895d423bf7eafa4f2074"
+      },
+      {
+        "path": "apps/server/test/terminal-controls.test.ts",
+        "sha256": "13857c07126eac9e142f004a12905b15f64c3f26174abf7a4c37d8de8deb9a3b"
+      },
+      {
+        "path": "docs/UPDATE-RELEASE-RULES.md",
+        "sha256": "cd0becc6b682f4fd122c6d3352230dcf33b277a53f78e2c185555ad4d765fac8"
+      },
+      {
+        "path": "package-lock.json",
+        "sha256": "71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c"
+      },
+      {
+        "path": "apps/desktop/public/third-party/xterm-addon-search.txt",
+        "sha256": "689ceb10716bd7a87a804c14951d7c2b818cbd60aab83d540902470ce3b13444"
+      },
+      {
+        "path": "apps/desktop/test/terminal-usability.spec.ts",
+        "sha256": "babd37c0f620af1a7a5087f90b534f8fd116ad239cc38591dafffa2c116327ac"
+      },
+      {
+        "path": "docs/CLAUDE-BOUNDARY-AUDIT-2026-11-05.md",
+        "sha256": "9b6a32c198f8a148661a9fc6bb4e7969763453c948e53f14e99ebf3c1b0f1b32"
+      },
+      {
+        "path": "docs/TERMINAL-NETWORK-CLAUDE-REVIEW-2026-11-05.md",
+        "sha256": "40323541d6412c779d108e123b72685817e06b2f514640c07b7c3986605fdeaf"
+      },
+      {
+        "path": "docs/TERMINAL-OPTIMIZATION-PLAN-2026-11-05.md",
+        "sha256": "ae0ac5688ff2369555e86e97e4a2efc2a3d5203ae63a60f23048972073da1c67"
+      },
+      {
+        "path": "docs/TERMINAL-OPTIMIZATION-RESULTS-2026-11-05.md",
+        "sha256": "e5d07c2a7249eee5303c896a009c21359d457b6746cab6db45f859d6ba42b8f4"
+      },
+      {
+        "path": "docs/TERMINAL-USABILITY-2026-11-05.md",
+        "sha256": "4c18d26b048e18a0e4b73b7a58d8a390436b10ea291790b5a88eaae4d461d327"
+      },
+      {
+        "path": "docs/evidence/terminal-optimization-2026-11-05.json",
+        "sha256": "0db7a5eea4d7c7eb1ca55c3beb870fe709c4cccc5b5cca55ad78d7e9470675bd"
+      },
+      {
+        "path": "docs/evidence/terminal-usability-2026-11-05.json",
+        "sha256": "3208db7d333fdd721264d815448bc7cce0085cd8bb4b0de888dfb260d058981b"
+      },
+      {
+        "path": "scripts/benchmark-terminal-output.mjs",
+        "sha256": "47884d864f6f0c2217780a0845e822ecdcfb2d2f2a6c44682aac78d239496bca"
+      }
+    ],
+    "realClaudeInvoked": false,
+    "productionCredentialsRead": false,
+    "productionDeployed": false,
+    "limits": [
+      "Production credential authorization and actual model egress not verified",
+      "No new packaged installer validation",
+      "No physical IME or all-GPU guarantees"
+    ]
+  }
+}

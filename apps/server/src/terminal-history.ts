@@ -90,6 +90,18 @@ export async function readTerminalMessages(config: string, cwd: string, nativeId
     },
   });
 }
+// Read persistence metadata independently of the bounded title preview. Callers must first validate messages.
+export async function readTerminalContext(config: string, cwd: string, nativeId: string) {
+  const file = await openTerminalHistory(config, cwd, nativeId);
+  if (!file) return null;
+  try {
+    const stat = await file.stat();
+    return stat.isFile() && stat.size ? { updatedAt: stat.mtime.toISOString() } : null;
+  } finally {
+    await file.close();
+  }
+}
+
 export async function readTerminalHistory(config: string, cwd: string, nativeId: string) {
   const file = await openTerminalHistory(config, cwd, nativeId);
   if (!file) return null;

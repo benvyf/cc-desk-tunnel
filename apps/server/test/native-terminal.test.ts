@@ -59,6 +59,7 @@ function fixture(screen?: { detached: () => void }) {
     input,
     sizes,
     data: (text: string) => onData(text),
+    exit: () => onExit({ exitCode: 0 }),
     counts: () => ({ paused, resumed, killed }),
   };
 }
@@ -85,6 +86,80 @@ test('native terminal forwards exact UTF-8 data with bounded frames and pauses u
   f.data('late');
   assert.equal(f.counts().killed, 1);
   assert.equal(f.output.map((frame) => frame.text).join(''), text);
+});
+
+test('small redraws gather without delaying input and flush before process exit', async () => {
+  const f = fixture();
+  try {
+    for (let i = 0; i < 100; i++) f.data(`\x1b[2K\r画面${i}`);
+    f.terminal.write('立即输入');
+    assert.deepEqual(f.input, ['立即输入']);
+    assert.equal(f.output.length, 0);
+    await delay(25);
+    assert.equal(f.output.length, 1);
+    assert.equal(
+      f.output[0].text,
+      Array.from({ length: 100 }, (_, i) => `\x1b[2K\r画面${i}`).join(''),
+    );
+    f.data('最后🙂');
+    f.exit();
+    assert.equal(f.output.at(-1)!.text, '最后🙂');
+    const count = f.output.length;
+    await delay(20);
+    assert.equal(f.output.length, count, 'exit must cancel the gather timer');
+  } finally {
+    await f.terminal.close();
+  }
+});
+
+test('continuous output cannot postpone the first gather deadline, and the length limit flushes early', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const f = fixture();
+  try {
+    f.data('first');
+    t.mock.timers.tick(4);
+    f.data('second');
+    t.mock.timers.tick(1);
+    assert.equal(f.output[0].text, 'firstsecond');
+    f.data('x'.repeat(16383));
+    assert.equal(f.output.length, 1);
+    f.data('🙂');
+    assert.equal(
+      f.output
+        .slice(1)
+        .map((frame) => frame.text)
+        .join(''),
+      'x'.repeat(16383) + '🙂',
+    );
+    assert.equal(f.output.at(-1)!.text, '🙂', 'a surrogate pair stays in one transport frame');
+  } finally {
+    await f.terminal.close();
+  }
+});
+
+test('detaching discards gathered output already present in the restoration snapshot', async () => {
+  const f = fixture({ detached() {} });
+  try {
+    f.data('\x1b[?1049h旧输出');
+    f.terminal.detach();
+    await delay(20);
+    assert.equal(f.output.length, 0);
+    await f.terminal.attach(80, 24);
+    assert.ok(
+      f.output
+        .map((frame) => frame.text)
+        .join('')
+        .includes('旧输出'),
+    );
+    const count = f.output.length;
+    await delay(20);
+    assert.equal(f.output.length, count, 'old buffered data must not follow the snapshot');
+    f.data('末尾');
+    await f.terminal.close();
+    assert.equal(f.output.at(-1)!.text, '末尾');
+  } finally {
+    await f.terminal.close();
+  }
 });
 
 test('control terminal launches the official CLI directly with remote guidance and no shell, MCP or bypass', () => {
@@ -188,6 +263,7 @@ test('a terminal that keeps running shows its current screen to a client that at
   let detached = 0;
   const f = fixture({ detached: () => detached++ });
   f.data('\x1b[?1049h\x1b[>1u第一屏');
+  await delay(20);
   f.terminal.detach();
   f.data('\r\n看不到的时候');
   assert.deepEqual(
@@ -202,6 +278,7 @@ test('a terminal that keeps running shows its current screen to a client that at
   assert.ok(snapshot.text.includes('第一屏') && snapshot.text.includes('看不到的时候'));
   assert.ok(snapshot.text.includes('\x1b[>1u'));
   f.data('之后');
+  await delay(20);
   assert.equal(f.output.at(-1)!.text, '之后');
   // Acknowledgments of what was sent before an attach may still come; they do not fail the terminal.
   f.terminal.acknowledge(f.terminal.outstanding);

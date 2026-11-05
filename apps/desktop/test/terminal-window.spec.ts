@@ -79,12 +79,25 @@ test('detached Electron terminal predicts on its own document and disables witho
     await expect(child.locator('[data-predictive-echo] span')).toHaveCount(0);
     await child.keyboard.press('d');
     await expect(child.locator('[data-predictive-echo] span')).toHaveText(['d']);
+    await child.getByRole('button', { name: '查找终端输出', exact: true }).click();
+    await child.getByRole('textbox', { name: '终端查找文字' }).fill('abc');
+    await expect
+      .poll(() =>
+        owner.evaluate(() => (window as any).terminalTest.terminalInstances.at(-1).getSelection()),
+      )
+      .toBe('abc');
+    await child.getByRole('textbox', { name: '终端查找文字' }).press('Escape');
+    await expect(child.locator('.xterm-helper-textarea')).toBeFocused();
     await owner.evaluate(() => (window as any).terminalTest.setPrediction(false));
     await expect(child.locator('[data-predictive-echo]')).toHaveCount(0);
     expect(
       await owner.evaluate(() =>
         (window as any).terminalTest.controls
-          .filter((control: any) => control.type === 'terminal.input')
+          // Moving between the terminal and search preserves xterm focus reports; only typed input is compared.
+          .filter(
+            (control: any) =>
+              control.type === 'terminal.input' && !['\x1b[I', '\x1b[O'].includes(control.data),
+          )
           .map((control: any) => control.data),
       ),
     ).toEqual(['a', 'b', 'c', 'd']);
