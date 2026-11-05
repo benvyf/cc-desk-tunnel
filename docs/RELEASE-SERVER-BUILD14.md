@@ -18,4 +18,12 @@
 
 45 项 Linux 隔离测试通过，Docker 操作模拟，不操作生产 Ubuntu。新增清理测试验证容器、回退、当前候选、自定义标签、日志与策略保留，且只删除无人引用的 CC 候选及旧解包文件；异常回退记录阻止候选删除。已知 Build 10/11/12/13 的精确基线和锁分别校验。CLI、SDK、Node、账号及模型网络未改。
 
-本次只发布服务端更新入口，不主动安装三台设备；Windows 发布和管理中心运行程序保持。签名及上线结果后续记录于此。
+本次只发布服务端更新入口，不主动安装三台设备；Windows 发布和管理中心运行程序保持。
+
+## 已上线
+
+2026-11-05 发布 Linux Build 14 / 0.3.10 / 协议 24，pilot revision 22。源码 `86ba9602c668bd7174e5454522f7fe960d1d445f`，归档 SHA256 `3bd6e113fdac7d6e1b5afa010a1071d6bb1037b1453f99466df278fc8103b807`。233 个文件完整清单、签名、公开全量下载摘要、续期登记及 systemd 执行均验证。现行 agent 经真实签名下载与解包后，针对三台已读版本生成正确的迁移命令，包含默认扩展清理，不执行节点安装。
+
+三台设备均在线，当前 Build 10、可用 Build 14；第一台原 Build 13 任务 failed，其余原作业保留。Windows 两通道和管理中心运行清单未变，无管理中心重启，两个续期 timer active。
+
+发布备份 `/var/backups/cc-update-service/server14-publication-20261105T032203Z`，VPS 私有制品与日志 `/root/.cc-update-admin/linux-build14-preparation/`，脱敏结果见 [上线证据](evidence/linux-build14-resource-cleanup-2026-11-05.json)。刷新管理中心并选择 Build 14 新建更新任务，不重试原 Build 12/13 任务。实际可回收空间及实机安装仍由该次任务验证；不将隔离测试描述为已完成节点清理或升级。
