@@ -19,7 +19,12 @@ const make = (title: string, path: string): Session => ({
   updatedAt: '2026-11-05T10:00:00Z',
   activeRun: null,
 });
-async function setup(page: Page, longHistory = false, nativeRemote = false) {
+async function setup(
+  page: Page,
+  longHistory = false,
+  nativeRemote = false,
+  provisionalDefaults = false,
+) {
   const sessions = [make('项目 A 会话', 'D:\\work\\a'), make('项目 B 会话', 'D:\\work\\b')];
   if (nativeRemote)
     sessions.push({
@@ -57,6 +62,9 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         if (!sessionId) {
           const session = {
             ...make('远程新会话', path),
+            ...(provisionalDefaults
+              ? { permissionMode: 'auto' as const, updatedAt: '2026-11-06T10:00:00Z' }
+              : {}),
             device: { id, name: '01', platform: 'linux' as const, viaSsh: true as const },
           };
           sessions.push(session);
@@ -185,6 +193,17 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         send({ type: 'response', requestId: c.requestId, ok: false, message: '配置暂时失败' });
         return;
       }
+      if (c.type === 'session.configure' && provisionalDefaults) {
+        const session = sessions.find((session) => session.id === c.sessionId);
+        if (session) {
+          Object.assign(session, {
+            permissionMode: c.permissionMode,
+            ...('model' in c ? { model: c.model } : {}),
+            ...('effort' in c ? { effort: c.effort } : {}),
+          });
+          send({ type: 'session.updated', session });
+        }
+      }
       if (c.type === 'session.subscribe')
         send({
           type: 'session.snapshot',
@@ -226,6 +245,9 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
           const source = sessions.find((s) => s.id === c.sourceSessionId);
           session = {
             ...make('新会话', c.projectPath ?? source?.projectPath ?? ''),
+            ...(provisionalDefaults && c.type === 'session.create'
+              ? { permissionMode: 'auto' as const, updatedAt: '2026-11-06T10:00:00Z' }
+              : {}),
             ...(source
               ? {
                   device: source.device,
@@ -698,4 +720,115 @@ for (const remote of [false, true])
     expect(configurations[0].sessionId).toBe(configurations[1].sessionId);
     expect(fixture.sessions).toHaveLength(4);
     await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
+  });
+
+for (const remote of [false, true])
+  for (const interruption of ['lost reply', 'cancelled configuration']) {
+    test(`terminal creation retry keeps original ${remote ? 'remote' : 'local'} settings after ${interruption}`, async ({
+      page,
+    }) => {
+      const fixture = await setup(page, false, true, true);
+      await select(page, '项目 B 会话');
+      const source = fixture.sessions[remote ? 2 : 0];
+      Object.assign(source, { model: 'original-model', effort: 'high', permissionMode: 'default' });
+      fixture.send({ type: 'session.updated', session: source });
+      const open = async () => {
+        await page
+          .locator('.project-group')
+          .filter({ hasText: source.title })
+          .getByRole('button', { name: /项目操作/ })
+          .click();
+        await page.getByRole('menuitem', { name: '新建终端', exact: true }).click();
+      };
+      if (interruption === 'lost reply') {
+        if (remote) fixture.loseNextRemoteResponse();
+        else fixture.loseNextLocalResponse();
+      } else fixture.failNextConfigure();
+      await open();
+      if (interruption === 'cancelled configuration') {
+        const dialog = page.getByRole('dialog', { name: '打开项目', exact: true });
+        await expect(dialog.getByRole('alert')).toContainText('配置暂时失败');
+        // A failed in-dialog retry must also preserve the intent if the dialog is then canceled.
+        fixture.failNextConfigure();
+        await dialog
+          .getByRole('button', { name: remote ? '新建会话' : '打开项目', exact: true })
+          .click();
+        await expect
+          .poll(() => fixture.commands.filter((c) => c.type === 'session.configure').length)
+          .toBe(2);
+        await dialog.getByRole('button', { name: '取消', exact: true }).click();
+        await expect(dialog).toHaveCount(0);
+      } else
+        await expect(page.getByRole('alert').filter({ hasText: '创建响应丢失' })).toBeVisible();
+      const pending = fixture.sessions.at(-1)!;
+      expect(pending.permissionMode).toBe('auto');
+      expect(fixture.commands.filter((c) => c.type === 'terminal.open')).toHaveLength(0);
+      await open();
+      await expect
+        .poll(() => fixture.commands.filter((c) => c.type === 'terminal.open').length)
+        .toBe(1);
+      const configuration = fixture.commands.filter((c) => c.type === 'session.configure').at(-1);
+      expect(configuration).toMatchObject({
+        sessionId: pending.id,
+        permissionMode: 'default',
+        model: 'original-model',
+        effort: 'high',
+      });
+      expect(fixture.sessions).toHaveLength(4);
+      const creations = fixture.commands.filter(
+        (c) => c.type === (remote ? 'ssh.openProject' : 'session.create'),
+      );
+      expect(new Set(creations.map((c) => (remote ? c.creationId : c.requestId))).size).toBe(1);
+      await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
+    });
+  }
+
+for (const remote of [false, true])
+  test(`terminal creation retry keeps initial defaults for a saved ${remote ? 'remote' : 'local'} project`, async ({
+    page,
+  }) => {
+    const fixture = await setup(page, false, true, true);
+    await select(page, '项目 B 会话');
+    const path = remote ? '/work/saved-project' : 'D:\\saved-project';
+    if (remote)
+      await page.evaluate(async (path) => {
+        const targets = await (window as any).desktop.ssh.list();
+        targets[0].projects.push(path);
+        (window as any).testSetTargetStatus('connected');
+      }, path);
+    else {
+      await page.getByRole('button', { name: '打开项目', exact: true }).click();
+      await page.getByRole('textbox', { name: '本机项目目录', exact: true }).fill(path);
+      await page.getByRole('dialog').getByRole('button', { name: '打开项目', exact: true }).click();
+    }
+    const defaults = async (model: string) =>
+      page.evaluate(async (model) => {
+        const modulePath = '/src/prefs.ts';
+        const { setPrefs } = await import(modulePath);
+        setPrefs((prefs: any) => ({ ...prefs, sessionDefaults: { model, effort: 'high' } }));
+      }, model);
+    await defaults('original-default');
+    const open = async () => {
+      await page
+        .locator('.project-group')
+        .filter({ hasText: 'saved-project' })
+        .getByRole('button', { name: /项目操作/ })
+        .click();
+      await page.getByRole('menuitem', { name: '新建终端', exact: true }).click();
+    };
+    if (remote) fixture.loseNextRemoteResponse();
+    else fixture.loseNextLocalResponse();
+    await open();
+    await expect(page.getByRole('alert').filter({ hasText: '创建响应丢失' })).toBeVisible();
+    await defaults('later-default');
+    await open();
+    await expect
+      .poll(() => fixture.commands.filter((c) => c.type === 'terminal.open').length)
+      .toBe(1);
+    expect(fixture.commands.filter((c) => c.type === 'session.configure').at(-1)).toMatchObject({
+      permissionMode: 'default',
+      model: 'original-default',
+      effort: 'high',
+    });
+    expect(fixture.sessions).toHaveLength(4);
   });

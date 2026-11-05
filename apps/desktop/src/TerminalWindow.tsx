@@ -96,11 +96,14 @@ export default function TerminalWindow({
   const [menu, setMenu] = useState(false);
   const [filter, setFilter] = useState('');
   const [menuIndex, setMenuIndex] = useState(0);
-  const [rename, setRename] = useState(false);
+  const [rename, setRename] = useState<string | null>(null);
   const [alias, setAlias] = useState('');
   const prefs = usePrefs();
   const menuButton = useRef<HTMLButtonElement>(null);
   const composing = useRef(false);
+  useEffect(() => {
+    if (!menu) composing.current = false;
+  }, [menu]);
   const [menuPosition, setMenuPosition] = useState({ left: 8, top: 40, width: 420 });
   const [openProject, setOpenProject] = useState<{
     deviceId?: string;
@@ -572,7 +575,7 @@ export default function TerminalWindow({
   function renameTab(tab: Tab) {
     setActiveId(tab.tabId);
     setAlias(tab.alias);
-    setRename(true);
+    setRename(tab.tabId);
   }
   const content = (
     <div className="terminal-workspace" data-native-controls={nativeControls}>
@@ -1044,13 +1047,13 @@ export default function TerminalWindow({
         </Modal>
       )}
       {rename && (
-        <Modal title="标签别名" onClose={() => setRename(false)}>
+        <Modal title="标签别名" onClose={() => setRename(null)}>
           <form
             className="dialog-form"
             onSubmit={(event) => {
               event.preventDefault();
-              if (active) patch(active.tabId, { alias: alias.trim() });
-              setRename(false);
+              if (rename) patch(rename, { alias: alias.trim() });
+              setRename(null);
             }}
           >
             <label>
@@ -1063,7 +1066,7 @@ export default function TerminalWindow({
               />
             </label>
             <div className="dialog-actions">
-              <Button onClick={() => setRename(false)}>取消</Button>
+              <Button onClick={() => setRename(null)}>取消</Button>
               <Button type="submit" variant="primary">
                 保存
               </Button>

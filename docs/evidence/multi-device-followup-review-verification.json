@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "dateHongKong": "2026-11-06",
+  "verifiedAtUtc": "2026-11-05T18:57:15.990171+00:00",
+  "reviewedCommit": "2fa600d2c5eb8f67ce73c2d5bbe65e08d770b28e",
+  "branch": "codex/multi-device-development",
+  "status": "verified",
+  "node": "24.21.0",
+  "review": {
+    "independentReviewers": 2,
+    "confirmedFindings": 3,
+    "resolved": 3,
+    "remainingConfirmedFindings": [],
+    "findings": [
+      {
+        "priority": "P2",
+        "issue": "Retry selected provisional session defaults instead of original permission/model/effort.",
+        "fix": "Capture configuration before the first creation; retain by stable request ID; defer remote identity cleanup until configure succeeds.",
+        "regressions": 6
+      },
+      {
+        "priority": "P2",
+        "issue": "Tab shortcuts during rename redirected save to a different active tab.",
+        "fix": "Persist original rename target tab ID.",
+        "regressions": 2
+      },
+      {
+        "priority": "P2",
+        "issue": "Closing a menu before compositionend left later keyboard actions disabled.",
+        "fix": "Reset menu composition state when it closes.",
+        "regressions": 1
+      }
+    ],
+    "redGreen": {
+      "before": {
+        "failed": 9,
+        "log": ".local/review-2fa600d-red.log"
+      },
+      "after": {
+        "passed": 9,
+        "log": ".local/review-2fa600d-green.log"
+      },
+      "reReview": "Both independent reviewers approved the fixes; main reviewer verified interrupted-composition recovery."
+    }
+  },
+  "checks": {
+    "fullUi": {
+      "startTime": "2026-11-05T18:48:32.585Z",
+      "duration": 454562.18799999997,
+      "expected": 200,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/review-2fa600d-ui.log",
+      "report": ".local/review-2fa600d-ui.json",
+      "byFile": {
+        "app.spec.ts": 16,
+        "buttons.spec.ts": 7,
+        "conversation-status.spec.ts": 4,
+        "follow-ups-navigation.spec.ts": 11,
+        "layout.spec.ts": 7,
+        "motion.spec.ts": 19,
+        "multi-device-development.spec.ts": 26,
+        "multi-device-electron.spec.ts": 1,
+        "multi-device-sidebar.spec.ts": 7,
+        "new-session.spec.ts": 2,
+        "open-project-dialog.spec.ts": 9,
+        "sidebar-details.spec.ts": 8,
+        "sidebar-merge.spec.ts": 7,
+        "ssh-settings.spec.ts": 3,
+        "terminal-close.spec.ts": 3,
+        "terminal-preview-chrome.spec.ts": 3,
+        "terminal-projects.spec.ts": 29,
+        "terminal-status.spec.ts": 1,
+        "terminal-usability.spec.ts": 15,
+        "terminal-window.spec.ts": 2,
+        "terminal-workspace.spec.ts": 20
+      }
+    },
+    "relatedCore": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "log": ".local/review-2fa600d-core.log"
+    },
+    "typecheck": {
+      "status": "passed",
+      "log": ".local/review-2fa600d-typecheck.log"
+    },
+    "build": {
+      "status": "passed with existing bundler warnings",
+      "log": ".local/review-2fa600d-build.log"
+    },
+    "modelBoundary": "passed",
+    "prettier": "passed",
+    "diffWhitespace": "passed"
+  },
+  "scope": {
+    "changedProductionFilesSinceReview": [
+      "apps/desktop/src/App.tsx",
+      "apps/desktop/src/TerminalWindow.tsx"
+    ],
+    "protectedPrefixesUnchangedSinceB12ef04": [
+      "apps/server",
+      "packages/protocol",
+      "apps/desktop/electron"
+    ],
+    "dependencyManifestsChanged": false,
+    "realClaudeInference": false,
+    "productionDevicesAccessed": false,
+    "linuxLabRerun": false,
+    "packaged": false,
+    "pushed": false,
+    "merged": false,
+    "published": false,
+    "originalUiMotionWorktreeEdited": false
+  },
+  "productionSha256": {
+    "apps/desktop/src/App.tsx": "6a18c53d17e264deb58daef8bf8b38df6e4a5fa94cf06cb76c9910d8b8edf8dd",
+    "apps/desktop/src/NativeTerminal.tsx": "8b46acc40d858b9e5fd181a1714aea0d14f018f7984f0e5282c1ecb6cd23ea77",
+    "apps/desktop/src/OpenProjectDialog.tsx": "a124088ce7794aba8137430798f94dcc69d57331a549611f8257431a04b6eecc",
+    "apps/desktop/src/Sidebar.tsx": "ac895b6e712bf5bc04452e66b962d7fa458597b52e93ad7879f127d987fb094e",
+    "apps/desktop/src/TerminalWindow.tsx": "811b4a85bf9822a4ff05dc80a71e42fbe338cae160283d94c46befb8e654e9e9",
+    "apps/desktop/src/developmentProjects.ts": "346b062ba0081a5da17c75aef3e7f1ed611fe8d17e73ac65ba713c55d551634e",
+    "apps/desktop/src/style.css": "0e3b2228bb0a87be7e06daf8ff35ea718a180488899196c1e6a7fc4f6183d907"
+  },
+  "testSha256": {
+    "apps/desktop/test/multi-device-development.spec.ts": "80760b9cf17f028d0bd5cc496d02de95fff13b7449bb4607c2f91199fab3b703",
+    "apps/desktop/test/terminal-projects.spec.ts": "23cf995754aa254d2e4bfa82aa5635753aed8ddc6798f8ff055e3c858891dda6"
+  },
+  "visualEvidence": "Existing light/dark screenshots in multi-device/ remain representative; this follow-up changes no layout or styling.",
+  "previousVerification": "multi-device-fix-verification.json",
+  "limits": [
+    "Physical Windows IME is not certified by synthetic composition events and real Electron keyboard tests.",
+    "Production Anthropic authorization and public model egress remain outside this renderer review.",
+    "Full repository Node suite was not rerun; historical baseline failures remain recorded in previous evidence."
+  ]
+}

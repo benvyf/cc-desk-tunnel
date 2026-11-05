@@ -546,3 +546,34 @@ test('an open terminal menu stays anchored and within a resized viewport', async
   await expect(menu).toBeVisible();
   await expect(page.locator('.terminal-list input')).toBeFocused();
 });
+
+for (const shortcut of ['Control+Tab', 'Control+Shift+T'])
+  test(`rename keeps the original tab when ${shortcut} changes the active tab`, async ({
+    page,
+  }) => {
+    await page.goto(fixture);
+    await page.getByRole('button', { name: '新建终端', exact: true }).click();
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await page.getByRole('tab').first().dblclick();
+    const dialog = page.getByRole('dialog', { name: '标签别名', exact: true });
+    await dialog.getByRole('textbox').fill('原标签的别名');
+    await dialog.getByRole('textbox').press(shortcut);
+    await dialog.getByRole('button', { name: '保存', exact: true }).click();
+    await expect(page.getByRole('tab').first()).toContainText('原标签的别名');
+    await expect(page.getByRole('tab').last()).not.toContainText('原标签的别名');
+  });
+
+test('canceling search composition by closing the menu does not disable later shortcuts', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  const opener = page.getByRole('button', { name: '切换或新建终端', exact: true });
+  await opener.click();
+  await page.locator('.terminal-list input').dispatchEvent('compositionstart');
+  await opener.click();
+  await expect(page.locator('.terminal-list')).toHaveCount(0);
+  await opener.press('Control+Shift+Space');
+  await expect(page.locator('.terminal-list input')).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('.terminal-list')).toHaveCount(0);
+});

@@ -111,6 +111,7 @@ const ReleaseNotes = lazy(() => import('./ReleaseNotes.tsx'));
 
 // Where the window is: a page, the settings section when that page is open, and the session being read.
 type Place = { page: Page; section: Section; sessionId: string | null };
+type TerminalConfiguration = Pick<Session, 'permissionMode' | 'model' | 'effort'>;
 // Which menu is open. Its items are built while rendering, so they follow the state as it changes.
 type OpenMenu = MenuPosition &
   (
@@ -302,6 +303,8 @@ export function App({
   const readingPositions = useRef(new Map<string, { top: number; following: boolean }>());
   const remoteCreations = useRef(new Map<string, string>());
   const localCreations = useRef(new Map<string, string>());
+  // Retries must keep the original settings, not inherit the unfinished session they created.
+  const terminalConfigurations = useRef(new Map<string, TerminalConfiguration>());
   const trackTerminalSessions = useCallback((ids: string[]) => {
     occupiedSessions.current = ids;
     for (const id of ids) followUps.pause(id, '此会话正在终端中使用，确认结束后继续排队');
@@ -1089,6 +1092,8 @@ export function App({
     const key = projectPreferenceKey(projectScope, state.device?.id, projectPath);
     const requestId = creationId ?? localCreations.current.get(key) ?? crypto.randomUUID();
     localCreations.current.set(key, requestId);
+    if (terminalSource !== undefined && !terminalConfigurations.current.has(requestId))
+      terminalConfigurations.current.set(requestId, terminalOptions(terminalSource ?? undefined));
     const response = await client.request(
       { type: 'session.create', title: '新会话', projectPath },
       requestId,
@@ -1097,7 +1102,7 @@ export function App({
     if (response.sessionId) {
       if (terminalSource !== undefined) {
         try {
-          await configureTerminal(response.sessionId, terminalSource ?? undefined);
+          await configureTerminal(response.sessionId, terminalSource ?? undefined, requestId);
         } catch (error) {
           if (client.state.connectionId !== generation) return;
           if (openProjectTarget?.terminal) throw error;
@@ -1117,16 +1122,23 @@ export function App({
     }
     if (client.state.connectionId !== generation) return;
     localCreations.current.delete(key);
+    terminalConfigurations.current.delete(requestId);
     return response.sessionId;
   }
-  async function configureTerminal(sessionId: string, source?: Session) {
-    await client.request({
-      type: 'session.configure',
-      sessionId,
+  function terminalOptions(source?: Session): TerminalConfiguration {
+    return {
       permissionMode: source?.permissionMode ?? newTerminalPermission,
       ...(source
         ? { model: source.model, effort: source.effort }
         : sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models)),
+    };
+  }
+  async function configureTerminal(sessionId: string, source?: Session, creationId?: string) {
+    const configuration = creationId ? terminalConfigurations.current.get(creationId) : undefined;
+    await client.request({
+      type: 'session.configure',
+      sessionId,
+      ...(configuration ?? terminalOptions(source)),
     });
   }
   function terminalSource(path: string, deviceId = state.device?.id) {
@@ -1203,6 +1215,9 @@ export function App({
     const key = projectPreferenceKey(projectScope, deviceId, path);
     const creationId = remoteCreations.current.get(key) ?? crypto.randomUUID();
     remoteCreations.current.set(key, creationId);
+    const source = terminal ? terminalSource(path, deviceId) : undefined;
+    if (terminal && !terminalConfigurations.current.has(creationId))
+      terminalConfigurations.current.set(creationId, terminalOptions(source));
     if (target.status !== 'connected') {
       setOpenProjectTarget({
         deviceId,
@@ -1210,7 +1225,7 @@ export function App({
         forceNew: true,
         creationId,
         terminal,
-        source: terminal ? terminalSource(path, deviceId) : undefined,
+        source,
       });
       return;
     }
@@ -1222,9 +1237,8 @@ export function App({
       if (client.state.connectionId !== generation) return;
       const samePlace = navigation.current === startedAt;
       if (terminal && result.created) {
-        const source = terminalSource(path, deviceId);
         try {
-          await configureTerminal(result.sessionId, source);
+          await configureTerminal(result.sessionId, source, creationId);
         } catch (error) {
           if (client.state.connectionId === generation)
             setOpenProjectTarget({
@@ -1242,6 +1256,7 @@ export function App({
       } else if (!terminal) await initializeSession(result.sessionId, false);
       if (client.state.connectionId !== generation) return;
       remoteCreations.current.delete(key);
+      terminalConfigurations.current.delete(creationId);
       if (!terminal && samePlace && navigation.current === startedAt) show(result.sessionId);
       created = result.sessionId;
     });
@@ -2872,15 +2887,15 @@ export function App({
             }}
             onRemote={async (id, created) => {
               const session = client.state.sessions.find((item) => item.id === id);
-              if (session?.device) {
-                const key = projectPreferenceKey(
-                  projectScope,
-                  session.device.id,
-                  session.projectPath,
-                );
-                if (remoteCreations.current.get(key) === openProjectTarget.creationId)
-                  remoteCreations.current.delete(key);
-              }
+              const key = session?.device
+                ? projectPreferenceKey(projectScope, session.device.id, session.projectPath)
+                : undefined;
+              const creationId =
+                session &&
+                session.device?.id === openProjectTarget.deviceId &&
+                pathKey(session.projectPath) === pathKey(openProjectTarget.path ?? '')
+                  ? openProjectTarget.creationId
+                  : undefined;
               if (openProjectTarget.fromHome) {
                 setDraft(id, homeDraft);
                 setHomeDraft('');
@@ -2894,10 +2909,13 @@ export function App({
                   pathKey(source.projectPath) === pathKey(session.projectPath)
                     ? source
                     : undefined;
-                if (created) await configureTerminal(id, inherited);
+                if (created) await configureTerminal(id, inherited, creationId);
                 showTerminal(id);
               } else if (created) await initializeSession(id);
               else show(id);
+              if (key && remoteCreations.current.get(key) === openProjectTarget.creationId)
+                remoteCreations.current.delete(key);
+              if (creationId) terminalConfigurations.current.delete(creationId);
             }}
           />
         )}
