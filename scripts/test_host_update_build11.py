@@ -54,7 +54,7 @@ class MigrationTests(unittest.TestCase):
         return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, lock=m.BASE_LOCK)
 
     def release(self):
-        return dict(build=13, protocol=24, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
+        return dict(build=14, protocol=24, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
                     packageLockSha256=m.LOCK, sha256='a'*64, descriptorSha256='b'*64)
 
     def test_known_build10_is_admitted_but_changed_baselines_are_rejected(self):
@@ -65,7 +65,7 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
 
     def test_installed_exact_target_is_idempotent(self):
-        value=self.baseline();value.update(descriptor='b'*64,build=13,protocol=24,lock=m.LOCK)
+        value=self.baseline();value.update(descriptor='b'*64,build=14,protocol=24,lock=m.LOCK)
         self.assertTrue(m.check_baseline(value,self.release()))
         value['protocol']=22
         with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
@@ -84,6 +84,13 @@ class MigrationTests(unittest.TestCase):
         baseline.update(descriptor='1207a4ab33542466f951fc48cc4f76f1ca9b5c5991423535c8d2b1b048912b2d',build=12,protocol=24)
         self.assertFalse(m.check_baseline(baseline,self.release()))
         baseline['descriptor']='unknown'
+        with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
+
+    def test_published_build13_uses_its_exact_new_lock(self):
+        baseline=self.baseline()
+        baseline.update(descriptor='42df8b7aad3c10c8fa99ec54c70a48637800a7a4d48bdf03704f7b689d7a87f3',build=13,protocol=24,lock=m.LOCK)
+        self.assertFalse(m.check_baseline(baseline,self.release()))
+        baseline['lock']=m.BASE_LOCK
         with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
 
     def test_signed_target_must_match_confirmed_identity(self):
@@ -125,7 +132,7 @@ class MigrationTests(unittest.TestCase):
             root=Path(directory);policy=root/'old-policy';policy.mkdir()
             (policy/'managed-settings.json').write_text('{}')
             contents={name:(ROOT/name).read_bytes() for name in ['package-lock.json','deploy/docker/runtime-level','deploy/managed-server.json']}
-            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=13,appVersion='0.3.10',protocol=24,sourceCommit='f'*40,
+            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=14,appVersion='0.3.10',protocol=24,sourceCommit='f'*40,
                             files={p:dict(size=len(b),sha256=hashlib.sha256(b).hexdigest()) for p,b in contents.items()})
             db=json.dumps(descriptor).encode();buffer=io.BytesIO()
             with tarfile.open(fileobj=buffer,mode='w:gz',format=tarfile.USTAR_FORMAT) as archive:
@@ -161,7 +168,7 @@ class MigrationTests(unittest.TestCase):
                     raise RuntimeError('Insufficient backup/recovery space')
             legacy=SimpleNamespace(check_idle=idle,check_space=space,install=install_fake)
             def load(name,path):
-                return {'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
+                return {'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
             def run(args,**kwargs):
                 if args==['docker','builder','prune','--all','--force']:
                     calls.append('cleanup')

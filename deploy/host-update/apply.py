@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare/cut over signed Build 13 on the three reviewed Ubuntu nodes; keep offline rollback."""
+"""Prepare/cut over signed Build 14 on the three reviewed Ubuntu nodes; keep offline rollback."""
 import argparse
 import hashlib
 import importlib.util
@@ -18,7 +18,7 @@ import urllib.error
 import http.client
 
 ROOT = Path('/var/lib/cc-runtime-upgrade')
-BUILD, PROTOCOL = 13, 24
+BUILD, PROTOCOL = 14, 24
 RUNTIME = 'node24-cli2.1.295-v2'
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
@@ -27,6 +27,7 @@ CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    '42df8b7aad3c10c8fa99ec54c70a48637800a7a4d48bdf03704f7b689d7a87f3': (13, 24),
     '1207a4ab33542466f951fc48cc4f76f1ca9b5c5991423535c8d2b1b048912b2d': (12, 24),
     BASE_DESCRIPTOR: (10, 23),
     '245677bc443c97e2e0b2c2a842801b5ade9629d8df8bc438c5f5dc64245be2c4': (11, 23),
@@ -100,7 +101,7 @@ def verify_release(fresh, data, expected):
     need((release['build'], release['protocol'], release['appVersion'], release['runtimeLevel'],
           release['packageLockSha256'], release['sha256']) ==
          (BUILD, PROTOCOL, '0.3.10', RUNTIME, LOCK, expected),
-         'Signed target changed or is not the reviewed Build 13; obtain a new command')
+         'Signed target changed or is not the reviewed Build 14; obtain a new command')
     return release
 
 
@@ -131,7 +132,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['node'] == NODE_VERSION and baseline['lock'] == BASE_LOCK,
+         baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] == 13 else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -206,21 +207,23 @@ def main():
         need(release == confirmed, 'Published release changed; refresh and confirm again')
         if check_baseline(baseline, release):
             b.live_status(b.CONTAINER, release)
-            print('ALREADY_INSTALLED: Build 13 / protocol 24 / Node 24.22.2; no change.')
+            print('ALREADY_INSTALLED: Build 14 / protocol 24 / Node 24.22.2; no change.')
             return
         legacy = load('runtime_cutover', PROGRAM / 'scripts/install-cc-space-037.py')
         legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
         legacy.check_idle(b, original)
         # All entrypoints, including the management-center host updater, must
         # reclaim safe cache without relying on callers to pass --cleanup.
-        clean_build_cache()
+        keep_image = 'cc-space-runtime:build14-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        cleanup = load('host_update_cleanup', PROGRAM / 'deploy/host-update/cleanup.py')
+        cleanup.clean(ROOT, PROGRAM, keep_image)
         legacy.check_space(reserve=2 * 1024**3)
         # The old CLI binary, SDK version and read-only policy were authenticated above. Never execute Claude.
         b.runtime_and_policy = lambda container: verify_runtime(container, node)
-        work = Path(tempfile.mkdtemp(prefix='build13-', dir=ROOT)); work.chmod(0o755)
+        work = Path(tempfile.mkdtemp(prefix='build14-', dir=ROOT)); work.chmod(0o755)
         program = work / 'program'
-        print('1/4 Verifying signed Build 13; current service remains running.', flush=True)
-        archive = b.download('/cc-updates/server/v1/artifacts/13/linux-x64/cc-desk-tunnel-server-0.3.10-build13.tar.gz', 64 * 1024**2)
+        print('1/4 Verifying signed Build 14; current service remains running.', flush=True)
+        archive = b.download('/cc-updates/server/v1/artifacts/14/linux-x64/cc-desk-tunnel-server-0.3.10-build14.tar.gz', 64 * 1024**2)
         b.unpack(archive, program, release)
         need(hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() == LOCK and
              (program / 'deploy/docker/runtime-level').read_text().strip() == '2', 'Candidate runtime/dependencies differ')
@@ -230,7 +233,7 @@ def main():
         # Recheck after extracting the signed program, before a costly build.
         legacy.check_space(reserve=2 * 1024**3)
         base = 'cc-space-runtime-base:' + original['Image'].split(':')[-1][:12]
-        image = 'cc-space-runtime:build13-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        image = 'cc-space-runtime:build14-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         subprocess.run(['docker', 'tag', original['Image'], base], check=True, capture_output=True)
         inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True)
         if inspected.returncode:
@@ -267,7 +270,7 @@ def main():
         b.clone_config = clone_candidate
         print('3/4 Checking idle state, disconnecting clients, cold backup and image/policy cutover.', flush=True)
         legacy.install(b, disconnect_clients=True)
-        print('4/4 SUCCESS: ' + node + ' / Build 13 / protocol 24 / Node 24.22.2.', flush=True)
+        print('4/4 SUCCESS: ' + node + ' / Build 14 / protocol 24 / Node 24.22.2.', flush=True)
 
 
 if __name__ == '__main__':
