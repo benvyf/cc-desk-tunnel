@@ -14,4 +14,14 @@ Build 13 使用当前应用版本 0.3.10、协议 24，保持 Node 24.22.2、官
 
 在 VPS 私有隔离目录执行 42 项 Python 迁移、策略和空闲断开/回退测试，全部通过；Docker 行为模拟，不操作生产 Ubuntu，不调用 Claude。默认不传 `--cleanup` 的测试验证构建前和预检后均清理；清理失败、构建后空间不足不安装；清理命令仅 `docker builder prune --all --force`。
 
-上线状态及制品摘要随后记录在本文件和脱敏证据中。发布授权只更新签名服务端入口，不自动创建三台节点安装任务，不变更 Windows 两个通道、管理中心运行代码或模型网络配置。
+发布授权只更新签名服务端入口，不自动创建三台节点安装任务，不变更 Windows 两个通道、管理中心运行代码或模型网络配置。
+
+## 已上线
+
+2026-11-05 已发布 Linux Build 13 / 0.3.10 / 协议 24，pilot revision 20，源码 `e963398b5f92eef682a0f5495c22f184d88765ed`。归档 SHA256：`94a2e0176593e5e2b8cce2175ccbf89f8187b76fcc2463425f255d32211a1562`。232 个归档文件清单、签名、公开全量下载摘要、精确续期及 systemd 服务运行均通过。两个续期 timer active。
+
+三台管理接口均返回在线、当前 Build 10、可用 Build 13。第一台原 Build 12 任务仍为 failed，其他原作业不变；本次没有发起安装。现行 agent 使用真实签名验证、下载和解包，再模拟三台已读状态生成迁移命令，确认无需传 `--cleanup` 即使用新默认清理路径；未执行 Docker 或节点安装。
+
+Windows 两通道摘要及管理中心完整运行清单未变，没有重启管理中心。发布备份：`/var/backups/cc-update-service/server13-publication-20261105T024933Z`，VPS 私有制品/源码 bundle/日志：`/root/.cc-update-admin/linux-build13-preparation/`。脱敏结果见 [上线证据](evidence/linux-build13-space-preparation-2026-11-05.json)。
+
+用户刷新管理中心，确认新目标为 Build 13 后逐台安装；不要重试旧 Build 12 任务。若清理后仍不足，脚本会明确报告缺口并保留原服务，不删除历史回退资源。

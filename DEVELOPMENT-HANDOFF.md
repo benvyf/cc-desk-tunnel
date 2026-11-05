@@ -1,10 +1,12 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
-### 2026-11-05 宿主机更新默认清理空间修复（Build 13 发布准备）
+### 2026-11-05 宿主机更新默认清理空间修复（Build 13 已上线）
 
 用户回传 Build 12 离线预检通过后备份空间不足：需 2.54 GiB，仅余 0.12 GiB，原服务未切换。确认现行宿主机 agent 未传 `--cleanup`，原签名迁移仅在该参数存在时清缓存。现将迁移脚本改为基线/空闲核对后、构建前自动清未使用 Docker build cache，并在离线预检后再次清缓存和检查备份预算；无需调用方传参。客户端仍在预检及空间检查通过、冻结确认空闲后自动断开，不强杀运行任务，不删除镜像、容器、数据或回退资源。空间不足或清理失败继续保留原服务。
 
-用户随后授权上线，已准备 Linux Build 13 / 0.3.10 / 协议 24，并在 VPS 隔离目录完成 42 项 Linux 迁移、策略及空闲断开/回退测试（Docker 模拟），全部通过。保留原 Build 12 归档，增加其精确基线准入；旧锁和当前仅桌面版本号变化的新锁分别校验，CLI/SDK/Node 不变。当前生产三台仍为 Build 10，第一台旧 Build 12 任务 failed，其他原任务保留。正式发布结果以 [Build 13 发布说明](docs/RELEASE-SERVER-BUILD13.md)及后续证据为准，不自动执行节点安装。详情见 [空间准备修复](docs/HOST-UPDATE-SPACE-PREPARATION.md)。
+用户随后授权上线，已发布 Linux Build 13 / 0.3.10 / 协议 24 / pilot revision 20，源码 `e963398`，归档 SHA256 `94a2e0176593e5e2b8cce2175ccbf89f8187b76fcc2463425f255d32211a1562`。42 项 Linux 迁移/策略/空闲断开/回退测试（Docker 模拟）通过，232 个文件清单、签名、公开全量下载摘要、精确续期、现行 agent 三节点签名迁移选择均通过。保留原 Build 12 归档，增加其精确基线准入；旧锁和当前仅桌面版本号变化的新锁分别校验，CLI/SDK/Node 不变。
+
+三台管理接口显示当前 Build 10、可用 Build 13；第一台旧 Build 12 任务 failed，其他原任务保留，未创建安装作业。Windows 两通道与管理中心运行代码未变，两个续期 timer active，没有重启管理中心。用户须刷新后选择 Build 13 逐台更新，不能重试旧任务。详情见 [Build 13 发布说明](docs/RELEASE-SERVER-BUILD13.md)及[空间准备修复](docs/HOST-UPDATE-SPACE-PREPARATION.md)。
 
 ### 2026-11-05 Windows Build 28 / 协议 24 已发布，配套 Linux Build 12
 
