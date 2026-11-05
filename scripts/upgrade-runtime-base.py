@@ -265,7 +265,7 @@ def main():
         legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': BUILD, 'protocol': PROTOCOL}
         clone = b.clone_config
         def validate_cutover(current):
-            need(all(current[k] == original[k] for k in ('Id', 'Image', 'Config', 'HostConfig', 'Mounts')), 'Original configuration changed')
+            need(review.same_configuration(current, original), 'Original configuration changed')
             now = {str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}
             need(now == source_hashes, 'Administrator policy changed; rollback required')
         b.validate_cutover = validate_cutover

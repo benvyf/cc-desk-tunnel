@@ -8,8 +8,8 @@
 </head>
 <body>
   <div class="shell">
-    <header class="app-header"><a class="brand" href="/cc-updates/admin/" aria-label="CC 管理中心首页"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 116 237.21" focusable="false"><path d="M116 29.07L36.5 68.82A19 19 0 0 0 26 85.81L26 116.83A2 2 0 0 0 28.89 118.62L52.5 106.82L52.5 135.89L40.52 141.88A28 28 0 0 1 0 116.83L0 85.81A45 45 0 0 1 24.88 45.56L116 0Z"/><path d="M63.5 101.32L75.48 95.33A28 28 0 0 1 116 120.37L116 151.4A45 45 0 0 1 91.12 191.64L0 237.21L0 208.14L79.5 168.39A19 19 0 0 0 90 151.4L90 120.37A2 2 0 0 0 87.11 118.58L63.5 130.39Z"/></svg></span><div><p class="eyebrow">CC SPACE</p><h1>管理中心</h1></div></a><div class="header-actions"><span class="console-label">你的工作空间，尽在掌握</span><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
-    <nav id="primary-navigation" class="main-nav" aria-label="管理分区" hidden><p class="nav-label">工作空间管理</p><a id="show-accounts" href="/cc-updates/admin/accounts"><span class="nav-icon" aria-hidden="true">▦</span>账号监控<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-updates" href="/cc-updates/admin/updates"><span class="nav-icon" aria-hidden="true">↓</span>客户端更新<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-moderation" href="/cc-updates/admin/moderation"><span class="nav-icon" aria-hidden="true">◇</span>内容审核<span class="nav-arrow" aria-hidden="true">›</span></a><div class="nav-footnote"><span class="status-dot" aria-hidden="true"></span>CC SPACE 控制台<p>连接设备 · 管理账号 · 持续创作</p></div></nav>
+    <header class="app-header"><a class="brand" href="/cc-updates/admin/" aria-label="CC 管理中心首页"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 116 237.21" focusable="false"><path d="M116 29.07L36.5 68.82A19 19 0 0 0 26 85.81L26 116.83A2 2 0 0 0 28.89 118.62L52.5 106.82L52.5 135.89L40.52 141.88A28 28 0 0 1 0 116.83L0 85.81A45 45 0 0 1 24.88 45.56L116 0Z"/><path d="M63.5 101.32L75.48 95.33A28 28 0 0 1 116 120.37L116 151.4A45 45 0 0 1 91.12 191.64L0 237.21L0 208.14L79.5 168.39A19 19 0 0 0 90 151.4L90 120.37A2 2 0 0 0 87.11 118.58L63.5 130.39Z"/></svg></span><div><p class="eyebrow">CC Space</p><h1>管理中心</h1></div></a><div class="header-actions"><span class="console-label">你的工作空间，尽在掌握</span><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
+    <nav id="primary-navigation" class="main-nav" aria-label="管理分区" hidden><p class="nav-label">工作空间管理</p><a id="show-accounts" href="/cc-updates/admin/accounts"><span class="nav-icon" aria-hidden="true">▦</span>账号监控<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-updates" href="/cc-updates/admin/updates"><span class="nav-icon" aria-hidden="true">↓</span>客户端更新<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-moderation" href="/cc-updates/admin/moderation"><span class="nav-icon" aria-hidden="true">◇</span>内容审核<span class="nav-arrow" aria-hidden="true">›</span></a><div class="nav-footnote"><span class="status-dot" aria-hidden="true"></span>CC Space 控制台<p>连接设备 · 管理账号 · 持续创作</p></div></nav>
     <p id="notice" role="status" aria-live="polite"></p>
     <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>登录管理中心</h2><p class="muted">使用你设置的管理员密码登录。首次设置或忘记密码时，通过 SSH 打开临时密码设置页面。</p><form id="password-login"><label for="admin-password">管理员密码</label><input id="admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><button type="submit">登录管理</button></form><details><summary>使用旧管理令牌</summary><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit" class="quiet">使用令牌登录</button></form></details></section>
     <section id="password-setup-panel" class="card login" hidden><p class="eyebrow">管理员密码</p><h2>设置管理员密码</h2><p class="muted">请设置 8–128 个字符的密码，可以包含中文。设置链接十分钟内有效，仅能使用一次；设置后自动登录。</p><form id="password-setup"><label for="new-admin-password">新管理员密码</label><input id="new-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-admin-password">确认管理员密码</label><input id="confirm-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存密码并登录</button></form></section>
@@ -44,8 +44,8 @@
             </form>
           </div>
           <div id="access-users" role="tabpanel" aria-labelledby="access-users-tab" hidden>
-            <div class="section-heading"><h3>CC SPACE 登录用户</h3><button id="access-user-add" type="button">添加用户</button></div>
-            <p class="muted">这里的邮箱用于登录 CC SPACE，与 Claude 官方账号分开。访问同一设备会共用该设备的会话与工作区。</p>
+            <div class="section-heading"><h3>CC Space 登录用户</h3><button id="access-user-add" type="button">添加用户</button></div>
+            <p class="muted">这里的邮箱用于登录 CC Space，与 Claude 官方账号分开。访问同一设备会共用该设备的会话与工作区。</p>
             <p class="muted">每个邮箱账号仅允许一台电脑在线。新电脑登录成功后，旧电脑会自动退出；同一台电脑的多个窗口可同时使用。</p>
             <form id="access-user-form" class="access-editor" hidden>
               <div class="access-grid"><label>邮箱<input id="access-user-email" type="email" required maxlength="254" autocomplete="off"></label><label>密码<input id="access-user-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="已有用户留空保持密码"></label></div>
@@ -85,11 +85,11 @@
       <p class="muted">Windows x64 完整定制客户端，包含随包运行组件。退出 CC 后运行安装包，可覆盖安装并保留连接配置。账号监控与内容审核由配套 Ubuntu／VPS 提供；安装客户端不会自动升级 Ubuntu。</p>
       <div id="downloads" class="channels" aria-live="polite"></div>
       <section class="card" aria-labelledby="fresh-heading">
-        <h2 id="fresh-heading">新建 Ubuntu 一键部署</h2>
-        <p class="muted">适用于空白 Ubuntu 24.04 LTS x64 虚拟机。自动安装 Docker、最新已发布服务端及独立监控和审核配置；完成后显示客户端连接地址、证书指纹和服务凭据。建议 2 核、4 GB 内存、至少 6 GB 可用磁盘，安装可能需要数分钟。</p>
-        <form id="fresh-form"><label for="fresh-node">新节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-2" autocomplete="off"><button type="submit">生成新虚拟机安装命令</button></form>
-        <div id="fresh-result" hidden><p id="fresh-expiry" class="muted" aria-live="polite"></p><label for="fresh-command">在新 Ubuntu 控制台执行</label><textarea id="fresh-command" readonly rows="6" spellcheck="false" autocomplete="off"></textarea><button id="fresh-copy" class="quiet">复制新虚拟机安装命令</button></div>
-        <p class="muted">每台虚拟机使用不同名称和命令。安装码十分钟内绑定一台机器，响应丢失时同机可在有效期内重试，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。已有服务使用客户端更新，不要重新安装；安装不会覆盖已有数据，也不会修改网络转发规则。</p>
+        <h2 id="fresh-heading">Ubuntu 一键部署</h2>
+        <p class="muted">适用于空白 Ubuntu 24.04 LTS x64 虚拟机，也可明确选择清空重装旧 CC 服务。自动安装 Docker、最新已发布服务端及独立监控和审核配置；完成后显示客户端连接地址、证书指纹和服务凭据。建议 2 核、4 GB 内存、至少 6 GB 可用磁盘，安装可能需要数分钟。</p>
+        <form id="fresh-form"><label for="fresh-node">新节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-04" autocomplete="off"><label class="check"><input id="fresh-reset" type="checkbox" aria-describedby="fresh-reset-help">清空重装旧 CC 服务</label><p id="fresh-reset-help" class="muted">仅在不需要旧内容时勾选。节点名称必须与目标 Ubuntu 的主机名一致；新版检查通过后才停止旧服务，旧数据隔离保留，新服务生成新的连接凭据。预设监控节点可选择清空重装，已完成部署或审核注册的同名节点仍受保护。</p><button type="submit">生成安装命令</button></form>
+        <div id="fresh-result" hidden><p id="fresh-expiry" class="muted" aria-live="polite"></p><label for="fresh-command">在目标 Ubuntu 控制台执行</label><textarea id="fresh-command" readonly rows="6" spellcheck="false" autocomplete="off"></textarea><button id="fresh-copy" class="quiet">复制安装命令</button></div>
+        <p class="muted">每台虚拟机使用不同名称和命令。安装码十分钟内绑定一台机器，响应丢失时同机可在有效期内重试，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。普通安装遇到旧服务会停止；需要保留内容时使用更新功能。安装不会修改网络转发规则。</p>
       </section>
       <section class="card" aria-labelledby="server-download-heading"><h2 id="server-download-heading">配套 Linux 服务端</h2><div id="server-download" aria-live="polite"></div></section>
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>
@@ -123,7 +123,7 @@
         <section class="card audit-panel"><h2>审核记录</h2><p class="muted">显示最近 100 条配置操作和管理员试算；尚无生产节点记录。</p><div class="table-scroll"><table><thead><tr><th>时间</th><th>管理员 / 请求</th><th>类型 / 策略版本</th><th>结果与原因</th></tr></thead><tbody id="moderation-events"></tbody></table></div></section>
       </section>
     </main>
-    <footer>CC Desk Tunnel · 管理中心</footer>
+    <footer>CC Space · 管理中心</footer>
   </div>
 </body>
 </html>

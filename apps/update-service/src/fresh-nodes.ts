@@ -47,10 +47,12 @@ export class FreshNodes {
   }
   issue(input: unknown, distribution: ServerDistribution) {
     const id = (input as { nodeId?: unknown } | null)?.nodeId;
+    const reset = (input as { resetExisting?: unknown } | null)?.resetExisting;
     if (
       !input ||
       Array.isArray(input) ||
-      Object.keys(input).length !== 1 ||
+      Object.keys(input).some((key) => !['nodeId', 'resetExisting'].includes(key)) ||
+      (Object.hasOwn(input, 'resetExisting') && typeof reset !== 'boolean') ||
       typeof id !== 'string' ||
       !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) ||
       ['__proto__', 'constructor', 'prototype'].includes(id)
@@ -66,7 +68,7 @@ export class FreshNodes {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
     if (
-      Object.hasOwn(this.config.monitorNodes ?? {}, id) ||
+      (Object.hasOwn(this.config.monitorNodes ?? {}, id) && !reset) ||
       Object.hasOwn(moderation, id) ||
       nodes[id]?.monitorHash
     )
@@ -86,7 +88,8 @@ export class FreshNodes {
     this.save(nodes);
     const installer = readFileSync(new URL('../web/fresh-install.py', import.meta.url));
     const url = this.config.origin + '/cc-updates/admin/fresh-install.py';
-    const program = `import urllib.request,hashlib,sys,tempfile,pathlib,runpy; print("Downloading verified Ubuntu installer...",flush=True); u=${JSON.stringify(url)}; r=urllib.request.urlopen(u,timeout=30); b=r.read(262145); (r.url==u and len(b)<=262144 and hashlib.sha256(b).hexdigest()==${JSON.stringify(hash(installer))}) or sys.exit("Installer verification failed"); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/"fresh-install.py"; p.write_bytes(b); sys.argv=[str(p),"--origin",${JSON.stringify(this.config.origin)},"--node",${JSON.stringify(id)},"--code",${JSON.stringify(code)}]; runpy.run_path(str(p),run_name="__main__")`;
+    const resetArgs = reset ? `,"--reset-existing","--confirm-host",${JSON.stringify(id)}` : '';
+    const program = `import urllib.request,hashlib,sys,tempfile,pathlib,runpy; print("Downloading verified Ubuntu installer...",flush=True); u=${JSON.stringify(url)}; r=urllib.request.urlopen(u,timeout=30); b=r.read(262145); (r.url==u and len(b)<=262144 and hashlib.sha256(b).hexdigest()==${JSON.stringify(hash(installer))}) or sys.exit("Installer verification failed"); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/"fresh-install.py"; p.write_bytes(b); sys.argv=[str(p),"--origin",${JSON.stringify(this.config.origin)},"--node",${JSON.stringify(id)},"--code",${JSON.stringify(code)}${resetArgs}]; runpy.run_path(str(p),run_name="__main__")`;
     return {
       nodeId: id,
       expiresAt: new Date(expiresAt).toISOString(),

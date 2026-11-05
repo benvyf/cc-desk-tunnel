@@ -120,7 +120,9 @@ function release(value: unknown): Release {
     'Invalid app version',
   );
   requireValue(
-    r.filename === `CC-Desk-Tunnel-Setup-${r.appVersion}-x64.exe`,
+    r.filename === `CC-Space-Setup-${r.appVersion}-x64.exe` ||
+      // Previously signed releases are immutable; their filenames stay readable during migration.
+      r.filename === `CC-Desk-Tunnel-Setup-${r.appVersion}-x64.exe`,
     'Invalid artifact filename',
   );
   hex(r.sourceCommit, 40);

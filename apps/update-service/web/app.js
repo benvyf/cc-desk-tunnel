@@ -151,7 +151,7 @@ function renderDownloads(channels) {
       Number.isSafeInteger(release?.build) &&
       release.build > 0 &&
       /^\d+\.\d+\.\d+$/.test(release.appVersion) &&
-      release.filename === `CC-Desk-Tunnel-Setup-${release.appVersion}-x64.exe`;
+      release.filename === `CC-Space-Setup-${release.appVersion}-x64.exe`;
     if (!valid) {
       card.append(
         element('h3', name === 'stable' ? '暂无正式版可下载' : '暂无试点版可下载'),

@@ -101,12 +101,16 @@ def run(args, timeout=1800, capture=False):
     if code: raise InstallError('Installation step failed. Details: ' + str(log))
 
 
-def support_module():
-    content = download(ORIGIN + '/cc-updates/admin/server-bootstrap.py', 262144)
+def support_module(reuse=False):
+    path = ROOT / 'support.py'
+    if reuse:
+        if not path.is_file(): raise InstallError('Cached readiness helper missing; keep the installation directory.')
+        content = path.read_bytes()
+    else:
+        content = download(ORIGIN + '/cc-updates/admin/server-bootstrap.py', 262144)
     if hashlib.sha256(content).hexdigest() != SUPPORT_SHA:
         raise InstallError('Pinned extraction/readiness helper changed.')
-    path = ROOT / 'support.py'
-    path.write_bytes(content)
+    if not reuse: path.write_bytes(content)
     spec = importlib.util.spec_from_file_location('cc_install_support', path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -200,18 +204,170 @@ def provision_runtime(work, runtime_level='node24-cli2.1.295-v1'):
         directory.chmod(0o755)
 
 
-def check_empty_machine():
-    if DATA.exists() or DATA.is_symlink():
-        raise InstallError('Existing /srv/cc-desk-tunnel detected. This installer never overwrites an existing deployment.')
+def check_port_available():
     with socket.socket() as probe:
         try: probe.bind(('0.0.0.0', 8787))
-        except OSError: raise InstallError('Port 8787 is already in use; no existing service was changed.')
+        except OSError: raise InstallError('Port 8787 is already in use; installation stopped.')
+
+
+def ensure_prerequisites(reuse_docker=False):
+    if reuse_docker:
+        # An existing host must not upgrade/restart Docker or unrelated services via apt/needrestart.
+        if not shutil.which('openssl'):
+            raise InstallError('Install the missing openssl prerequisite before retrying; existing Docker was not changed.')
+        run(['docker', 'info'], capture=True, timeout=30)
+        return
+    run(['apt-get', 'update'])
+    run(['apt-get', 'install', '-y', '--no-install-recommends', 'docker.io', 'ca-certificates', 'openssl', 'xz-utils'])
+    run(['systemctl', 'enable', '--now', 'docker'])
+
+
+def prepared_installation(bundle):
+    record = json.loads((ROOT / 'prepared.json').read_text())
+    if (record['nodeId'] != bundle['nodeId'] or
+            record['indexSha256'] != hashlib.sha256(bundle['index'].encode()).hexdigest() or
+            not re.fullmatch(r'sha256:[0-9a-f]{64}', record['image'])):
+        raise InstallError('Prepared installation identity mismatch; inspect reset.json before retrying.')
+    image = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', record['image']], capture=True, timeout=30)
+    if image != record['image']:
+        raise InstallError('Prepared image missing or changed; keep the installation directory and isolated data.')
+    program = ROOT / 'build/program'
+    policy = program / 'deploy/docker/managed-settings.json'
+    if not policy.is_file() or hashlib.sha256(policy.read_bytes()).hexdigest() != record['policySha256']:
+        raise InstallError('Prepared policy missing or changed; keep the installation directory and isolated data.')
+    # This private receipt is written only after signed release verification and offline preflight.
+    # Resume that exact admitted release even if its publication has since expired; never rebuild it.
+    return record['release'], support_module(reuse=True), program, image
+
+
+def check_empty_machine():
+    if DATA.exists() or DATA.is_symlink():
+        raise InstallError('Existing /srv/cc-desk-tunnel detected. Ordinary installation never replaces existing data.')
+    check_port_available()
     if shutil.which('docker'):
         daemon = subprocess.run(['docker', 'info'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         if daemon.returncode: return
         containers = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture=True).splitlines()
         if CONTAINER in containers or any(n.startswith('cc-desk-tunnel-') for n in containers):
             raise InstallError('Existing CC container detected; use its managed upgrade instead.')
+
+
+def reset_inventory():
+    ids = run(['docker', 'ps', '-aq'], capture=True, timeout=30).splitlines()
+    return json.loads(run(['docker', 'inspect', *ids], capture=True, timeout=30)) if ids else []
+
+
+def reset_fingerprint(container):
+    value = {k: container[k] for k in ('Id', 'Name', 'Image', 'Config', 'HostConfig')}
+    value['Mounts'] = sorted(container['Mounts'], key=lambda m: json.dumps(m, sort_keys=True))
+    return hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()
+
+
+def reset_target(containers):
+    targets = []
+    for container in containers:
+        name = container['Name'].lstrip('/')
+        related = name == CONTAINER or name.startswith('cc-desk-tunnel-')
+        for mount in container['Mounts']:
+            if mount.get('Type') == 'bind':
+                source = pathlib.Path(mount['Source']).resolve()
+                if source == DATA or source in DATA.parents or DATA in source.parents:
+                    related = True
+        if related:
+            targets.append(container)
+    if len(targets) != 1:
+        raise InstallError('Clean reinstall requires exactly one unshared CC deployment.')
+    target = targets[0]
+    if not re.fullmatch(r'cc-desk-tunnel(?:-[0-9a-f]{8}-proxy-1)?', target['Name'].lstrip('/')):
+        raise InstallError('Unrecognized CC container; clean reinstall refused.')
+    mounts = target['Mounts']
+    data_mounts = [m for m in mounts if m.get('Type') == 'bind' and
+                   m.get('Source') == str(DATA) and m.get('Destination') == '/data' and m.get('RW') is True]
+    if len(data_mounts) != 1 or any(m != data_mounts[0] and not (
+            m.get('Type') == 'bind' and m.get('Destination') == '/etc/claude-code' and m.get('RW') is False)
+            for m in mounts):
+        raise InstallError('Unexpected CC mounts; clean reinstall refused.')
+    return target
+
+
+def prepare_reset(args):
+    enabled = getattr(args, 'reset_existing', False)
+    confirmation = getattr(args, 'confirm_host', None)
+    if not enabled:
+        if confirmation:
+            raise InstallError('--confirm-host requires --reset-existing.')
+        if (ROOT / 'reset.json').exists() and json.loads((ROOT / 'reset.json').read_text())['phase'] != 'done':
+            raise InstallError('Pending clean reinstall; rerun the original command with hostname confirmation.')
+        return None
+    if not confirmation or confirmation != socket.gethostname():
+        raise InstallError('Clean reinstall requires --confirm-host matching this machine hostname.')
+    journal = ROOT / 'reset.json'
+    if journal.exists():
+        plan = json.loads(journal.read_text())
+        if plan['nodeId'] != args.node or plan['hostname'] != confirmation:
+            raise InstallError('Clean reinstall belongs to another node or hostname.')
+        return plan
+    if any((ROOT / name).exists() for name in ('configured.json', 'installed.json')):
+        raise InstallError('This managed installation already has data; the original command will not reset it.')
+    if DATA.is_symlink() or DATA.resolve() != DATA or not DATA.is_dir() or os.path.ismount(DATA):
+        raise InstallError('Clean reinstall requires the real, non-mounted CC data directory.')
+    target = reset_target(reset_inventory())
+    info = DATA.stat()
+    return {'nodeId': args.node, 'hostname': confirmation, 'phase': 'prepared',
+            'containerId': target['Id'], 'fingerprint': reset_fingerprint(target),
+            'wasRunning': target['State'].get('Running') is True,
+            'dataIdentity': [info.st_dev, info.st_ino],
+            'archive': str(DATA.with_name(DATA.name + '.before-reset-' + secrets.token_hex(8)))}
+
+
+def finish_reset(plan):
+    if not plan or plan['phase'] == 'done':
+        return
+    archive = pathlib.Path(plan['archive'])
+    if (archive.parent != DATA.parent or not archive.name.startswith(DATA.name + '.before-reset-')
+            or archive.is_symlink() or DATA.is_symlink() or DATA.resolve() != DATA):
+        raise InstallError('Unsafe clean reinstall paths; inspect the private reset journal.')
+    containers = reset_inventory()
+    old = next((c for c in containers if c['Id'] == plan['containerId']), None)
+    if old:
+        if reset_target(containers)['Id'] != old['Id'] or reset_fingerprint(old) != plan['fingerprint']:
+            raise InstallError('Original CC configuration changed; clean reinstall stopped.')
+    elif not archive.is_dir():
+        raise InstallError('Original CC container disappeared before data isolation.')
+    if DATA.exists():
+        info = DATA.stat()
+        if archive.exists() or [info.st_dev, info.st_ino] != plan['dataIdentity']:
+            raise InstallError('CC data directory changed; clean reinstall stopped.')
+    elif not archive.is_dir():
+        raise InstallError('CC data and isolation directory are missing.')
+    if archive.exists():
+        info = archive.stat()
+        if [info.st_dev, info.st_ino] != plan['dataIdentity']:
+            raise InstallError('CC isolation directory changed; clean reinstall stopped.')
+    private_json(ROOT / 'reset.json', plan)
+    print('CLEAN_REINSTALL: verified host=' + plan['hostname'] + '; old data isolation=' + str(archive), flush=True)
+    if old:
+        run(['docker', 'stop', '--time', '30', old['Id']])
+        stopped = reset_target(reset_inventory())
+        if (reset_fingerprint(stopped) != plan['fingerprint'] or stopped['State'].get('Running')
+                or stopped['State'].get('Paused')):
+            raise InstallError('CC did not stop with its original configuration; inspect reset.json.')
+        try:
+            check_port_available()
+        except InstallError:
+            if plan['wasRunning']:
+                run(['docker', 'start', old['Id']])
+            raise
+    if DATA.exists():
+        info = DATA.stat()
+        if DATA.is_symlink() or archive.exists() or [info.st_dev, info.st_ino] != plan['dataIdentity']:
+            raise InstallError('CC data changed while stopping; inspect reset.json.')
+        DATA.rename(archive)
+    if old:
+        run(['docker', 'rm', old['Id']])
+    plan['phase'] = 'done'
+    private_json(ROOT / 'reset.json', plan)
+    print('CLEAN_REINSTALL_READY: old data isolated and old image retained; retries will not reset new data.', flush=True)
 
 
 def publish_configuration(record):
@@ -292,15 +448,20 @@ def install(args):
     ROOT.mkdir(exist_ok=True, mode=0o700)
     if ROOT.is_symlink(): raise InstallError('Installation directory cannot be a symlink.')
     ROOT.chmod(0o700)
+    login_source = '#!/bin/sh\nexec docker exec -it ' + CONTAINER + ' /opt/runtime/node/bin/node --env-file=/data/config/service.env --input-type=commonjs -e '\
+        + "'const p=require(\"node:child_process\").spawn(\"/opt/runtime/cli/bin/claude\",[\"auth\",\"login\"],{stdio:\"inherit\",env:process.env});p.on(\"exit\",c=>process.exit(c??1));'\n"
     with (ROOT / 'install.lock').open('w') as lock:
         import fcntl
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        if LOGIN.is_symlink() or (LOGIN.exists() and LOGIN.read_text() != login_source):
+            raise InstallError('Login helper already exists or is a symlink; refusing to overwrite it.')
+        reset = prepare_reset(args)
         cached = ROOT / 'enrollment.json'
         if cached.exists():
             bundle = json.loads(cached.read_text())
             if bundle['nodeId'] != args.node: raise InstallError('This machine is already assigned to another node.')
         else:
-            check_empty_machine()
+            if not reset: check_empty_machine()
             print('1/6 Redeeming this machine\'s one-time installation code...', flush=True)
             attempt_path = ROOT / 'enrollment-attempt.json'
             attempt = json.loads(attempt_path.read_text()) if attempt_path.exists() else {}
@@ -323,20 +484,28 @@ def install(args):
             if record['nodeId'] != args.node: raise InstallError('Configuration belongs to another node.')
             publish_configuration(record)
         if not initialized:
-            check_empty_machine()
+            if not reset: check_empty_machine()
         if initialized:
-            release = verify_index(bundle['index'])
-            support = support_module()
-            image = record['image']
+            if (ROOT / 'prepared.json').exists():
+                release, support, program, image = prepared_installation(bundle)
+                if image != record['image']: raise InstallError('Configured and prepared images disagree; installation stopped.')
+            else:
+                release = verify_index(bundle['index'])
+                support = support_module()
+                image = record['image']
             print('Resuming the configured installation; keeping the existing image and credentials.', flush=True)
+        elif (ROOT / 'prepared.json').exists():
+            release, support, program, image = prepared_installation(bundle)
+            print('Resuming the verified image and policy; no download, dependency installation or rebuild.', flush=True)
+            finish_reset(reset)
+            check_empty_machine()
+            configure(bundle, program, image)
         else:
             print('2/6 Installing Docker and prerequisites (first run can take several minutes)...', flush=True)
             if shutil.disk_usage('/').free < 6 * 1024 ** 3:
                 raise InstallError('At least 6 GiB free disk space is required before building.')
-            run(['apt-get', 'update'])
-            run(['apt-get', 'install', '-y', '--no-install-recommends', 'docker.io', 'ca-certificates', 'openssl', 'xz-utils'])
-            run(['systemctl', 'enable', '--now', 'docker'])
-            check_empty_machine()
+            ensure_prerequisites(reuse_docker=bool(reset))
+            if not reset: check_empty_machine()
             print('3/6 Verifying the signed server release and pinned official runtime...', flush=True)
             release = verify_index(bundle['index'])
             support = support_module()
@@ -357,8 +526,18 @@ def install(args):
             image = 'cc-desk-tunnel:fresh-' + str(release['build'])
             print('4/6 Building the service image; progress is printed every 15 seconds...', flush=True)
             run(['docker', 'build', '-t', image, str(work)], timeout=3600)
+            if reset:
+                image = run(['docker', 'image', 'inspect', '--format', '{{.Id}}', image], capture=True, timeout=30)
+                if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise InstallError('Invalid prepared image identity.')
             print('5/6 Checking readiness offline, with no account data and no Claude execution...', flush=True)
             support.offline_preflight(image, work, release, ROOT / 'install.log')
+            if reset:
+                private_json(ROOT / 'prepared.json', {
+                    'nodeId': bundle['nodeId'], 'indexSha256': hashlib.sha256(bundle['index'].encode()).hexdigest(),
+                    'release': release, 'image': image,
+                    'policySha256': hashlib.sha256((program / 'deploy/docker/managed-settings.json').read_bytes()).hexdigest()})
+            finish_reset(reset)
+            check_empty_machine()
             configure(bundle, program, image)
         names = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture=True).splitlines()
         if CONTAINER not in names:
@@ -373,9 +552,7 @@ def install(args):
             run(['docker', 'start', CONTAINER])
         support.live_status(CONTAINER, release)
         login = LOGIN
-        login_source = '#!/bin/sh\nexec docker exec -it ' + CONTAINER + ' /opt/runtime/node/bin/node --env-file=/data/config/service.env --input-type=commonjs -e '\
-            + "'const p=require(\"node:child_process\").spawn(\"/opt/runtime/cli/bin/claude\",[\"auth\",\"login\"],{stdio:\"inherit\",env:process.env});p.on(\"exit\",c=>process.exit(c??1));'\n"
-        if login.exists() and login.read_text() != login_source:
+        if login.is_symlink() or (login.exists() and login.read_text() != login_source):
             raise InstallError('Login helper already exists; refusing to overwrite it.')
         login.write_text(login_source)
         login.chmod(0o755)
@@ -389,6 +566,8 @@ if __name__ == '__main__':
     parser.add_argument('--origin', required=True)
     parser.add_argument('--node', required=True)
     parser.add_argument('--code', required=True)
+    parser.add_argument('--reset-existing', action='store_true', help='Isolate old CC data and replace its verified container after offline preflight.')
+    parser.add_argument('--confirm-host', help='Required for clean reinstall; must equal this Ubuntu hostname.')
     try:
         install(parser.parse_args())
     except KeyboardInterrupt:
@@ -396,5 +575,5 @@ if __name__ == '__main__':
         sys.exit(130)
     except Exception as error:
         # HTTP errors omit Authorization; subprocess errors never include credential arguments.
-        print('INSTALL FAILED: ' + str(error) + '\nDetails: /var/lib/cc-fresh-install/install.log. Existing CC data was not reset.', file=sys.stderr)
+        print('INSTALL FAILED: ' + str(error) + '\nDetails: /var/lib/cc-fresh-install/install.log. For clean reinstall, inspect reset.json for data isolation state; rerun the same command to resume.', file=sys.stderr)
         sys.exit(1)
