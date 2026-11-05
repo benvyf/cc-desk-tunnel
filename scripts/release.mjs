@@ -93,7 +93,7 @@ if (dryRun) {
       '--target',
       commit,
       '--title',
-      `CC SPACE ${version}`,
+      `CC Space ${version}`,
       '--notes-file',
       join(output, 'notes.md'),
     ]).trim();

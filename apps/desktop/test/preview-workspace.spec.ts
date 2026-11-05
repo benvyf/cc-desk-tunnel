@@ -27,7 +27,7 @@ test('lazy tree opens a local file, refreshes and reports missing directories', 
   await tree.getByRole('treeitem', { name: 'src', exact: true }).click();
   await tree.getByRole('treeitem', { name: 'index.ts', exact: true }).click();
   await expect(page.getByRole('tab', { name: 'index.ts', exact: true })).toBeVisible();
-  await expect(page.locator('.preview-code')).toContainText('CC SPACE');
+  await expect(page.locator('.preview-code')).toContainText('CC Space');
 });
 
 test('split, drag between panes, float/dock and restore persist only metadata', async ({

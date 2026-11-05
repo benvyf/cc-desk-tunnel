@@ -7,6 +7,7 @@ function createDesktopAccess({
   write,
   storage,
   deviceId,
+  clientIdentity,
   onExpired,
   onAccountChanged,
   confirmSwitch,
@@ -52,6 +53,12 @@ function createDesktopAccess({
       throw Object.assign(new Error(value?.error || '管理中心暂不可用，请稍后重试。'), {
         status: response.status,
         retryable: response.status === 429 || response.status >= 500,
+        ...(response.status === 426 &&
+        value?.code === 'client_upgrade_required' &&
+        Number.isSafeInteger(value.requiredProtocol) &&
+        value.requiredProtocol > 0
+          ? { clientUpgrade: { requiredProtocol: value.requiredProtocol } }
+          : {}),
       });
     if (response.status !== 204 && !value)
       throw Object.assign(new Error('管理中心返回了无效信息，请稍后重试。'), { retryable: true });
@@ -167,7 +174,22 @@ function createDesktopAccess({
       if (!session || typeof nodeId !== 'string') throw new Error('请先登录邮箱账号。');
       const turn = generation,
         current = session;
-      const value = await api('connect', { nodeId }, current.token).catch((error) => {
+      const identity = clientIdentity?.();
+      const client =
+        identity &&
+        Number.isSafeInteger(identity.build) &&
+        identity.build > 0 &&
+        Number.isSafeInteger(identity.protocol) &&
+        identity.protocol > 0
+          ? { build: identity.build, protocol: identity.protocol }
+          : undefined;
+      const value = await api(
+        'connect',
+        { nodeId, ...(client ? { client } : {}) },
+        current.token,
+      ).catch((error) => {
+        if (error.clientUpgrade && (turn !== generation || current !== session))
+          throw new Error('登录已取消。');
         clearExpired(error, current, turn);
         throw error;
       });

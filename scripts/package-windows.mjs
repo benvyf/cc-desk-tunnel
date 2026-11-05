@@ -45,7 +45,7 @@ const results = await electronBuild({
   publish: 'never',
   config: {
     appId: 'io.github.ccdesktunnel.desktop',
-    productName: 'CC SPACE',
+    productName: 'CC Space',
     electronVersion: electron.version,
     electronDist: join(root, 'node_modules/electron/dist'),
     directories: { app, output },
@@ -73,10 +73,10 @@ const results = await electronBuild({
       allowToChangeInstallationDirectory: true,
       createDesktopShortcut: true,
       createStartMenuShortcut: true,
-      shortcutName: 'CC SPACE',
-      runAfterFinish: false,
+      shortcutName: 'CC Space',
+      runAfterFinish: true,
       deleteAppDataOnUninstall: false,
-      artifactName: 'CC-Desk-Tunnel-Setup-${version}-${arch}.${ext}',
+      artifactName: 'CC-Space-Setup-${version}-${arch}.${ext}',
     },
   },
 });
@@ -91,7 +91,7 @@ execFileSync(
     stdio: 'inherit',
     env: {
       ...process.env,
-      WINDOWS_PACKAGE_EXE: join(output, 'win-unpacked/CC SPACE.exe'),
+      WINDOWS_PACKAGE_EXE: join(output, 'win-unpacked/CC Space.exe'),
       NATIVE_TEST_CONFIG: '',
     },
   },
@@ -107,7 +107,7 @@ execFileSync(
   ],
   { windowsHide: true, stdio: 'inherit' },
 );
-console.log(`Windows package: ${results.join(', ') || join(output, 'win-unpacked/CC SPACE.exe')}`);
+console.log(`Windows package: ${results.join(', ') || join(output, 'win-unpacked/CC Space.exe')}`);
 console.log(
   'No service token, OAuth data, local history, test fixtures or source repository included.',
 );

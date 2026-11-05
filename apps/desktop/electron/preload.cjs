@@ -108,6 +108,8 @@ contextBridge.exposeInMainWorld('desktop', {
     load: () => ipcRenderer.invoke('access:load'),
     login: (input) => ipcRenderer.invoke('access:login', input),
     ticket: (nodeId) => ipcRenderer.invoke('access:ticket', nodeId),
+    upgradeInfo: (requiredProtocol) => ipcRenderer.invoke('access:upgrade-info', requiredProtocol),
+    openUpgrade: (requiredProtocol) => ipcRenderer.invoke('access:open-upgrade', requiredProtocol),
     logout: () => ipcRenderer.invoke('access:logout'),
     onExpired: (callback) => {
       const listener = (_event, message) => callback(message);
@@ -137,12 +139,16 @@ contextBridge.exposeInMainWorld('desktop', {
     webFrame.setZoomLevel(direction ? webFrame.getZoomLevel() + Math.sign(direction) * 0.5 : 0),
   quit: (all) => ipcRenderer.invoke('app:quit', all),
   version: () => ipcRenderer.invoke('app:version'),
+  installerCleanup: {
+    inspect: () => ipcRenderer.invoke('installer-cleanup:inspect'),
+    keep: () => ipcRenderer.invoke('installer-cleanup:keep'),
+    remove: () => ipcRenderer.invoke('installer-cleanup:remove'),
+  },
   managedServer: {
     check: (connection) => ipcRenderer.invoke('managed-server:check', connection),
     install: (confirmation) => ipcRenderer.invoke('managed-server:install', confirmation),
     status: (connection) => ipcRenderer.invoke('managed-server:status', connection),
     cancel: () => ipcRenderer.invoke('managed-server:cancel'),
-    openManager: () => ipcRenderer.invoke('managed-server:manager'),
   },
   managedUpdate: {
     state: () => ipcRenderer.invoke('managed-update:state'),

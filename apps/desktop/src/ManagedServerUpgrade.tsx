@@ -9,13 +9,12 @@ export type ManagedServerConfirmation = ManagedServerConnection & {
   build: number;
   sha256: string;
 };
-const bootstrap =
-  '旧服务端需首次接入：打开 CC管理中心的客户端更新页，在 Ubuntu 控制台运行一次接入命令；之后可从客户端升级。';
+const bootstrap = '旧服务端需首次接入，请联系管理员在 Ubuntu 完成接入；之后可从客户端升级。';
 const explanations: Record<ServerCheck['reason'], string> = {
   available: '',
   current: '服务端已是当前可用构建，无需升级。若连接时仍提示协议不匹配，请安装匹配的最新客户端。',
   'protocol-unavailable':
-    '没有更高且匹配本客户端协议的服务端构建。请从 CC管理中心获取最新客户端；不能降级服务端。',
+    '没有更高且匹配本客户端协议的服务端构建。请联系管理员提供配套客户端；不能降级服务端。',
   'manual-image-upgrade': '此版本涉及运行环境或数据兼容性变更，需要管理员在 Ubuntu 升级配套镜像。',
   disabled: bootstrap,
   busy: '服务端正在处理会话、终端或其他工作。请结束工作后重新检查。',
@@ -52,7 +51,6 @@ export default function ManagedServerUpgrade({
   const [candidate, setCandidate] = useState<ServerCheck['candidate']>(null);
   const [working, setWorking] = useState(false);
   const [text, setText] = useState('');
-  const [help, setHelp] = useState(false);
   const [canReconnect, setCanReconnect] = useState(true);
   const generation = useRef(0);
   const api = window.desktop!.managedServer;
@@ -60,7 +58,6 @@ export default function ManagedServerUpgrade({
     generation.current++;
     setCandidate(null);
     setText('');
-    setHelp(false);
     setCanReconnect(true);
     setWorking(false);
     activity(false);
@@ -93,7 +90,6 @@ export default function ManagedServerUpgrade({
     setCandidate(null);
     setWorking(true);
     activity(true);
-    setHelp(false);
     setText('正在验证配套服务端发布签名…');
     try {
       const result = await api.check(credentials());
@@ -102,15 +98,9 @@ export default function ManagedServerUpgrade({
       setText(
         `当前版本 ${result.current.appVersion} · Build ${result.current.build}。${explanations[result.reason]}`,
       );
-      setHelp(
-        result.reason === 'disabled' ||
-          result.reason === 'manual-image-upgrade' ||
-          result.reason === 'protocol-unavailable',
-      );
     } catch (error) {
       if (own !== generation.current) return;
       setText(message(error));
-      setHelp(true);
     } finally {
       if (own === generation.current) {
         setWorking(false);
@@ -199,23 +189,6 @@ export default function ManagedServerUpgrade({
         </>
       )}
       <div className="setting-actions">
-        {help && (
-          <button
-            className="button"
-            type="button"
-            onClick={() => {
-              void api
-                .openManager()
-                .catch(() =>
-                  setText(
-                    '无法打开 CC管理中心，请访问 https://api.ghostapi.org/cc-updates/admin/updates',
-                  ),
-                );
-            }}
-          >
-            打开 CC管理中心
-          </button>
-        )}
         {(working || candidate) && (
           <button
             className="button"

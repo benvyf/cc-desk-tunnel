@@ -77,7 +77,7 @@ test('packaged exe runs without development dependencies and reclaims bundled re
   try {
     const page = await application.firstWindow();
     page.on('pageerror', (error) => errors.push(error.message));
-    await expect(page.getByRole('heading', { name: '登录 CC SPACE', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '登录 CC Space', exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.desktop!.access.load())).toBeNull();
     expect(await page.evaluate(() => typeof window.desktop!.access.onExpired)).toBe('function');
     await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
@@ -101,9 +101,9 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     expect(settings.login).toBeUndefined();
     expect(settings.smokePreserved).toBe('keep-unrelated-settings');
     expect(await application.evaluate(({ app }) => app.isPackaged)).toBe(true);
-    expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
-    await expect(page).toHaveTitle('CC SPACE');
-    await expect(page.locator('.brand-name')).toHaveText('CC SPACE');
+    expect(await application.evaluate(({ app }) => app.getName())).toBe('CC Space');
+    await expect(page).toHaveTitle('CC Space');
+    await expect(page.locator('.brand-name')).toHaveText('CC Space');
     const images = await application.evaluate(({ app, nativeImage }) => {
       const load = process.mainModule!.require;
       const path = load('node:path');

@@ -769,6 +769,9 @@ button.chip.danger:hover:not(:disabled) {
   /* A connection failure says what happened on its first line and what to check on the next. */
   white-space: pre-line;
 }
+.installer-cleanup-file {
+  overflow-wrap: anywhere;
+}
 .login-page {
   min-height: 100dvh;
   display: grid;

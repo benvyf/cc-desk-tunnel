@@ -100,7 +100,7 @@ export default function LoginPage({
         <Brand connectionName={connectionName} />
         <section className="login-card" aria-labelledby="login-heading">
           <div className="login-title">
-            <h1 id="login-heading">连接到 CC SPACE 服务</h1>
+            <h1 id="login-heading">连接到 CC Space 服务</h1>
           </div>
           <p className="login-subtitle">连接你的工作空间，继续创作与开发。</p>
           <form

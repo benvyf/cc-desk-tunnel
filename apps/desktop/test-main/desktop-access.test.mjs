@@ -33,6 +33,73 @@ test('account replacement waits for old SSH identity cleanup while same-account 
   assert.deepEqual(changes.at(-1), ['one@example.com', 'two@example.com']);
 });
 
+test('workspace version metadata comes from main identity and upgrade refusal preserves remembered login', async () => {
+  const calls = [];
+  let saved = null,
+    expired = 0;
+  const access = createDesktopAccess({
+    read: () => saved,
+    write: (v) => {
+      saved = v;
+    },
+    storage: { isEncryptionAvailable: () => true, encryptString: (v) => Buffer.from(v) },
+    clientIdentity: () => ({ build: 25, protocol: 23 }),
+    onExpired: () => expired++,
+    request: async (url, options) => {
+      const input = options.body && JSON.parse(options.body);
+      calls.push({ url, input });
+      if (url.endsWith('/login'))
+        return Response.json({
+          email: input.email,
+          token: 'session',
+          workspaces: [{ id: 'node', name: 'workspace' }],
+        });
+      return Response.json(
+        { error: '需要升级客户端。', code: 'client_upgrade_required', requiredProtocol: 24 },
+        { status: 426 },
+      );
+    },
+  });
+  await access.login({
+    email: 'owner@example.com',
+    password: 'password',
+    remember: true,
+    client: { build: 999, protocol: 999 },
+  });
+  const previous = saved;
+  await assert.rejects(access.ticket('node'), (error) => {
+    assert.deepEqual(error.clientUpgrade, { requiredProtocol: 24 });
+    assert.equal(error.retryable, false);
+    return true;
+  });
+  assert.deepEqual(calls.at(-1).input, { nodeId: 'node', client: { build: 25, protocol: 23 } });
+  assert.equal(saved, previous);
+  assert.equal(expired, 0);
+});
+
+test('malformed upgrade notices never become a trusted client requirement', async () => {
+  for (const value of [
+    { code: 'client_upgrade_required', requiredProtocol: '24' },
+    { code: 'server_upgrade_required', requiredProtocol: 22 },
+    { code: 'client_upgrade_required', requiredProtocol: -1 },
+  ]) {
+    const access = createDesktopAccess({
+      read: () => null,
+      write: () => {},
+      storage: { isEncryptionAvailable: () => false },
+      request: async (url) =>
+        url.endsWith('/login')
+          ? Response.json({ email: 'owner@example.com', token: 'session', workspaces: [] })
+          : Response.json({ error: '请联系管理员', ...value }, { status: 426 }),
+    });
+    await access.login({ email: 'owner@example.com', password: 'password' });
+    await assert.rejects(access.ticket('node'), (error) => {
+      assert.equal(error.clientUpgrade, undefined);
+      return true;
+    });
+  }
+});
+
 test('computer switching waits for confirmation, preserves the current session on cancel and retries only on consent', async () => {
   let conflict = false;
   let consent = false;

@@ -396,7 +396,7 @@ test('the title speaks of the service, and the development mode switch is a line
   page,
 }) => {
   await desktopLogin(page);
-  await expect(page.getByRole('heading', { level: 1 })).toHaveText('连接到 CC SPACE 服务');
+  await expect(page.getByRole('heading', { level: 1 })).toHaveText('连接到 CC Space 服务');
   await expect(page.locator('.login-page .badge, .login-page .segmented')).toHaveCount(0);
   const modes = page.getByRole('group', { name: '连接方式' });
   const remote = modes.getByRole('button', { name: '远程代理', exact: true });

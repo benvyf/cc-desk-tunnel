@@ -33,7 +33,7 @@ mkdirSync(directory, { recursive: true });
 const name = 'CC Managed Update Acceptance';
 const vendor = [
   'apps/desktop/vendor',
-  'CC SPACE/resources/vendor',
+  'CC Space/resources/vendor',
   'CC Desk Tunnel/resources/vendor',
 ]
   .map((directory) => join(root, directory))
@@ -140,7 +140,7 @@ async function build(build) {
         createStartMenuShortcut: false,
         runAfterFinish: false,
         deleteAppDataOnUninstall: false,
-        artifactName: 'CC-Desk-Tunnel-Setup-${version}-x64.exe',
+        artifactName: 'CC-Space-Setup-${version}-x64.exe',
       },
     },
   });
@@ -208,7 +208,7 @@ try {
     protocol: 20,
     sourceCommit: identity.sourceCommit,
     notes: '<script>fixture must remain text</script>',
-    filename: `CC-Desk-Tunnel-Setup-${appVersion}-x64.exe`,
+    filename: `CC-Space-Setup-${appVersion}-x64.exe`,
     size: artifact.bytes.length,
     sha256: createHash('sha256').update(artifact.bytes).digest('hex'),
   };

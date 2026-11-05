@@ -155,6 +155,7 @@ export type ClientState = {
   update: ServiceUpdate | null;
   // The service refused this client for its version; it may still hand out an installer.
   mismatch: boolean;
+  clientUpgrade: { requiredProtocol: number } | null;
   // How much of the installer of its own version the service has fetched so far, from 0 to 1, while it is
   // still fetching it.
   preparing: number | null;
@@ -192,6 +193,7 @@ export class ProxyClient {
     service: null,
     update: null,
     mismatch: false,
+    clientUpgrade: null,
     preparing: null,
     model: null,
     capabilities: null,
@@ -293,6 +295,7 @@ export class ProxyClient {
       service: null,
       update: null,
       mismatch: false,
+      clientUpgrade: null,
       preparing: null,
       sessions: [],
       events: {},
@@ -415,6 +418,11 @@ export class ProxyClient {
           status: 'disconnected',
           connectionId: null,
           error: error instanceof Error ? error.message : '本机连接准备失败。',
+          clientUpgrade:
+            Number.isSafeInteger(error?.clientUpgrade?.requiredProtocol) &&
+            error.clientUpgrade.requiredProtocol > 0
+              ? { requiredProtocol: error.clientUpgrade.requiredProtocol }
+              : null,
         });
       },
     );
@@ -471,6 +479,7 @@ export class ProxyClient {
           sessions: message.sessions,
           selectedId,
           error: null,
+          clientUpgrade: null,
           adapter: message.adapter,
           release: null,
           service: message.version,
@@ -503,13 +512,17 @@ export class ProxyClient {
         }
         this.update({ error: message.message });
         if (message.code === 'unauthorized' && credentials.browser) credentials.browser();
-        if (message.code === 'version_mismatch')
+        if (message.code === 'version_mismatch') {
+          const clientIsOlder =
+            message.requiredProtocol !== undefined && message.requiredProtocol > PROTOCOL_VERSION;
           this.update({
-            mismatch: true,
+            mismatch: !clientIsOlder,
+            clientUpgrade: clientIsOlder ? { requiredProtocol: message.requiredProtocol! } : null,
             service: message.service ?? null,
             release: null,
             preparing: null,
           });
+        }
         if (
           [
             'unauthorized',
@@ -710,6 +723,7 @@ export class ProxyClient {
       connectionId: null,
       sideConversations: false,
       error: null,
+      clientUpgrade: null,
     });
   }
   private rejectPending() {

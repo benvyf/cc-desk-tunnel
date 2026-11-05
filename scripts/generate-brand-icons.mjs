@@ -49,4 +49,4 @@ try {
 } finally {
   await browser.close();
 }
-console.log('CC SPACE application, tray, template and favicon PNGs generated from supplied SVGs.');
+console.log('CC Space application, tray, template and favicon PNGs generated from supplied SVGs.');

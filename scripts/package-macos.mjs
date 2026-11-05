@@ -26,7 +26,7 @@ const architecture = args.includes('--arm64')
 const unpacked = args.includes('--dir');
 const app = join(root, `.local/macos-package/${architecture}/app`);
 const output = join(root, 'artifacts/macos');
-const bundle = join(output, architecture === 'arm64' ? 'mac-arm64' : 'mac', 'CC SPACE.app');
+const bundle = join(output, architecture === 'arm64' ? 'mac-arm64' : 'mac', 'CC Space.app');
 await stageDesktop(root, app, {
   description: 'macOS client for a native remote Claude Code session',
   ...posixService,
@@ -46,7 +46,7 @@ const results = await electronBuild({
   publish: 'never',
   config: {
     appId: 'io.github.ccdesktunnel.desktop',
-    productName: 'CC SPACE',
+    productName: 'CC Space',
     electronVersion: electron.version,
     // The Electron installed here is of this machine's architecture; the other one is downloaded.
     ...(architecture === process.arch &&
@@ -62,7 +62,7 @@ const results = await electronBuild({
       category: 'public.app-category.developer-tools',
       minimumSystemVersion: '13.0',
       icon,
-      artifactName: 'CC-Desk-Tunnel-${version}-mac-${arch}.${ext}',
+      artifactName: 'CC-Space-${version}-mac-${arch}.${ext}',
       // Signed for this machine only ("ad hoc"), with no certificate. An application with no signature at
       // all is reported as damaged on Apple silicon once it has been downloaded; one signed this way is
       // reported as from an unidentified developer, which the user can allow.

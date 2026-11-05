@@ -59,7 +59,7 @@ export default function ManagedUpdateDialog({
           </p>
         )}
         {incompatible ? (
-          <p role="status">此版本涉及协议变更，请在 CC 管理中心安排客户端与服务端配套升级。</p>
+          <p role="status">此版本涉及协议变更，请联系管理员安排客户端与服务端配套升级。</p>
         ) : phase !== 'error' ? (
           <p role="status">
             {phase === 'ready'

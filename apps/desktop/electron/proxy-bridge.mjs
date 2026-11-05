@@ -344,7 +344,7 @@ export async function openProxyBridge(
       throw new Error('这个系统上的客户端不能在应用内升级，请到发布页下载新版本。');
     if (!release || !token) throw new Error('服务端没有提供客户端安装包。');
     const expected = release;
-    const target = join(directory, `CC-Desk-Tunnel-Setup-${expected.version}-x64.exe`);
+    const target = join(directory, `CC-Space-Setup-${expected.version}-x64.exe`);
     const response = await authorizedGet(
       address,
       config,

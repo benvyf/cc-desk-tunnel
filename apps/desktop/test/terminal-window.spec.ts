@@ -167,7 +167,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       .toBeGreaterThan(0);
     await application.evaluate(({ BrowserWindow }) => {
       const child = BrowserWindow.getAllWindows().find(
-        (w) => w.getTitle() === 'CC SPACE · 原生终端',
+        (w) => w.getTitle() === 'CC Space · 原生终端',
       )!;
       child.setBounds({ x: 100, y: 100, width: 480, height: 300 });
       child.webContents.setZoomFactor(1.25);
@@ -237,7 +237,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       await application.evaluate(
         ({ BrowserWindow }, zoom) =>
           BrowserWindow.getAllWindows()
-            .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+            .find((w) => w.getTitle() === 'CC Space · 原生终端')!
             .webContents.setZoomFactor(zoom),
         zoom,
       );
@@ -291,7 +291,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
     }
     await application.evaluate(({ BrowserWindow }) => {
       const child = BrowserWindow.getAllWindows().find(
-        (w) => w.getTitle() === 'CC SPACE · 原生终端',
+        (w) => w.getTitle() === 'CC Space · 原生终端',
       )!;
       child.webContents.setZoomFactor(1);
       child.setBounds({ x: 100, y: 100, width: 1000, height: 680 });
@@ -305,7 +305,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
     );
     const bounds = await application.evaluate(({ BrowserWindow }) => {
       const child = BrowserWindow.getAllWindows().find(
-        (w) => w.getTitle() === 'CC SPACE · 原生终端',
+        (w) => w.getTitle() === 'CC Space · 原生终端',
       )!;
       child.setBounds({ x: 120, y: 100, width: 800, height: 500 });
       return {
@@ -338,14 +338,14 @@ test('detached terminal has native window controls, exact input, resize, focus a
     );
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
-        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .find((w) => w.getTitle() === 'CC Space · 原生终端')!
         .maximize(),
     );
     await expect
       .poll(() =>
         application.evaluate(({ BrowserWindow }) =>
           BrowserWindow.getAllWindows()
-            .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+            .find((w) => w.getTitle() === 'CC Space · 原生终端')!
             .isMaximized(),
         ),
       )
@@ -362,7 +362,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       .toBe(true);
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
-        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .find((w) => w.getTitle() === 'CC Space · 原生终端')!
         .unmaximize(),
     );
     await expect
@@ -376,12 +376,12 @@ test('detached terminal has native window controls, exact input, resize, focus a
       .toEqual(smallSize);
     await application.evaluate(({ BrowserWindow }) => {
       BrowserWindow.getAllWindows()
-        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .find((w) => w.getTitle() === 'CC Space · 原生终端')!
         .minimize();
     });
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
-        .find((w) => w.getTitle() !== 'CC SPACE · 原生终端')!
+        .find((w) => w.getTitle() !== 'CC Space · 原生终端')!
         .setSize(500, 800),
     );
     await expect(owner.getByRole('button', { name: '终端', exact: true })).toBeVisible();
@@ -390,7 +390,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       .poll(() =>
         application.evaluate(({ BrowserWindow }) =>
           BrowserWindow.getAllWindows()
-            .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+            .find((w) => w.getTitle() === 'CC Space · 原生终端')!
             .isMinimized(),
         ),
       )
@@ -425,7 +425,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
     ).toBe(true);
     await application.evaluate(({ BrowserWindow }) => {
       for (const window of BrowserWindow.getAllWindows()) {
-        if (window.getTitle() === 'CC SPACE · 原生终端') window.minimize();
+        if (window.getTitle() === 'CC Space · 原生终端') window.minimize();
         else window.hide();
       }
     });
@@ -469,7 +469,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
     await owner.evaluate(() =>
       (window as any).terminalTest.emit({
         type: 'terminal.data',
-        data: '\x1b[1;33mCC SPACE — terminal window test\x1b[0m\r\n\r\nArrow keys, Enter, resize and window restore verified.\r\n',
+        data: '\x1b[1;33mCC Space — terminal window test\x1b[0m\r\n\r\nArrow keys, Enter, resize and window restore verified.\r\n',
         bytes: 121,
       }),
     );
@@ -508,7 +508,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
     if (process.platform === 'win32') {
       const handle = await application.evaluate(({ BrowserWindow }) =>
         BrowserWindow.getAllWindows()
-          .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+          .find((w) => w.getTitle() === 'CC Space · 原生终端')!
           .getNativeWindowHandle()
           .readBigUInt64LE(0)
           .toString(),
@@ -557,7 +557,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     if (process.platform !== 'win32')
       await application.evaluate(({ BrowserWindow }) => {
         BrowserWindow.getAllWindows()
-          .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+          .find((w) => w.getTitle() === 'CC Space · 原生终端')!
           .close();
       });
     await expect(child.getByRole('dialog')).toBeVisible();
@@ -565,7 +565,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     await expect.poll(() => application.windows().length).toBe(2);
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
-        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .find((w) => w.getTitle() === 'CC Space · 原生终端')!
         .close(),
     );
     await owner.evaluate(() => (window as any).terminalTest.failCloseSession('fixture-1'));
@@ -576,7 +576,7 @@ $graphics.Dispose(); $bitmap.Dispose()
     await owner.evaluate(() => (window as any).terminalTest.failCloseSession(null));
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
-        .find((w) => w.getTitle() === 'CC SPACE · 原生终端')!
+        .find((w) => w.getTitle() === 'CC Space · 原生终端')!
         .close(),
     );
     await child.getByRole('button', { name: '结束终端', exact: true }).click();

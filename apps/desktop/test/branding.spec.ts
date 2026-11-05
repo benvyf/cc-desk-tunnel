@@ -13,13 +13,13 @@ async function expectBrandCentered(brand: Locator) {
   expect(offset, 'Logo and product name must share their vertical center').toBeLessThan(0.5);
 }
 
-test('CC SPACE login and sidebar branding adapt to themes, narrow windows and interface font size', async ({
+test('CC Space login and sidebar branding adapt to themes, narrow windows and interface font size', async ({
   page,
 }) => {
   await page.goto('/');
-  await expect(page).toHaveTitle('CC SPACE');
+  await expect(page).toHaveTitle('CC Space');
   const loginBrand = page.locator('.login-content > .brand');
-  await expect(loginBrand).toHaveText('CC SPACE');
+  await expect(loginBrand).toHaveText('CC Space');
   await expect(loginBrand.locator('.brand-mark')).toHaveCSS('height', '44px');
   await expectBrandCentered(loginBrand);
   for (const theme of ['light', 'dark'] as const) {
@@ -36,7 +36,7 @@ test('CC SPACE login and sidebar branding adapt to themes, narrow windows and in
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await login(page);
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(page.locator('.sidebar-brand .brand-name')).toHaveText('CC SPACE');
+  await expect(page.locator('.sidebar-brand .brand-name')).toHaveText('CC Space');
   // The brand is no longer the heaviest thing in the side column: a 22px mark beside a 15px name.
   await expect(page.locator('.sidebar-brand .brand-mark')).toHaveCSS('height', '22px');
   await expect(page.locator('.shell')).not.toHaveClass(/side-closed/);
@@ -85,7 +85,7 @@ test('CC SPACE login and sidebar branding adapt to themes, narrow windows and in
   }
 });
 
-test('Electron uses CC SPACE while retaining an explicit profile and recognizing old workspace roots', async () => {
+test('Electron uses CC Space while retaining an explicit profile and recognizing old workspace roots', async () => {
   test.skip(process.platform !== 'win32');
   const directory = mkdtempSync(resolve('.local/cc-space-brand-'));
   const profile = join(directory, 'profile');
@@ -103,21 +103,19 @@ test('Electron uses CC SPACE while retaining an explicit profile and recognizing
   });
   try {
     const page = await application.firstWindow();
-    await expect(
-      page.getByRole('heading', { name: '连接到 CC SPACE 服务', exact: true }),
-    ).toBeVisible();
-    expect(await application.evaluate(({ app }) => app.getName())).toBe('CC SPACE');
+    await expect(page.getByRole('heading', { name: '登录 CC Space', exact: true })).toBeVisible();
+    expect(await application.evaluate(({ app }) => app.getName())).toBe('CC Space');
     expect(await application.evaluate(({ app }) => app.getPath('userData'))).toBe(profile);
     expect(await page.evaluate(() => window.desktop!.windowSettings())).toEqual({
       closeToTray: false,
     });
-    expect(await page.title()).toBe('CC SPACE');
+    expect(await page.title()).toBe('CC Space');
     await application.evaluate(
       ({ app }, directory) => app.setPath('documents', directory),
       documents,
     );
     const roots = await page.evaluate(() => window.desktop!.workspaceRoots());
-    expect(roots[0]).toBe(join(documents, 'CC SPACE'));
+    expect(roots[0]).toBe(join(documents, 'CC Space'));
     expect(roots).toContain(join(documents, 'CC Desk Tunnel'));
     const oldSession = join(documents, 'CC Desk Tunnel', '2026-10-24', '120000');
     mkdirSync(oldSession, { recursive: true });
@@ -130,7 +128,7 @@ test('Electron uses CC SPACE while retaining an explicit profile and recognizing
     }, custom);
     expect((await page.evaluate(() => window.desktop!.chooseWorkspace(false)))[0]).toBe(custom);
     const reset = await page.evaluate(() => window.desktop!.chooseWorkspace(true));
-    expect(reset[0]).toBe(join(documents, 'CC SPACE'));
+    expect(reset[0]).toBe(join(documents, 'CC Space'));
     expect(reset).toContain(custom);
     expect(reset).toContain(join(documents, 'CC Desk Tunnel'));
   } finally {
@@ -164,6 +162,18 @@ test('a full-length connection label leaves the brand and sidebar actions readab
   });
   try {
     const page = await application.firstWindow();
+    // The production sign-in is email-only; this development-only saved profile exercises the legacy form.
+    await page.evaluate(() =>
+      window.desktop!.saveLogin({
+        url: 'wss://fixture.example/ws',
+        token: 'fixture-token-with-at-least-24-characters',
+        fingerprint: '',
+        mode: 'remote',
+        remember: true,
+        autoLogin: false,
+      }),
+    );
+    await page.reload();
     await application.evaluate(({ BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0];
       window.setMinimumSize(320, 560);
@@ -231,7 +241,7 @@ test('a full-length connection label leaves the brand and sidebar actions readab
       .getByRole('navigation', { name: '设置分类' })
       .getByRole('button', { name: '关于与更新', exact: true })
       .click();
-    await expect(page.locator('.about-brand .brand-name')).toHaveText('CC SPACE');
+    await expect(page.locator('.about-brand .brand-name')).toHaveText('CC Space');
     await expect(page.locator('.about-brand .brand-mark')).toHaveCSS('height', '44px');
     await expectBrandCentered(page.locator('.about-brand'));
     await page.screenshot({

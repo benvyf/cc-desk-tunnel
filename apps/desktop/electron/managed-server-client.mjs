@@ -111,9 +111,7 @@ export function createManagedServerClient({
       if (config.nodeId && error?.message) throw error;
       // Transport errors may include URLs or HTTP details; never relay arbitrary error text from a peer.
       if (error?.status === 404)
-        throw new Error(
-          '旧服务端尚未启用配套管理，需首次接入：请打开 CC管理中心的客户端更新页，在 Ubuntu 控制台运行一次接入命令。',
-        );
+        throw new Error('旧服务端尚未启用配套管理，请联系管理员在 Ubuntu 完成首次接入。');
       if (error?.status === 409) throw new Error('服务繁忙或发布目标已变化，请重新检查后确认。');
       throw new Error('服务管理网络请求失败；服务重启期间可稍候查询状态。');
     }

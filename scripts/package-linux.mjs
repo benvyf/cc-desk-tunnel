@@ -28,7 +28,7 @@ const results = await electronBuild({
   publish: 'never',
   config: {
     appId: 'io.github.ccdesktunnel.desktop',
-    productName: 'CC SPACE',
+    productName: 'CC Space',
     electronVersion: electron.version,
     electronDist: join(root, 'node_modules/electron/dist'),
     directories: { app, output },
@@ -42,8 +42,8 @@ const results = await electronBuild({
       syncDesktopName: true,
       category: 'Development',
       icon: join(root, 'apps/desktop/electron/icon.png'),
-      maintainer: 'CC SPACE contributors <cc-desk-tunnel@users.noreply.github.com>',
-      artifactName: 'CC-Desk-Tunnel-${version}-linux-${arch}.${ext}',
+      maintainer: 'CC Space contributors <cc-desk-tunnel@users.noreply.github.com>',
+      artifactName: 'CC-Space-${version}-linux-${arch}.${ext}',
     },
     deb: {
       // What Electron needs, as electron-builder lists it by default, and the SFTP server, which comes

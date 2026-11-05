@@ -1,6 +1,6 @@
 {
   "product": "cc-desk-tunnel-managed",
-  "build": 25,
+  "build": 28,
   "channel": "pilot",
   "origin": "https://api.ghostapi.org",
   "trustedKeys": {

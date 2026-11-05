@@ -190,13 +190,14 @@ test('settings checks a signed target then requires explicit installation confir
   await expect(page.getByText(/升级已完成.*手动连接/)).toBeVisible();
 });
 
-test('first Ubuntu bootstrap instruction links fixed CC management center for disabled service', async ({
+test('first Ubuntu bootstrap refers users to their administrator without an admin launcher', async ({
   page,
 }) => {
   await setup(page, 'disabled');
   await openMaintenance(page);
-  await expect(page.getByText(/首次.*Ubuntu.*接入命令/)).toBeVisible();
-  await expect(page.getByRole('button', { name: '打开 CC管理中心' })).toBeVisible();
+  await expect(page.getByRole('status')).toContainText('请联系管理员');
+  await expect(page.getByRole('button', { name: /管理中心/ })).toHaveCount(0);
+  await expect(page.getByRole('dialog')).not.toContainText('/cc-updates/admin');
   await expect(page.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
 });
 
@@ -210,9 +211,10 @@ test('legacy management failure shows concise text and spaced footer buttons', a
   await expect(dialog.getByRole('status')).not.toContainText('Error invoking remote method');
   await expect(dialog.getByRole('button', { name: /确认升级到/ })).toHaveCount(0);
   const reconnect = dialog.getByRole('button', { name: '重新连接', exact: true });
-  const manager = dialog.getByRole('button', { name: '打开 CC管理中心', exact: true });
+  await expect(dialog.getByRole('button', { name: /管理中心/ })).toHaveCount(0);
+  const check = dialog.getByRole('button', { name: '检查服务端更新', exact: true });
   const a = (await reconnect.boundingBox())!;
-  const b = (await manager.boundingBox())!;
+  const b = (await check.boundingBox())!;
   expect(Math.abs(a.y - b.y)).toBeLessThan(1);
   // The main action (重新连接) last, at the right (spec §5.5), the buttons 8px apart.
   await expect(dialog.locator('.setting-actions button').last()).toHaveText('重新连接');
@@ -231,12 +233,31 @@ test('legacy management failure shows concise text and spaced footer buttons', a
   await dialog.screenshot({ path: testInfo.outputPath('server-update-missing-credential.png') });
   await page.setViewportSize({ width: 320, height: 560 });
   expect(await dialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
-  await manager.scrollIntoViewIfNeeded();
-  await expect(manager).toBeInViewport();
+  await reconnect.scrollIntoViewIfNeeded();
+  await expect(reconnect).toBeInViewport();
   expect(await page.evaluate(() => (window as any).upgradeFixture())).toMatchObject({
     installed: false,
   });
 });
+
+for (const reason of ['manual-image-upgrade', 'protocol-unavailable']) {
+  test(`${reason} explains administrator action without exposing the admin center`, async ({
+    page,
+  }, testInfo) => {
+    await setup(page, reason);
+    await openMaintenance(page);
+    const dialog = page.getByRole('dialog', { name: '配套服务端更新' });
+    await expect(dialog.getByRole('status')).toContainText('管理员');
+    await expect(dialog).not.toContainText('CC管理中心');
+    await expect(dialog).not.toContainText('/cc-updates/admin');
+    await expect(dialog.getByRole('button', { name: /管理中心/ })).toHaveCount(0);
+    await expect(dialog.locator('.setting-actions button').last()).toHaveText('检查服务端更新');
+    await page.screenshot({
+      path: testInfo.outputPath(`server-update-${reason}.png`),
+      animations: 'disabled',
+    });
+  });
+}
 
 test('closing maintenance discards confirmation and reconnecting can recheck a rollback target', async ({
   page,

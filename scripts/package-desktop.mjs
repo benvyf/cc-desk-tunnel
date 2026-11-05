@@ -164,7 +164,7 @@ export async function stageDesktop(
         // The desktop workspace manifest is the single source of the client version.
         version: JSON.parse(readFileSync(join(root, 'apps/desktop/package.json'), 'utf8')).version,
         description,
-        author: 'CC SPACE contributors',
+        author: 'CC Space contributors',
         private: true,
         main: 'electron/main.cjs',
         type: 'module',

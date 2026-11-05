@@ -554,7 +554,7 @@ function Message({
     >
       {!user && !native && (
         <div className="message-label">
-          CC SPACE
+          CC Space
           <span>模拟</span>
           {stamp}
           <CopyButton text={item.text} />

@@ -36,7 +36,7 @@ for (const [packaged, override] of [
     assert.equal(configureBrand(app, 'win32'), expected);
     assert.equal(paths.userData, expected);
     assert.equal(paths.sessionData, expected);
-    assert.equal(app.name, 'CC SPACE');
+    assert.equal(app.name, 'CC Space');
     const { appId } = require('../brand.json');
     assert.equal(appId, 'io.github.ccdesktunnel.desktop');
   });
@@ -44,8 +44,8 @@ for (const [packaged, override] of [
 
 for (const platform of ['linux', 'darwin']) {
   for (const [packaged, originalName, credentialName, override] of [
-    [true, 'CC SPACE', 'CC Desk Tunnel', false],
-    [true, 'CC SPACE', 'CC Desk Tunnel', true],
+    [true, 'CC Space', 'CC Desk Tunnel', false],
+    [true, 'CC Space', 'CC Desk Tunnel', true],
     [true, 'CC Managed Update Acceptance', 'CC Managed Update Acceptance', true],
     [false, '@cc-desk-tunnel/desktop', '@cc-desk-tunnel/desktop', false],
   ]) {
@@ -71,7 +71,7 @@ for (const platform of ['linux', 'darwin']) {
       // Electron captures the OS crypt/keychain identity before emitting ready.
       assert.equal(app.name, credentialName);
       app.emit('ready');
-      assert.equal(app.name, 'CC SPACE');
+      assert.equal(app.name, 'CC Space');
       assert.equal(readFileSync(join(legacy, 'settings.json'), 'utf8'), '{"remember":true}');
     });
   }

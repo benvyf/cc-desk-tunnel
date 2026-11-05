@@ -277,7 +277,7 @@ export default function TerminalWindow({
       }
       popupRef.current = popup;
       popup.opener = null;
-      popup.document.title = 'CC SPACE · 原生终端';
+      popup.document.title = 'CC Space · 原生终端';
       popup.document.documentElement.dataset.theme =
         document.documentElement.dataset.theme ?? 'dark';
       popup.document.documentElement.style.cssText = document.documentElement.style.cssText;

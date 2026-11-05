@@ -59,6 +59,7 @@ import type { Scenario } from './Composer.tsx';
 import Conversation from './Conversation.tsx';
 import LoginPage from './LoginPage.tsx';
 import EmailLoginPage from './EmailLoginPage.tsx';
+import ClientUpgradeDialog from './ClientUpgradeDialog.tsx';
 import ManagedServerUpgrade from './ManagedServerUpgrade.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { exportSession } from './exportSession.ts';
@@ -494,6 +495,16 @@ export function App({
       )}
     </Presence>
   );
+  const clientUpgradeDialog = (
+    <Presence kind="dialog">
+      {state.clientUpgrade && (
+        <ClientUpgradeDialog
+          requiredProtocol={state.clientUpgrade.requiredProtocol}
+          onClose={() => client.update({ clientUpgrade: null, error: null })}
+        />
+      )}
+    </Presence>
+  );
   useEffect(() => {
     const report = () => {
       void window.desktop?.managedUpdate?.activity({ blocked: updateBlocked }).catch(() => {});
@@ -534,7 +545,7 @@ export function App({
     (lastStatus.status === 'cancelled' || lastStatus.status === 'failed');
   const signedOut = state.account?.loggedIn === false;
   const actionError = error instanceof RequestInterruptedError ? error.describe(connected) : error;
-  const currentError = actionError ?? state.error;
+  const currentError = state.clientUpgrade ? null : (actionError ?? state.error);
   // Offered when the service holds a newer installer than the running client.
   const upgrade =
     selfUpdating && version && state.release && isNewer(state.release, version)
@@ -865,7 +876,10 @@ export function App({
       client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
         const connection = await window.desktop!.access.ticket(nodeId);
         if ('error' in connection)
-          throw Object.assign(new Error(connection.error), { retryable: connection.retryable });
+          throw Object.assign(new Error(connection.error), {
+            retryable: connection.retryable,
+            clientUpgrade: connection.clientUpgrade,
+          });
         const bridge = await window.desktop!.connectProxy({
           nodeId,
           url: connection.url,
@@ -1869,12 +1883,14 @@ export function App({
         {notesDialog}
         {managedUpdateDialog}
         {loginUpdateButton}
+        {clientUpgradeDialog}
       </div>
     ) : (
       <>
         {notesDialog}
         {managedUpdateDialog}
         {loginUpdateButton}
+        {clientUpgradeDialog}
         {serverUpgradeOpen && window.desktop?.managedServer && (
           <Modal
             title="配套服务端更新"
@@ -2631,6 +2647,7 @@ export function App({
       </Presence>
       {notesDialog}
       {managedUpdateDialog}
+      {clientUpgradeDialog}
     </div>
   );
 }

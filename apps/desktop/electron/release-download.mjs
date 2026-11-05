@@ -24,7 +24,7 @@ export async function downloadRelease(
 ) {
   if (!page) throw new Error('定制版更新由管理员统一部署，请联系管理员。');
   if (!/^\d+\.\d+\.\d+$/.test(String(version))) throw new Error('版本号不正确。');
-  const name = `CC-Desk-Tunnel-Setup-${version}-x64.exe`;
+  const name = `CC-Space-Setup-${version}-x64.exe`;
   let manifest;
   try {
     const response = await fetch(`${page}/v${version}/release.json`, {

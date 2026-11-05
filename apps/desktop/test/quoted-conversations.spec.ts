@@ -413,7 +413,9 @@ test('main quote is an atomic editable reference and sends only the explicit que
     quotes: [{ sessionId: f.parent.id, text: f.answer }],
   });
   await expect(main.locator('.message.user').last()).toContainText('解释引用中的这句话');
-  await expect(main.locator('.message.user').last()).not.toContainText('CC SPACE 引用消息');
+  await expect(main.locator('.message.user').last()).not.toContainText(
+    /CC (?:SPACE|Space) 引用消息/,
+  );
 });
 
 test('selected quote opens an independent side conversation with explicit send and isolated model settings', async ({

@@ -27,7 +27,7 @@ function installTerminalWindow(owner, Menu) {
         height: 680,
         minWidth: 480,
         minHeight: 300,
-        title: 'CC SPACE · 原生终端',
+        title: 'CC Space · 原生终端',
         backgroundColor: '#0b0b0a',
         autoHideMenuBar: true,
         frame: nativeControls,

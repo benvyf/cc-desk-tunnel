@@ -184,8 +184,12 @@ declare global {
           nodeId: string,
         ) => Promise<
           | { url: string; fingerprint: string; token: string }
-          | { error: string; retryable: boolean }
+          | { error: string; retryable: boolean; clientUpgrade?: { requiredProtocol: number } }
         >;
+        upgradeInfo: (
+          requiredProtocol: number,
+        ) => Promise<{ build: number; appVersion: string } | null>;
+        openUpgrade: (requiredProtocol: number) => Promise<void>;
         logout: () => Promise<void>;
         onExpired: (callback: (message: string) => void) => () => void;
       };
@@ -212,6 +216,11 @@ declare global {
       // `all` also closes the windows of the other connections.
       quit: (all?: boolean) => Promise<void>;
       version: () => Promise<string>;
+      installerCleanup?: {
+        inspect: () => Promise<import('./InstallerCleanupDialog.tsx').InstallerCleanupInfo | null>;
+        keep: () => Promise<void>;
+        remove: () => Promise<void>;
+      };
       managedServer: {
         check: (
           connection: import('./ManagedServerUpgrade.tsx').ManagedServerConnection,
@@ -223,7 +232,6 @@ declare global {
           connection: import('./ManagedServerUpgrade.tsx').ManagedServerConnection,
         ) => Promise<import('../../server/src/managed-server-http.ts').ServerStatus>;
         cancel: () => Promise<void>;
-        openManager: () => Promise<void>;
       };
       managedUpdate: {
         state: () => Promise<import('./managed-update.ts').ManagedUpdateState>;

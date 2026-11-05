@@ -1,7 +1,7 @@
 // Complete local PDF pages without JavaScript, URLs or external assets.
 // The default remains the compact one-page document used by existing callers.
 export function previewPdf(
-  text = 'CC SPACE PDF preview',
+  text = 'CC Space PDF preview',
   options: {
     pages?: number;
     width?: number;

@@ -5,7 +5,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 const exe =
-  process.env.CC_TERMINAL_PACKAGE || resolve('artifacts/windows/win-unpacked/CC SPACE.exe');
+  process.env.CC_TERMINAL_PACKAGE || resolve('artifacts/windows/win-unpacked/CC Space.exe');
 const profile = mkdtempSync(join(tmpdir(), 'cc-window-review-'));
 const app = await electron.launch({
   executablePath: exe,
@@ -17,7 +17,7 @@ try {
   await owner.waitForLoadState();
   await owner.evaluate(() => {
     const w = window.open('about:blank', 'cc-native-terminal', 'popup');
-    w.document.title = 'CC SPACE · 原生终端';
+    w.document.title = 'CC Space · 原生终端';
   });
   for (let i = 0; i < 100 && app.windows().length !== 2; i++)
     await new Promise((r) => setTimeout(r, 30));
@@ -25,7 +25,7 @@ try {
   const ownerVisible = await app.evaluate(({ BrowserWindow, app }) => {
     app.emit('activate');
     return BrowserWindow.getAllWindows()
-      .find((w) => w.getTitle() !== 'CC SPACE · 原生终端')
+      .find((w) => w.getTitle() !== 'CC Space · 原生终端')
       .isVisible();
   });
   assert.equal(ownerVisible, true, 'Tray/activate must show primary window, not the terminal');

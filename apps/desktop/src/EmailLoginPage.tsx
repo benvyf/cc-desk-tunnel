@@ -52,7 +52,7 @@ export default function EmailLoginPage({
           aria-busy={connecting}
         >
           <div className="email-login-heading">
-            <h1 id="email-login-heading">{workspaces ? '选择工作空间' : '登录 CC SPACE'}</h1>
+            <h1 id="email-login-heading">{workspaces ? '选择工作空间' : '登录 CC Space'}</h1>
             {workspaces && <p>{form.email}</p>}
           </div>
           {workspaces ? (

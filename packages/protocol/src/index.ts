@@ -964,6 +964,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     type: z.literal('connection.error'),
     code: z.string(),
     message: z.string(),
+    requiredProtocol: z.number().int().positive().optional(),
     sessionId: id.optional(),
     terminalId: id.optional(),
     service: versionSchema.optional(),

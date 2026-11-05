@@ -37,6 +37,8 @@ const {
 const { copyFile, mkdtemp, readFile, stat, writeFile } = require('node:fs/promises');
 const { gitBranch } = require('./git-branch.cjs');
 const fileLinks = require('./file-links.cjs');
+const { openClientBrowser } = require('./client-browser.cjs');
+const openBrowser = (target) => openClientBrowser(target, (url) => shell.openExternal(url));
 const { readTerminalText } = require('./terminal-text.cjs');
 const { clearPastedPictures } = require('./pasted-images.cjs');
 const { asOnDisk } = require('./disk-path.cjs');
@@ -410,14 +412,14 @@ handle('external:open', async (event, target) => {
     !/(^|\.)(claude\.com|claude\.ai|anthropic\.com)$|^github\.com$/.test(url.hostname)
   )
     throw new Error('Unexpected link');
-  await shell.openExternal(url.toString());
+  await openBrowser(url.toString());
 });
 // Links in replies, which the user clicked. A web address goes to the browser. A file is opened, shown in its
 // folder or given to a code editor at its line, as file-links.cjs allows; what is said back is for the user.
 handle('link:open', async (_event, target) => {
   const url = new URL(String(target));
   if (!['http:', 'https:', 'mailto:'].includes(url.protocol)) throw new Error('Unexpected link');
-  await shell.openExternal(url.href);
+  await openBrowser(url.href);
 });
 // The installed editors, the one chosen last from a link's menu first. Asking the system blocks (on Linux it runs
 // xdg-mime for each), so the answer is kept a minute.
@@ -464,7 +466,7 @@ handle('path:act', async (event, action, target, options) => {
     return failure ? `没能打开：${failure}` : '';
   };
   const edit = async (chosen) => {
-    await shell.openExternal(fileLinks.editorUrl(chosen.scheme, file, ...position));
+    await openBrowser(fileLinks.editorUrl(chosen.scheme, file, ...position));
     return '';
   };
   if (action === 'open') {
@@ -524,7 +526,7 @@ handle('web:open', async (_event, target) => {
     bridge?.webUrl() !== url.href
   )
     throw new Error('Unexpected Web address');
-  await shell.openExternal(url.href);
+  await openBrowser(url.href);
 });
 // Sessions without a project still need a working directory on this computer; they get one under Documents, grouped by
 // day, unless the user chose another folder. Folders used before are remembered: their sessions are still
@@ -681,6 +683,26 @@ const managedClient = managedUpdates.createManagedRuntime({
   },
   quit: () => app.quit(),
 });
+let managedClientReady = Promise.resolve();
+const { createInstallerCleanup, registerInstallerCleanup } = require('./installer-cleanup.cjs');
+const cleanupStatePath = path.join(
+  base,
+  `installer-cleanup-${require('./managed-identity.cjs').installationId(process.execPath)}.json`,
+);
+registerInstallerCleanup(
+  handle,
+  createInstallerCleanup({
+    enabled: app.isPackaged && process.platform === 'win32' && connectionId === '',
+    markerPath: path.join(process.resourcesPath, 'cc-space-install.ini'),
+    installDirectory: path.dirname(process.execPath),
+    version: app.getVersion(),
+    read: () => readSettings(cleanupStatePath),
+    write: (value) => replaceFile(cleanupStatePath, JSON.stringify(value)),
+    trash: (target) => shell.trashItem(target),
+    lock: (action) => managedClient.withUpdateLock(action),
+    ready: () => managedClientReady,
+  }),
+);
 managedUpdates.registerClientUpdates(
   (channel, listener) =>
     handle(channel, (...args) => {
@@ -723,7 +745,6 @@ require('./managed-server-ipc.cjs').registerManagedServerUpdates(
     });
     return serverClientLoading;
   },
-  (url) => shell.openExternal(url),
 );
 // Installed clients only use the management center. Drop legacy connection credentials in this profile,
 // preserving the email session, device identity, drafts and all unrelated settings.
@@ -735,6 +756,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   write: (desktopAccess) => writeSettings({ desktopAccess }),
   storage: safeStorage,
   deviceId: () => readComputer().deviceId ?? writeComputer({ deviceId: randomUUID() }).deviceId,
+  clientIdentity: () => managedClient.identity(),
   confirmSwitch: async () => {
     const { response } = await dialog.showMessageBox(primaryWindow, {
       type: 'question',
@@ -776,8 +798,21 @@ handle('access:ticket', async (_event, nodeId) => {
     return await desktopAccess.ticket(nodeId);
   } catch (error) {
     // Electron does not preserve custom Error properties across IPC.
-    return { error: error.message, retryable: error.retryable === true };
+    return {
+      error: error.message,
+      retryable: error.retryable === true,
+      ...(error.clientUpgrade ? { clientUpgrade: error.clientUpgrade } : {}),
+    };
   }
+});
+handle('access:upgrade-info', async (_event, requiredProtocol) => {
+  const release = await managedClient.clientDownload(requiredProtocol);
+  return release ? { build: release.build, appVersion: release.appVersion } : null;
+});
+handle('access:open-upgrade', async (_event, requiredProtocol) => {
+  const release = await managedClient.clientDownload(requiredProtocol);
+  if (!release) throw new Error('配套客户端尚未发布，请联系管理员。');
+  await openBrowser(release.url);
 });
 handle('access:logout', async () => {
   serverClient?.cancel();
@@ -1084,7 +1119,7 @@ handle('ssh:identity-file', async (event) => {
 if (process.platform === 'win32') app.setAppUserModelId(app.isPackaged ? appId : process.execPath);
 app.whenReady().then(() => {
   if (!ownsInstance) return;
-  void managedClient.initialize();
+  managedClientReady = managedClient.initialize();
   log(`Client ${app.getVersion()} started${connectionId ? ` as connection ${connectionId}` : ''}.`);
   void clearPastedPictures(pastedDirectory(), readSettings(draftsPath()));
   connections.mark(base, connectionId, true);

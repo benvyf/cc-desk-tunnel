@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import WebGate from './WebGate.tsx';
 import { App } from './App.tsx';
+import InstallerCleanupDialog from './InstallerCleanupDialog.tsx';
 import { getPrefs, onPrefs } from './prefs.ts';
 import './style.css';
 
@@ -26,5 +27,6 @@ onPrefs(showAppearance);
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {!window.desktop && !import.meta.env.DEV ? <WebGate /> : <App />}
+    {window.desktop && <InstallerCleanupDialog />}
   </React.StrictMode>,
 );

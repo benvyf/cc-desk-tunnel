@@ -319,7 +319,7 @@ test('409 and 404 responses cannot authorize installation and never reflect peer
   }
 });
 
-test('dedicated IPC rejects arbitrary argument lists and fixes the manager URL', async () => {
+test('dedicated IPC rejects arbitrary arguments and exposes no administration launcher', async () => {
   const { registerManagedServerUpdates } = createRequire(import.meta.url)(
     '../electron/managed-server-ipc.cjs',
   );
@@ -343,12 +343,10 @@ test('dedicated IPC rejects arbitrary argument lists and fixes the manager URL',
       'managed-server:install',
       'managed-server:status',
       'managed-server:cancel',
-      'managed-server:manager',
     ],
   );
   await assert.rejects(handlers.get('managed-server:check')({}, config, '/steal'));
-  assert.throws(() => handlers.get('managed-server:manager')({}, 'https://attacker.invalid'));
+  assert.equal(handlers.has('managed-server:manager'), false);
   await handlers.get('managed-server:check')({}, config);
-  handlers.get('managed-server:manager')({});
-  assert.deepEqual(calls, [config, 'https://api.ghostapi.org/cc-updates/admin/updates']);
+  assert.deepEqual(calls, [config]);
 });

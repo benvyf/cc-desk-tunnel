@@ -745,7 +745,7 @@ test(
       await page.getByRole('tab', { name: 'index.html', exact: true }).click();
       await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
       await page.reload();
-      await expect(page.getByRole('heading', { name: '登录 CC SPACE', exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: '登录 CC Space', exact: true })).toBeVisible();
       await expect
         .poll(() =>
           app.evaluate(({ webContents }) =>

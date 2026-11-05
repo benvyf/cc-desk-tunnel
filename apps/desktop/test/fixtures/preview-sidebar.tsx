@@ -140,7 +140,7 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
           text: Array.from(
             { length: options.short ? 35 : 360 },
             (_, i) =>
-              `Reading paragraph ${i + 1}: CC SPACE preserves the current document position.`,
+              `Reading paragraph ${i + 1}: CC Space preserves the current document position.`,
           ).join('\n'),
         };
       if (path.endsWith('长代码.ts')) {
@@ -218,13 +218,13 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
         return {
           path,
           kind: 'markdown',
-          text: '# 项目说明\n\n在这里查看生成的文件，继续在左侧讨论。\n\n## 使用方式\n\n- 支持中文与长文件名\n- 选择 `localhost` 本机地址\n\n```js\nconst preview = "CC SPACE";\n```\n\n[项目外文档](../outside.md)',
+          text: '# 项目说明\n\n在这里查看生成的文件，继续在左侧讨论。\n\n## 使用方式\n\n- 支持中文与长文件名\n- 选择 `localhost` 本机地址\n\n```js\nconst preview = "CC Space";\n```\n\n[项目外文档](../outside.md)',
         };
       return {
         path,
         kind: 'text',
         text: JSON.stringify(
-          { name: 'CC SPACE', description: '长内容 '.repeat(80), enabled: true },
+          { name: 'CC Space', description: '长内容 '.repeat(80), enabled: true },
           null,
           2,
         ),

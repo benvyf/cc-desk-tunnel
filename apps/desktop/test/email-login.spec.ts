@@ -73,7 +73,7 @@ test.beforeEach(async ({ page }) => {
 test('email-only login ignores legacy credentials, selects a workspace and exits on session expiry', async ({
   page,
 }) => {
-  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录 CC Space' })).toBeVisible();
   // Laid out as the connection sign-in (F1): no card, no tinted backdrop.
   await expect(page.locator('.email-login-card')).toHaveCSS('box-shadow', 'none');
   await expect(page.locator('.email-login-page')).toHaveCSS('background-image', 'none');
@@ -92,7 +92,7 @@ test('email-only login ignores legacy credentials, selects a workspace and exits
   await page.getByRole('button', { name: '我的 Ubuntu' }).click();
   await expect(page.getByRole('alert')).toContainText('测试连接已到达本机通道');
   await page.getByRole('button', { name: '返回邮箱登录' }).click();
-  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录 CC Space' })).toBeVisible();
   await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
   await expect(page.getByRole('alert')).toHaveCount(0);
   await page.getByLabel('密码', { exact: true }).fill('correct-password');
@@ -100,7 +100,7 @@ test('email-only login ignores legacy credentials, selects a workspace and exits
   await page.getByRole('button', { name: '登录', exact: true }).click();
   await expect(page.getByRole('heading', { name: '选择工作空间' })).toBeVisible();
   await page.evaluate(() => (window as unknown as { expireEmail: () => void }).expireEmail());
-  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录 CC Space' })).toBeVisible();
   await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
   await expect(page.getByLabel('自动登录', { exact: true })).not.toBeChecked();
   await expect(page.getByLabel('记住登录', { exact: true })).not.toBeChecked();
@@ -190,7 +190,7 @@ test('missing email component never falls back to manual connection', async ({ p
     delete (window.desktop as any).access;
   });
   await page.reload();
-  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录 CC Space' })).toBeVisible();
   await page.getByLabel('邮箱', { exact: true }).fill('me@example.com');
   await page.getByLabel('密码', { exact: true }).fill('fixture-password');
   await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -208,7 +208,7 @@ test('local settings and help have no manual credential controls', async ({ page
     ),
   ).toBeVisible();
   await page.getByRole('button', { name: '返回登录', exact: true }).click();
-  await expect(page.getByRole('heading', { name: '登录 CC SPACE' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: '登录 CC Space' })).toBeVisible();
 });
 
 test('session expiry resets password visibility before another sign-in', async ({ page }) => {

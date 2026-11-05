@@ -58,6 +58,18 @@ function wire(value, keyId = 'test') {
 }
 const verified = (value) => verifyIndex(wire(value), keys, now);
 
+test('CC Space installer filenames verify without changing immutable legacy release identities', () => {
+  const branded = payload();
+  branded.release.appVersion = '0.3.9';
+  branded.release.filename = 'CC-Space-Setup-0.3.9-x64.exe';
+  assert.equal(verified(branded).payload.release.filename, branded.release.filename);
+  assert.equal(verified(payload()).payload.release.filename, payload().release.filename);
+  for (const filename of ['../CC-Space-Setup-0.3.9-x64.exe', 'CC-Space-Setup-0.3.7-x64.exe']) {
+    branded.release.filename = filename;
+    assert.throws(() => verified(branded), /filename/);
+  }
+});
+
 test('interoperates with the exact domain-separated signature and hashes raw payload bytes', () => {
   const signed = signIndex(payload(), 'test', privateKey, now);
   const result = verifyIndex(signed, keys, now);
