@@ -437,7 +437,7 @@ test('a long draft keeps native send and stop actions reachable in a short windo
     );
   });
   const stop = page.getByRole('button', { name: '停止运行', exact: true });
-  const send = page.getByRole('button', { name: '发送消息', exact: true });
+  const send = page.getByRole('button', { name: '排队发送', exact: true });
   for (const { fontSize, ...viewport } of [
     { width: 320, height: 280 },
     { width: 390, height: 400 },
