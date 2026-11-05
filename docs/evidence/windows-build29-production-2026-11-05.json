@@ -1,0 +1,71 @@
+{
+  "published": true,
+  "backup": "/var/backups/cc-update-service/client29-publication-20261105T034026Z",
+  "release": {
+    "build": 29,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "25cb477603ae05d3997d0fcf45967affa519df5e",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "notes": "CC Space 0.3.10 / Build 29：在 Build 28 基础上修复跨协议新版不显示更新提示的问题。仅保留已验签的新版本信息用于配套升级提醒，签名、防回放与跨协议自动安装限制保持。Build 27 需手动下载完整包，结束任务并退出全部窗口后保留原目录覆盖安装一次；协议 24 客户端与服务端配套使用，账号和历史记录保留。",
+    "size": 258579717,
+    "sha256": "2feae8b42039bd5a38436b2b52b8bde9335ca2a39803d168a39a3e27b06f5c71"
+  },
+  "revision": 41,
+  "publicIndexVerified": true,
+  "publicInstallerVerified": true,
+  "stableUnchanged": true,
+  "linuxUnchanged": true,
+  "renewalRegistrationUpdated": true,
+  "candidates": 0,
+  "managementRuntimeChanged": false,
+  "nodeInstallJobsCreated": false,
+  "completedAt": "2026-11-05T03:40:40.573Z",
+  "verification": {
+    "published": true,
+    "release": {
+      "build": 29,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "25cb477603ae05d3997d0fcf45967affa519df5e",
+      "filename": "CC-Space-Setup-0.3.10-x64.exe",
+      "notes": "CC Space 0.3.10 / Build 29：在 Build 28 基础上修复跨协议新版不显示更新提示的问题。仅保留已验签的新版本信息用于配套升级提醒，签名、防回放与跨协议自动安装限制保持。Build 27 需手动下载完整包，结束任务并退出全部窗口后保留原目录覆盖安装一次；协议 24 客户端与服务端配套使用，账号和历史记录保留。",
+      "size": 258579717,
+      "sha256": "2feae8b42039bd5a38436b2b52b8bde9335ca2a39803d168a39a3e27b06f5c71"
+    },
+    "revision": 42,
+    "expiresAt": "2026-11-08T03:41:36.877Z",
+    "renewalRegistered": true,
+    "realSystemdRunSucceeded": true,
+    "timers": {
+      "cc-update-renew.timer": "active",
+      "cc-server-index-renew.timer": "active"
+    },
+    "stableUnchanged": true,
+    "linuxUnchanged": true,
+    "managementRuntimeUnchanged": true,
+    "realModelRequests": 0
+  },
+  "package": {
+    "release": {
+      "build": 29,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "25cb477603ae05d3997d0fcf45967affa519df5e",
+      "filename": "CC-Space-Setup-0.3.10-x64.exe",
+      "size": 258579717,
+      "sha256": "2feae8b42039bd5a38436b2b52b8bde9335ca2a39803d168a39a3e27b06f5c71"
+    },
+    "modulesMatched": 28,
+    "vendorFilesMatched": 691,
+    "packagedSmokePassed": true,
+    "updateFixEmbedded": true
+  },
+  "localSignatureVerified": true,
+  "localCleanup": {
+    "installerCount": 23,
+    "removedFileCount": 31,
+    "removedBytes": 11094310465,
+    "latestInstallerRetained": true
+  }
+}
