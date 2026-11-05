@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import NativeTerminal, { type TerminalHandle, type TerminalPhase } from './NativeTerminal.tsx';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { SquareTerminal, X, Plus, ChevronDown, ScrollText, Search } from './icons.tsx';
+import { SquareTerminal, X, Plus, ChevronDown, ScrollText, Search, Folder } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { folderName, pathKey } from './paths.ts';
 import { terminalTarget } from './terminalLinks.ts';
@@ -24,6 +24,15 @@ import { useSshTargets } from './useSshTargets.ts';
 import { useShared } from './shared.ts';
 import { getPrefs, usePrefs } from './prefs.ts';
 import { effortNames, sessionDefaultOptions } from './modelDefaults.ts';
+
+// What a tab's state is called in the switch menu; ended and failed tabs show their own detail instead.
+const tabStateWords: Partial<Record<string, string>> = {
+  working: '运行中',
+  waiting: '等你确认',
+  idle: '等待输入',
+  running: '运行中',
+  opening: '启动中',
+};
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
@@ -468,6 +477,16 @@ export default function TerminalWindow({
         session.projectPath,
       )
     ] || folderName(session.projectPath);
+  // The dot speaks the sidebar's language: clay breathes while Claude works, amber with a halo waits for the
+  // user, green is ready for input, grey is starting or gone, red needs a retry.
+  const tabState = (tab: Tab) =>
+    tab.phase === 'running'
+      ? (sourceOf(tab).activeRun?.activity ?? 'running')
+      : ['creating', 'opening', 'closing'].includes(tab.phase)
+        ? 'opening'
+        : tab.phase === 'ended'
+          ? 'ended'
+          : 'failed';
   const matchingTabs = tabs.filter((tab) =>
     [
       tab.alias,
@@ -591,6 +610,7 @@ export default function TerminalWindow({
             <div
               className={`terminal-tab ${tab.tabId === activeId ? 'active' : ''}`}
               data-phase={tab.phase}
+              data-state={tabState(tab)}
               key={tab.tabId}
             >
               <button
@@ -778,6 +798,7 @@ export default function TerminalWindow({
                   className="terminal-list-row"
                   role="option"
                   data-phase={tab.phase}
+                  data-state={tabState(tab)}
                   aria-selected={selectedIndex === index}
                   title={`${tab.alias || projectName(sourceOf(tab))} · ${tab.source.projectPath}`}
                   onMouseEnter={() => setMenuIndex(index)}
@@ -787,17 +808,14 @@ export default function TerminalWindow({
                   <span className="terminal-list-name">
                     {tab.alias || projectName(sourceOf(tab))}
                     {deviceLabel(sourceOf(tab).device, state.device?.id) && (
-                      <small> · {deviceLabel(sourceOf(tab).device, state.device?.id)}</small>
+                      <small className="terminal-list-device">
+                        <span className="sr-only"> · </span>
+                        {deviceLabel(sourceOf(tab).device, state.device?.id)}
+                      </small>
                     )}
                   </span>
                   <small className="terminal-list-status">
-                    {tab.phase === 'running'
-                      ? sourceOf(tab).activeRun?.activity === 'waiting'
-                        ? '终端等你确认'
-                        : '终端运行中'
-                      : ['opening', 'creating'].includes(tab.phase)
-                        ? '终端打开中'
-                        : tab.detail}
+                    {tabStateWords[tabState(tab)] ?? tab.detail}
                   </small>
                   <small className="terminal-list-path">{tab.source.projectPath}</small>
                   {selectedIndex === index && <small className="terminal-list-hint">↵ 切换</small>}
@@ -840,19 +858,18 @@ export default function TerminalWindow({
                     onFocus={() => setMenuIndex(index + matchingTabs.length)}
                     onClick={() => chooseProject(choice)}
                   >
-                    <span>
+                    <Folder className="terminal-choice-icon" />
+                    <span className="terminal-list-name">
                       {choice.name}
-                      {label && <small>{label}</small>}
+                      {label && <small className="terminal-list-device">{label}</small>}
                     </span>
+                    {(offline || choice.source?.id === activeSource?.id) && (
+                      <small className="terminal-list-status">{offline ? '离线' : '当前'}</small>
+                    )}
                     <small className="terminal-project-meta">{choice.path}</small>
-                    <small className="terminal-list-hint">
-                      {[
-                        offline ? '离线' : choice.source?.id === activeSource?.id ? '当前' : '',
-                        selectedIndex === index + matchingTabs.length ? '↵ 新建' : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </small>
+                    {selectedIndex === index + matchingTabs.length && (
+                      <small className="terminal-list-hint">↵ 新建</small>
+                    )}
                   </button>
                 );
               })}

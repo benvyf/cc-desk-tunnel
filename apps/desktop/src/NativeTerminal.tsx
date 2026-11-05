@@ -6,7 +6,7 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import type { TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { Bot, CircleAlert, Hand, LoaderCircle, Search, Server, Square, X } from './icons.tsx';
+import { Search, X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
 import { terminalLinks } from './terminalLinks.ts';
@@ -811,40 +811,51 @@ export default function NativeTerminal({
         ? 'disconnected'
         : 'connecting';
   const activityState = phase === 'running' ? (connection.activity ?? 'unknown') : phase;
-  const ActivityIcon =
-    activityState === 'working' || activityState === 'opening' || activityState === 'closing'
-      ? LoaderCircle
-      : activityState === 'waiting'
-        ? Hand
-        : activityState === 'failed'
-          ? CircleAlert
-          : activityState === 'ended'
-            ? Square
-            : Bot;
+  // One chip says what matters now, in the sidebar's words and colours: a link problem first, else Claude's
+  // state. The full connection and activity sentences stay as the two announced statuses and the tooltip.
+  const chip: { state: string; label: string } =
+    connectionState === 'disconnected'
+      ? { state: 'disconnected', label: '已断开' }
+      : connectionState === 'connecting'
+        ? { state: 'connecting', label: connection.status === 'reconnecting' ? '重连中' : '连接中' }
+        : connectionState === 'waiting'
+          ? { state: 'connecting', label: '准备中' }
+          : phase === 'running'
+            ? connection.activity === 'working'
+              ? { state: 'working', label: '运行中' }
+              : connection.activity === 'waiting'
+                ? { state: 'waiting', label: '等你确认' }
+                : connection.activity === 'idle'
+                  ? { state: 'idle', label: '等待输入' }
+                  : { state: 'unknown', label: '同步中' }
+            : phase === 'opening'
+              ? { state: 'opening', label: '启动中' }
+              : phase === 'closing'
+                ? { state: 'opening', label: '关闭中' }
+                : phase === 'ended'
+                  ? { state: 'ended', label: '已结束' }
+                  : { state: 'failed', label: phase === 'disconnected' ? '已断开' : '需处理' };
   const indicators = (
     <div className="terminal-runtime-status" aria-label="终端状态">
       <span
-        className="terminal-state-icon"
-        data-state={connectionState}
-        role="status"
-        title={connectionText}
-        aria-label={connectionText}
+        className="terminal-status-chip"
+        data-state={chip.state}
+        title={`${activityText}\n${connectionText}`}
+        aria-hidden="true"
       >
-        <Server scale="sm" />
-        <span className="sr-only">{connectionText}</span>
+        <span className="terminal-status-dot" />
+        <span className="terminal-status-label">{chip.label}</span>
       </span>
       <span
-        className="terminal-state-icon"
-        data-state={activityState}
+        className="sr-only"
+        data-state={connectionState}
         role="status"
-        title={activityText}
-        aria-label={activityText}
+        aria-label={connectionText}
       >
-        <ActivityIcon
-          scale="sm"
-          className={ActivityIcon === LoaderCircle ? 'spinning' : undefined}
-        />
-        <span className="sr-only">{activityText}</span>
+        {connectionText}
+      </span>
+      <span className="sr-only" data-state={activityState} role="status" aria-label={activityText}>
+        {activityText}
       </span>
       <IconButton
         title="查找终端输出"
