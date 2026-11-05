@@ -25,7 +25,13 @@ export default function OpenProjectDialog({
   onClose,
 }: {
   client: ProxyClient;
-  initial?: { deviceId?: string; path?: string; creationId?: string };
+  initial?: {
+    deviceId?: string;
+    path?: string;
+    creationId?: string;
+    error?: string;
+    opened?: { sessionId: string; created: boolean };
+  };
   forceNew?: boolean;
   onLocal: (path: string, creationId: string) => Promise<void>;
   onRemote: (sessionId: string, created: boolean) => Promise<void>;
@@ -39,14 +45,14 @@ export default function OpenProjectDialog({
   const [form, setForm] = useState(emptyTarget);
   const [secret, setSecret] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(initial?.error ?? '');
   const [listing, setListing] = useState<SshDirectoryList | null>(null);
   const [listingBusy, setListingBusy] = useState(false);
   const alive = useRef(true);
   const turn = useRef(0);
   const connection = useRef<string | null>(null);
-  const browsingDevice = useRef('');
-  const opened = useRef<{ sessionId: string; created: boolean } | null>(null);
+  const browsingDevice = useRef(initial?.opened ? (initial.deviceId ?? '') : '');
+  const opened = useRef<{ sessionId: string; created: boolean } | null>(initial?.opened ?? null);
   const creation = useRef<{ key: string; id: string } | null>(
     initial?.creationId
       ? {

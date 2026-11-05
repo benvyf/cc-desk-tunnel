@@ -51,6 +51,7 @@ export default function NativeTerminal({
   register,
   onLink,
   toolbar,
+  onShortcut,
 }: {
   client: ProxyClient;
   sessionId: string;
@@ -60,10 +61,11 @@ export default function NativeTerminal({
   register?: (handle: TerminalHandle | null) => void;
   onLink?: (target: string) => void;
   toolbar?: HTMLElement | null;
+  onShortcut?: (event: KeyboardEvent) => boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
-  const callbacks = useRef({ onClose, onStatus, register, onLink });
-  callbacks.current = { onClose, onStatus, register, onLink };
+  const callbacks = useRef({ onClose, onStatus, register, onLink, onShortcut });
+  callbacks.current = { onClose, onStatus, register, onLink, onShortcut };
   const visible = useRef(active);
   visible.current = active;
   const activate = useRef((_focus = false) => {});
@@ -580,6 +582,10 @@ export default function NativeTerminal({
     const unwatch = client.subscribe?.(disconnected);
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || event.isComposing) return true;
+      if (callbacks.current.onShortcut?.(event)) {
+        event.preventDefault();
+        return false;
+      }
       const copy =
         event.ctrlKey &&
         !event.altKey &&

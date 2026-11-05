@@ -53,3 +53,100 @@ test('terminal projects deduplicate device/path and prefer active source then ne
   assert.equal(terminalProjects([b, a, c], 'service', a)[0].source.id, 'a');
   assert.equal(terminalProjects([a, b, c], 'service', a)[0].deviceName, '01');
 });
+
+test('device labels are visible only for remote devices', async () => {
+  const { deviceLabel } = await import('../src/developmentProjects.ts');
+  assert.equal(typeof deviceLabel, 'function');
+  assert.equal(deviceLabel(undefined, 'local'), '');
+  assert.equal(deviceLabel({ id: 'local', name: 'My PC' }, 'local'), '');
+  assert.equal(deviceLabel({ id: '01', name: '51' }, 'local'), '51');
+});
+
+test('terminal choices exclude ordinary sessions, other computers and unavailable SSH targets', async () => {
+  const { terminalChoices } = await import('../src/developmentProjects.ts');
+  assert.equal(typeof terminalChoices, 'function');
+  const local = {
+    ...session('local-project', 'local', 'D:\\work\\app'),
+    device: { id: 'local', name: 'My PC', platform: 'win32' as const },
+  };
+  const ordinary = { ...local, id: 'ordinary', projectPath: 'D:\\sessions\\2026-11-05\\123456' };
+  const other = { ...local, id: 'other', device: { ...local.device, id: 'other' } };
+  const targets = ['01', '02', 'unavailable'].map((id) => ({
+    id,
+    name: id,
+    available: id !== 'unavailable',
+    projects: ['/work/app'],
+    status: 'disconnected' as const,
+    host: 'fixture.invalid',
+    port: 22,
+    username: 'dev',
+    auth: 'key' as const,
+    error: '',
+  }));
+  const choices = terminalChoices({
+    sessions: [
+      ordinary,
+      other,
+      session('unavailable', 'unavailable'),
+      local,
+      session('remote1', '01'),
+      session('remote2', '02'),
+    ],
+    targets,
+    localPaths: ['D:\\work\\APP', 'D:\\saved', 'D:\\saved'],
+    localDeviceId: 'local',
+    workspaceRoots: ['D:\\sessions'],
+    scope: 'service',
+  });
+  assert.equal(choices.length, 4);
+  assert.equal(
+    choices.find((p) => p.deviceId === 'local' && p.source)?.source?.id,
+    'local-project',
+  );
+  assert.equal(choices.filter((p) => p.path === '/work/app').length, 2);
+  assert.equal(
+    choices.some(
+      (p) =>
+        p.source?.id === 'ordinary' || p.source?.id === 'other' || p.deviceId === 'unavailable',
+    ),
+    false,
+  );
+  assert.equal(choices.find((p) => p.deviceId === 'local')?.deviceName, '');
+});
+
+test('terminal choices prefer active configuration, then newest and stable ID, before saved paths', async () => {
+  const { terminalChoices } = await import('../src/developmentProjects.ts');
+  assert.equal(typeof terminalChoices, 'function');
+  const active = session('active', '01');
+  const newest = session('newest', '01', '/work/app', '2026-11-06T10:00:00Z');
+  const tie = session('aaa', '02', '/work/app', '2026-11-06T09:00:00Z');
+  const laterId = { ...tie, id: 'zzz' };
+  const targets = ['01', '02'].map((id) => ({
+    id,
+    name: id,
+    available: true,
+    projects: ['/work/app', '/work/saved'],
+    status: 'connected' as const,
+    host: 'fixture.invalid',
+    port: 22,
+    username: 'dev',
+    auth: 'key' as const,
+    error: '',
+  }));
+  const choices = terminalChoices({
+    sessions: [newest, active, laterId, tie],
+    targets,
+    localPaths: [],
+    localDeviceId: 'local',
+    workspaceRoots: [],
+    scope: 'service',
+    active,
+  });
+  assert.equal(choices.length, 4);
+  assert.equal(choices[0].source?.id, 'active');
+  assert.equal(choices[1].source?.id, 'aaa');
+  assert.equal(
+    choices.slice(2).every((p) => !p.source),
+    true,
+  );
+});

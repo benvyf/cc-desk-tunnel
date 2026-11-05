@@ -2,15 +2,15 @@ import { test, expect } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', (error) => console.log('sidebar fixture error', error.message));
   await page.goto('/test/fixtures/multi-device-sidebar.html');
-  await expect(page.locator('.project-device')).toHaveCount(4);
+  await expect(page.locator('.project-device')).toHaveCount(3);
 });
 test('managed devices share project list while empty offline targets and other-device history remain distinct', async ({
   page,
 }) => {
   await expect(
     page.locator('.project-group').filter({ has: page.locator('.project-device') }),
-  ).toHaveCount(4);
-  await expect(page.locator('.project-device')).toHaveText(['本机', '01', '02', '03 · 离线']);
+  ).toHaveCount(3);
+  await expect(page.locator('.project-device')).toHaveText(['01', '02', '03 · 离线']);
   await page.getByRole('button', { name: '新建会话 · 02 · /work/app', exact: true }).click();
   expect(await page.evaluate(() => (window as any).sidebarFixture.calls)).toContainEqual([
     'remote-create',
@@ -58,7 +58,7 @@ test('remote preferences use isolated keys and the existing local path preferenc
   await expect(page.locator('.project-group h2').filter({ hasText: '远程别名' })).toHaveCount(1);
 });
 
-test('searching the displayed local-device label keeps local project sessions visible', async ({
+test('searching the local-device keyword keeps local project sessions visible', async ({
   page,
 }) => {
   await page.getByRole('button', { name: '搜索', exact: true }).click();

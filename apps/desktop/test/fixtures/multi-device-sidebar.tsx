@@ -70,7 +70,6 @@ function Fixture() {
         connected
         busy={false}
         refreshing={false}
-        terminalOpen
         sshTargets={entries}
         projectScope="test-service"
         notifications={

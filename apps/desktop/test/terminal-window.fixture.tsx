@@ -9,6 +9,7 @@ import { PredictiveEchoAddon } from 'xterm-zerolag-input';
 import { setPrefs } from '../src/prefs.ts';
 import { saveShared } from '../src/shared.ts';
 import { RequestFailedError } from '../src/client.ts';
+import { pathKey } from '../src/paths.ts';
 let holdRenderCallbacks = false;
 const renderCallbacks: (() => void)[] = [];
 const writeTerminal = Terminal.prototype.write;
@@ -54,6 +55,7 @@ const session = {
   updatedAt: '2026-11-05T00:00:00Z',
 };
 let state: any = {
+  device: session.device,
   sessions: [session],
   status: 'connected',
   connectionId: 'fixture-connection',
@@ -110,6 +112,8 @@ const client = {
   },
   async request(command: any, requestId = crypto.randomUUID()) {
     requests.push(command);
+    if (command.type === 'session.configure' && state.configureError)
+      throw new Error(state.configureError);
     if (
       command.type === 'terminal.session.create' ||
       command.type === 'terminal.history.continue'
@@ -205,6 +209,7 @@ function Fixture() {
         register: (handle: any) => {
           if (handle) {
             (window as any).terminalTest.showSession = (id: string) => handle.show(id);
+            (window as any).terminalTest.createProject = (project: any) => handle.create(project);
             (window as any).terminalTest.closeAll = () => {
               void handle.closeAll();
             };
@@ -216,6 +221,11 @@ function Fixture() {
 root.render(React.createElement(React.StrictMode, null, React.createElement(Fixture)));
 Object.assign(window, {
   terminalTest: {
+    setProjectName: (name: string) =>
+      setPrefs((prefs) => ({
+        ...prefs,
+        projectNames: { ...prefs.projectNames, [pathKey(session.projectPath)]: name },
+      })),
     setLocalProjects: (paths: string[]) => {
       saveShared('projects', paths);
       update({});

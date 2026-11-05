@@ -84,7 +84,12 @@ import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
 import OpenProjectDialog from './OpenProjectDialog.tsx';
 import { useSshTargets } from './useSshTargets.ts';
-import { projectPreferenceKey } from './developmentProjects.ts';
+import {
+  deviceLabel,
+  newTerminalPermission,
+  projectPreferenceKey,
+  terminalChoices,
+} from './developmentProjects.ts';
 import TitleBar from './TitleBar.tsx';
 import Presence, { useColumnsGliding, useLeaving } from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
@@ -336,6 +341,10 @@ export function App({
     path?: string;
     forceNew?: boolean;
     fromHome?: boolean;
+    terminal?: boolean;
+    source?: Session;
+    error?: string;
+    opened?: { sessionId: string; created: boolean };
     creationId?: string;
   } | null>(null);
   const [remoteRename, setRemoteRename] = useState<{ deviceId: string; path: string } | null>(null);
@@ -476,6 +485,8 @@ export function App({
       : (metrics ?? state.metrics);
   const canCompact = !!latest(events, 'native.context')?.persisted;
   // Chat runs hold shared CLI state; a terminal holds only its own native session.
+  const anyTerminal =
+    terminalsActive || state.sessions.some((session) => session.activeRun?.surface === 'terminal');
   const anyChat = state.sessions.some(
     (session) => session.activeRun && session.activeRun.surface !== 'terminal',
   );
@@ -801,7 +812,7 @@ export function App({
       history?.loading ||
       selected.activeRun ||
       refreshing ||
-      selectedTerminal ||
+      anyTerminal ||
       anyChat ||
       refreshed.current.has(selected.id)
     )
@@ -816,7 +827,7 @@ export function App({
     selected?.activeRun,
     refreshing,
     anyChat,
-    selectedTerminal,
+    anyTerminal,
   ]);
   useEffect(() => {
     if (nativeMode && connected) void client.request({ type: 'account.status' }).catch(() => {});
@@ -1072,6 +1083,8 @@ export function App({
     startedAt = navigation.current,
     generation = client.state.connectionId,
     creationId?: string,
+    navigate = true,
+    terminalSource?: Session | null,
   ) {
     const key = projectPreferenceKey(projectScope, state.device?.id, projectPath);
     const requestId = creationId ?? localCreations.current.get(key) ?? crypto.randomUUID();
@@ -1080,14 +1093,73 @@ export function App({
       { type: 'session.create', title: '新会话', projectPath },
       requestId,
     );
-    localCreations.current.delete(key);
     if (client.state.connectionId !== generation) return;
     if (response.sessionId) {
-      await initializeSession(response.sessionId, false);
-      if (navigation.current === startedAt && client.state.connectionId === generation)
+      if (terminalSource !== undefined) {
+        try {
+          await configureTerminal(response.sessionId, terminalSource ?? undefined);
+        } catch (error) {
+          if (client.state.connectionId !== generation) return;
+          if (openProjectTarget?.terminal) throw error;
+          setOpenProjectTarget({
+            path: projectPath,
+            forceNew: true,
+            terminal: true,
+            source: terminalSource ?? undefined,
+            creationId: requestId,
+            error: error instanceof Error ? error.message : '终端配置失败',
+          });
+          return;
+        }
+      } else await initializeSession(response.sessionId, false);
+      if (navigate && navigation.current === startedAt && client.state.connectionId === generation)
         show(response.sessionId);
     }
+    if (client.state.connectionId !== generation) return;
+    localCreations.current.delete(key);
     return response.sessionId;
+  }
+  async function configureTerminal(sessionId: string, source?: Session) {
+    await client.request({
+      type: 'session.configure',
+      sessionId,
+      permissionMode: source?.permissionMode ?? newTerminalPermission,
+      ...(source
+        ? { model: source.model, effort: source.effort }
+        : sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models)),
+    });
+  }
+  function terminalSource(path: string, deviceId = state.device?.id) {
+    return terminalChoices({
+      sessions: state.sessions,
+      targets: sshTargets,
+      localPaths: projects,
+      localDeviceId: state.device?.id,
+      workspaceRoots,
+      scope: projectScope,
+    }).find((choice) => choice.deviceId === deviceId && pathKey(choice.path) === pathKey(path))
+      ?.source;
+  }
+  async function createProjectTerminal(path: string, deviceId?: string) {
+    if (terminalWorkspace.current) {
+      terminalWorkspace.current.create({ deviceId, path });
+      return;
+    }
+    if (deviceId) {
+      const id = await createRemoteProject(deviceId, path, true);
+      if (id) showTerminal(id);
+    } else
+      await act(async () => {
+        const id = await createSession(
+          path,
+          navigation.current,
+          client.state.connectionId,
+          undefined,
+          false,
+          terminalSource(path) ?? null,
+        );
+        if (id) showTerminal(id);
+      });
   }
   async function initializeSession(sessionId: string, navigate = true) {
     const generation = client.state.connectionId;
@@ -1118,7 +1190,11 @@ export function App({
     });
     return created;
   }
-  async function createRemoteProject(deviceId: string, path: string): Promise<string | undefined> {
+  async function createRemoteProject(
+    deviceId: string,
+    path: string,
+    terminal = false,
+  ): Promise<string | undefined> {
     const target = sshTargets.find((entry) => entry.id === deviceId && entry.available);
     if (!target) {
       setError('此 SSH 项目不属于当前工作空间。');
@@ -1128,7 +1204,14 @@ export function App({
     const creationId = remoteCreations.current.get(key) ?? crypto.randomUUID();
     remoteCreations.current.set(key, creationId);
     if (target.status !== 'connected') {
-      setOpenProjectTarget({ deviceId, path, forceNew: true, creationId });
+      setOpenProjectTarget({
+        deviceId,
+        path,
+        forceNew: true,
+        creationId,
+        terminal,
+        source: terminal ? terminalSource(path, deviceId) : undefined,
+      });
       return;
     }
     const startedAt = navigation.current;
@@ -1136,11 +1219,30 @@ export function App({
     let created: string | undefined;
     await act(async () => {
       const result = await window.desktop!.ssh!.openProject(deviceId, path, true, creationId);
-      remoteCreations.current.delete(key);
       if (client.state.connectionId !== generation) return;
       const samePlace = navigation.current === startedAt;
-      await initializeSession(result.sessionId, false);
-      if (samePlace && navigation.current === startedAt) show(result.sessionId);
+      if (terminal && result.created) {
+        const source = terminalSource(path, deviceId);
+        try {
+          await configureTerminal(result.sessionId, source);
+        } catch (error) {
+          if (client.state.connectionId === generation)
+            setOpenProjectTarget({
+              deviceId,
+              path,
+              forceNew: true,
+              terminal: true,
+              source,
+              creationId,
+              opened: result,
+              error: error instanceof Error ? error.message : '终端配置失败',
+            });
+          return;
+        }
+      } else if (!terminal) await initializeSession(result.sessionId, false);
+      if (client.state.connectionId !== generation) return;
+      remoteCreations.current.delete(key);
+      if (!terminal && samePlace && navigation.current === startedAt) show(result.sessionId);
       created = result.sessionId;
     });
     return created;
@@ -1166,12 +1268,6 @@ export function App({
     let created: string | undefined;
     const startedAt = navigation.current;
     const generation = client.state.connectionId;
-    if (!browser && place.page === 'chat' && selected) {
-      if (selected.device?.viaSsh)
-        return createRemoteProject(selected.device.id, selected.projectPath);
-      if (onThis(selected) && !isInside(selected.projectPath, workspaceRoots))
-        return createInProject(selected.projectPath);
-    }
     if (browser) {
       await act(async () => {
         const response = await client.request({ type: 'server.session.create', title: '新会话' });
@@ -1531,6 +1627,14 @@ export function App({
         run: () => {
           if (deviceId) void createRemoteProject(deviceId, path);
           else void createInProject(path);
+        },
+      },
+      {
+        label: '新建终端',
+        icon: <SquareTerminal />,
+        disabled: !connected || !nativeMode || busy || refreshing,
+        run: () => {
+          void createProjectTerminal(path, deviceId);
         },
       },
       {
@@ -2185,6 +2289,7 @@ export function App({
               onActivity={setTerminalsActive}
               onSessions={trackTerminalSessions}
               projectScope={projectScope}
+              workspaceRoots={workspaceRoots}
               register={registerTerminalWorkspace}
               nodeName={
                 loginWorkspaces?.find((workspace) => workspace.id === activeWorkspace)?.name
@@ -2284,8 +2389,6 @@ export function App({
             connected={connected}
             busy={busy}
             refreshing={refreshing}
-            terminalOpen={terminalsActive}
-            showTerminal={openTerminal}
             notifications={notifications}
             select={show}
             newSession={() => {
@@ -2350,7 +2453,11 @@ export function App({
                         menu.deviceId === selected.device?.id &&
                         menu.path === selected.projectPath)
                     }
-                    title={`${selected.device?.name ?? '本机'} · ${selected.projectPath} · 移动当前会话到其他项目`}
+                    title={
+                      selected.device?.viaSsh
+                        ? `${selected.device.name} · ${selected.projectPath}`
+                        : `${selected.projectPath} · 移动当前会话到其他项目`
+                    }
                     disabled={controlsDisabled || (away && !selected.device?.viaSsh)}
                     onClick={(event) => {
                       const box = event.currentTarget.getBoundingClientRect();
@@ -2383,7 +2490,8 @@ export function App({
                               )
                             ] ?? folderName(selected.projectPath))
                           : projectLabel(selected.projectPath)}
-                      {` · ${onThis(selected) ? '本机' : (selected.device?.name ?? '未知设备')}`}
+                      {deviceLabel(selected.device, state.device?.id) &&
+                        ` · ${deviceLabel(selected.device, state.device?.id)}`}
                     </span>
                   </button>
                 )
@@ -2550,10 +2658,16 @@ export function App({
             {selectedTerminal && (
               <div className="elsewhere-bar" role="status">
                 <SquareTerminal />
-                <p>此会话正在终端中使用，可继续其他会话。</p>
-                <button type="button" className="button secondary" onClick={openTerminal}>
-                  返回终端
-                </button>
+                <p>
+                  {terminalSessions.includes(selected!.id)
+                    ? '正在终端里运行'
+                    : '此会话正在另一个窗口的终端中使用'}
+                </p>
+                {terminalSessions.includes(selected!.id) && (
+                  <button type="button" className="button secondary" onClick={openTerminal}>
+                    返回终端
+                  </button>
+                )}
               </div>
             )}
             {selected && (!away || remote || selectedTerminal) && (
@@ -2612,6 +2726,10 @@ export function App({
                   void compact();
                 }}
                 refresh={() => {
+                  if (anyTerminal) {
+                    setError('终端运行时暂不读取原生状态，关闭终端后再试');
+                    return;
+                  }
                   void refreshStatus();
                 }}
                 configure={configure}
@@ -2730,7 +2848,21 @@ export function App({
               if (client.state.connectionId !== generation) return;
               setProjects((value) => withProject(value, path));
               if (openProjectTarget.forceNew) {
-                const id = await createSession(path, startedAt, generation, creationId);
+                const id = await createSession(
+                  path,
+                  startedAt,
+                  generation,
+                  creationId,
+                  !openProjectTarget.terminal,
+                  openProjectTarget.terminal
+                    ? openProjectTarget.source &&
+                      openProjectTarget.source.device?.id === state.device?.id &&
+                      pathKey(openProjectTarget.source.projectPath) === pathKey(path)
+                      ? openProjectTarget.source
+                      : null
+                    : undefined,
+                );
+                if (id && openProjectTarget.terminal) showTerminal(id);
                 if (!id) throw new Error('连接已变化，请检查原会话的创建结果。');
                 if (openProjectTarget.fromHome) {
                   setDraft(id, homeDraft);
@@ -2753,7 +2885,18 @@ export function App({
                 setDraft(id, homeDraft);
                 setHomeDraft('');
               }
-              if (created) await initializeSession(id);
+              if (openProjectTarget.terminal) {
+                const source = openProjectTarget.source;
+                const inherited =
+                  source &&
+                  session &&
+                  source.device?.id === session.device?.id &&
+                  pathKey(source.projectPath) === pathKey(session.projectPath)
+                    ? source
+                    : undefined;
+                if (created) await configureTerminal(id, inherited);
+                showTerminal(id);
+              } else if (created) await initializeSession(id);
               else show(id);
             }}
           />

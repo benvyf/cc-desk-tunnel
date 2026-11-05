@@ -605,9 +605,9 @@ test('a project folds its sessions away, remembers it, and a search still finds 
     .filter({ hasText: '中文项目' })
     .locator('.session-row');
   await expect(rows.filter({ hasText: title })).toHaveCount(1);
-  await page.getByRole('button', { name: '收起项目 · 中文项目 · 本机', exact: true }).click();
+  await page.getByRole('button', { name: '收起项目 · 中文项目', exact: true }).click();
   await expect(rows).toHaveCount(0);
-  const expand = page.getByRole('button', { name: '展开项目 · 中文项目 · 本机', exact: true });
+  const expand = page.getByRole('button', { name: '展开项目 · 中文项目', exact: true });
   await expect(expand).toHaveAttribute('aria-expanded', 'false');
   await page.reload();
   await login(page);

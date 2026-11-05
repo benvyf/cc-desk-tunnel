@@ -32,9 +32,14 @@ test('terminal entry waits for status reading and does not start another read on
   const commands: { type: string; sessionId?: string; requestId: string }[] = [];
   let finishStatus = (_ok = true) => {};
   let endTerminal = () => {};
+  let endOtherTerminal = () => {};
   const contexts = new Map<string, object>();
   await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
     const send = (value: object) => route.send(JSON.stringify(value));
+    endOtherTerminal = () => {
+      sessions.at(-1)!.activeRun = null;
+      send({ type: 'session.updated', session: sessions.at(-1)! });
+    };
     route.onMessage((raw) => {
       const command = JSON.parse(String(raw));
       commands.push(command);
@@ -101,7 +106,10 @@ test('terminal entry waits for status reading and does not start another read on
   await page.getByRole('button', { name: '连接', exact: true }).click();
   const row = page.locator('.session-row').filter({ hasText: '当前会话' });
   await row.click();
-  // A terminal in another session must not suppress this idle session's status read (#157).
+  // Node-wide native state reads wait for terminals owned by any connection.
+  await expect(page.locator('.session-row.selected')).toContainText('当前会话');
+  expect(commands.filter((c) => c.type === 'session.status')).toHaveLength(0);
+  endOtherTerminal();
   await expect.poll(() => commands.filter((c) => c.type === 'session.status').length).toBe(1);
   const terminal = page.getByRole('button', { name: '终端', exact: true });
   await expect(terminal).toBeDisabled();

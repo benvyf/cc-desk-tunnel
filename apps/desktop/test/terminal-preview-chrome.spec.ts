@@ -9,9 +9,9 @@ test('all terminals open as a menu: the search on top, one plain row per termina
   await expect(page.getByRole('tab')).toHaveCount(1);
   await page.getByRole('button', { name: '新建终端', exact: true }).click();
   await expect(page.getByRole('tab')).toHaveCount(2);
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
   const list = page.locator('.terminal-list');
-  const search = list.getByRole('textbox', { name: '筛选终端', exact: true });
+  const search = list.getByRole('textbox', { name: '搜索项目、设备或已打开的终端', exact: true });
   await expect(search).toBeFocused();
   // The search is the menu's first row, inside its box.
   const box = (await list.boundingBox())!;
@@ -19,7 +19,7 @@ test('all terminals open as a menu: the search on top, one plain row per termina
   expect(field.y - box.y).toBeLessThan(12);
   expect(field.x).toBeGreaterThanOrEqual(box.x);
   expect(field.x + field.width).toBeLessThanOrEqual(box.x + box.width);
-  const rows = list.getByRole('option');
+  const rows = list.getByRole('group', { name: '已打开', exact: true }).getByRole('option');
   await expect(rows).toHaveCount(2);
   for (const row of await rows.all()) {
     await expect(row).toHaveCSS('border-top-width', '0px');
@@ -27,7 +27,7 @@ test('all terminals open as a menu: the search on top, one plain row per termina
   }
   await expect(rows.first()).toHaveAttribute('aria-selected', 'true');
   await expect(list.locator('hr')).toHaveCount(1);
-  for (const name of ['选项目新建', '标签别名']) {
+  for (const name of ['打开其他目录…']) {
     const action = list.getByRole('button', { name, exact: true });
     await expect(action).toHaveCSS('border-top-width', '0px');
     await expect(action.locator('svg')).toHaveCount(1);

@@ -251,7 +251,7 @@ test('project entry sits beside search and moves sessions through a menu below i
   expect(menuBounds!.y).toBeGreaterThanOrEqual(entryBounds!.y + entryBounds!.height);
   await menu.getByRole('menuitemradio', { name: longName, exact: true }).click();
   await expect.poll(() => moves).toEqual([target]);
-  await expect(entry).toHaveText(`${longName} · 本机`);
+  await expect(entry).toHaveText(longName);
   expect(await entry.getAttribute('title')).toContain(target);
   expect(await entry.getAttribute('title')).toContain('移动当前会话到其他项目');
   await expect(entry).toHaveAttribute('aria-expanded', 'false');

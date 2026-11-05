@@ -133,8 +133,8 @@ test('history refresh failure and changed connection invalidate results and conf
       ],
     }),
   );
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
-  await page.getByRole('button', { name: '继续官方历史', exact: true }).click();
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
+  await page.getByRole('button', { name: '继续官方历史…', exact: true }).click();
   const dialog = page.getByRole('dialog');
   // One sentence of explanation, and each history a row ending in “继续” (G4); the status bar says only the
   // project's path and its computer (G5).
@@ -212,8 +212,8 @@ test('clear discards pending file selection and clipboard image preparation', as
 test('official history is negotiated, explicitly confirmed and continued in a new tab with stable retry identity', async ({
   page,
 }) => {
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
-  await expect(page.getByRole('button', { name: '继续官方历史', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
+  await expect(page.getByRole('button', { name: '继续官方历史…', exact: true })).toHaveCount(0);
   await page.evaluate(() => {
     (window as any).terminalTest.update({
       terminalHistory: { version: 1 },
@@ -238,7 +238,7 @@ test('official history is negotiated, explicitly confirmed and continued in a ne
     (window as any).terminalTest.setCreateMode('lostResponse');
     (window as any).terminalTest.emit({ type: 'terminal.closed', exitCode: 0 });
   });
-  await page.getByRole('button', { name: '继续官方历史', exact: true }).click();
+  await page.getByRole('button', { name: '继续官方历史…', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByText('历史中文任务')).toBeVisible();
   await expect(dialog.getByRole('button', { name: '新开终端继续' }).first()).toBeDisabled();
@@ -501,26 +501,27 @@ test('terminal filter searches device and aliases without restarting sessions an
     await page.getByRole('button', { name: '新建终端', exact: true }).click();
     await expect(page.getByRole('tab')).toHaveCount(i + 2);
   }
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
-  const filter = page.getByRole('textbox', { name: '筛选终端' });
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
+  const filter = page.getByRole('textbox', { name: '搜索项目、设备或已打开的终端' });
   await expect(filter).toBeFocused();
   await filter.fill('FIXTURE-NODE');
-  await expect(page.getByRole('option')).toHaveCount(12);
+  await expect(
+    page.getByRole('group', { name: '已打开', exact: true }).getByRole('option'),
+  ).toHaveCount(12);
   await filter.press('ArrowDown');
   await filter.press('Enter');
   await expect(page.getByRole('tab').nth(1)).toHaveAttribute('aria-selected', 'true');
   await expect(page.locator('.terminal-panel:visible textarea')).toBeFocused();
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
-  await page.getByRole('button', { name: '标签别名', exact: true }).click();
+  await page.getByRole('tab', { selected: true }).dblclick();
   await page.getByRole('dialog').locator('input').fill('中文调查任务长标题');
   await page.getByRole('button', { name: '保存', exact: true }).click();
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
   await filter.fill('调查');
   await expect(page.getByRole('option')).toHaveCount(1);
   await filter.fill('nothing-matches');
-  await expect(page.getByText('没有匹配的终端')).toBeVisible();
+  await expect(page.getByText('没有匹配的项目或终端')).toBeVisible();
   await filter.press('Escape');
-  await expect(page.locator('.terminal-panel:visible textarea')).toBeFocused();
+  await expect(page.getByRole('button', { name: '切换或新建终端', exact: true })).toBeFocused();
   expect(
     await page.evaluate(
       () =>
@@ -536,8 +537,7 @@ test('tabs keep stable processes, route input and acknowledge hidden output', as
   await page.locator('.terminal-panel:visible textarea').press('Enter');
   await page.getByRole('tab').nth(0).click();
   await page.locator('.terminal-panel:visible textarea').press('Control+c');
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
-  await page.getByRole('button', { name: '标签别名', exact: true }).click();
+  await page.getByRole('tab', { selected: true }).dblclick();
   await page.getByRole('dialog').locator('input').fill('调查问题');
   await page.getByRole('button', { name: '保存', exact: true }).click();
   await expect(page.getByRole('tab').nth(0)).toContainText('调查问题');
@@ -616,7 +616,7 @@ test('batch close retains only failed tabs and reports the failure', async ({ pa
   await page.getByRole('button', { name: '新建终端', exact: true }).click();
   await expect(page.getByRole('tab')).toHaveCount(2);
   await page.evaluate(() => (window as any).terminalTest.failCloseSession('fixture-1'));
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
   // Inline fallback has no native close button; close both tabs through their shared controller.
   await page.evaluate(() => (window as any).terminalTest.closeAll());
   await page.getByRole('button', { name: '结束终端', exact: true }).click();
@@ -841,9 +841,8 @@ test('closing a stalled terminal explicitly ends its retained process', async ({
 test('a selected local project and subsequent plus use the returned project identity', async ({
   page,
 }) => {
-  await page.getByRole('button', { name: '全部终端', exact: true }).click();
-  await page.getByRole('button', { name: '选项目新建', exact: true }).click();
-  await page.getByRole('button', { name: '打开其他项目…', exact: true }).click();
+  await page.getByRole('button', { name: '切换或新建终端', exact: true }).click();
+  await page.getByRole('button', { name: '打开其他目录…', exact: true }).click();
   await page.getByLabel('本机项目目录', { exact: true }).fill('D:\\different-project');
   await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await expect(page.getByRole('tab').nth(1)).toContainText('Linux · Claude Code');

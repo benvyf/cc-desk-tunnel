@@ -98,8 +98,6 @@ export default function Sidebar({
   connected,
   busy,
   refreshing,
-  terminalOpen,
-  showTerminal,
   notifications,
   select,
   newSession,
@@ -132,10 +130,6 @@ export default function Sidebar({
   connected: boolean;
   busy: boolean;
   refreshing: boolean;
-  // This window's native terminal is open: it has the window until it is closed.
-  terminalOpen: boolean;
-  // Brings the open terminal back to the front.
-  showTerminal?: () => void;
   notifications: Notifications;
   select: (sessionId: string) => void;
   newSession: () => void;
@@ -292,7 +286,7 @@ export default function Sidebar({
             sessions.find((session) => pathKey(session.projectPath) === key)!.projectPath,
           sessions: members,
           deviceId: undefined as string | undefined,
-          deviceName: '本机',
+          deviceName: '',
           online: connected,
         }))
         .filter(
@@ -576,7 +570,7 @@ export default function Sidebar({
         type="button"
         className="side-action new-session"
         disabled={!connected || busy || refreshing}
-        title="在当前项目中新建会话"
+        title="新建会话"
         onClick={newSession}
       >
         <SquarePen />
@@ -613,16 +607,6 @@ export default function Sidebar({
           </button>
         )}
       </div>
-      {terminalOpen && (
-        <div className="side-terminal-note" role="status">
-          <span>终端窗口使用中，可继续其他会话</span>
-          {showTerminal && (
-            <button type="button" onClick={showTerminal}>
-              回到终端
-            </button>
-          )}
-        </div>
-      )}
       <nav className="session-list" aria-label="会话列表" onKeyDown={moveInList}>
         {pinned.length > 0 && <div className="list-heading">置顶</div>}
         {pinned.map(renderSession)}
@@ -658,7 +642,7 @@ export default function Sidebar({
               >
                 {foldToggle({
                   open: !collapsed,
-                  label: `项目 · ${name} · ${deviceName}`,
+                  label: `项目 · ${name}${deviceName ? ` · ${deviceName}` : ''}`,
                   name,
                   members,
                   toggle: () =>
@@ -685,10 +669,15 @@ export default function Sidebar({
                     openMenu(below(event.currentTarget));
                   },
                 })}
-                <small className="project-device" title={`${deviceName}${online ? '' : ' · 离线'}`}>
-                  {deviceName}
-                  {!online && ' · 离线'}
-                </small>
+                {deviceName && (
+                  <small
+                    className="project-device"
+                    title={`${deviceName}${online ? '' : ' · 离线'}`}
+                  >
+                    {deviceName}
+                    {!online && ' · 离线'}
+                  </small>
+                )}
                 {prefs.pinnedProjects.includes(key) && <Pin className="pin-mark" />}
                 <IconButton
                   title={`项目操作 · ${location}`}

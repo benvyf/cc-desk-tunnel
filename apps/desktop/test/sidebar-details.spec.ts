@@ -184,8 +184,8 @@ test('a project row turns its folder into the folding arrow; the other computers
   await expect(heading.getByRole('button', { name: /^项目操作/ })).toBeVisible();
   await expect(heading.getByRole('button', { name: /^新建会话 · / })).toBeVisible();
   // Folded, the row counts its sessions and shows the dot of the one at work.
-  await page.getByRole('button', { name: '收起项目 · api · 本机', exact: true }).click();
-  const toggle = page.getByRole('button', { name: '展开项目 · api · 本机', exact: true });
+  await page.getByRole('button', { name: '收起项目 · api', exact: true }).click();
+  const toggle = page.getByRole('button', { name: '展开项目 · api', exact: true });
   await expect(toggle.locator('small')).toHaveText('3');
   await expect(toggle).toHaveAttribute('data-state', 'running');
   await toggle.click();
@@ -216,9 +216,7 @@ test("the list moves with ↑ ↓ and opens a row's menu from the keyboard", asy
   await expect(row(page, '修复时区').locator('.session-select')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
-  await expect(
-    page.getByRole('button', { name: '收起项目 · api · 本机', exact: true }),
-  ).toBeFocused();
+  await expect(page.getByRole('button', { name: '收起项目 · api', exact: true })).toBeFocused();
   await page.keyboard.press('End');
   await expect(page.getByRole('button', { name: '展开其他设备的会话', exact: true })).toBeFocused();
   await page.keyboard.press('Home');
@@ -266,8 +264,8 @@ test('an open terminal keeps other conversations navigable and new sessions avai
   await page.getByRole('menuitem', { name: '原生终端', exact: true }).click();
   await expect(page.locator('.native-terminal')).toBeVisible();
   const note = page.locator('.side-terminal-note');
-  await expect(note).toContainText('终端窗口使用中，可继续其他会话');
-  await expect(note.getByRole('button', { name: '回到终端', exact: true })).toBeVisible();
+  await expect(note).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '终端', exact: true })).toBeVisible();
   const select = row(page, '压测脚本').locator('.session-select');
   await expect(select).toBeEnabled();
   await select.click();

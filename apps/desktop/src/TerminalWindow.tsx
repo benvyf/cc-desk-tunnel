@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import NativeTerminal, { type TerminalHandle, type TerminalPhase } from './NativeTerminal.tsx';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { SquareTerminal, X, Plus, ChevronDown, Pencil, ScrollText, Search } from './icons.tsx';
+import { SquareTerminal, X, Plus, ChevronDown, ScrollText, Search } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { folderName, pathKey } from './paths.ts';
 import { terminalTarget } from './terminalLinks.ts';
@@ -13,16 +13,22 @@ import TerminalDraft from './TerminalDraft.tsx';
 import TerminalHistory from './TerminalHistory.tsx';
 import PreviewSidebar from './PreviewSidebar.tsx';
 import { previewWebsite, usePreviewWorkspace } from './preview.ts';
-import TerminalProjectPicker from './TerminalProjectPicker.tsx';
+import {
+  deviceLabel,
+  terminalChoices,
+  projectPreferenceKey,
+  newTerminalPermission,
+} from './developmentProjects.ts';
 import OpenProjectDialog from './OpenProjectDialog.tsx';
 import { useSshTargets } from './useSshTargets.ts';
 import { useShared } from './shared.ts';
-import { getPrefs } from './prefs.ts';
-import { sessionDefaultOptions } from './modelDefaults.ts';
+import { getPrefs, usePrefs } from './prefs.ts';
+import { effortNames, sessionDefaultOptions } from './modelDefaults.ts';
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
   show: (sessionId?: string) => void;
+  create: (project: { deviceId?: string; path: string }) => void;
 };
 type Tab = {
   tabId: string;
@@ -46,6 +52,7 @@ export default function TerminalWindow({
   projectScope = '',
   register,
   nodeName = '当前连接节点',
+  workspaceRoots = [],
 }: {
   client: ProxyClient;
   sessionId: string;
@@ -55,6 +62,7 @@ export default function TerminalWindow({
   projectScope?: string;
   register?: (handle: TerminalWorkspaceHandle | null) => void;
   nodeName?: string;
+  workspaceRoots?: string[];
 }) {
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const sshTargets = useSshTargets();
@@ -90,7 +98,10 @@ export default function TerminalWindow({
   const [menuIndex, setMenuIndex] = useState(0);
   const [rename, setRename] = useState(false);
   const [alias, setAlias] = useState('');
-  const [picker, setPicker] = useState(false);
+  const prefs = usePrefs();
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const composing = useRef(false);
+  const [menuPosition, setMenuPosition] = useState({ left: 8, top: 40, width: 420 });
   const [openProject, setOpenProject] = useState<{
     deviceId?: string;
     path?: string;
@@ -246,6 +257,45 @@ export default function TerminalWindow({
     setMenu(false);
     void create(tab);
   }
+  const choices = terminalChoices({
+    sessions: state.sessions,
+    targets: sshTargets,
+    localPaths,
+    localDeviceId: state.device?.id,
+    workspaceRoots,
+    scope: projectScope,
+    active: activeSource,
+  }).map((choice) => ({
+    ...choice,
+    name:
+      prefs.projectNames[
+        projectPreferenceKey(
+          projectScope,
+          choice.deviceId === state.device?.id ? undefined : choice.deviceId,
+          choice.path,
+        )
+      ] || choice.name,
+  }));
+  function chooseProject(project: { deviceId?: string; path: string; source?: Session }) {
+    if (!multi || !connected || closing) return;
+    setMenu(false);
+    if (project.source) add(project.source);
+    else
+      setOpenProject({
+        deviceId: project.deviceId === state.device?.id ? undefined : project.deviceId,
+        path: project.path,
+      });
+    void window.desktop?.terminalWindow.focus();
+  }
+  function createProject(project: { deviceId?: string; path: string }) {
+    chooseProject(
+      choices.find(
+        (choice) =>
+          (choice.deviceId || state.device?.id) === (project.deviceId || state.device?.id) &&
+          pathKey(choice.path) === pathKey(project.path),
+      ) ?? project,
+    );
+  }
   async function remove(targets: Tab[], all: boolean): Promise<boolean> {
     if (closing || confirmResult.current) return false;
     if (targets.some((tab) => live(tab) || tab.phase === 'disconnected')) {
@@ -282,8 +332,8 @@ export default function TerminalWindow({
     if (all || !remaining.length) callbacks.current.onClose();
     return true;
   }
-  const actions = useRef({ remove, show });
-  actions.current = { remove, show };
+  const actions = useRef({ remove, show, createProject });
+  actions.current = { remove, show, createProject };
   const closeAll = useCallback(() => {
     if (closePending.current) return closePending.current;
     closePending.current = actions.current.remove(tabsRef.current, true).finally(() => {
@@ -292,7 +342,11 @@ export default function TerminalWindow({
     return closePending.current;
   }, []);
   useEffect(() => {
-    callbacks.current.register?.({ closeAll, show });
+    callbacks.current.register?.({
+      closeAll,
+      show,
+      create: (project) => actions.current.createProject(project),
+    });
     return () => {
       callbacks.current.register?.(null);
       confirmResult.current?.(false);
@@ -403,9 +457,18 @@ export default function TerminalWindow({
     confirmResult.current = null;
     setConfirm(null);
   };
+  const projectName = (session: Session) =>
+    prefs.projectNames[
+      projectPreferenceKey(
+        projectScope,
+        session.device?.id === state.device?.id ? undefined : session.device?.id,
+        session.projectPath,
+      )
+    ] || folderName(session.projectPath);
   const matchingTabs = tabs.filter((tab) =>
     [
       tab.alias,
+      projectName(sourceOf(tab)),
       folderName(tab.source.projectPath),
       tab.source.projectPath,
       nodeName,
@@ -415,18 +478,102 @@ export default function TerminalWindow({
       .toLocaleLowerCase()
       .includes(filter.trim().toLocaleLowerCase()),
   );
-  const selectedMenuTab = matchingTabs[Math.min(menuIndex, matchingTabs.length - 1)];
+  const matchingChoices = choices.filter((choice) =>
+    `${choice.name} ${choice.deviceName} ${choice.source?.device?.name ?? (choice.deviceId === state.device?.id ? state.device.name : '')} ${choice.path}`
+      .toLocaleLowerCase()
+      .includes(filter.trim().toLocaleLowerCase()),
+  );
+  const menuCount = matchingTabs.length + matchingChoices.length;
+  const selectedIndex = Math.min(menuIndex, menuCount - 1);
+  const selectedMenuTab = matchingTabs[selectedIndex];
+  const selectedChoice = matchingChoices[selectedIndex - matchingTabs.length];
   useEffect(() => {
-    if (menu && selectedMenuTab)
+    if (menu)
       (container?.ownerDocument ?? document)
-        .getElementById(`terminal-result-${selectedMenuTab.tabId}`)
+        .getElementById(
+          selectedMenuTab
+            ? `terminal-result-${selectedMenuTab.tabId}`
+            : `terminal-choice-${encodeURIComponent(selectedChoice?.key ?? '')}`,
+        )
         ?.scrollIntoView({ block: 'nearest' });
-  }, [menu, selectedMenuTab?.tabId, container]);
+  }, [menu, selectedMenuTab?.tabId, selectedChoice?.key, container]);
   const finishMenu = (tabId = activeId) => {
     setMenu(false);
     setActiveId(tabId);
     handles.current.get(tabId)?.focus();
   };
+  const positionMenu = useCallback(() => {
+    const button = menuButton.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const viewport = button.ownerDocument.defaultView?.innerWidth ?? window.innerWidth;
+    const width = Math.min(420, viewport - 16);
+    setMenuPosition({
+      left: Math.max(8, Math.min(rect.left, viewport - width - 8)),
+      top: rect.bottom + 4,
+      width,
+    });
+  }, []);
+  function toggleMenu() {
+    if (menu) {
+      setMenu(false);
+      menuButton.current?.focus();
+      return;
+    }
+    positionMenu();
+    setFilter('');
+    setMenuIndex(0);
+    setMenu(true);
+  }
+  useEffect(() => {
+    if (!menu) return;
+    const view = menuButton.current?.ownerDocument.defaultView;
+    view?.addEventListener('resize', positionMenu);
+    return () => view?.removeEventListener('resize', positionMenu);
+  }, [menu, positionMenu, container, fallback]);
+  function shortcut(event: KeyboardEvent) {
+    if (
+      event.isComposing ||
+      composing.current ||
+      event.altKey ||
+      event.metaKey ||
+      !event.ctrlKey ||
+      event.type !== 'keydown'
+    )
+      return false;
+    if (event.shiftKey && event.key.toLowerCase() === 't') {
+      if (activeSource) add(activeSource);
+    } else if (event.shiftKey && (event.key === ' ' || event.code === 'Space')) toggleMenu();
+    else if (event.key === 'Tab') {
+      const index = tabsRef.current.findIndex((tab) => tab.tabId === activeId);
+      const next =
+        tabsRef.current[
+          (index + (event.shiftKey ? tabsRef.current.length - 1 : 1)) % tabsRef.current.length
+        ];
+      if (next) finishMenu(next.tabId);
+    } else return false;
+    return true;
+  }
+  const shortcutRef = useRef(shortcut);
+  shortcutRef.current = shortcut;
+  useEffect(() => {
+    const doc = container?.ownerDocument ?? (fallback ? document : null);
+    if (!doc) return;
+    const keydown = (event: KeyboardEvent) => {
+      if ((event.target as Element)?.closest('.xterm')) return;
+      if (shortcutRef.current(event)) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    doc.addEventListener('keydown', keydown, true);
+    return () => doc.removeEventListener('keydown', keydown, true);
+  }, [container, fallback]);
+  function renameTab(tab: Tab) {
+    setActiveId(tab.tabId);
+    setAlias(tab.alias);
+    setRename(true);
+  }
   const content = (
     <div className="terminal-workspace" data-native-controls={nativeControls}>
       <header
@@ -450,11 +597,16 @@ export default function TerminalWindow({
                 id={`tab-${tab.tabId}`}
                 title={`${tab.alias || folderName(sourceOf(tab).projectPath)} · ${sourceOf(tab).device?.name ?? '本机'} · ${sourceOf(tab).projectPath} · ${tab.detail}`}
                 onClick={() => setActiveId(tab.tabId)}
+                onDoubleClick={() => renameTab(tab)}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  renameTab(tab);
+                }}
               >
                 <span>{tab.alias || folderName(tab.source.projectPath)}</span>
-                {mixedDevices && (
+                {mixedDevices && deviceLabel(sourceOf(tab).device, state.device?.id) && (
                   <span className="terminal-tab-device">
-                    {sourceOf(tab).device?.name ?? '本机'}
+                    {deviceLabel(sourceOf(tab).device, state.device?.id)}
                   </span>
                 )}
                 {!live(tab) && (
@@ -483,58 +635,41 @@ export default function TerminalWindow({
             </div>
           ))}
         </div>
-        <div className="terminal-new-actions">
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={multi ? '新建终端' : '服务端升级后可使用多终端'}
-            title={
-              !multi
-                ? '服务端升级后可使用多终端'
-                : activeSource
-                  ? `在 ${activeSource.device?.name ?? '本机'} · ${folderName(activeSource.projectPath)} 中新建终端`
-                  : '新建终端'
-            }
-            disabled={!multi || !connected || closing || !active}
-            onClick={() => activeSource && add(activeSource)}
-            aria-description={
-              activeSource
-                ? `在 ${activeSource.device?.name ?? '本机'} · ${folderName(activeSource.projectPath)} 中新建终端`
-                : undefined
-            }
-          >
-            <Plus scale="sm" />
-          </button>
-          <IconButton
-            title="选择设备或项目新建终端"
-            disabled={!multi || !connected || closing}
-            onClick={() => {
-              setPicker(true);
-              setMenu(false);
-            }}
-          >
-            <ChevronDown scale="sm" />
-          </IconButton>
-        </div>
+        <button
+          type="button"
+          className="icon-button"
+          aria-label={multi ? '新建终端' : '服务端升级后可使用多终端'}
+          title={
+            activeSource
+              ? `新建终端 · ${projectName(activeSource)}${deviceLabel(activeSource.device, state.device?.id) ? ` · ${deviceLabel(activeSource.device, state.device?.id)}` : ''}`
+              : '新建终端'
+          }
+          aria-description={
+            activeSource
+              ? `新建终端 · ${projectName(activeSource)}${deviceLabel(activeSource.device, state.device?.id) ? ` · ${deviceLabel(activeSource.device, state.device?.id)}` : ''}`
+              : undefined
+          }
+          disabled={!multi || !connected || closing || !active}
+          onClick={() => activeSource && add(activeSource)}
+        >
+          <Plus scale="sm" />
+        </button>
         {previewAvailable && (
           <Button size="xs" variant="ghost" data-preview-toggle onClick={preview.toggle}>
             预览
           </Button>
         )}
-        <IconButton
-          title="全部终端"
+        <button
+          ref={menuButton}
+          type="button"
+          className="icon-button"
+          title="切换或新建终端"
+          aria-label="切换或新建终端"
           aria-expanded={menu}
-          onClick={() => {
-            if (menu) finishMenu();
-            else {
-              setFilter('');
-              setMenuIndex(0);
-              setMenu(true);
-            }
-          }}
+          onClick={toggleMenu}
         >
           <ChevronDown scale="sm" />
-        </IconButton>
+        </button>
         <div className="terminal-title-actions" ref={setToolbar} />
         {!fallback && !nativeControls && (
           <div className="terminal-window-controls">
@@ -568,73 +703,158 @@ export default function TerminalWindow({
       {menu && (
         <div
           className="terminal-list"
-          aria-label="全部终端列表"
+          aria-label="切换或新建终端"
+          style={{
+            ...menuPosition,
+            position: 'fixed',
+            right: 'auto',
+            maxHeight: 'calc(100vh - 80px)',
+            overflowY: 'auto',
+          }}
           onKeyDown={(event) => {
-            if (event.key === 'Escape' && !event.nativeEvent.isComposing) {
+            if (event.nativeEvent.isComposing || composing.current) return;
+            const listTarget = (event.target as Element).closest(
+              '.terminal-list-search, [role="option"]',
+            );
+            if (event.key === 'Escape') {
               event.preventDefault();
               event.stopPropagation();
-              finishMenu();
+              setMenu(false);
+              menuButton.current?.focus();
+            } else if (listTarget && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+              event.preventDefault();
+              if (menuCount)
+                setMenuIndex(
+                  (index) =>
+                    (Math.min(index, menuCount - 1) +
+                      (event.key === 'ArrowDown' ? 1 : menuCount - 1)) %
+                    menuCount,
+                );
+            } else if (listTarget && event.key === 'Enter' && (selectedMenuTab || selectedChoice)) {
+              event.preventDefault();
+              if (selectedMenuTab) finishMenu(selectedMenuTab.tabId);
+              else chooseProject(selectedChoice);
             }
           }}
         >
-          {/* A menu of the open terminals (audit G2): the search sits at its top, each terminal is one row with
-              its state's dot, and what can be done follows under a rule. */}
           <label className="terminal-list-search">
             <Search />
             <input
               autoFocus
-              aria-label="筛选终端"
-              placeholder="搜索别名、项目或节点"
+              aria-label="搜索项目、设备或已打开的终端"
+              placeholder="搜索项目、设备或已打开的终端"
               value={filter}
               aria-controls="terminal-results"
               aria-activedescendant={
-                selectedMenuTab ? `terminal-result-${selectedMenuTab.tabId}` : undefined
+                selectedMenuTab
+                  ? `terminal-result-${selectedMenuTab.tabId}`
+                  : selectedChoice
+                    ? `terminal-choice-${encodeURIComponent(selectedChoice.key)}`
+                    : undefined
               }
+              onCompositionStart={() => {
+                composing.current = true;
+              }}
+              onCompositionEnd={() => {
+                composing.current = false;
+              }}
               onChange={(event) => {
                 setFilter(event.target.value);
                 setMenuIndex(0);
               }}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-                  event.preventDefault();
-                  if (matchingTabs.length)
-                    setMenuIndex(
-                      (index) =>
-                        (Math.min(index, matchingTabs.length - 1) +
-                          (event.key === 'ArrowDown' ? 1 : matchingTabs.length - 1)) %
-                        matchingTabs.length,
-                    );
-                } else if (event.key === 'Enter' && selectedMenuTab) {
-                  event.preventDefault();
-                  finishMenu(selectedMenuTab.tabId);
-                }
-              }}
             />
           </label>
-          <div id="terminal-results" role="listbox" aria-label="匹配终端">
-            {!matchingTabs.length && <p role="status">没有匹配的终端</p>}
-            {matchingTabs.map((tab) => (
-              <button
-                type="button"
-                key={tab.tabId}
-                id={`terminal-result-${tab.tabId}`}
-                className="terminal-list-row"
-                role="option"
-                data-phase={tab.phase}
-                aria-selected={selectedMenuTab?.tabId === tab.tabId}
-                title={`${tab.alias || folderName(tab.source.projectPath)} · ${tab.source.projectPath} · ${nodeName} · ${tab.source.device?.name ?? ''}`}
-                onClick={() => finishMenu(tab.tabId)}
-              >
-                <span className="terminal-list-name">
-                  {tab.alias || folderName(tab.source.projectPath)}
-                  <small> · {tab.detail}</small>
-                </span>
-                <small className="terminal-list-path">
-                  {tab.source.projectPath} · {nodeName} · {tab.source.device?.name}
-                </small>
-              </button>
-            ))}
+          <div id="terminal-results" role="listbox" aria-label="匹配终端和项目">
+            <section role="group" aria-label="已打开">
+              <h3 className="terminal-list-group">已打开</h3>
+              {matchingTabs.map((tab, index) => (
+                <button
+                  type="button"
+                  key={tab.tabId}
+                  id={`terminal-result-${tab.tabId}`}
+                  className="terminal-list-row"
+                  role="option"
+                  data-phase={tab.phase}
+                  aria-selected={selectedIndex === index}
+                  title={`${tab.alias || projectName(sourceOf(tab))} · ${tab.source.projectPath}`}
+                  onMouseEnter={() => setMenuIndex(index)}
+                  onFocus={() => setMenuIndex(index)}
+                  onClick={() => finishMenu(tab.tabId)}
+                >
+                  <span className="terminal-list-name">
+                    {tab.alias || projectName(sourceOf(tab))}
+                    {deviceLabel(sourceOf(tab).device, state.device?.id) && (
+                      <small> · {deviceLabel(sourceOf(tab).device, state.device?.id)}</small>
+                    )}
+                  </span>
+                  <small className="terminal-list-status">
+                    {tab.phase === 'running'
+                      ? sourceOf(tab).activeRun?.activity === 'waiting'
+                        ? '终端等你确认'
+                        : '终端运行中'
+                      : ['opening', 'creating'].includes(tab.phase)
+                        ? '终端打开中'
+                        : tab.detail}
+                  </small>
+                  <small className="terminal-list-path">{tab.source.projectPath}</small>
+                  {selectedIndex === index && <small className="terminal-list-hint">↵ 切换</small>}
+                </button>
+              ))}
+            </section>
+            <section role="group" aria-label="新建终端">
+              <h3 className="terminal-list-group">新建终端</h3>
+              {matchingChoices.map((choice, index) => {
+                const target = sshTargets.find((target) => target.id === choice.deviceId);
+                const offline = target && target.status !== 'connected';
+                const label = deviceLabel(
+                  { id: choice.deviceId, name: choice.deviceName },
+                  state.device?.id,
+                );
+                const defaults = choice.source ?? {
+                  permissionMode: newTerminalPermission,
+                  ...sessionDefaultOptions(prefs.sessionDefaults, state.capabilities?.models),
+                };
+                const permissions = {
+                  auto: '自动审批',
+                  default: '手动审批',
+                  acceptEdits: '接受编辑',
+                  plan: '计划模式',
+                  bypassPermissions: '绕过权限',
+                };
+                return (
+                  <button
+                    type="button"
+                    role="option"
+                    className="terminal-project-choice"
+                    key={choice.key}
+                    id={`terminal-choice-${encodeURIComponent(choice.key)}`}
+                    aria-label={`${choice.name}${label ? ` · ${label}` : ''}`}
+                    aria-selected={selectedIndex === index + matchingTabs.length}
+                    data-offline={offline || undefined}
+                    title={`${choice.path} · ${defaults.model ?? '默认模型'} · ${permissions[defaults.permissionMode]} · ${defaults.effort ? effortNames[defaults.effort] : '默认强度'}`}
+                    disabled={!multi || !connected || closing}
+                    onMouseEnter={() => setMenuIndex(index + matchingTabs.length)}
+                    onFocus={() => setMenuIndex(index + matchingTabs.length)}
+                    onClick={() => chooseProject(choice)}
+                  >
+                    <span>
+                      {choice.name}
+                      {label && <small>{label}</small>}
+                    </span>
+                    <small className="terminal-project-meta">{choice.path}</small>
+                    <small className="terminal-list-hint">
+                      {[
+                        offline ? '离线' : choice.source?.id === activeSource?.id ? '当前' : '',
+                        selectedIndex === index + matchingTabs.length ? '↵ 新建' : '',
+                      ]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </small>
+                  </button>
+                );
+              })}
+            </section>
+            {!menuCount && <p role="status">没有匹配的项目或终端</p>}
           </div>
           <hr />
           <button
@@ -642,25 +862,12 @@ export default function TerminalWindow({
             className="terminal-list-action"
             disabled={!multi || !connected || closing}
             onClick={() => {
-              setPicker(true);
               setMenu(false);
+              setOpenProject({});
             }}
           >
             <Plus />
-            选项目新建
-          </button>
-          <button
-            type="button"
-            className="terminal-list-action"
-            disabled={!active}
-            onClick={() => {
-              setAlias(active?.alias ?? '');
-              setRename(true);
-              setMenu(false);
-            }}
-          >
-            <Pencil />
-            标签别名
+            打开其他目录…
           </button>
           {state.terminalHistory && (
             <button
@@ -673,7 +880,7 @@ export default function TerminalWindow({
               }}
             >
               <ScrollText />
-              继续官方历史
+              继续官方历史…
             </button>
           )}
         </div>
@@ -695,6 +902,7 @@ export default function TerminalWindow({
                 sessionId={tab.sessionId}
                 active={tab.tabId === activeId}
                 toolbar={toolbar}
+                onShortcut={shortcut}
                 onClose={() => {
                   void remove([tab], false);
                 }}
@@ -773,7 +981,9 @@ export default function TerminalWindow({
         title={`${activeSource?.device?.name ?? '本机'} · ${activeSource?.projectPath ?? ''} · ${nodeName}`}
       >
         <span>{activeSource?.projectPath}</span>
-        <span>{activeSource?.device?.name ?? '本机'}</span>
+        {deviceLabel(activeSource?.device, state.device?.id) && (
+          <span>{deviceLabel(activeSource?.device, state.device?.id)}</span>
+        )}
       </footer>
       {linkError && <p role="alert">{linkError}</p>}
       {historySource && (
@@ -861,28 +1071,6 @@ export default function TerminalWindow({
           </form>
         </Modal>
       )}
-      {picker && (
-        <TerminalProjectPicker
-          sessions={state.sessions}
-          targets={sshTargets}
-          localPaths={localPaths}
-          localDeviceId={state.device?.id}
-          scope={projectScope}
-          active={activeSource}
-          onClose={() => setPicker(false)}
-          onSelect={(selected) => {
-            const target = sshTargets.find((target) => target.id === selected.device?.id);
-            if (target && target.status !== 'connected')
-              setOpenProject({ deviceId: target.id, path: selected.projectPath, source: selected });
-            else add(selected);
-            setPicker(false);
-          }}
-          onOpen={(initial) => {
-            setPicker(false);
-            setOpenProject(initial ?? {});
-          }}
-        />
-      )}
       {openProject && (
         <OpenProjectDialog
           client={client}
@@ -895,7 +1083,7 @@ export default function TerminalWindow({
               {
                 ...activeSource,
                 device: state.device ?? undefined,
-                permissionMode: 'default',
+                permissionMode: newTerminalPermission,
                 ...sessionDefaultOptions(getPrefs().sessionDefaults, state.capabilities?.models),
               },
               path,
@@ -914,11 +1102,11 @@ export default function TerminalWindow({
             const defaults = inherited
               ? { model: inherited.model, effort: inherited.effort }
               : sessionDefaultOptions(getPrefs().sessionDefaults, state.capabilities?.models);
-            if (created && (inherited || defaults.model || defaults.effort))
+            if (created)
               await client.request({
                 type: 'session.configure',
                 sessionId: id,
-                permissionMode: inherited?.permissionMode ?? selected.permissionMode,
+                permissionMode: inherited?.permissionMode ?? newTerminalPermission,
                 ...defaults,
               });
             show(id);

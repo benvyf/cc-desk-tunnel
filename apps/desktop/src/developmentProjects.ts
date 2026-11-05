@@ -1,5 +1,6 @@
 import type { Session } from '@cc-desk-tunnel/protocol';
-import { folderName, pathKey } from './paths.ts';
+import type { SshTarget } from './desktop.d.ts';
+import { folderName, isInside, pathKey } from './paths.ts';
 
 // The service scopes remote device identities; local preferences keep their existing path keys.
 export const projectIdentity = (scope: string, deviceId: string, path: string) =>
@@ -49,4 +50,51 @@ export function terminalProjects(
       b.source.updatedAt.localeCompare(a.source.updatedAt) ||
       a.key.localeCompare(b.key),
   );
+}
+
+export const newTerminalPermission = 'default' as const;
+
+export function deviceLabel(
+  device: { id: string; name: string } | undefined,
+  localDeviceId?: string,
+): string {
+  return !device || device.id === localDeviceId ? '' : device.name;
+}
+
+export type TerminalChoice = Omit<TerminalProject, 'source'> & { source?: Session };
+export function terminalChoices(input: {
+  sessions: Session[];
+  targets: SshTarget[];
+  localPaths: string[];
+  localDeviceId?: string;
+  workspaceRoots: string[];
+  scope: string;
+  active?: Session;
+}): TerminalChoice[] {
+  const { sessions, targets, localPaths, localDeviceId, workspaceRoots, scope, active } = input;
+  const available = targets.filter((target) => target.available);
+  const eligible = sessions.filter(
+    (session) =>
+      (session.device?.id === localDeviceId &&
+        !!localDeviceId &&
+        !isInside(session.projectPath, workspaceRoots)) ||
+      (session.device?.viaSsh && available.some((target) => target.id === session.device?.id)),
+  );
+  const choices = new Map<string, TerminalChoice>(
+    terminalProjects(eligible, scope, active).map((project) => [
+      project.key,
+      { ...project, deviceName: deviceLabel(project.source.device, localDeviceId) },
+    ]),
+  );
+  const saved = [
+    ...localPaths.map((path) => ({ deviceId: localDeviceId ?? '', deviceName: '', path })),
+    ...available.flatMap((target) =>
+      target.projects.map((path) => ({ deviceId: target.id, deviceName: target.name, path })),
+    ),
+  ];
+  for (const project of saved) {
+    const key = projectIdentity(scope, project.deviceId, project.path);
+    if (!choices.has(key)) choices.set(key, { ...project, key, name: folderName(project.path) });
+  }
+  return [...choices.values()];
 }

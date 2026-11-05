@@ -38,6 +38,7 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
   let held = false;
   let releaseRemote: () => void = () => {};
   let loseLocalResponse = false;
+  let failConfigure = false;
   const localResults = new Map<string, Session>();
   let holdLocal = false;
   let releaseLocal: () => void = () => {};
@@ -91,7 +92,9 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         entries[0].status = status;
         changes.forEach((fn) => fn([...entries]));
       };
+      window.open = () => null;
       (window as any).desktop = {
+        terminalWindow: { focus: async () => true, setActive: async () => {} },
         dev: true,
         platform: 'win32',
         boot: { connection: 'fixture', shared: {} },
@@ -104,7 +107,7 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         disconnectProxy: async () => {},
         onProxyClosed: off,
         device: async () => device,
-        workspaceRoots: async () => ['/work'],
+        workspaceRoots: async () => ['/work', 'D:\\sessions'],
         foldersExist: async (paths: string[]) => paths.map(() => true),
         loadDrafts: async () => ({}),
         saveDrafts: async () => {},
@@ -116,9 +119,8 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         gitBranch: async () => null,
         notify: async () => {},
         asOnDisk: async (path: string) => path,
-        createWorkspace: async () => {
-          throw new Error('unexpected local workspace fallback');
-        },
+        createWorkspace: async () => 'D:\\sessions\\2026-11-06\\123456',
+        removeWorkspace: async () => {},
         ssh: {
           list: async () => entries,
           onChanged: (fn: (entries: any[]) => void) => {
@@ -178,6 +180,11 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         return;
       }
       if (c.type === 'device' || !c.requestId) return;
+      if (c.type === 'session.configure' && failConfigure) {
+        failConfigure = false;
+        send({ type: 'response', requestId: c.requestId, ok: false, message: '配置暂时失败' });
+        return;
+      }
       if (c.type === 'session.subscribe')
         send({
           type: 'session.snapshot',
@@ -213,10 +220,21 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
         send({ type: 'session.updated', session });
         send({ type: 'terminal.opened', sessionId: c.sessionId, terminalId: session.activeRun.id });
       }
-      if (c.type === 'session.create') {
+      if (c.type === 'session.create' || c.type === 'terminal.session.create') {
         let session = localResults.get(c.requestId);
         if (!session) {
-          session = make('新会话', c.projectPath);
+          const source = sessions.find((s) => s.id === c.sourceSessionId);
+          session = {
+            ...make('新会话', c.projectPath ?? source?.projectPath ?? ''),
+            ...(source
+              ? {
+                  device: source.device,
+                  model: source.model,
+                  permissionMode: source.permissionMode,
+                  effort: source.effort,
+                }
+              : {}),
+          };
           sessions.push(session);
           localResults.set(c.requestId, session);
         }
@@ -251,6 +269,9 @@ async function setup(page: Page, longHistory = false, nativeRemote = false) {
     sessions,
     commands,
     send,
+    failNextConfigure: () => {
+      failConfigure = true;
+    },
     loseNextRemoteResponse: () => {
       loseRemoteResponse = true;
     },
@@ -293,19 +314,21 @@ test('terminal A stays mounted while independent chat B is navigated and draft i
     commands.filter((c) => c.type === 'terminal.close' || c.type === 'session.move'),
   ).toHaveLength(0);
   await select(page, '项目 A 会话');
-  await expect(page.getByText('此会话正在终端中使用')).toBeVisible();
+  await expect(page.getByText('正在终端里运行', { exact: true })).toBeVisible();
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeDisabled();
 });
-test('new session inherits the selected project even while a different terminal is running', async ({
+test('desktop new session uses an ordinary local workspace while a different terminal runs', async ({
   page,
 }) => {
-  const { commands } = await setup(page);
+  const { commands } = await setup(page, false, true);
   await select(page, '项目 A 会话');
   await page.getByRole('button', { name: '终端', exact: true }).click();
   await select(page, '项目 B 会话');
   await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
   await expect.poll(() => commands.filter((c) => c.type === 'session.create').length).toBe(1);
-  expect(commands.find((c) => c.type === 'session.create').projectPath).toBe('D:\\work\\b');
+  expect(commands.find((c) => c.type === 'session.create').projectPath).toBe(
+    'D:\\sessions\\2026-11-06\\123456',
+  );
 });
 test('existing terminal window cannot bypass active graphical run check', async ({ page }) => {
   const { sessions, commands, send } = await setup(page);
@@ -324,8 +347,8 @@ test('chat reading position survives switching to another project', async ({ pag
   await select(page, '项目 B 会话');
   const conversation = page.locator('.conversation');
   await expect(page.locator('[data-message-id]')).toHaveCount(60);
-  await conversation.evaluate((node) => node.scrollTo(0, 650));
-  await expect.poll(() => conversation.evaluate((node) => node.scrollTop)).toBeGreaterThan(600);
+  await conversation.evaluate((node) => node.scrollTo(0, 300));
+  await expect.poll(() => conversation.evaluate((node) => node.scrollTop)).toBeGreaterThan(250);
   const before = await conversation.evaluate((node) => node.scrollTop);
   await select(page, '项目 A 会话');
   await select(page, '项目 B 会话');
@@ -336,26 +359,43 @@ test('chat reading position survives switching to another project', async ({ pag
     .toBeLessThan(30);
 });
 
-test('remote new-session remains remote even when its path overlaps local workspace roots', async ({
+test('desktop top new session and shortcut stay local when a remote project is selected', async ({
   page,
 }) => {
   const { commands } = await setup(page, false, true);
-  await select(page, '远程项目会话');
-  await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
-  await expect.poll(() => commands.filter((c) => c.type === 'ssh.openProject').length).toBe(1);
-  expect(commands.find((c) => c.type === 'ssh.openProject').id).toBe(
-    '00000000-0000-4000-8000-000000000002',
-  );
+  for (const shortcut of [false, true]) {
+    await select(page, '远程项目会话');
+    if (shortcut) await page.keyboard.press('Control+n');
+    else await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
+    await expect
+      .poll(() => commands.filter((c) => c.type === 'session.create').length)
+      .toBe(shortcut ? 2 : 1);
+  }
+  expect(commands.filter((c) => c.type === 'ssh.openProject')).toHaveLength(0);
+  expect(
+    commands
+      .filter((c) => c.type === 'session.create')
+      .every((c) => c.projectPath.startsWith('D:\\sessions')),
+  ).toBe(true);
 });
+
 test('connected remote new-session retry reuses creation identity after lost response', async ({
   page,
 }) => {
   const fixture = await setup(page, false, true);
   await select(page, '远程项目会话');
   fixture.loseNextRemoteResponse();
-  await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '远程项目会话' })
+    .getByRole('button', { name: /新建会话/ })
+    .click();
   await expect(page.getByRole('alert').filter({ hasText: '模拟创建响应丢失' })).toBeVisible();
-  await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '远程项目会话' })
+    .getByRole('button', { name: /新建会话/ })
+    .click();
   await expect(page.locator('.titlebar h1')).toHaveText('远程新会话');
   const calls = fixture.commands.filter((c) => c.type === 'ssh.openProject');
   expect(calls).toHaveLength(2);
@@ -387,7 +427,11 @@ test('late remote creation keeps the new session but does not steal navigation f
   const fixture = await setup(page, false, true);
   await select(page, '远程项目会话');
   fixture.holdRemote();
-  await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '远程项目会话' })
+    .getByRole('button', { name: /新建会话/ })
+    .click();
   await expect
     .poll(() => fixture.commands.filter((c) => c.type === 'ssh.openProject').length)
     .toBe(1);
@@ -473,10 +517,18 @@ test('lost remote creation identity survives retry through the offline reconnect
   const fixture = await setup(page, false, true);
   await select(page, '远程项目会话');
   fixture.loseNextRemoteResponse();
-  await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '远程项目会话' })
+    .getByRole('button', { name: /新建会话/ })
+    .click();
   await expect(page.getByRole('alert').filter({ hasText: '模拟创建响应丢失' })).toBeVisible();
   await page.evaluate(() => (window as any).testSetTargetStatus('disconnected'));
-  await page.getByRole('button', { name: '新建会话', exact: true }).first().click();
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '远程项目会话' })
+    .getByRole('button', { name: /新建会话/ })
+    .click();
   await page.getByRole('dialog').getByRole('button', { name: '连接', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: '新建会话', exact: true }).click();
   await expect(page.locator('.titlebar h1')).toHaveText('远程新会话');
@@ -486,9 +538,7 @@ test('lost remote creation identity survives retry through the offline reconnect
   expect(fixture.sessions.filter((s) => s.title === '远程新会话')).toHaveLength(1);
 });
 
-test('return-to-terminal attaches a running session even before this window owns a terminal workspace', async ({
-  page,
-}) => {
+test('terminal owned by another window has no return action', async ({ page }) => {
   const { sessions, commands, send } = await setup(page);
   sessions[0].activeRun = {
     id: randomUUID(),
@@ -499,9 +549,9 @@ test('return-to-terminal attaches a running session even before this window owns
   };
   send({ type: 'session.updated', session: sessions[0] });
   await select(page, '项目 A 会话');
-  await page.getByRole('button', { name: '返回终端', exact: true }).click();
-  await expect(page.locator('.native-terminal')).toHaveCount(1);
-  await expect.poll(() => commands.filter((c) => c.type === 'terminal.open').length).toBe(1);
+  await expect(page.getByText('此会话正在另一个窗口的终端中使用', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '返回终端', exact: true })).toHaveCount(0);
+  expect(commands.filter((c) => c.type === 'terminal.open')).toHaveLength(0);
 });
 
 test('home local project creation retry keeps one session and its draft', async ({ page }) => {
@@ -552,3 +602,100 @@ test('late native directory validation cannot create a project on a changed serv
   );
   expect(fixture.commands.filter((c) => c.type === 'session.create')).toHaveLength(0);
 });
+
+test('any terminal prevents status reads and refresh, then the last exit reads the selected session once', async ({
+  page,
+}) => {
+  const { commands, sessions, send } = await setup(page);
+  await select(page, '项目 A 会话');
+  await expect
+    .poll(() => commands.filter((c) => c.type === 'session.status').length)
+    .toBeGreaterThan(0);
+  await page.getByRole('button', { name: '终端', exact: true }).click();
+  await expect.poll(() => commands.filter((c) => c.type === 'terminal.open').length).toBe(1);
+  await select(page, '项目 B 会话');
+  const box = page.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('/refresh');
+  await page.getByRole('option', { name: /刷新原生状态/ }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: '终端运行时暂不读取原生状态' }),
+  ).toBeVisible();
+  expect(
+    commands.filter((c) => c.type === 'session.status' && c.sessionId === sessions[1].id),
+  ).toHaveLength(0);
+  const terminalId = sessions[0].activeRun!.id;
+  sessions[0].activeRun = null;
+  send({ type: 'session.updated', session: sessions[0] });
+  send({ type: 'terminal.closed', sessionId: sessions[0].id, terminalId, exitCode: 0 });
+  await expect
+    .poll(
+      () =>
+        commands.filter((c) => c.type === 'session.status' && c.sessionId === sessions[1].id)
+          .length,
+    )
+    .toBe(1);
+  await select(page, '项目 A 会话');
+  await select(page, '项目 B 会话');
+  expect(
+    commands.filter((c) => c.type === 'session.status' && c.sessionId === sessions[1].id),
+  ).toHaveLength(1);
+});
+
+for (const remote of [false, true])
+  test(`project menu creates ${remote ? 'remote' : 'local'} terminals without changing main selection`, async ({
+    page,
+  }) => {
+    const { commands, sessions } = await setup(page, false, true);
+    await select(page, '项目 B 会话');
+    const source = remote ? sessions[2] : sessions[0];
+    for (let index = 0; index < 2; index++) {
+      await page
+        .locator('.project-group')
+        .filter({ hasText: source.title })
+        .getByRole('button', { name: /项目操作/ })
+        .click();
+      await page.getByRole('menuitem', { name: '新建终端', exact: true }).click();
+      await expect(page.getByRole('tab')).toHaveCount(index + 1);
+      await expect
+        .poll(() => commands.filter((c) => c.type === 'terminal.open').length)
+        .toBe(index + 1);
+      await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
+    }
+    const firstId = commands.find((c) => c.type === 'terminal.open').sessionId;
+    expect(
+      commands.find((c) => c.type === 'session.configure' && c.sessionId === firstId)
+        ?.permissionMode,
+    ).toBe('default');
+    await expect(page.locator('.side-terminal-note')).toHaveCount(0);
+    await expect(page.locator('.project-device').filter({ hasText: '本机' })).toHaveCount(0);
+  });
+
+for (const remote of [false, true])
+  test(`project terminal ${remote ? 'remote' : 'local'} configure failure keeps a dialog and retries one session`, async ({
+    page,
+  }) => {
+    const fixture = await setup(page, false, true);
+    await select(page, '项目 B 会话');
+    fixture.failNextConfigure();
+    const source = fixture.sessions[remote ? 2 : 0];
+    await page
+      .locator('.project-group')
+      .filter({ hasText: source.title })
+      .getByRole('button', { name: /项目操作/ })
+      .click();
+    await page.getByRole('menuitem', { name: '新建终端', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: '打开项目', exact: true });
+    await expect(dialog.getByRole('alert')).toContainText('配置暂时失败');
+    expect(fixture.commands.filter((c) => c.type === 'terminal.open')).toHaveLength(0);
+    await dialog
+      .getByRole('button', { name: remote ? '新建会话' : '打开项目', exact: true })
+      .click();
+    await expect
+      .poll(() => fixture.commands.filter((c) => c.type === 'terminal.open').length)
+      .toBe(1);
+    const configurations = fixture.commands.filter((c) => c.type === 'session.configure');
+    expect(configurations).toHaveLength(2);
+    expect(configurations[0].sessionId).toBe(configurations[1].sessionId);
+    expect(fixture.sessions).toHaveLength(4);
+    await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
+  });

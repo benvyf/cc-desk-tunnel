@@ -230,9 +230,8 @@ test('detached terminal has native window controls, exact input, resize, focus a
     );
     await child.screenshot({ path: resolve('.local/terminal-workspace-native-small.png') });
     for (const selector of [
-      '.terminal-new-actions > button:first-child',
-      '.terminal-new-actions > button:last-child',
-      '.terminal-tabs-header > button[aria-label="全部终端"]',
+      '.terminal-tabs-header > button[aria-label="新建终端"]',
+      '.terminal-tabs-header > button[aria-label="切换或新建终端"]',
       '.terminal-workspace-footer',
     ]) {
       expect(
@@ -494,8 +493,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       await child.getByRole('button', { name: '新建终端', exact: true }).click();
       await expect(child.getByRole('tab')).toHaveCount(i + 2);
     }
-    await child.getByRole('button', { name: '全部终端', exact: true }).click();
-    await child.getByRole('button', { name: '标签别名', exact: true }).click();
+    await child.getByRole('tab', { selected: true }).dblclick();
     await child
       .getByRole('dialog')
       .locator('input')

@@ -1,0 +1,209 @@
+{
+  "schema": 1,
+  "dateHongKong": "2026-11-06",
+  "verifiedAtUtc": "2026-11-05T18:35:22.191597+00:00",
+  "branch": "codex/multi-device-development",
+  "featureBaseCommit": "b12ef04cd104b5a9522c5f98f66e2bdb03a84282",
+  "startingHead": "3a7a295c99d49c46017b941cd7eda0796085f891",
+  "plan": {
+    "file": "32-multi-device-fix-plan.md",
+    "sha256": "6c1ebc68335226cf8b81ed0316ec5645b3b9ca3ea0c70ef9e9814c37e9d649f6"
+  },
+  "status": "verified",
+  "node": "24.21.0",
+  "checks": {
+    "broadUi": {
+      "startTime": "2026-11-05T18:23:01.757Z",
+      "duration": 433645.67,
+      "expected": 189,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/fix-plan-verified-ui.log",
+      "report": ".local/fix-plan-verified-ui.json",
+      "sourceSha256": {
+        "apps/desktop/src/App.tsx": "a3064fa75730e0f1b9fa0a2907de75fbaabfa506f1aea0e75c14cc1c211fbe1b",
+        "apps/desktop/src/NativeTerminal.tsx": "8b46acc40d858b9e5fd181a1714aea0d14f018f7984f0e5282c1ecb6cd23ea77",
+        "apps/desktop/src/OpenProjectDialog.tsx": "a124088ce7794aba8137430798f94dcc69d57331a549611f8257431a04b6eecc",
+        "apps/desktop/src/Sidebar.tsx": "ac895b6e712bf5bc04452e66b962d7fa458597b52e93ad7879f127d987fb094e",
+        "apps/desktop/src/TerminalWindow.tsx": "dcc30c9a9d8942f00d0ae88a013978afea9874b7914044bdcbfd84197462a9ee",
+        "apps/desktop/src/developmentProjects.ts": "346b062ba0081a5da17c75aef3e7f1ed611fe8d17e73ac65ba713c55d551634e",
+        "apps/desktop/src/style.css": "0e3b2228bb0a87be7e06daf8ff35ea718a180488899196c1e6a7fc4f6183d907"
+      }
+    },
+    "finalTerminalSupplement": {
+      "startTime": "2026-11-05T18:31:07.520Z",
+      "duration": 100821.39,
+      "expected": 71,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/fix-plan-supplement-ui.log",
+      "report": ".local/fix-plan-supplement-ui.json",
+      "changedProductionFilesSinceBroadBatch": ["apps/desktop/src/TerminalWindow.tsx"],
+      "reason": "Encoded option IDs for paths with spaces; owning-window resize positioning. Includes two new cases and real Electron resize."
+    },
+    "distinctFinalUiCases": {
+      "passed": 191,
+      "failed": 0,
+      "skipped": 0,
+      "previousRegressionGroup": 125,
+      "updatedMultiDeviceGroup": 63,
+      "additionalTerminalAppearanceGroup": 3,
+      "byFile": {
+        "app.spec.ts": 16,
+        "buttons.spec.ts": 7,
+        "conversation-status.spec.ts": 4,
+        "follow-ups-navigation.spec.ts": 11,
+        "layout.spec.ts": 7,
+        "motion.spec.ts": 19,
+        "multi-device-development.spec.ts": 20,
+        "multi-device-electron.spec.ts": 1,
+        "multi-device-sidebar.spec.ts": 7,
+        "new-session.spec.ts": 2,
+        "open-project-dialog.spec.ts": 9,
+        "sidebar-details.spec.ts": 8,
+        "sidebar-merge.spec.ts": 7,
+        "ssh-settings.spec.ts": 3,
+        "terminal-close.spec.ts": 3,
+        "terminal-preview-chrome.spec.ts": 3,
+        "terminal-projects.spec.ts": 26,
+        "terminal-status.spec.ts": 1,
+        "terminal-usability.spec.ts": 15,
+        "terminal-window.spec.ts": 2,
+        "terminal-workspace.spec.ts": 20
+      }
+    },
+    "relatedCore": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "log": ".local/fix-plan-verified-core.log"
+    },
+    "typecheck": {
+      "status": "passed",
+      "log": ".local/fix-plan-typecheck.log"
+    },
+    "build": {
+      "status": "passed with existing bundler warnings",
+      "log": ".local/fix-plan-build.log"
+    },
+    "modelBoundary": "passed by build precheck and model-boundary core tests",
+    "format": "passed",
+    "diffWhitespace": "passed"
+  },
+  "scope": {
+    "changedProduction": "apps/desktop/src only",
+    "unchangedPrefixes": ["apps/server", "packages/protocol", "apps/desktop/electron"],
+    "proof": "git diff --exit-code 3a7a295 -- apps/server packages/protocol apps/desktop/electron",
+    "realClaudeInference": false,
+    "productionDevicesAccessed": false,
+    "linuxLabRerun": false,
+    "packaged": false,
+    "pushed": false,
+    "published": false,
+    "originalUiMotionWorktreeEdited": false
+  },
+  "review": {
+    "specification": "passed",
+    "codeQuality": "passed",
+    "remainingActionableFindings": [],
+    "resolved": [
+      "configure failure retains session and retry dialog",
+      "disabled Enter guard",
+      "bottom action Enter guard",
+      "Tab focus synchronizes selected row",
+      "narrow local path and remote footer name",
+      "device and alias search with waiting status",
+      "valid active-descendant IDs for paths with spaces",
+      "open menu follows owning-window resize"
+    ]
+  },
+  "requirements": {
+    "remote-only-device-labels": "verified",
+    "A1-unified-anchored-menu-and-rename": "verified",
+    "A2-shortcuts-composition-and-popup-document": "verified",
+    "A3-project-menu-silent-terminal-creation": "verified",
+    "A4-ordinary-local-new-session": "verified",
+    "A5-remove-sidebar-terminal-note": "verified",
+    "B1-any-terminal-native-status-exclusion": "verified",
+    "B2-development-project-filter-and-dedup": "verified",
+    "B3-default-permission-configure-before-open-and-retry": "verified",
+    "C1-other-window-no-return-action": "verified",
+    "C2-project-hover-correct-action": "verified"
+  },
+  "productionSha256": {
+    "apps/desktop/src/App.tsx": "a3064fa75730e0f1b9fa0a2907de75fbaabfa506f1aea0e75c14cc1c211fbe1b",
+    "apps/desktop/src/NativeTerminal.tsx": "8b46acc40d858b9e5fd181a1714aea0d14f018f7984f0e5282c1ecb6cd23ea77",
+    "apps/desktop/src/OpenProjectDialog.tsx": "a124088ce7794aba8137430798f94dcc69d57331a549611f8257431a04b6eecc",
+    "apps/desktop/src/Sidebar.tsx": "ac895b6e712bf5bc04452e66b962d7fa458597b52e93ad7879f127d987fb094e",
+    "apps/desktop/src/TerminalWindow.tsx": "d71cfe896d7424196d4804d00b56042b60cda697be5347e89d09acc188b767be",
+    "apps/desktop/src/developmentProjects.ts": "346b062ba0081a5da17c75aef3e7f1ed611fe8d17e73ac65ba713c55d551634e",
+    "apps/desktop/src/style.css": "0e3b2228bb0a87be7e06daf8ff35ea718a180488899196c1e6a7fc4f6183d907"
+  },
+  "deletedProductionFiles": ["apps/desktop/src/TerminalProjectPicker.tsx"],
+  "screenshots": [
+    {
+      "path": "docs/evidence/multi-device/03-unified-projects.png",
+      "theme": "light",
+      "width": 1280,
+      "height": 900,
+      "sha256": "5f8315f91b4af7d99cacf05798a7e5527b4836e381cc57e62e1e3d1557aee9cf"
+    },
+    {
+      "path": "docs/evidence/multi-device/04-terminal-project-picker.png",
+      "theme": "light",
+      "width": 480,
+      "height": 800,
+      "sha256": "3f9b188f15ae5e08baad5b45630f43bab2db2133daec2e775a386ad20fb4e69e"
+    },
+    {
+      "path": "docs/evidence/multi-device/05-electron-projects.png",
+      "theme": "light",
+      "width": 1500,
+      "height": 1023,
+      "sha256": "de6399ba5e767aa24b04dab188464e2479bf353298f04c87b20ae8908125d801"
+    },
+    {
+      "path": "docs/evidence/multi-device/06-terminal-menu.png",
+      "theme": "light",
+      "width": 1500,
+      "height": 1023,
+      "sha256": "763e258a1d1cc84e92c879084536af30966fa496cbc5e7940e88d1d4fa083a3e"
+    },
+    {
+      "path": "docs/evidence/multi-device/03-unified-projects-dark.png",
+      "theme": "dark",
+      "width": 1280,
+      "height": 900,
+      "sha256": "dbefb2246554908cab7ad80a0089acb897e5451b16f9804779c1100b2b598dcf"
+    },
+    {
+      "path": "docs/evidence/multi-device/04-terminal-project-picker-dark.png",
+      "theme": "dark",
+      "width": 480,
+      "height": 800,
+      "sha256": "161a8056fa818fab56c6e3c7d307b992a1f5266c0e21bf58433668c19b50bf5e"
+    },
+    {
+      "path": "docs/evidence/multi-device/05-electron-projects-dark.png",
+      "theme": "dark",
+      "width": 1500,
+      "height": 1023,
+      "sha256": "3e48f241150c00315e9d06a189d5d6dcccb26d64e74f263b1efb4b29db019510"
+    },
+    {
+      "path": "docs/evidence/multi-device/06-terminal-menu-dark.png",
+      "theme": "dark",
+      "width": 1500,
+      "height": 1023,
+      "sha256": "763e258a1d1cc84e92c879084536af30966fa496cbc5e7940e88d1d4fa083a3e"
+    }
+  ],
+  "limits": [
+    "Physical Windows IME was not manually certified; synthetic composition and real Electron keyboard paths were tested.",
+    "Production Anthropic authorization, public egress and existing branding risk are outside this renderer change; see network/Claude review.",
+    "Full repository Node suite not rerun; historical Docker allowlist baseline failure and cleanup issue remain documented."
+  ],
+  "previousVerification": "multi-device-development-verification.json"
+}
