@@ -1,0 +1,126 @@
+{
+  "date": "2026-11-05",
+  "release": {
+    "build": 28,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "643b1f0390824dabc8e6b4c8b9e0f20d9785e0d6",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "notes": "CC Space 0.3.10 / Build 28：配套 Linux Build 12／协议 24。新增 SSH 远程开发，修复断线恢复、并发会话、停止任务、混合文字粘贴和设备改名；同步浅色中性主题。保留安装完成后启动、可恢复安装包清理及客户端升级提示。Build 27 为协议 23，请下载完整包，退出全部窗口后保留原目录覆盖安装，并将 Ubuntu 更新至 Build 12。账号配置和历史记录沿用原位置。",
+    "size": 258580014,
+    "sha256": "85205fd44c4ab7dd3ca8e660774d9d4c1b601c3b36ead94ffcd874dfba0cca71"
+  },
+  "firstRevision": 39,
+  "finalRevision": 40,
+  "expiresAt": "2026-11-08T01:55:27.450Z",
+  "backup": "/var/backups/cc-update-service/client28-publication-20261105T015345Z",
+  "verification": {
+    "coreTests": {
+      "passed": 884,
+      "skipped": 43,
+      "failed": 0
+    },
+    "browserTestsPassed": 85,
+    "packageSmokePassed": true,
+    "actualNsisHookTestsPassed": 2,
+    "runtime": {
+      "packaged": true,
+      "name": "CC Space",
+      "version": "0.3.10",
+      "electron": "44.10.1",
+      "sshManagerLoaded": true,
+      "pendingTargets": [],
+      "adminBrowserBlocked": true,
+      "oldAdminIpcAbsent": true
+    },
+    "commonJsFilesMatch": 28,
+    "vendor": {
+      "files": 691,
+      "size": 269282156,
+      "exact": true
+    },
+    "publicIndexSignatureVerifiedLocally": true,
+    "fullPublicHttpDownloadVerifiedOnVps": true,
+    "localHttpsSamples": [
+      {
+        "start": 0,
+        "end": 16383,
+        "bytes": 16384,
+        "exact": true
+      },
+      {
+        "start": 129290007,
+        "end": 129306390,
+        "bytes": 16384,
+        "exact": true
+      },
+      {
+        "start": 258563630,
+        "end": 258580013,
+        "bytes": 16384,
+        "exact": true
+      }
+    ],
+    "localFullDownload": false,
+    "localDownloadLimitation": "Large transfers through this workstation network were slow or timed out; no full local transfer was counted as passed.",
+    "forcedRenewalInSystemdSandbox": true,
+    "ordinaryRenewalNotDue": true,
+    "temporaryForceOverrideRemoved": true
+  },
+  "stableUnchanged": true,
+  "linuxIndexUnchanged": true,
+  "hostJobsAndNodeVersionsUnchanged": true,
+  "managementRuntimeUnchanged": true,
+  "managementSource": "cac8006e45d6d36ed0a6227130f27f0e040bae28",
+  "nodes": {
+    "ubuntu-cc": {
+      "enrolled": true,
+      "online": true,
+      "current": {
+        "build": 10,
+        "protocol": 23,
+        "phase": "idle"
+      },
+      "job": {
+        "id": "36455306-1c08-46ed-b9d8-00ef69507924",
+        "state": "succeeded",
+        "build": 10,
+        "updatedAt": "2026-11-03T16:37:57.477Z"
+      }
+    },
+    "ubuntu-cc-02": {
+      "enrolled": true,
+      "online": true,
+      "current": {
+        "build": 10,
+        "protocol": 23,
+        "phase": "idle"
+      },
+      "job": {
+        "id": "be8f6124-9dc1-4902-81f0-fcefe29ac050",
+        "state": "succeeded",
+        "build": 10,
+        "updatedAt": "2026-11-03T16:53:05.503Z"
+      }
+    },
+    "ubuntu-cc-03": {
+      "enrolled": true,
+      "online": true,
+      "current": {
+        "build": 10,
+        "protocol": 23,
+        "phase": "idle"
+      },
+      "job": {
+        "id": "2eff9a95-8195-44d1-8128-ced854d332b5",
+        "state": "succeeded",
+        "build": 10,
+        "updatedAt": "2026-11-03T17:39:55.243Z"
+      }
+    }
+  },
+  "signingCredentialsDownloaded": false,
+  "realModelRequests": 0,
+  "firstIncompletePackagePublished": false,
+  "downloadUrl": "https://api.ghostapi.org/cc-updates/v1/artifacts/28/win32-x64/CC-Space-Setup-0.3.10-x64.exe"
+}

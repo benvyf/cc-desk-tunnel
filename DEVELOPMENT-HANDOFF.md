@@ -1,5 +1,15 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-05 Windows Build 28 / 协议 24 已发布，配套 Linux Build 12
+
+按用户要求打包并替换管理中心旧客户端下载。Windows v0.3.10 / Build 28 / 协议 24 已发布（源码 `643b1f0`，pilot revision 40）；包含主分支 SSH 稳定性和中性浅色主题，并取回已发布 Build 27 的客户端升级提示、命名兼容、管理入口限制、安装完成后启动和可恢复安装包清理。安装身份、配置目录、签名信任与更新账本保留；未整体合入宿主机分支或重部署管理中心。
+
+完整包 258580014 字节，SHA256 `85205fd44c4ab7dd3ca8e660774d9d4c1b601c3b36ead94ffcd874dfba0cca71`。884 核心通过 / 43 条件跳过，85 界面通过；实际包启动、28 个 CJS 源码文件、691 个内置组件和 2 项 NSIS 钩子验证通过。VPS 公开完整下载/hash、本机验签及首中尾 HTTPS 字节核对通过；本机完整下载慢/超时，未计为通过。首个遗漏组件的包未发布，已重建为最终完整包。
+
+Windows 精确续期登记已指向新干净源码和新公开包；真实 systemd 强制续期、普通 `not-due`、临时参数清理及两个 timer active 均验证。Linux Build 12 和 stable 索引不变，三台仍为 Build 10 / 协议 23、旧任务不变。用户应先下载完整新客户端，结束任务后逐台确认服务端 Build 12，再保留原目录覆盖安装新客户端；旧 Build 27 不可与协议 24 服务端混用，不强行跨协议自动安装。
+
+安装包与证据见 [Build 28 发布说明](docs/CLIENT-BUILD28-PUBLICATION.md)及[脱敏记录](docs/evidence/windows-build28-production-2026-11-05.json)。VPS 安全记录 `/root/.cc-update-admin/release-build28/`，备份 `/var/backups/cc-update-service/client28-publication-20261105T015345Z`；私钥和令牌未下载，未安装用户正在使用的软件或执行生产 Ubuntu 升级/模型请求。下方客户端待发布为历史记录。
+
 ### 2026-11-05 Linux Build 12 / 协议 24 已发布
 
 用户要求更新管理中心服务端升级入口供 `ubuntu-cc`、`ubuntu-cc-02`、`ubuntu-cc-03` 使用。已签名发布 Linux Build 12 / 协议 24（源码 `936609c`，pilot revision 18），包含当前主分支 SSH 服务端配套、设备改名和 Tunnel 收尾修复，以及配套 Web 浅色主题。归档携带适用于精确 Build 10/11 基线的宿主机迁移，保留 Node 24.22.2、CLI/SDK、账号/数据、空闲检查、冷备份与回退。
