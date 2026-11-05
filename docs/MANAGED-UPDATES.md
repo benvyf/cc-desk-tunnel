@@ -1,5 +1,7 @@
 # 定制版维护与更新
 
+**后续开发与发布强制执行：** [更新与发布规则](UPDATE-RELEASE-RULES.md)。服务端更新默认包括空间准备与受控客户端断开；新客户端必须保留新版提示和应用内获取入口，协议变化不能使提示消失。下方旧版本/旧节点说明属于历史背景，不能覆盖此规则及当前交接。
+
 当前状态和跨电脑恢复步骤以根目录 [DEVELOPMENT-HANDOFF.md](../DEVELOPMENT-HANDOFF.md) 为准。定制源码基于 0.3.6／协议 20，已合入 GitHub 更新分支；工作分支为 `codex/account-monitor-production`，完整当前源码通过交接 Git bundle 提供，普通 GitHub clone 可能仍是较旧阶段。
 
 ## 已上线的维护方式
