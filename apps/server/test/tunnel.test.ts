@@ -282,6 +282,44 @@ test('the end of an SSH connection closes its channel after delivering what was 
   assert.equal(output().length, 64 * 65536);
   await closed(second);
 });
+test(
+  'a delayed WebSocket closing handshake survives normal SSH socket closure',
+  { timeout: 5000 },
+  async (t) => {
+    const device = await harness(t);
+    const ssh = device.ssh();
+    const channel = await device.open((await device.requested(1))[0]!);
+    const close = channel.service.close.bind(channel.service);
+    let requested: () => void;
+    const closing = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    channel.service.close = () => {
+      requested();
+    };
+    let terminated = false;
+    const terminate = channel.service.terminate.bind(channel.service);
+    channel.service.terminate = () => {
+      terminated = true;
+      terminate();
+    };
+    let bytes = 0;
+    channel.device.on('message', (chunk: Buffer) => (bytes += chunk.length));
+    const finished = once(channel.device, 'close');
+    const socketClosed = closed(ssh);
+    ssh.end(Buffer.alloc(4 * 1024 * 1024, 7));
+    await closing;
+    await socketClosed;
+    // Let both ends of the TCP close propagate while the WebSocket handshake is held.
+    await delay(20);
+    close();
+    const [code] = await finished;
+    assert.equal(terminated, false, 'normal TCP completion must not force-terminate its WebSocket');
+    assert.equal(bytes, 4 * 1024 * 1024);
+    assert.equal(code, 1005);
+  },
+);
+
 test('a channel cut without a goodbye ends its SSH connection, and others go on', async (t) => {
   const device = await harness(t);
   const [cut, kept] = [device.ssh(), device.ssh()];
@@ -303,6 +341,71 @@ test('a channel cut without a goodbye ends its SSH connection, and others go on'
   }
   assert.equal(output().toString(), 'still here');
 });
+
+test(
+  'an SSH socket reset still force-closes its WebSocket channel',
+  { timeout: 5000 },
+  async (t) => {
+    const device = await harness(t);
+    const ssh = device.ssh();
+    const channel = await device.open((await device.requested(1))[0]!);
+    const finished = once(channel.device, 'close');
+    ssh.resetAndDestroy();
+    const [code] = await finished;
+    assert.equal(code, 1006);
+    await closed(ssh);
+  },
+);
+
+test(
+  'tunnel shutdown terminates a channel still waiting for a closing handshake',
+  { timeout: 5000 },
+  async (t) => {
+    const device = await harness(t);
+    const ssh = device.ssh();
+    const channel = await device.open((await device.requested(1))[0]!);
+    let requested: () => void;
+    const closing = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    channel.service.close = () => {
+      requested();
+    };
+    const finished = once(channel.device, 'close');
+    ssh.end();
+    await closing;
+    await closed(ssh);
+    await delay(20);
+    await device.tunnel.close();
+    const [code] = await finished;
+    assert.equal(code, 1006);
+  },
+);
+test(
+  'tunnel shutdown releases a paused TCP reader after its WebSocket has closed',
+  { timeout: 5000 },
+  async (t) => {
+    const device = await harness(t);
+    const ssh = device.ssh();
+    const channel = await device.open((await device.requested(1))[0]!);
+    ssh.pause();
+    channel.device.send(Buffer.alloc(8 * 1024 * 1024, 9));
+    await delay(50);
+    const channelClosed = once(channel.service, 'close');
+    channel.service.terminate();
+    await channelClosed;
+    const shutdown = device.tunnel.close();
+    let finished;
+    try {
+      finished = await Promise.race([shutdown.then(() => true), delay(1000).then(() => false)]);
+    } finally {
+      ssh.destroy();
+      await shutdown;
+    }
+    assert.equal(finished, true, 'shutdown must not lose a TCP socket still draining output');
+  },
+);
+
 test('more SSH connections than may wait at once are dropped instead of queued', async (t) => {
   const device = await harness(t, 60000);
   const sockets = Array.from({ length: 40 }, () => device.ssh());

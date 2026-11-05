@@ -138,7 +138,11 @@ export function sshConfig(
 function splice(socket: Socket, channel: WebSocket) {
   const stream = createWebSocketStream(channel);
   stream.on('error', () => socket.destroy());
-  socket.once('close', () => stream.destroy());
+  socket.once('close', (hadError) => {
+    // Normal EOF already ends the writable through pipe(). Let ws finish its
+    // closing handshake; destroying its stream here force-terminates it.
+    if (hadError || !socket.readableEnded) stream.destroy();
+  });
   socket.pipe(stream);
   stream.pipe(socket);
 }
@@ -232,7 +236,13 @@ export class Tunnel {
     this.waiting.delete(channelId);
     const { socket } = entry;
     this.channels.set(socket, channel);
-    socket.once('close', () => this.channels.delete(socket));
+    // Either side can outlive the other while its final output/handshake drains.
+    // Keep both reachable by close() until both resources have actually closed.
+    const forget = () => {
+      if (socket.closed && channel.readyState === channel.CLOSED) this.channels.delete(socket);
+    };
+    socket.once('close', forget);
+    channel.once('close', forget);
     splice(socket, channel);
     return true;
   }
