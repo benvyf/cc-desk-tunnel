@@ -961,7 +961,7 @@ handle('shared:save', (_event, key, value) => {
 const windowColours = () =>
   nativeTheme.shouldUseDarkColors
     ? { color: '#0b0b0a', symbolColor: '#dedcd6' }
-    : { color: '#eeede9', symbolColor: '#20201e' };
+    : { color: '#fbfbf9', symbolColor: '#20201e' };
 function followTheme(prefs) {
   const theme = prefs?.theme;
   nativeTheme.themeSource = theme === 'light' || theme === 'dark' ? theme : 'system';
