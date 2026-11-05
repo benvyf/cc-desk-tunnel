@@ -1,5 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-05 Linux Build 12 / 协议 24 已发布
+
+用户要求更新管理中心服务端升级入口供 `ubuntu-cc`、`ubuntu-cc-02`、`ubuntu-cc-03` 使用。已签名发布 Linux Build 12 / 协议 24（源码 `936609c`，pilot revision 18），包含当前主分支 SSH 服务端配套、设备改名和 Tunnel 收尾修复，以及配套 Web 浅色主题。归档携带适用于精确 Build 10/11 基线的宿主机迁移，保留 Node 24.22.2、CLI/SDK、账号/数据、空闲检查、冷备份与回退。
+
+三台节点均在线，实际管理接口显示当前 Build 10 / 协议 23、可用 Build 12 / 协议 24；没有创建安装任务，用户从设备的“服务端更新”入口逐台确认。管理中心运行程序未变、未重启；Linux 精确续期及其 systemd 服务通过，两个续期 timer active。Windows pilot/stable 保持原字节，Build 27 仍为协议 23，完整配套还需要单独打包发布协议 24 客户端，不能用旧客户端连接已升级服务端。
+
+10 项迁移和 11 项策略测试在 VPS Linux 隔离目录通过（Docker 模拟），核心 843 项通过 / 61 按条件跳过；归档 232 个文件、签名、公网全量下载哈希以及现行 agent 从签名包选择迁移入口均验证。详见 [Build 12 发布记录](docs/RELEASE-SERVER-BUILD12.md)及[脱敏证据](docs/evidence/linux-build12-production-2026-11-05.json)。下方“SSH 尚未发布”和 Build 11 为历史记录；未执行生产 Ubuntu 安装或真实模型请求。
+
 ### 2026-11-04 SSH 远程开发源码与 review 修复（尚未发布）
 
 按用户要求实现「设置 → 连接」，本机 SSH 直连 Linux 开发设备，通过现有 WSS/Tunnel 让 Ubuntu 上的 Claude 操作远程项目；Claude、SDK、账号和模型出口仍仅在 Ubuntu。包含密钥/密码认证、指纹确认、目录选择、最近项目/会话恢复和分阶段诊断。源码协议升级为 24，后续需桌面与服务端配套发行；未改已发布 Build 编号或生产节点。
