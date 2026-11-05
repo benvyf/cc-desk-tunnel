@@ -1,4 +1,4 @@
-"""Signed Build 11 migration admission; Docker and production nodes are never contacted."""
+"""Signed server migration admission; Docker and production nodes are never contacted."""
 import copy
 import importlib.util
 import json
@@ -23,7 +23,7 @@ class MigrationTests(unittest.TestCase):
         return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, lock=m.LOCK)
 
     def release(self):
-        return dict(build=11, protocol=23, appVersion='0.3.7', runtimeLevel=m.RUNTIME,
+        return dict(build=12, protocol=24, appVersion='0.3.7', runtimeLevel=m.RUNTIME,
                     packageLockSha256=m.LOCK, sha256='a'*64, descriptorSha256='b'*64)
 
     def test_known_build10_is_admitted_but_changed_baselines_are_rejected(self):
@@ -34,10 +34,19 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
 
     def test_installed_exact_target_is_idempotent(self):
-        value=self.baseline();value.update(descriptor='b'*64,build=11)
+        value=self.baseline();value.update(descriptor='b'*64,build=12,protocol=24)
         self.assertTrue(m.check_baseline(value,self.release()))
         value['protocol']=22
         with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
+
+    def test_reviewed_build11_is_admitted_but_modified_identity_is_rejected(self):
+        baseline=self.baseline()
+        baseline.update(descriptor='245677bc443c97e2e0b2c2a842801b5ade9629d8df8bc438c5f5dc64245be2c4',build=11)
+        self.assertFalse(m.check_baseline(baseline,self.release()))
+        for key in baseline:
+            with self.subTest(key=key):
+                modified=copy.copy(baseline);modified[key]='unknown'
+                with self.assertRaises(RuntimeError):m.check_baseline(modified,self.release())
 
     def test_signed_target_must_match_confirmed_identity(self):
         target=self.release()
@@ -78,7 +87,7 @@ class MigrationTests(unittest.TestCase):
             root=Path(directory);policy=root/'old-policy';policy.mkdir()
             (policy/'managed-settings.json').write_text('{}')
             contents={name:(ROOT/name).read_bytes() for name in ['package-lock.json','deploy/docker/runtime-level','deploy/managed-server.json']}
-            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=11,appVersion='0.3.7',protocol=23,sourceCommit='f'*40,
+            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=12,appVersion='0.3.7',protocol=24,sourceCommit='f'*40,
                             files={p:dict(size=len(b),sha256=hashlib.sha256(b).hexdigest()) for p,b in contents.items()})
             db=json.dumps(descriptor).encode();buffer=io.BytesIO()
             with tarfile.open(fileobj=buffer,mode='w:gz',format=tarfile.USTAR_FORMAT) as archive:

@@ -40,7 +40,12 @@ test('upstream version history and managed build history describe their respecti
   // Never relabel already-issued build numbers as that unreleased protocol.
   assert.ok(PROTOCOL_VERSION === latest.protocol || PROTOCOL_VERSION === latest.protocol + 1);
   assert.equal(latest.appVersion, read('apps/desktop/package.json').version);
-  assert.ok(latest.windowsBuilds.includes(read('deploy/managed-client.json').build));
+  // A server release may precede its matching desktop package. Keep already
+  // published Windows builds tied to their original protocol.
+  const latestWindows = history.findLast(
+    (entry: { windowsBuilds: number[] }) => entry.windowsBuilds.length,
+  );
+  assert.ok(latestWindows.windowsBuilds.includes(read('deploy/managed-client.json').build));
   if (PROTOCOL_VERSION === latest.protocol)
     assert.equal(latest.serverBuild, read('deploy/managed-server.json').build);
   else assert.ok(latest.serverBuild <= read('deploy/managed-server.json').build);
