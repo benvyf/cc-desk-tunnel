@@ -19,11 +19,42 @@ spec.loader.exec_module(m)
 
 
 class MigrationTests(unittest.TestCase):
+    def test_preparation_always_cleans_before_final_space_check(self):
+        calls=[]
+        legacy=SimpleNamespace(check_space=lambda:calls.append('space'))
+        with patch.object(m,'clean_build_cache',side_effect=lambda:calls.append('cleanup')):
+            m.finish_preparation(legacy)
+        self.assertEqual(calls,['cleanup','space'])
+
+    def test_cleanup_failure_stops_before_space_check_or_cutover(self):
+        calls=[]
+        legacy=SimpleNamespace(check_space=lambda:calls.append('space'))
+        with patch.object(m,'clean_build_cache',side_effect=RuntimeError('cleanup failed')):
+            with self.assertRaisesRegex(RuntimeError,'cleanup failed'):
+                m.finish_preparation(legacy)
+        self.assertEqual(calls,[])
+
+    def test_space_still_insufficient_after_cleanup_preserves_failure(self):
+        calls=[]
+        def space():
+            calls.append('space')
+            raise RuntimeError('Insufficient backup/recovery space; no cutover; original service left running')
+        with patch.object(m,'clean_build_cache',side_effect=lambda:calls.append('cleanup')):
+            with self.assertRaisesRegex(RuntimeError,'original service left running'):
+                m.finish_preparation(SimpleNamespace(check_space=space))
+        self.assertEqual(calls,['cleanup','space'])
+
+    def test_cleanup_never_prunes_images_containers_volumes_or_backups(self):
+        with patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=1024)), \
+             patch.object(m.subprocess,'run') as run:
+            m.clean_build_cache()
+        run.assert_called_once_with(['docker','builder','prune','--all','--force'],check=True,timeout=300)
+
     def baseline(self):
-        return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, lock=m.LOCK)
+        return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, lock=m.BASE_LOCK)
 
     def release(self):
-        return dict(build=12, protocol=24, appVersion='0.3.7', runtimeLevel=m.RUNTIME,
+        return dict(build=13, protocol=24, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
                     packageLockSha256=m.LOCK, sha256='a'*64, descriptorSha256='b'*64)
 
     def test_known_build10_is_admitted_but_changed_baselines_are_rejected(self):
@@ -34,7 +65,7 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
 
     def test_installed_exact_target_is_idempotent(self):
-        value=self.baseline();value.update(descriptor='b'*64,build=12,protocol=24)
+        value=self.baseline();value.update(descriptor='b'*64,build=13,protocol=24,lock=m.LOCK)
         self.assertTrue(m.check_baseline(value,self.release()))
         value['protocol']=22
         with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
@@ -47,6 +78,13 @@ class MigrationTests(unittest.TestCase):
             with self.subTest(key=key):
                 modified=copy.copy(baseline);modified[key]='unknown'
                 with self.assertRaises(RuntimeError):m.check_baseline(modified,self.release())
+
+    def test_published_build12_is_admitted_without_relabeling_its_descriptor(self):
+        baseline=self.baseline()
+        baseline.update(descriptor='1207a4ab33542466f951fc48cc4f76f1ca9b5c5991423535c8d2b1b048912b2d',build=12,protocol=24)
+        self.assertFalse(m.check_baseline(baseline,self.release()))
+        baseline['descriptor']='unknown'
+        with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
 
     def test_signed_target_must_match_confirmed_identity(self):
         target=self.release()
@@ -87,7 +125,7 @@ class MigrationTests(unittest.TestCase):
             root=Path(directory);policy=root/'old-policy';policy.mkdir()
             (policy/'managed-settings.json').write_text('{}')
             contents={name:(ROOT/name).read_bytes() for name in ['package-lock.json','deploy/docker/runtime-level','deploy/managed-server.json']}
-            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=12,appVersion='0.3.7',protocol=24,sourceCommit='f'*40,
+            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=13,appVersion='0.3.10',protocol=24,sourceCommit='f'*40,
                             files={p:dict(size=len(b),sha256=hashlib.sha256(b).hexdigest()) for p,b in contents.items()})
             db=json.dumps(descriptor).encode();buffer=io.BytesIO()
             with tarfile.open(fileobj=buffer,mode='w:gz',format=tarfile.USTAR_FORMAT) as archive:
@@ -117,20 +155,32 @@ class MigrationTests(unittest.TestCase):
                 support.clone_config(source,'candidate');calls.append('installed')
             def idle(*_):
                 if failure=='busy':raise RuntimeError('active task')
-            legacy=SimpleNamespace(check_idle=idle,check_space=lambda **_:None,install=install_fake)
+            def space(**_):
+                calls.append('space')
+                if failure=='space-after-build' and 'preflight' in calls:
+                    raise RuntimeError('Insufficient backup/recovery space')
+            legacy=SimpleNamespace(check_idle=idle,check_space=space,install=install_fake)
             def load(name,path):
                 return {'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
             def run(args,**kwargs):
+                if args==['docker','builder','prune','--all','--force']:
+                    calls.append('cleanup')
+                    return SimpleNamespace(returncode=0)
                 if args[:3]==['docker','image','inspect']:
                     if len(args)==4:return SimpleNamespace(returncode=1)
                     return SimpleNamespace(returncode=0,stdout=json.dumps([dict(Id='candidate',RootFS=dict(Layers=['wrong' if failure=='layers' else 'base','new'])),dict(RootFS=dict(Layers=['base']))]).encode())
                 return SimpleNamespace(returncode=0)
-            with patch.object(m,'ROOT',root/'private'),patch.object(m,'load',side_effect=load),patch.object(m,'verify_runtime',return_value=self.baseline()),patch.object(m,'candidate_check'),patch.object(m,'check_docker_storage'),patch.object(m.os,'geteuid',return_value=0),patch.object(m.socket,'gethostname',return_value=node),patch.object(m.subprocess,'run',side_effect=run),patch('sys.argv',['apply','--release',str(confirmed),*(['--install'] if install else [])]):
+            with patch.object(m,'ROOT',root/'private'),patch.object(m,'load',side_effect=load),patch.object(m,'verify_runtime',return_value=self.baseline()),patch.object(m,'candidate_check'),patch.object(m,'check_docker_storage'),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=20*1024**3)),patch.object(m.os,'geteuid',return_value=0),patch.object(m.socket,'gethostname',return_value=node),patch.object(m.subprocess,'run',side_effect=run),patch('sys.argv',['apply','--release',str(confirmed),*(['--install'] if install else [])]):
                 if failure:
                     with self.assertRaises(RuntimeError):m.main()
                 else:m.main()
             self.assertEqual('installed' in calls,install and not failure)
             if failure in ['signature','busy']:self.assertNotIn('build',calls)
+            if not failure or failure=='space-after-build':
+                self.assertEqual(calls.count('cleanup'),2)
+                self.assertLess(calls.index('cleanup'),calls.index('build'))
+                self.assertLess(calls.index('preflight'),len(calls)-1-calls[::-1].index('cleanup'))
+                if 'installed' in calls:self.assertEqual(calls[-3:],['cleanup','space','installed'])
 
     def test_prepare_never_installs(self):self.exercise()
 
@@ -139,7 +189,7 @@ class MigrationTests(unittest.TestCase):
             with self.subTest(node=node):self.exercise(node=node,install=True)
 
     def test_admission_and_preflight_failures_never_cut_over(self):
-        for failure in ['signature','busy','layers','preflight']:
+        for failure in ['signature','busy','layers','preflight','space-after-build']:
             with self.subTest(failure=failure):self.exercise(install=True,failure=failure)
 
 
