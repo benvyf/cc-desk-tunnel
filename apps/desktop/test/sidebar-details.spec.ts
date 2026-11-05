@@ -184,8 +184,8 @@ test('a project row turns its folder into the folding arrow; the other computers
   await expect(heading.getByRole('button', { name: /^项目操作/ })).toBeVisible();
   await expect(heading.getByRole('button', { name: /^新建会话 · / })).toBeVisible();
   // Folded, the row counts its sessions and shows the dot of the one at work.
-  await page.getByRole('button', { name: '收起项目 · api', exact: true }).click();
-  const toggle = page.getByRole('button', { name: '展开项目 · api', exact: true });
+  await page.getByRole('button', { name: '收起项目 · api · 本机', exact: true }).click();
+  const toggle = page.getByRole('button', { name: '展开项目 · api · 本机', exact: true });
   await expect(toggle.locator('small')).toHaveText('3');
   await expect(toggle).toHaveAttribute('data-state', 'running');
   await toggle.click();
@@ -216,7 +216,9 @@ test("the list moves with ↑ ↓ and opens a row's menu from the keyboard", asy
   await expect(row(page, '修复时区').locator('.session-select')).toBeFocused();
   await page.keyboard.press('ArrowUp');
   await page.keyboard.press('ArrowUp');
-  await expect(page.getByRole('button', { name: '收起项目 · api', exact: true })).toBeFocused();
+  await expect(
+    page.getByRole('button', { name: '收起项目 · api · 本机', exact: true }),
+  ).toBeFocused();
   await page.keyboard.press('End');
   await expect(page.getByRole('button', { name: '展开其他设备的会话', exact: true })).toBeFocused();
   await page.keyboard.press('Home');
@@ -254,7 +256,7 @@ test('the account menu is as wide as the account area and opens above it', async
   expect((await menu.boundingBox())!.x).toBe(58);
 });
 
-test('while the native terminal has the window, rows stay readable and the column says why', async ({
+test('an open terminal keeps other conversations navigable and new sessions available', async ({
   page,
 }) => {
   await connect(page);
@@ -264,18 +266,14 @@ test('while the native terminal has the window, rows stay readable and the colum
   await page.getByRole('menuitem', { name: '原生终端', exact: true }).click();
   await expect(page.locator('.native-terminal')).toBeVisible();
   const note = page.locator('.side-terminal-note');
-  await expect(note).toContainText('终端窗口使用中，关闭后可切换会话');
+  await expect(note).toContainText('终端窗口使用中，可继续其他会话');
   await expect(note.getByRole('button', { name: '回到终端', exact: true })).toBeVisible();
   const select = row(page, '压测脚本').locator('.session-select');
-  await expect(select).toHaveAttribute('aria-disabled', 'true');
-  await expect(select).toHaveCSS('opacity', '1');
-  // Playwright counts aria-disabled as disabled: the click is forced, and the row does not open.
-  await select.click({ force: true });
-  await expect(page.locator('.session-row.selected')).toContainText('审计日志');
-  const create = page.locator('.side-action.new-session');
-  await expect(create).toBeDisabled();
-  await expect(create).toHaveAttribute('title', '终端窗口打开时不能新建会话');
-  await expect(create).toHaveCSS('opacity', '1');
+  await expect(select).toBeEnabled();
+  await select.click();
+  await expect(page.locator('.session-row.selected')).toContainText('压测脚本');
+  await expect(page.locator('.native-terminal')).toBeVisible();
+  await expect(page.locator('.side-action.new-session')).toBeEnabled();
 });
 
 test('a scheduled task is switched on and off by a small switch, its actions float on hover', async ({

@@ -9582,3 +9582,104 @@ dialog:has(.web-settings-form) {
   gap: 8px;
   align-items: center;
 }
+
+/* Project identity stays readable beside existing quiet project rows. */
+.project-device {
+  flex: none;
+  max-width: 72px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: calc(11rem / 14);
+  font-weight: 400;
+}
+.terminal-new-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  border-radius: var(--radius-md);
+  background: rgb(250 249 245 / 4%);
+  -webkit-app-region: no-drag;
+}
+.terminal-new-actions > .icon-button + .icon-button {
+  border-left: 1px solid var(--line);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+.terminal-tab .terminal-tab-device {
+  display: inline;
+  flex: none;
+  max-width: 56px;
+  color: var(--muted);
+  font-size: calc(11rem / 14);
+}
+.terminal-project-picker {
+  width: min(440px, 100%);
+  max-width: 100%;
+  min-width: 0;
+  max-height: min(620px, calc(100dvh - 160px));
+  overflow-y: auto;
+}
+.terminal-project-search {
+  width: 100%;
+  margin-bottom: 10px;
+}
+.terminal-project-group {
+  margin: 10px 0 4px;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  font-weight: 400;
+}
+.terminal-project-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-width: 0;
+  box-sizing: border-box;
+  width: 100%;
+  text-align: left;
+  justify-content: flex-start;
+  height: auto;
+  padding: 8px;
+}
+.terminal-project-meta {
+  display: block;
+  color: var(--muted);
+  font-size: calc(11rem / 14);
+  overflow-wrap: anywhere;
+}
+
+.terminal-project-choice > span:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.terminal-project-choice > span:first-child > small {
+  margin-left: auto;
+  flex: none;
+  color: var(--muted);
+}
+.terminal-project-choice:hover,
+.terminal-project-choice:focus-visible {
+  background: var(--hover);
+}
+.terminal-project-choice {
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.terminal-project-search input {
+  width: 100%;
+  min-width: 0;
+}
+.terminal-project-group h3 {
+  margin: 12px 8px 4px;
+  font-size: calc(12rem / 14);
+  font-weight: 500;
+}

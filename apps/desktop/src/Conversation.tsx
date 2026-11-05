@@ -801,6 +801,7 @@ export default function Conversation({
   onQuote,
   sideQuoteAvailable = false,
   adjustableWidth = false,
+  readingPositions,
   resume,
 }: {
   projectControl?: ReactNode;
@@ -811,6 +812,7 @@ export default function Conversation({
   onQuote?: (messageId: string, text: string, destination: QuoteDestination) => void;
   sideQuoteAvailable?: boolean;
   adjustableWidth?: boolean;
+  readingPositions?: Map<string, { top: number; following: boolean }>;
   // Takes up the latest turn again, offered while it stands stopped or failed.
   resume?: () => void;
   events: SessionEvent[];
@@ -1092,9 +1094,16 @@ export default function Conversation({
   };
   useLayoutEffect(() => {
     prependAnchor.current = null;
-    rejoin();
-    toEnd();
-  }, [session?.id]);
+    const saved = session && readingPositions?.get(session.id);
+    follow.current = saved?.following ?? true;
+    setAway(!follow.current);
+    if (follow.current) toEnd();
+    else if (scroll.current && saved) scroll.current.scrollTop = saved.top;
+    if (scroll.current) {
+      lastTop.current = scroll.current.scrollTop;
+      setAtEnd(fromEnd(scroll.current) < 40);
+    }
+  }, [session?.id, history?.loaded, history?.loading]);
   useLayoutEffect(() => {
     const anchor = prependAnchor.current;
     if (anchor && anchor.sessionId === session?.id && !history?.loadingEarlier && scroll.current) {
@@ -1330,6 +1339,8 @@ export default function Conversation({
               // Reading on upwards past what is loaded brings the page before it; a failed load waits for the button.
               if (top < lastTop.current && top < 240 && !loadError) loadMore();
               lastTop.current = top;
+              if (session && history?.loaded && !history.loading)
+                readingPositions?.set(session.id, { top, following: follow.current });
             }}
             onClickCapture={(event) => {
               // A disclosure is being read where it is, whether activated by pointer or keyboard.

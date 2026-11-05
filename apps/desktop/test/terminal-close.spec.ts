@@ -60,7 +60,7 @@ test('natural exit shows neutral status and closing it sends no duplicate close 
   await page.evaluate(() =>
     (window as any).terminalTest.emit({ type: 'terminal.closed', exitCode: 0 }),
   );
-  await expect(page.locator('.native-terminal')).toContainText('已结束 · 退出码 0');
+  await expect(page.getByRole('status', { name: '已结束 · 退出码 0', exact: true })).toBeVisible();
   await expect(page.locator('.native-terminal [role=alert]')).toHaveCount(0);
   await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
   await expect(page.locator('.native-terminal')).toHaveCount(0);

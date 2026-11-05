@@ -824,6 +824,8 @@ test('closing a stalled terminal explicitly ends its retained process', async ({
   );
   await expect(page.getByRole('tab')).toContainText('连接中断');
   await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+  await expect(page.getByRole('dialog')).toContainText('只关闭本地显示');
+  await page.getByRole('button', { name: '关闭所选终端', exact: true }).click();
   await expect
     .poll(() =>
       page.evaluate(
@@ -841,8 +843,9 @@ test('a selected local project and subsequent plus use the returned project iden
 }) => {
   await page.getByRole('button', { name: '全部终端', exact: true }).click();
   await page.getByRole('button', { name: '选项目新建', exact: true }).click();
-  await page.getByLabel('或使用本机项目目录', { exact: true }).fill('D:\\different-project');
-  await page.getByRole('button', { name: '新建', exact: true }).click();
+  await page.getByRole('button', { name: '打开其他项目…', exact: true }).click();
+  await page.getByLabel('本机项目目录', { exact: true }).fill('D:\\different-project');
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await expect(page.getByRole('tab').nth(1)).toContainText('Linux · Claude Code');
   await expect(page.locator('.terminal-workspace-footer')).toContainText('D:\\different-project');
   await page.getByRole('button', { name: '新建终端', exact: true }).click();

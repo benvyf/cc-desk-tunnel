@@ -1,0 +1,213 @@
+{
+  "schema": 1,
+  "dateHongKong": "2026-11-06",
+  "verifiedAtUtc": "2026-11-05T17:16:52.601365+00:00",
+  "baseCommit": "f631a61c3e195151bb0e5212dc37d8b3aed9b38c",
+  "branch": "codex/multi-device-development",
+  "featureStatus": "implemented-and-reviewed",
+  "repositoryWideStatus": "known-baseline-failure-and-transient-cleanup-rechecked",
+  "checks": {
+    "uiRegression": {
+      "passed": 125,
+      "failed": 0,
+      "log": ".local/multi-device-final-regression-ui-verified.log"
+    },
+    "newMultiDeviceUi": {
+      "passed": 43,
+      "failed": 0,
+      "log": ".local/multi-device-final-ui-verified.log"
+    },
+    "finalNativeTerminalRecheck": {
+      "passed": 2,
+      "failed": 0,
+      "log": ".local/multi-device-final-electron.log"
+    },
+    "relatedCore": {
+      "tests": 69,
+      "passed": 69,
+      "failed": 0,
+      "skipped": 0,
+      "log": ".local/multi-device-final-core.log"
+    },
+    "fullNodeLatest": {
+      "tests": 939,
+      "passed": 875,
+      "failed": 2,
+      "skipped": 62,
+      "log": ".local/multi-device-all-core-verified.log",
+      "failures": [
+        {
+          "test": "managed-server-image.test.ts",
+          "reason": "Docker context allowlist omits deploy/host-update/cleanup.py",
+          "baselineReproduced": true,
+          "baselineLog": ".local/multi-device-baseline-image-failure.log"
+        },
+        {
+          "test": "managed-client.test.mjs: Windows launcher survives parent",
+          "reason": "EPERM during temporary-directory cleanup",
+          "isolatedRecheck": {
+            "passed": 1,
+            "failed": 0,
+            "log": ".local/multi-device-launcher-cleanup-recheck.log"
+          }
+        }
+      ]
+    },
+    "typecheck": "passed",
+    "build": "passed with existing chunk/dynamic-import warnings",
+    "modelDependencyBoundary": "passed"
+  },
+  "linux": {
+    "runId": "6c392305a1f846c1a7669825f2be2bc2",
+    "passed": 9,
+    "failed": 0,
+    "realLinuxGuests": 2,
+    "realClaudeInference": false,
+    "cancellationSuiteRerun": false,
+    "result": "multi-device/linux-results.json",
+    "cleanup": "multi-device/linux-cleanup.json",
+    "transportBytesMatchCurrent": true,
+    "transportHashes": {
+      "apps/desktop/electron/ssh-targets.mjs": "9f8595aed1eaa2afdd06a50b680d7e0546b61bead539dada291b36bb1a6b8011",
+      "apps/desktop/electron/ssh-target-adapter.mjs": "3f48245c35bf6dc2cb7ad2314868f1b60b28cfaa330f58ae8756f5d09e039e88",
+      "apps/desktop/electron/ssh-target-pool.mjs": "5f04ba7d84a583a32299662e2e01738d05dffeef9726f10e7afb0b3827592e6d",
+      "apps/server/src/server.ts": "d36bda3df047ee3b4e38724a1bc90c34de6300323aa18f812d80188416408749",
+      "apps/server/src/native-terminal.ts": "514d36ace2d44773bdaadeb54bd696265d7d4f07a15c90d417720dda3122a9b3",
+      "packages/protocol/src/index.ts": "fef51fd944a0746718d2b008a01cdbe0f9ed2cd1bf84b11b07b1df55091aff97"
+    }
+  },
+  "review": {
+    "passes": "two independent reviewers plus root verification",
+    "remainingKnownFeatureBlockers": [],
+    "fixedFindings": [
+      "device-first remote routing when paths overlap local roots",
+      "stable creation identity through connected and offline retries",
+      "local dialog retries preserve one session and home draft",
+      "late creation cannot steal navigation; late native filesystem validation cannot use a changed connection",
+      "offline source configuration retained only for matching device and canonical directory",
+      "return-to-terminal opens a workspace when none exists",
+      "local terminal ownership blocks primary/side/queued input",
+      "other-device aggregate excludes SSH projects already unified",
+      "legacy remote folds and stable current-window remote project order",
+      "per-session drafts and chat reading positions",
+      "search waits for field mount; resize preserves explicit terminal focus",
+      "terminal waiting state uses existing notification and folded status",
+      "legacy create entry shares the new picker; visible tooltip names target",
+      "disconnected close distinguishes local display from unconfirmed remote process termination"
+    ]
+  },
+  "requirements": [
+    {
+      "id": "A1",
+      "scenario": "当前项目新终端",
+      "evidence": "`terminal-projects.spec.ts` 检查一步新建和最新来源配置"
+    },
+    {
+      "id": "A2",
+      "scenario": "最近及其他项目",
+      "evidence": "统一新建选择器、最多五个最近项目、设备/项目/目录搜索"
+    },
+    {
+      "id": "A3",
+      "scenario": "多设备同名路径",
+      "evidence": "项目身份核心测试、侧栏隔离场景，以及真实双 Linux 设备同路径构建和文件核对"
+    },
+    {
+      "id": "A4",
+      "scenario": "项目去重与来源",
+      "evidence": "`development-projects.test.ts` 和终端选择器场景，检查当前来源优先和稳定的时间/ID 排序"
+    },
+    {
+      "id": "A5",
+      "scenario": "首次远程目录",
+      "evidence": "保存但无来源项目只创建一个会话并打开它；本机新目录只发送一次终端创建请求"
+    },
+    {
+      "id": "A6",
+      "scenario": "图形远程新建",
+      "evidence": "主界面原生门面验证设备路由，即使远程目录与本机普通会话根目录同名也不回退本机"
+    },
+    {
+      "id": "A7",
+      "scenario": "图形与终端并行",
+      "evidence": "A 终端保留、B 正常输入、新建和导航；原终端没有额外启动或关闭"
+    },
+    {
+      "id": "A8",
+      "scenario": "同会话互斥",
+      "evidence": "顶部入口、工作区追加、侧边聊天、排队发送和既有服务端检查"
+    },
+    {
+      "id": "A9",
+      "scenario": "导航与移动",
+      "evidence": "项目标记明确动作；跨项目导航断言没有 `session.move`"
+    },
+    {
+      "id": "A10",
+      "scenario": "断线与恢复",
+      "evidence": "占用回调覆盖未知/断线；SSH 先连接再创建；真实断网恢复不重放且其他目标仍可用"
+    },
+    {
+      "id": "A11",
+      "scenario": "多任务状态",
+      "evidence": "折叠项目等待提示、其他设备汇总排除已合并项目、通知可定位且不抢当前视图"
+    },
+    {
+      "id": "A12",
+      "scenario": "个人状态",
+      "evidence": "草稿、阅读位置、远程别名/置顶、旧折叠键兼容与项目顺序场景"
+    },
+    {
+      "id": "A13",
+      "scenario": "视觉",
+      "evidence": "浅/深色与 1280、1000、800、480px，主界面和选择器截图；真实 Electron 跨文档窗口"
+    },
+    {
+      "id": "A14",
+      "scenario": "输入与可访问性",
+      "evidence": "方向键/Enter/Escape、组合输入、焦点返回、状态及设备文字标识；不把自动化组合事件视为物理输入法人工验收"
+    },
+    {
+      "id": "A15",
+      "scenario": "生命周期",
+      "evidence": "创建迟到、关闭、丢响应、重试、设备改变、服务连接改变和窗口清理场景"
+    }
+  ],
+  "productionFileSha256": {
+    "apps/desktop/electron/main.cjs": "d460f021f5d0dcda564c84c48aca30b1863cd79fd7c84815e29de10c53e11701",
+    "apps/desktop/electron/preload.cjs": "a1575f77bc8f2299d99dacdf6f25e845f176569e1dfa121ed96f2c5cee427bb0",
+    "apps/desktop/electron/ssh-targets.mjs": "9f8595aed1eaa2afdd06a50b680d7e0546b61bead539dada291b36bb1a6b8011",
+    "apps/desktop/src/App.tsx": "31eccbacc3b97d14f20ef1f91e295f968ce3cb9038ce5771803feed2eae303fb",
+    "apps/desktop/src/Composer.tsx": "f719633632475ddef662be90e6f57f489dad795e923ddbd4fb2a4d1a972ef8e8",
+    "apps/desktop/src/Conversation.tsx": "e1d7f73b9290ee59712dceeba867998b1fe163c293cae265ea01296ccb59c5e9",
+    "apps/desktop/src/NativeTerminal.tsx": "29168e1b2f69bb9bbd0778716f667243b9c040d9fd86d525d63591c367b2b1e7",
+    "apps/desktop/src/OpenProjectDialog.tsx": "dd0f00919f4cf04a573cbd3365c21b873b9208e38f9e97b8910cc7506284b644",
+    "apps/desktop/src/SideConversation.tsx": "20865a8ecce9870b9b449b6789bb1a17d78ae7cf49c2fde580f0eee61ca63e3a",
+    "apps/desktop/src/Sidebar.tsx": "b8b4051ec858ba4241fe227786bf63619bc887b08eec4e2a7d226a8965389442",
+    "apps/desktop/src/TerminalProjectPicker.tsx": "a64b03ee71a3cde90954e49c786095d1c61bfb792ef046ae9c609d4d198ec314",
+    "apps/desktop/src/TerminalWindow.tsx": "34905b34c5bf216a283f883be265e024e66f5309b8e6907cdd0798b20e5bdcf4",
+    "apps/desktop/src/desktop.d.ts": "340972aa9801c45bcdda723daf7da15df17a27b66e756d9592d96b516c4d8687",
+    "apps/desktop/src/developmentProjects.ts": "fe2e0efa2aba31a3a7cd9b9c599c20da8d231e05b3d2f46389c48abcce2bf577",
+    "apps/desktop/src/followUps.ts": "dc1efb1d1e4559ed78184fba963ee5daffab207c05ba417f2f2a826e5ccaee41",
+    "apps/desktop/src/notifications.ts": "682228db65ae937d40b776e0785c9655980808e49f8d313480a0475c961aabf4",
+    "apps/desktop/src/style.css": "b73d5553446f2173d283a84a44799a40827c262d0626267f52d15da55e99d2d0",
+    "apps/desktop/src/useSshTargets.ts": "e242ec6cfd4e02f27bdf8163b29f4b45a8de2b48c5611e9abebdab4b03f93182"
+  },
+  "screenshots": [
+    "multi-device/03-unified-projects.png",
+    "multi-device/04-terminal-project-picker.png",
+    "multi-device/05-electron-projects.png"
+  ],
+  "limits": [
+    "UI uses isolated fixtures/local simulation; real Linux service and SSH transport verified separately",
+    "No real Claude inference, production login, installer, signing, publishing or deployment",
+    "Automated composition does not establish physical Windows IME or all displays/drivers"
+  ],
+  "cleanup": {
+    "linuxPortsRemaining": [],
+    "retainedFailedTestTemp": {
+      "path": "C:/Users/benben/AppData/Local/Temp/cc-managed-client-tibXK2",
+      "deletion": "automatic approval rejected action with blocked by policy; retained"
+    }
+  }
+}

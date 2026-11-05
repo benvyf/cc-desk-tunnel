@@ -85,7 +85,7 @@ test('native dialogs become inert during exit and return focus after closing', a
   await page.goto('/');
   await login(page);
   await page.evaluate(() => document.documentElement.style.setProperty('--cds-dur-base', '800ms'));
-  const trigger = page.getByRole('button', { name: '添加项目', exact: true });
+  const trigger = page.getByRole('button', { name: '打开项目', exact: true });
   await trigger.click();
   const dialog = page.getByRole('dialog');
   await expect(dialog).toBeVisible();
@@ -121,7 +121,7 @@ test('a tall dialog keeps its dimensions and scrolling while exiting in a short 
   await page.goto('/');
   await login(page);
   await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   const dialog = page.getByRole('dialog');
   await dialog.evaluate((element) => {
     const content = document.createElement('p');

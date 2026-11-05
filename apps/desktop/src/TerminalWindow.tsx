@@ -5,7 +5,7 @@ import NativeTerminal, { type TerminalHandle, type TerminalPhase } from './Nativ
 import { RequestFailedError, type ProxyClient } from './client.ts';
 import { SquareTerminal, X, Plus, ChevronDown, Pencil, ScrollText, Search } from './icons.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
-import { folderName } from './paths.ts';
+import { folderName, pathKey } from './paths.ts';
 import { terminalTarget } from './terminalLinks.ts';
 import { followLink } from './linkActions.ts';
 import TerminalFile from './TerminalFile.tsx';
@@ -13,6 +13,12 @@ import TerminalDraft from './TerminalDraft.tsx';
 import TerminalHistory from './TerminalHistory.tsx';
 import PreviewSidebar from './PreviewSidebar.tsx';
 import { previewWebsite, usePreviewWorkspace } from './preview.ts';
+import TerminalProjectPicker from './TerminalProjectPicker.tsx';
+import OpenProjectDialog from './OpenProjectDialog.tsx';
+import { useSshTargets } from './useSshTargets.ts';
+import { useShared } from './shared.ts';
+import { getPrefs } from './prefs.ts';
+import { sessionDefaultOptions } from './modelDefaults.ts';
 
 export type TerminalWorkspaceHandle = {
   closeAll: () => Promise<boolean>;
@@ -36,6 +42,8 @@ export default function TerminalWindow({
   sessionId,
   onClose,
   onActivity,
+  onSessions,
+  projectScope = '',
   register,
   nodeName = '当前连接节点',
 }: {
@@ -43,10 +51,17 @@ export default function TerminalWindow({
   sessionId: string;
   onClose: () => void;
   onActivity?: (active: boolean) => void;
+  onSessions?: (ids: string[]) => void;
+  projectScope?: string;
   register?: (handle: TerminalWorkspaceHandle | null) => void;
   nodeName?: string;
 }) {
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const sshTargets = useSshTargets();
+  const savedPaths = useShared('projects');
+  const localPaths = Array.isArray(savedPaths)
+    ? savedPaths.filter((path): path is string => typeof path === 'string')
+    : [];
   const source = state.sessions.find((session) => session.id === sessionId)!;
   const [tabs, setTabsState] = useState<Tab[]>(() => [
     {
@@ -75,9 +90,12 @@ export default function TerminalWindow({
   const [menuIndex, setMenuIndex] = useState(0);
   const [rename, setRename] = useState(false);
   const [alias, setAlias] = useState('');
-  const [project, setProject] = useState(false);
-  const [projectSource, setProjectSource] = useState(sessionId);
-  const [projectPath, setProjectPath] = useState('');
+  const [picker, setPicker] = useState(false);
+  const [openProject, setOpenProject] = useState<{
+    deviceId?: string;
+    path?: string;
+    source?: Session;
+  } | null>(null);
   const [confirm, setConfirm] = useState<Tab[] | null>(null);
   const [closing, setClosing] = useState(false);
   const [closeError, setCloseError] = useState<string | null>(null);
@@ -95,12 +113,25 @@ export default function TerminalWindow({
   const waitingHandles = useRef(new Map<string, (handle: TerminalHandle) => void>());
   const creations = useRef(new Map<string, Promise<void>>());
   const popupRef = useRef<Window | null>(null);
-  const callbacks = useRef({ onClose, onActivity, register });
-  callbacks.current = { onClose, onActivity, register };
+  const callbacks = useRef({ onClose, onActivity, onSessions, register });
+  callbacks.current = { onClose, onActivity, onSessions, register };
   const patch = useCallback((tabId: string, values: Partial<Tab>) => {
     setTabs((current) => current.map((tab) => (tab.tabId === tabId ? { ...tab, ...values } : tab)));
   }, []);
   const active = tabs.find((tab) => tab.tabId === activeId) ?? tabs[0];
+  const sourceOf = (tab: Tab) =>
+    state.sessions.find((session) => session.id === (tab.sessionId ?? tab.source.id)) ?? tab.source;
+  const activeSource = active && sourceOf(active);
+  const mixedDevices = new Set(tabs.map((tab) => sourceOf(tab).device?.id)).size > 1;
+  const occupied = JSON.stringify(
+    tabs
+      .filter((tab) => tab.sessionId && !['ended', 'failed'].includes(tab.phase))
+      .map((tab) => tab.sessionId!)
+      .sort(),
+  );
+  useEffect(() => {
+    callbacks.current.onSessions?.(JSON.parse(occupied));
+  }, [occupied]);
   const preview = usePreviewWorkspace(
     state.status === 'disconnected' ? null : 'terminal',
     active?.source.id,
@@ -115,7 +146,7 @@ export default function TerminalWindow({
   const previewShown = previewAvailable && preview.expanded;
   const multi = state.terminalWorkspace?.version === 1;
   const connected = state.status === 'connected';
-  const anyLive = tabs.some(live);
+  const anyLive = tabs.some((tab) => !['ended', 'failed'].includes(tab.phase));
   useEffect(() => {
     callbacks.current.onActivity?.(anyLive);
     void window.desktop?.terminalWindow.setActive?.(anyLive);
@@ -128,6 +159,10 @@ export default function TerminalWindow({
         else {
           const source = client.state.sessions.find((session) => session.id === id);
           if (!source) return;
+          if (source.activeRun && source.activeRun.surface !== 'terminal') {
+            setCloseError('此会话正在图形界面运行，请先结束当前任务。');
+            return;
+          }
           const tabId = crypto.randomUUID();
           setTabs((current) => [
             ...current,
@@ -191,6 +226,11 @@ export default function TerminalWindow({
   }
   function add(source: Session, path?: string, historySessionId?: string) {
     if (!multi || !connected || closing) return;
+    const target = sshTargets.find((target) => target.id === source.device?.id);
+    if (!path && !historySessionId && target && target.status !== 'connected') {
+      setOpenProject({ deviceId: target.id, path: source.projectPath, source });
+      return;
+    }
     const tab: Tab = {
       tabId: crypto.randomUUID(),
       source,
@@ -208,7 +248,7 @@ export default function TerminalWindow({
   }
   async function remove(targets: Tab[], all: boolean): Promise<boolean> {
     if (closing || confirmResult.current) return false;
-    if (targets.some(live)) {
+    if (targets.some((tab) => live(tab) || tab.phase === 'disconnected')) {
       const agreed = await new Promise<boolean>((resolve) => {
         confirmResult.current = resolve;
         setConfirm(targets);
@@ -408,10 +448,15 @@ export default function TerminalWindow({
                 aria-selected={tab.tabId === activeId}
                 aria-controls={`terminal-${tab.tabId}`}
                 id={`tab-${tab.tabId}`}
-                title={`${tab.alias || folderName(tab.source.projectPath)} · ${tab.detail}`}
+                title={`${tab.alias || folderName(sourceOf(tab).projectPath)} · ${sourceOf(tab).device?.name ?? '本机'} · ${sourceOf(tab).projectPath} · ${tab.detail}`}
                 onClick={() => setActiveId(tab.tabId)}
               >
                 <span>{tab.alias || folderName(tab.source.projectPath)}</span>
+                {mixedDevices && (
+                  <span className="terminal-tab-device">
+                    {sourceOf(tab).device?.name ?? '本机'}
+                  </span>
+                )}
                 {!live(tab) && (
                   <span className="terminal-tab-ended">
                     {tab.phase === 'disconnected'
@@ -438,13 +483,39 @@ export default function TerminalWindow({
             </div>
           ))}
         </div>
-        <IconButton
-          title={multi ? '新建终端' : '服务端升级后可使用多终端'}
-          disabled={!multi || !connected || closing || !active}
-          onClick={() => active && add(active.source)}
-        >
-          <Plus scale="sm" />
-        </IconButton>
+        <div className="terminal-new-actions">
+          <button
+            type="button"
+            className="icon-button"
+            aria-label={multi ? '新建终端' : '服务端升级后可使用多终端'}
+            title={
+              !multi
+                ? '服务端升级后可使用多终端'
+                : activeSource
+                  ? `在 ${activeSource.device?.name ?? '本机'} · ${folderName(activeSource.projectPath)} 中新建终端`
+                  : '新建终端'
+            }
+            disabled={!multi || !connected || closing || !active}
+            onClick={() => activeSource && add(activeSource)}
+            aria-description={
+              activeSource
+                ? `在 ${activeSource.device?.name ?? '本机'} · ${folderName(activeSource.projectPath)} 中新建终端`
+                : undefined
+            }
+          >
+            <Plus scale="sm" />
+          </button>
+          <IconButton
+            title="选择设备或项目新建终端"
+            disabled={!multi || !connected || closing}
+            onClick={() => {
+              setPicker(true);
+              setMenu(false);
+            }}
+          >
+            <ChevronDown scale="sm" />
+          </IconButton>
+        </div>
         {previewAvailable && (
           <Button size="xs" variant="ghost" data-preview-toggle onClick={preview.toggle}>
             预览
@@ -571,7 +642,7 @@ export default function TerminalWindow({
             className="terminal-list-action"
             disabled={!multi || !connected || closing}
             onClick={() => {
-              setProject(true);
+              setPicker(true);
               setMenu(false);
             }}
           >
@@ -678,7 +749,7 @@ export default function TerminalWindow({
               </div>
             )}
             {['ended', 'disconnected'].includes(tab.phase) && (
-              <Button size="sm" disabled={!multi || !connected} onClick={() => add(tab.source)}>
+              <Button size="sm" disabled={!multi || !connected} onClick={() => add(sourceOf(tab))}>
                 新开同项目终端
               </Button>
             )}
@@ -699,10 +770,10 @@ export default function TerminalWindow({
       {/* Where this terminal works, as plainly as a status bar says it: the project's path and its computer (G5). */}
       <footer
         className="terminal-workspace-footer"
-        title={`${active?.source.projectPath ?? ''} · ${nodeName}`}
+        title={`${activeSource?.device?.name ?? '本机'} · ${activeSource?.projectPath ?? ''} · ${nodeName}`}
       >
-        <span>{active?.source.projectPath}</span>
-        {active?.source.device?.name && <span>{active.source.device.name}</span>}
+        <span>{activeSource?.projectPath}</span>
+        <span>{activeSource?.device?.name ?? '本机'}</span>
       </footer>
       {linkError && <p role="alert">{linkError}</p>}
       {historySource && (
@@ -740,7 +811,11 @@ export default function TerminalWindow({
             if (!closing) dismissConfirm();
           }}
         >
-          <p>将结束所选 {confirm.length} 个终端进程，已执行的文件修改不会撤销。</p>
+          <p>
+            {confirm.some((tab) => tab.phase === 'disconnected')
+              ? '连接中断的终端只关闭本地显示，尚未确认远端进程是否结束，恢复连接后请检查。其他所选终端将结束进程；已执行的文件修改保留。'
+              : `将结束所选 ${confirm.length} 个终端进程，已执行的文件修改不会撤销。`}
+          </p>
           <div className="dialog-actions">
             <Button autoFocus data-terminal-cancel onClick={dismissConfirm}>
               取消
@@ -753,7 +828,7 @@ export default function TerminalWindow({
                 setConfirm(null);
               }}
             >
-              结束终端
+              {confirm.some((tab) => tab.phase === 'disconnected') ? '关闭所选终端' : '结束终端'}
             </Button>
           </div>
         </Modal>
@@ -786,53 +861,69 @@ export default function TerminalWindow({
           </form>
         </Modal>
       )}
-      {project && (
-        <Modal title="选项目新建终端" onClose={() => setProject(false)}>
-          <form
-            className="dialog-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              const chosen = state.sessions.find((session) => session.id === projectSource);
-              if (chosen) {
-                add(chosen, projectPath.trim() || undefined);
-                setProject(false);
-              }
-            }}
-          >
-            <label>
-              已有项目
-              <select
-                value={projectSource}
-                onChange={(event) => setProjectSource(event.target.value)}
-              >
-                {state.sessions
-                  .filter((session) => !!session.device)
-                  .map((session) => (
-                    <option key={session.id} value={session.id}>
-                      {session.device?.name} · {session.projectPath}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            {!state.browser && (
-              <label>
-                或使用本机项目目录
-                <input
-                  value={projectPath}
-                  maxLength={2048}
-                  onChange={(event) => setProjectPath(event.target.value)}
-                />
-              </label>
-            )}
-            <p>同目录并行修改可能冲突；需要隔离时选择已有 worktree。</p>
-            <div className="dialog-actions">
-              <Button onClick={() => setProject(false)}>取消</Button>
-              <Button type="submit" variant="primary">
-                新建
-              </Button>
-            </div>
-          </form>
-        </Modal>
+      {picker && (
+        <TerminalProjectPicker
+          sessions={state.sessions}
+          targets={sshTargets}
+          localPaths={localPaths}
+          localDeviceId={state.device?.id}
+          scope={projectScope}
+          active={activeSource}
+          onClose={() => setPicker(false)}
+          onSelect={(selected) => {
+            const target = sshTargets.find((target) => target.id === selected.device?.id);
+            if (target && target.status !== 'connected')
+              setOpenProject({ deviceId: target.id, path: selected.projectPath, source: selected });
+            else add(selected);
+            setPicker(false);
+          }}
+          onOpen={(initial) => {
+            setPicker(false);
+            setOpenProject(initial ?? {});
+          }}
+        />
+      )}
+      {openProject && (
+        <OpenProjectDialog
+          client={client}
+          initial={openProject}
+          forceNew
+          onClose={() => setOpenProject(null)}
+          onLocal={async (path) => {
+            if (!activeSource) throw new Error('当前终端项目不可用，请重新打开终端。');
+            add(
+              {
+                ...activeSource,
+                device: state.device ?? undefined,
+                permissionMode: 'default',
+                ...sessionDefaultOptions(getPrefs().sessionDefaults, state.capabilities?.models),
+              },
+              path,
+            );
+          }}
+          onRemote={async (id, created) => {
+            const selected = client.state.sessions.find((session) => session.id === id);
+            if (!selected) throw new Error('项目会话正在同步，请稍后重试。');
+            const source = openProject.source;
+            const inherited =
+              source &&
+              source.device?.id === selected.device?.id &&
+              pathKey(source.projectPath) === pathKey(selected.projectPath)
+                ? source
+                : undefined;
+            const defaults = inherited
+              ? { model: inherited.model, effort: inherited.effort }
+              : sessionDefaultOptions(getPrefs().sessionDefaults, state.capabilities?.models);
+            if (created && (inherited || defaults.model || defaults.effort))
+              await client.request({
+                type: 'session.configure',
+                sessionId: id,
+                permissionMode: inherited?.permissionMode ?? selected.permissionMode,
+                ...defaults,
+              });
+            show(id);
+          }}
+        />
       )}
     </div>
   );

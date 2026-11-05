@@ -97,7 +97,7 @@ test('find opens folded tool details then restores folds, and never steals dialo
   await expect(page.locator('.tool-input')).toBeVisible();
   await page.getByLabel('查找对话内容', { exact: true }).press('Escape');
   await expect(page.locator('.turn-process')).not.toHaveAttribute('open');
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.keyboard.press('Control+f');
   await expect(page.getByRole('search', { name: '对话内查找' })).toHaveCount(0);
   await page.getByRole('dialog').getByRole('button', { name: '关闭', exact: true }).click();

@@ -280,7 +280,7 @@ test('real login and dialog use large and default actions without changing submi
     });
   }
   await login(page);
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   const dialog = page.getByRole('dialog');
   const add = dialog.getByRole('button', { name: '添加', exact: true });
   const cancel = dialog.getByRole('button', { name: '取消', exact: true });
@@ -292,7 +292,7 @@ test('real login and dialog use large and default actions without changing submi
   });
   await cancel.click();
   await expect(dialog).not.toBeVisible();
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.getByLabel('本机项目目录').fill('D:\\工作\\按钮控件');
   await page.getByLabel('本机项目目录').press('Enter');
   await expect(dialog).not.toBeVisible();

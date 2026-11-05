@@ -25,7 +25,7 @@ test('the home page greets over an input box whose first message makes and opens
   expect(card.y - (greeting.y + greeting.height)).toBeLessThan(80);
   expect(card.y + card.height).toBeLessThan(page0.y + page0.height * 0.6);
   // The project the first session goes to (in this test build, new sessions go to the first project).
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.getByLabel('本机项目目录').fill('D:\\工作\\首页新会话');
   await page.getByRole('button', { name: '添加', exact: true }).click();
   await expect(page.getByRole('dialog')).not.toBeVisible();
@@ -47,7 +47,7 @@ test('a session nothing has been said in keeps its input box under the greeting 
 }) => {
   await page.goto('/');
   await login(page);
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.getByLabel('本机项目目录').fill('D:\\工作\\空白会话');
   await page.getByRole('button', { name: '添加', exact: true }).click();
   await page.getByRole('button', { name: '新建会话 · D:\\工作\\空白会话', exact: true }).click();

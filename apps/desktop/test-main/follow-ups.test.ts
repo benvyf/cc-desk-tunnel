@@ -194,3 +194,30 @@ test('refresh restores unsent messages with stable IDs and waits for confirmatio
   await tick();
   assert.deepEqual(calls, [{ text: 'survive refresh', requestId: messageId }]);
 });
+
+test('local terminal ownership blocks automatic and explicit queued sends before server activity catches up', async () => {
+  const calls: object[] = [];
+  let blocked = true;
+  const state = {
+    status: 'connected',
+    sessions: [{ id: 'terminal-session', activeRun: null }],
+    events: {},
+    history: {},
+  } as unknown as ClientState;
+  const client = {
+    getSnapshot: () => state,
+    subscribe: () => () => {},
+    request: async (command: object) => {
+      calls.push(command);
+      return { ok: true };
+    },
+  } as unknown as Pick<ProxyClient, 'request' | 'getSnapshot' | 'subscribe'>;
+  const queue = new FollowUps(client, () => blocked);
+  queue.enqueue('terminal-session', 'do not send to terminal', 'chat');
+  await queue.sendNow('terminal-session', queue.getSnapshot().items['terminal-session'][0].id);
+  assert.equal(calls.length, 0);
+  blocked = false;
+  queue.resume('terminal-session');
+  await tick();
+  assert.equal(calls.length, 1);
+});

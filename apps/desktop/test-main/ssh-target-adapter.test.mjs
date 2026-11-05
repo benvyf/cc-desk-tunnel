@@ -833,6 +833,20 @@ test(
       second,
       'same path on another target is not reused',
     );
+    const creationId = randomUUID();
+    const retryable = await manager.openProject(a, '/home/dev/project', true, creationId);
+    assert.deepEqual(
+      await manager.openProject(a, '/home/dev/project', true, creationId),
+      retryable,
+      'retrying one project-open operation cannot create a second session',
+    );
+    const otherTarget = await manager.openProject(b, '/home/dev/project', true, creationId);
+    assert.notEqual(
+      otherTarget.sessionId,
+      retryable.sessionId,
+      'operation identity remains isolated when targets share the same directory',
+    );
+    assert.equal(server.store.get(otherTarget.sessionId).session.device.id, b);
     await manager.disconnect(a);
     assert.equal(manager.list().find((entry) => entry.id === b).status, 'connected');
     await assert.rejects(manager.createSession(a, '/home/dev/project'), /尚未就绪/);

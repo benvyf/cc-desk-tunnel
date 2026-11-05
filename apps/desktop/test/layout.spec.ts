@@ -10,6 +10,7 @@ import {
   createSession,
   expandActivity,
   login,
+  prepareSimulationLogin,
   screenshots,
   send,
   sessionAction,
@@ -25,13 +26,13 @@ test('a menu longer than the window scrolls inside it', async ({ page }) => {
   await login(page);
   await createSession(page, '很多项目');
   for (let index = 1; index <= 8; index++) {
-    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
     await page.getByLabel('本机项目目录').fill(`D:\\工作\\项目${index}`);
     await page.getByRole('button', { name: '添加', exact: true }).click();
   }
   await page.setViewportSize({ width: 1000, height: 420 });
   await page.getByRole('button', { name: '会话所在的项目', exact: true }).click();
-  const menu = page.getByRole('menu', { name: '会话所在的项目', exact: true });
+  const menu = page.getByRole('menu', { name: '移动当前会话到其他项目', exact: true });
   const box = (await menu.boundingBox())!;
   expect(box.y).toBeGreaterThanOrEqual(0);
   expect(box.y + box.height).toBeLessThanOrEqual(420);
@@ -49,7 +50,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   const title = await createSession(page, '改版');
   await send(page, '梳理当前项目');
   await settled(page);
-  await expect(page.locator('.composer-context')).toContainText('中文项目');
+  await expect(page.locator('.session-project')).toContainText('中文项目');
   await shot(page, '01-会话');
 
   // A pinned session moves under its own heading; a project gets a local name and a pin of its own.
@@ -68,7 +69,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();
   const group = page.locator('.project-group > h2').filter({ hasText: '我的项目' });
   await expect(group).toHaveAttribute('title', project);
-  await expect(page.locator('.composer-context')).toContainText('我的项目');
+  await expect(page.locator('.session-project')).toContainText('我的项目');
   await group.click({ button: 'right' });
   await page.getByRole('menuitem', { name: '置顶', exact: true }).click();
   await expect(group.locator('.pin-mark')).toBeVisible();
@@ -216,7 +217,7 @@ test('a project lists its latest five sessions until it is listed in full', asyn
   await page.goto('/');
   await login(page);
   const folder = `D:\\工作\\多会话 ${Date.now()}`;
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.getByLabel('本机项目目录').fill(folder);
   await page.getByRole('button', { name: '添加', exact: true }).click();
   const group = page.locator('.project-group').filter({
@@ -294,7 +295,7 @@ test('a question is answered with its choices, and a session or a whole project 
 
   // The session moves to another project from the chip above the message box.
   const other = 'D:\\工作\\另一个项目';
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.getByLabel('本机项目目录').fill(other);
   await page.getByRole('button', { name: '添加', exact: true }).click();
   const chip = page.getByRole('button', { name: '会话所在的项目', exact: true });
@@ -304,7 +305,9 @@ test('a question is answered with its choices, and a session or a whole project 
   await row.hover();
   await row.getByRole('button', { name: '会话操作', exact: true }).click();
   await page.getByRole('menuitem', { name: '移到其他项目…', exact: true }).click();
-  await expect(page.getByRole('menu', { name: '会话所在的项目', exact: true })).toBeVisible();
+  await expect(
+    page.getByRole('menu', { name: '移动当前会话到其他项目', exact: true }),
+  ).toBeVisible();
   await page.getByRole('menuitemradio', { name: '另一个项目', exact: true }).click();
   await expect(chip).toContainText('另一个项目');
   await chip.click();
@@ -336,7 +339,8 @@ test('a question is answered with its choices, and a session or a whole project 
   await page.getByRole('dialog').getByLabel('本机项目目录').fill(moved);
   await page.getByRole('dialog').getByRole('button', { name: '更改', exact: true }).click();
   await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(chip).toHaveAttribute('title', moved);
+  expect(await chip.getAttribute('title')).toContain(moved);
+  expect(await chip.getAttribute('title')).toContain('移动当前会话到其他项目');
   await expect(page.getByRole('button', { name: `项目操作 · ${other}`, exact: true })).toHaveCount(
     0,
   );
@@ -444,7 +448,7 @@ test('a run that goes on only for background tasks looks finished, lists them an
   // The turn itself is over: its answer shows as final, and the composer offers sending, not stopping.
   await expect(page.locator('.message.assistant')).toContainText('渲染已在后台开始。');
   await expect(page.getByRole('button', { name: '停止运行', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '发送消息', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '排队发送', exact: true })).toBeVisible();
   await shot(page, '15-后台任务');
   await panel.getByRole('listitem').first().getByRole('button', { name: '结束' }).click();
   await expect(panel.getByRole('listitem')).toHaveText([/开发服务器/]);
@@ -634,6 +638,7 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
   });
   try {
     const page = await application.firstWindow();
+    await prepareSimulationLogin(page);
     await expect(
       page.getByRole('heading', { name: '连接到 CC Space 服务', exact: true }),
     ).toBeVisible();
@@ -650,7 +655,9 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
       },
       [repository, picked],
     );
-    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
+    await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '打开项目', exact: true }).click();
     await page.getByRole('button', { name: `新建会话 · ${repository}`, exact: true }).click();
     const branch = execFileSync('git', ['branch', '--show-current'], { encoding: 'utf8' }).trim();
     await expect(page.locator('.composer-context')).toContainText(branch);
@@ -711,7 +718,7 @@ test('Electron: frameless window, the project branch, file attachment tiles and 
       await expect(page.getByRole('button', { name: '这一版的更新内容', exact: true })).toHaveCount(
         0,
       );
-      await expect(page.getByLabel('定制客户端更新', { exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: '检查更新', exact: true })).toBeVisible();
       return;
     }
     // What this version changed is read here, from the notes the program carries.

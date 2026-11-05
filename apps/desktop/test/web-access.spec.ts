@@ -194,7 +194,7 @@ test('production browser logs in with TOTP, sends no desktop identity, and expos
   await expect(page.locator('.shell')).toBeVisible();
   await expect(page.getByRole('note')).toContainText('正规证书');
   await expect(page.getByRole('button', { name: '定时任务', exact: true })).toHaveCount(0);
-  await expect(page.getByRole('button', { name: '添加项目', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '打开项目', exact: true })).toHaveCount(0);
   await page.locator('.sidebar').getByRole('button', { name: '新建会话', exact: true }).click();
   await expect
     .poll(() => fixture.commands.some((value) => value.type === 'server.session.create'))

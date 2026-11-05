@@ -15,7 +15,9 @@ export class FollowUps {
   private state: Snapshot = { items: {}, paused: {}, sending: {} };
   private listeners = new Set<() => void>();
   private waiting = new Map<string, string>();
-  constructor(privateClient: Transport) {
+  private blocked: (sessionId: string) => boolean;
+  constructor(privateClient: Transport, blocked: (sessionId: string) => boolean = () => false) {
+    this.blocked = blocked;
     this.client = privateClient;
     try {
       const saved = JSON.parse(sessionStorage.getItem(storageKey) ?? '{}');
@@ -141,6 +143,14 @@ export class FollowUps {
     if (item && !this.state.sending[sessionId]) await this.send(sessionId, item);
   }
   private async send(sessionId: string, item: FollowUp) {
+    if (
+      this.blocked(sessionId) ||
+      this.client.getSnapshot().sessions.find((session) => session.id === sessionId)?.activeRun
+        ?.surface === 'terminal'
+    ) {
+      this.pause(sessionId, '此会话正在终端中使用，确认结束后继续排队');
+      return;
+    }
     this.state.sending = { ...this.state.sending, [sessionId]: item.id };
     this.state.items = {
       ...this.state.items,

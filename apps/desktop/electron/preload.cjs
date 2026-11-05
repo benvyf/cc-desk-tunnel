@@ -30,7 +30,8 @@ contextBridge.exposeInMainWorld('desktop', {
     connect: (id, secret) => ipcRenderer.invoke('ssh:connect', id, secret),
     disconnect: (id) => ipcRenderer.invoke('ssh:disconnect', id),
     remove: (id) => ipcRenderer.invoke('ssh:remove', id),
-    openProject: (id, path, forceNew) => ipcRenderer.invoke('ssh:open-project', id, path, forceNew),
+    openProject: (id, path, forceNew, creationId) =>
+      ipcRenderer.invoke('ssh:open-project', id, path, forceNew, creationId),
     directories: (id, path) => ipcRenderer.invoke('ssh:directories', id, path),
     forkSession: (id, sessionId, beforeMessageId) =>
       ipcRenderer.invoke('ssh:fork-session', id, sessionId, beforeMessageId),

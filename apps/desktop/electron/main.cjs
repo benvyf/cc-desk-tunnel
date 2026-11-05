@@ -1098,8 +1098,8 @@ handle('ssh:save', async (_event, input) => (await sshTargets()).save(input));
 handle('ssh:connect', async (_event, id, secret) => (await sshTargets()).connect(id, secret));
 handle('ssh:disconnect', async (_event, id) => (await sshTargets()).disconnect(id));
 handle('ssh:remove', async (_event, id) => (await sshTargets()).remove(id));
-handle('ssh:open-project', async (_event, id, directory, forceNew) =>
-  (await sshTargets()).openProject(id, directory, forceNew === true),
+handle('ssh:open-project', async (_event, id, directory, forceNew, creationId) =>
+  (await sshTargets()).openProject(id, directory, forceNew === true, creationId),
 );
 handle('ssh:directories', async (_event, id, directory) =>
   (await sshTargets()).directories(id, directory),

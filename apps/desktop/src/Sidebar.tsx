@@ -25,6 +25,8 @@ import { IconButton } from './ui.tsx';
 import type { MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
 import { terminalState } from './RunStatus.tsx';
+import type { SshTarget } from './desktop.d.ts';
+import { projectPreferenceKey } from './developmentProjects.ts';
 
 // What a session is doing, as its row names it in `data-state`: the stylesheet colours the dot and the word by it.
 type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed';
@@ -48,7 +50,7 @@ const stateRank: Record<RowState, number> = {
 function rowState(session: Session, failed: ReadonlySet<string>): RowState | undefined {
   const run = session.activeRun;
   if (!run) return failed.has(session.id) ? 'failed' : undefined;
-  if (run.surface === 'terminal') return 'terminal';
+  if (run.surface === 'terminal') return run.activity === 'waiting' ? 'approval' : 'terminal';
   if (run.waiting === 'background') return 'background';
   if (run.status !== 'awaiting_approval') return 'running';
   return run.waiting === 'question' ? 'question' : 'approval';
@@ -57,7 +59,7 @@ function rowState(session: Session, failed: ReadonlySet<string>): RowState | und
 const breathes = (state: RowState) =>
   state === 'running' || state === 'background' || state === 'terminal';
 function activity(session: Session, state: RowState | undefined) {
-  if (state === 'terminal') return terminalState(session.activeRun?.activity);
+  if (session.activeRun?.surface === 'terminal') return terminalState(session.activeRun.activity);
   return state ? stateLabels[state] : ago(Date.parse(session.updatedAt));
 }
 
@@ -111,6 +113,10 @@ export default function Sidebar({
   searchAsked = false,
   searchDone,
   footer,
+  sshTargets = [],
+  projectScope = '',
+  createRemoteProject,
+  remoteProjectMenu,
 }: {
   sideOpen?: boolean;
   localProjects?: boolean;
@@ -146,9 +152,14 @@ export default function Sidebar({
   searchAsked?: boolean;
   searchDone?: () => void;
   footer?: ReactNode;
+  sshTargets?: SshTarget[];
+  projectScope?: string;
+  createRemoteProject?: (deviceId: string, path: string) => void;
+  remoteProjectMenu?: (deviceId: string, path: string, position: MenuPosition) => void;
 }) {
   const prefs = usePrefs();
   const connectionName = useConnectionName();
+
   const { failed } = notifications;
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
@@ -167,6 +178,7 @@ export default function Sidebar({
     // the length of the slide, unless the reader has put it somewhere else.
     // (No cleanup: searchDone above changes searchAsked at once, and that must not cancel these frames.)
     let frames = 0;
+    let focused = false;
     let acted = false;
     const act = () => {
       acted = true;
@@ -178,12 +190,16 @@ export default function Sidebar({
     window.addEventListener('keydown', act, true);
     window.addEventListener('pointerdown', act, true);
     const hold = () => {
+      if (acted) return stop();
       const box = searchBox.current;
-      if (!box?.isConnected || (acted && frames > 0)) return stop();
-      if (frames === 0) {
+      // Concurrent rendering can mount the field after the first animation frame.
+      if (box?.isConnected && (!focused || document.activeElement === document.body)) {
         box.focus();
-        box.select();
-      } else if (document.activeElement === document.body) box.focus();
+        if (document.activeElement === box) {
+          if (!focused) box.select();
+          focused = true;
+        }
+      }
       if (++frames < 24) requestAnimationFrame(hold);
       else stop();
     };
@@ -191,6 +207,7 @@ export default function Sidebar({
   }, [searchAsked, searchDone]);
   // The lists listed in full rather than their latest few, for this window only.
   const [listed, setListed] = useState<string[]>([]);
+  const remoteOrder = useRef(new Map<string, number>());
   const { pinned, plain, groups } = useMemo(() => {
     const grouped = new Map<string, Session[]>();
     const plain: Session[] = [];
@@ -199,7 +216,7 @@ export default function Sidebar({
     for (const path of projects) grouped.set(pathKey(path), []);
     for (const session of sessions) {
       const loose = isInside(session.projectPath, workspaceRoots);
-      const text = loose ? session.title : `${session.title} ${session.projectPath}`;
+      const text = `${session.title} 本机 ${session.device?.name ?? ''} ${loose ? '' : session.projectPath} ${prefs.projectNames[pathKey(session.projectPath)] ?? ''}`;
       if (!text.toLowerCase().includes(term)) continue;
       if (prefs.pinnedSessions.includes(session.id)) {
         pinned.push(session);
@@ -213,6 +230,56 @@ export default function Sidebar({
       if (!prefs.pinnedSessions.includes(session.id)) members.push(session);
       grouped.set(key, members);
     }
+    const remoteGroups = sshTargets
+      .filter((target) => target.available)
+      .flatMap((target) => {
+        const paths = [...target.projects];
+        const members = elsewhere.filter((session) => session.device?.id === target.id);
+        for (const session of members)
+          if (!paths.some((path) => pathKey(path) === pathKey(session.projectPath)))
+            paths.push(session.projectPath);
+        return paths
+          .map((path) => {
+            const key = projectPreferenceKey(projectScope, target.id, path);
+            const matching = members.filter(
+              (session) => pathKey(session.projectPath) === pathKey(path),
+            );
+            for (const session of matching)
+              if (
+                prefs.pinnedSessions.includes(session.id) &&
+                `${session.title} ${target.name} ${path} ${prefs.projectNames[key] ?? ''}`
+                  .toLowerCase()
+                  .includes(term)
+              )
+                pinned.push(session);
+            return {
+              key,
+              path,
+              deviceId: target.id,
+              deviceName: target.name,
+              online: devices.some((device) => device.id === target.id && device.ready),
+              sessions: matching.filter(
+                (session) =>
+                  !prefs.pinnedSessions.includes(session.id) &&
+                  `${session.title} ${target.name} ${path} ${prefs.projectNames[key] ?? ''}`
+                    .toLowerCase()
+                    .includes(term),
+              ),
+            };
+          })
+          .filter(
+            (group) =>
+              group.sessions.length ||
+              !term ||
+              `${target.name} ${group.path} ${prefs.projectNames[group.key] ?? ''}`
+                .toLowerCase()
+                .includes(term),
+          );
+      });
+    for (const group of remoteGroups)
+      if (!remoteOrder.current.has(group.key))
+        remoteOrder.current.set(group.key, remoteOrder.current.size);
+    remoteGroups.sort((a, b) => remoteOrder.current.get(a.key)! - remoteOrder.current.get(b.key)!);
     const first = (key: string) => (prefs.pinnedProjects.includes(key) ? 0 : 1);
     return {
       pinned,
@@ -224,20 +291,49 @@ export default function Sidebar({
             projects.find((path) => pathKey(path) === key) ??
             sessions.find((session) => pathKey(session.projectPath) === key)!.projectPath,
           sessions: members,
+          deviceId: undefined as string | undefined,
+          deviceName: '本机',
+          online: connected,
         }))
         .filter(
-          (group) => group.sessions.length || !term || group.path.toLowerCase().includes(term),
+          (group) =>
+            group.sessions.length ||
+            !term ||
+            `${group.path} ${prefs.projectNames[group.key] ?? ''} 本机`
+              .toLowerCase()
+              .includes(term),
         )
+        .concat(remoteGroups)
         // Array.sort is stable: pinned projects come first, the rest keep their order.
         .sort((a, b) => first(a.key) - first(b.key)),
     };
-  }, [sessions, search, projects, workspaceRoots, prefs.pinnedSessions, prefs.pinnedProjects]);
+  }, [
+    sessions,
+    elsewhere,
+    devices,
+    sshTargets,
+    projectScope,
+    connected,
+    search,
+    projects,
+    workspaceRoots,
+    prefs.pinnedSessions,
+    prefs.pinnedProjects,
+    prefs.projectNames,
+  ]);
 
   const others = useMemo(() => {
     const term = search.trim().toLowerCase();
     const groups = new Map<string, Elsewhere>();
     for (const session of elsewhere) {
-      if (!`${session.title} ${session.projectPath}`.toLowerCase().includes(term)) continue;
+      if (sshTargets.some((target) => target.available && target.id === session.device?.id))
+        continue;
+      if (
+        !`${session.title} ${session.projectPath} ${session.device?.name ?? ''}`
+          .toLowerCase()
+          .includes(term)
+      )
+        continue;
       // A session from before computers were told apart, whose folder is not on this one.
       const device = session.device ?? { id: '', name: '未知设备' };
       const entry: Elsewhere = groups.get(device.id) ?? {
@@ -263,7 +359,7 @@ export default function Sidebar({
       entry.projects.set(key, project);
     }
     return [...groups.entries()];
-  }, [elsewhere, devices, search]);
+  }, [elsewhere, devices, search, sshTargets]);
   const othersCount = others.reduce(
     (count, [, device]) =>
       count +
@@ -421,11 +517,7 @@ export default function Sidebar({
         <button
           type="button"
           className="session-select"
-          // While the terminal has the window the rows stay readable; they only do not open.
-          aria-disabled={terminalOpen || undefined}
-          onClick={() => {
-            if (!terminalOpen) select(session.id);
-          }}
+          onClick={() => select(session.id)}
           onKeyDown={(event) => {
             if (!asksForMenu(event)) return;
             event.preventDefault();
@@ -483,8 +575,8 @@ export default function Sidebar({
       <button
         type="button"
         className="side-action new-session"
-        disabled={!connected || busy || refreshing || terminalOpen}
-        title={terminalOpen ? '终端窗口打开时不能新建会话' : undefined}
+        disabled={!connected || busy || refreshing}
+        title="在当前项目中新建会话"
         onClick={newSession}
       >
         <SquarePen />
@@ -504,7 +596,7 @@ export default function Sidebar({
             onBlur={() => {
               if (!search) closeSearch();
             }}
-            placeholder="搜索会话或项目"
+            placeholder="搜索设备、项目或会话"
             close={closeSearch}
           />
         ) : (
@@ -523,7 +615,7 @@ export default function Sidebar({
       </div>
       {terminalOpen && (
         <div className="side-terminal-note" role="status">
-          <span>终端窗口使用中，关闭后可切换会话</span>
+          <span>终端窗口使用中，可继续其他会话</span>
           {showTerminal && (
             <button type="button" onClick={showTerminal}>
               回到终端
@@ -537,60 +629,84 @@ export default function Sidebar({
         {localProjects && (
           <div className="list-heading">
             项目
-            <IconButton
-              title="添加项目"
-              disabled={!connected || busy || terminalOpen}
-              onClick={addProject}
-            >
+            <IconButton title="打开项目" disabled={!connected || busy} onClick={addProject}>
               <Plus />
             </IconButton>
           </div>
         )}
-        {groups.map(({ key, path, sessions: members }) => {
+        {groups.map(({ key, path, sessions: members, deviceId, deviceName, online }) => {
           // A search shows what it found, folded or not.
-          const collapsed = !search.trim() && prefs.collapsedProjects.includes(key);
+          const legacyKey = deviceId ? `${deviceId}\n${pathKey(path)}` : '';
+          const collapsed =
+            !search.trim() &&
+            (prefs.collapsedProjects.includes(key) ||
+              (!!deviceId &&
+                (prefs.collapsedElsewhere.includes(legacyKey) ||
+                  prefs.collapsedElsewhere.includes(deviceId))));
           const name = prefs.projectNames[key] || folderName(path);
+          const location = deviceId ? `${deviceName} · ${path}` : path;
+          const openMenu = (position: MenuPosition) =>
+            deviceId ? remoteProjectMenu?.(deviceId, path, position) : projectMenu(path, position);
           return (
             <section className="project-group" key={key}>
               <h2
-                title={path}
+                title={location}
                 onContextMenu={(event) => {
                   event.preventDefault();
-                  projectMenu(path, { x: event.clientX, y: event.clientY });
+                  openMenu({ x: event.clientX, y: event.clientY });
                 }}
               >
                 {foldToggle({
                   open: !collapsed,
-                  label: `项目 · ${name}`,
+                  label: `项目 · ${name} · ${deviceName}`,
                   name,
                   members,
                   toggle: () =>
-                    setPrefs((value) => ({
-                      ...value,
-                      collapsedProjects: toggled(value.collapsedProjects, key),
-                    })),
+                    setPrefs((value) => {
+                      const folded = new Set(value.collapsedProjects);
+                      if (deviceId && value.collapsedElsewhere.includes(deviceId))
+                        for (const group of groups)
+                          if (group.deviceId === deviceId) folded.add(group.key);
+                      if (collapsed) folded.delete(key);
+                      else folded.add(key);
+                      return {
+                        ...value,
+                        collapsedProjects: [...folded],
+                        collapsedElsewhere: deviceId
+                          ? value.collapsedElsewhere.filter(
+                              (item) => item !== legacyKey && item !== deviceId,
+                            )
+                          : value.collapsedElsewhere,
+                      };
+                    }),
                   onKeyDown: (event) => {
                     if (!asksForMenu(event)) return;
                     event.preventDefault();
-                    projectMenu(path, below(event.currentTarget));
+                    openMenu(below(event.currentTarget));
                   },
                 })}
+                <small className="project-device" title={`${deviceName}${online ? '' : ' · 离线'}`}>
+                  {deviceName}
+                  {!online && ' · 离线'}
+                </small>
                 {prefs.pinnedProjects.includes(key) && <Pin className="pin-mark" />}
                 <IconButton
-                  title={`项目操作 · ${path}`}
+                  title={`项目操作 · ${location}`}
                   className="row-action"
                   onClick={(event) => {
                     const box = event.currentTarget.getBoundingClientRect();
-                    projectMenu(path, { x: box.left, y: box.bottom + 4 });
+                    openMenu({ x: box.left, y: box.bottom + 4 });
                   }}
                 >
                   <Ellipsis />
                 </IconButton>
                 <IconButton
-                  title={`新建会话 · ${path}`}
+                  title={`新建会话 · ${location}`}
                   className="row-action"
-                  disabled={!connected || busy || refreshing || terminalOpen}
-                  onClick={() => createInProject(path)}
+                  disabled={!connected || busy || refreshing}
+                  onClick={() =>
+                    deviceId ? createRemoteProject?.(deviceId, path) : createInProject(path)
+                  }
                 >
                   <Plus />
                 </IconButton>
@@ -615,7 +731,10 @@ export default function Sidebar({
                 open: othersOpen,
                 label: '其他设备的会话',
                 name: '其他设备',
-                members: elsewhere,
+                members: others.flatMap(([, device]) => [
+                  ...device.plain,
+                  ...[...device.projects.values()].flatMap((project) => project.sessions),
+                ]),
                 toggle: () =>
                   setPrefs((value) => ({ ...value, elsewhereOpen: !value.elsewhereOpen })),
               })}

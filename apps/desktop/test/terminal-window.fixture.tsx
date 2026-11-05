@@ -7,6 +7,7 @@ import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { PredictiveEchoAddon } from 'xterm-zerolag-input';
 import { setPrefs } from '../src/prefs.ts';
+import { saveShared } from '../src/shared.ts';
 import { RequestFailedError } from '../src/client.ts';
 let holdRenderCallbacks = false;
 const renderCallbacks: (() => void)[] = [];
@@ -50,6 +51,7 @@ const session = {
   model: null,
   effort: null,
   activeRun: null,
+  updatedAt: '2026-11-05T00:00:00Z',
 };
 let state: any = {
   sessions: [session],
@@ -119,7 +121,16 @@ const client = {
         update({
           sessions: [
             ...state.sessions,
-            { ...session, id, projectPath: command.projectPath || session.projectPath },
+            {
+              ...(state.sessions.find((source: any) => source.id === command.sourceSessionId) ??
+                session),
+              id,
+              projectPath:
+                command.projectPath ||
+                state.sessions.find((source: any) => source.id === command.sourceSessionId)
+                  ?.projectPath ||
+                session.projectPath,
+            },
           ],
         });
       }
@@ -188,11 +199,16 @@ function Fixture() {
         client: client as any,
         sessionId: 'fixture',
         onClose: close,
+        onSessions: (ids: string[]) => {
+          (window as any).terminalTest.occupied = ids;
+        },
         register: (handle: any) => {
-          if (handle)
+          if (handle) {
+            (window as any).terminalTest.showSession = (id: string) => handle.show(id);
             (window as any).terminalTest.closeAll = () => {
               void handle.closeAll();
             };
+          }
         },
       }),
   );
@@ -200,6 +216,55 @@ function Fixture() {
 root.render(React.createElement(React.StrictMode, null, React.createElement(Fixture)));
 Object.assign(window, {
   terminalTest: {
+    setLocalProjects: (paths: string[]) => {
+      saveShared('projects', paths);
+      update({});
+    },
+    setDefaults: (defaults: any) => setPrefs((prefs) => ({ ...prefs, sessionDefaults: defaults })),
+    installTargets: (entries: any[]) => {
+      window.open = () => null;
+      const targetListeners = new Set<(entries: any[]) => void>();
+      (window as any).desktop = {
+        ...(window as any).desktop,
+        terminalWindow: { focus() {}, setActive() {} },
+        onSharedChanged: () => () => {},
+        saveShared: async () => {},
+        ssh: {
+          list: async () => entries,
+          onChanged: (listener: (entries: any[]) => void) => {
+            targetListeners.add(listener);
+            return () => targetListeners.delete(listener);
+          },
+          connect: async (id: string) => {
+            entries.find((target) => target.id === id).status = 'connected';
+            targetListeners.forEach((listener) => listener([...entries]));
+          },
+          disconnect: async () => {},
+          directories: async (_id: string, path = '/home/dev') => ({
+            path,
+            parent: '/',
+            directories: [],
+          }),
+          openProject: async (id: string, path: string, forceNew: boolean) => {
+            requests.push({ type: 'ssh.openProject', id, path, forceNew });
+            const selected = {
+              ...session,
+              id: 'first-remote',
+              projectPath: path,
+              device: {
+                id,
+                name: entries.find((target) => target.id === id).name,
+                platform: 'linux',
+                viaSsh: true,
+              },
+            };
+            update({ sessions: [...state.sessions, selected] });
+            return { sessionId: selected.id, created: true };
+          },
+        },
+      };
+      update({});
+    },
     terminalInstances,
     setPredictionRows: (rows: number) => {
       predictiveRows = rows;
@@ -242,3 +307,39 @@ Object.assign(window, {
     },
   },
 });
+if (
+  new URLSearchParams(location.search).has('remoteProjects') ||
+  new URLSearchParams(location.search).has('offlineRemote')
+) {
+  (window as any).terminalTest.installTargets([
+    {
+      id: '02',
+      name: '02',
+      projects: ['/work/first'],
+      status: new URLSearchParams(location.search).has('offlineRemote')
+        ? 'disconnected'
+        : 'connected',
+      available: true,
+      auth: 'password',
+      host: 'localhost',
+      username: 'dev',
+      port: 22,
+      error: '',
+    },
+  ]);
+  if (new URLSearchParams(location.search).has('offlineRemote'))
+    update({
+      sessions: [
+        ...state.sessions,
+        {
+          ...session,
+          id: 'offline-source',
+          projectPath: '/work/first',
+          model: 'preserved-model',
+          permissionMode: 'acceptEdits',
+          effort: 'high',
+          device: { id: '02', name: '02', viaSsh: true },
+        },
+      ],
+    });
+}

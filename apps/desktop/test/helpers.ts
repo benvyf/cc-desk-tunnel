@@ -12,7 +12,42 @@ export function connection() {
     token: string;
   };
 }
+// Native development builds now begin at email sign-in. Seed only the isolated test profile
+// through its real encrypted login store to exercise the existing local simulation login.
+export async function prepareSimulationLogin(page: Page) {
+  await page.waitForFunction(() => window.desktop?.dev === true);
+  await expect
+    .poll(
+      async () =>
+        (await page.getByRole('heading', { name: '登录 CC Space', exact: true }).isVisible()) ||
+        (await page
+          .getByRole('heading', { name: '连接到 CC Space 服务', exact: true })
+          .isVisible()) ||
+        (await page.locator('.connection-status').isVisible()),
+    )
+    .toBe(true);
+  const email = page.getByRole('heading', { name: '登录 CC Space', exact: true });
+  if (!(await email.isVisible())) return;
+  await page.evaluate(async (config) => {
+    await window.desktop!.saveLogin({
+      authMethod: 'manual',
+      mode: 'local',
+      url: config.serverUrl,
+      token: config.token,
+      fingerprint: '',
+      remember: true,
+      autoLogin: false,
+    });
+  }, connection());
+  await page.reload();
+  await expect(page.getByLabel('服务地址', { exact: true })).toBeVisible();
+}
 export async function login(page: Page) {
+  if (
+    page.context().browser() === null ||
+    (await page.evaluate(() => window.desktop?.dev === true))
+  )
+    await prepareSimulationLogin(page);
   const config = connection();
   const localMode = page.getByRole('button', { name: '本地模拟', exact: true });
   if (await localMode.isVisible()) await localMode.click();
@@ -43,10 +78,13 @@ export async function search(page: Page, text: string) {
 }
 export async function createSession(page: Page, prefix: string) {
   const title = `${prefix} ${Date.now()}`;
-  await page.getByRole('button', { name: '添加项目', exact: true }).click();
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
   await page.getByLabel('本机项目目录').fill('D:\\工作\\中文项目');
-  await page.getByRole('button', { name: '添加', exact: true }).click();
-  await expect(page.getByRole('dialog')).not.toBeVisible();
+  const dialog = page.getByRole('dialog');
+  const add = dialog.getByRole('button', { name: '添加', exact: true });
+  if (await add.isVisible()) await add.click();
+  else await dialog.getByRole('button', { name: '打开项目', exact: true }).click();
+  await expect(dialog).not.toBeVisible();
   await page.getByRole('button', { name: '新建会话 · D:\\工作\\中文项目', exact: true }).click();
   await expect(page.locator('.session-row.selected strong')).toHaveText('新会话');
   await sessionAction(page, '重命名');

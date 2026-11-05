@@ -56,6 +56,7 @@ declare global {
           id: string,
           path: string,
           forceNew?: boolean,
+          creationId?: string,
         ) => Promise<{ sessionId: string; created: boolean }>;
         directories: (id: string, path?: string) => Promise<SshDirectoryList>;
         forkSession: (id: string, sessionId: string, beforeMessageId?: string) => Promise<string>;

@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { WebSocket } from 'ws';
@@ -454,21 +454,44 @@ export function createSshTargets({
       lastSessionId: sessionId,
     });
   }
-  async function createSession(id, path) {
+  async function createSession(id, path, creationId) {
     const run = readyRun(id);
     const projectPath = await targetDirectory(run.target, path);
     if (active.get(id) !== run || run.socket.readyState !== WebSocket.OPEN)
       throw new Error('SSH 开发通道已断开。');
-    const response = await request(run, { type: 'session.create', title: '新会话', projectPath });
+    let requestId;
+    if (creationId !== undefined) {
+      if (
+        typeof creationId !== 'string' ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          creationId,
+        )
+      )
+        throw new Error('项目创建标识无效。');
+      // Bind retry identity to this service, device and validated directory.
+      const bytes = createHash('sha256')
+        .update(JSON.stringify([scope(), id, projectPath, creationId]))
+        .digest();
+      bytes[6] = (bytes[6] & 0x0f) | 0x40;
+      bytes[8] = (bytes[8] & 0x3f) | 0x80;
+      const hex = bytes.subarray(0, 16).toString('hex');
+      requestId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+    const response = await request(
+      run,
+      { type: 'session.create', title: '新会话', projectPath },
+      requestId,
+    );
     if (!response.sessionId) throw new Error('服务端未返回会话标识。');
     rememberProject(id, projectPath, response.sessionId);
     return response.sessionId;
   }
-  function request(run, command) {
+  function request(run, command, requestId = randomUUID()) {
     if (run.socket.readyState !== WebSocket.OPEN)
       return Promise.reject(new Error('SSH 开发通道已断开。'));
-    const requestId = randomUUID();
-    return new Promise((resolve, reject) => {
+    const existing = run.pending.get(requestId);
+    if (existing) return existing.promise;
+    const promise = new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         run.pending.delete(requestId);
         reject(new Error('操作响应超时，请先检查当前状态，避免重复操作。'));
@@ -485,6 +508,8 @@ export function createSshTargets({
       });
       run.socket.send(JSON.stringify({ ...command, requestId }));
     });
+    if (run.pending.has(requestId)) run.pending.get(requestId).promise = promise;
+    return promise;
   }
   return {
     list,
@@ -497,7 +522,7 @@ export function createSshTargets({
       if (service && serviceIdentity(config) !== serviceIdentity(service.config))
         await setService(null);
     },
-    async openProject(id, path, forceNew = false) {
+    async openProject(id, path, forceNew = false, creationId) {
       const run = readyRun(id);
       const canonical = await targetDirectory(run.target, path);
       if (readyRun(id) !== run) throw new Error('SSH 开发通道已变化，请重试。');
@@ -516,7 +541,7 @@ export function createSshTargets({
           return { sessionId: session.id, created: false };
         }
       }
-      return { sessionId: await createSession(id, canonical), created: true };
+      return { sessionId: await createSession(id, canonical, creationId), created: true };
     },
     async directories(id, path) {
       const run = readyRun(id);

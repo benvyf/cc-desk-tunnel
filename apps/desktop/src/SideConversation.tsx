@@ -23,6 +23,7 @@ export default function SideConversation({
   sessionId,
   draft,
   draftsReady = true,
+  terminalOccupied = false,
   setDraft,
   quotes,
   setQuotes,
@@ -39,6 +40,7 @@ export default function SideConversation({
   sessionId: string;
   draft: string;
   draftsReady?: boolean;
+  terminalOccupied?: boolean;
   setDraft: (text: string, expectedText?: string) => void;
   quotes: QuoteReference[];
   setQuotes: SetQuotes;
@@ -92,7 +94,8 @@ export default function SideConversation({
     !reachable ||
     !!history?.loading ||
     (!!session?.activeRun && (!native || !ownsRun)) ||
-    session?.activeRun?.surface === 'terminal';
+    session?.activeRun?.surface === 'terminal' ||
+    terminalOccupied;
   const controlsDisabled = disabled || !!session?.activeRun;
   async function act(action: () => Promise<unknown>) {
     setBusy(true);

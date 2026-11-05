@@ -97,7 +97,7 @@ test('Electron: a second connection is a window of its own and shares what is th
         filePaths: [chosen],
       })) as unknown as typeof dialog.showOpenDialog;
     }, repository);
-    await other.getByRole('button', { name: '添加项目', exact: true }).click();
+    await other.getByRole('button', { name: '打开项目', exact: true }).click();
     await other.getByRole('button', { name: `新建会话 · ${repository}`, exact: true }).click();
     await send(other, '检查目录', 'tool');
     await expect.poll(runs).toEqual([repository]);

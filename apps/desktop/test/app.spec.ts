@@ -5,6 +5,7 @@ import {
   createSession,
   expandActivity,
   login,
+  prepareSimulationLogin,
   screenshots,
   search,
   send,
@@ -56,11 +57,7 @@ test('desktop login, chat, allow/deny, stop, errors and delete', async ({ page }
   await expect(page.getByRole('button', { name: '拒绝', exact: true })).toBeVisible();
   await page.getByRole('button', { name: '拒绝', exact: true }).click();
   await settled(page);
-  // The refused tool's row may arrive after the run has settled; expand again until it shows.
-  await expect(async () => {
-    await expandActivity(page);
-    await expect(page.locator('.tool-output').last()).toContainText('用户拒绝', { timeout: 1000 });
-  }).toPass();
+  await expect(page.locator('.message.assistant').last()).toContainText('已遵循拒绝决定');
   await send(page, '停止测试');
   await page.getByRole('button', { name: '停止运行', exact: true }).click();
   await expect(page.getByText('用户停止', { exact: true })).toBeVisible();
@@ -179,12 +176,17 @@ test('Electron loads the built UI with sandbox and closes its execution connecti
   for (const [name, value] of Object.entries(process.env))
     if (value !== undefined && name !== 'ELECTRON_RUN_AS_NODE') env[name] = value;
   const application = await _electron.launch({
-    args: [resolve('apps/desktop'), '--smoke-test'],
+    args: [
+      resolve('apps/desktop'),
+      '--smoke-test',
+      `--user-data-dir=${resolve('.local/ui-test/profile-smoke')}`,
+    ],
     env,
   });
   let sessionTitle = '';
   try {
     const page = await application.firstWindow();
+    await prepareSimulationLogin(page);
     await expect(
       page.getByRole('heading', { name: '连接到 CC Space 服务', exact: true }),
     ).toBeVisible();
@@ -212,7 +214,7 @@ test('Electron loads the built UI with sandbox and closes its execution connecti
       documents,
     );
     await login(page);
-    await page.locator('.new-session').click();
+    await page.locator('.side-action.new-session').click();
     const plain = page.locator('.session-list > .session-row.selected');
     await expect(plain.locator('strong')).toHaveText('新会话');
     const [day] = readdirSync(resolve(documents, 'CC Space'));
@@ -226,12 +228,16 @@ test('Electron loads the built UI with sandbox and closes its execution connecti
     await application.evaluate(({ dialog }) => {
       dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
     });
-    await page.getByRole('button', { name: '添加项目', exact: true }).click();
-    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
+    await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: '打开项目', exact: true })).toBeVisible();
+    await page.getByRole('dialog').getByRole('button', { name: '取消', exact: true }).click();
     await application.evaluate(({ dialog }) => {
       dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['D:\\工作\\中文项目'] });
     });
-    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
+    await page.getByRole('button', { name: '选择文件夹', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: '打开项目', exact: true }).click();
     await page.getByRole('button', { name: '新建会话 · D:\\工作\\中文项目', exact: true }).click();
     sessionTitle = `Electron 会话 ${Date.now()}`;
     await sessionAction(page, '重命名');
@@ -599,9 +605,9 @@ test('a project folds its sessions away, remembers it, and a search still finds 
     .filter({ hasText: '中文项目' })
     .locator('.session-row');
   await expect(rows.filter({ hasText: title })).toHaveCount(1);
-  await page.getByRole('button', { name: '收起项目 · 中文项目', exact: true }).click();
+  await page.getByRole('button', { name: '收起项目 · 中文项目 · 本机', exact: true }).click();
   await expect(rows).toHaveCount(0);
-  const expand = page.getByRole('button', { name: '展开项目 · 中文项目', exact: true });
+  const expand = page.getByRole('button', { name: '展开项目 · 中文项目 · 本机', exact: true });
   await expect(expand).toHaveAttribute('aria-expanded', 'false');
   await page.reload();
   await login(page);
@@ -694,7 +700,7 @@ test('a session on another computer is listed apart, read, and taken over with a
   await expect(page.getByText('第二台电脑上的话')).toBeVisible();
   // This computer has projects, so the session comes back into one of them without a folder being asked for.
   await page.locator('.elsewhere-bar').getByRole('button', { name: '在本机继续…' }).click();
-  const menu = page.getByRole('menu', { name: '会话所在的项目' });
+  const menu = page.getByRole('menu', { name: '移动当前会话到其他项目' });
   await expect(menu).toContainText('这台电脑上的项目');
   const choice = menu.getByRole('menuitemradio', { name: /中文项目/ });
   await expect(choice).toHaveAttribute('aria-checked', 'false');
@@ -808,6 +814,7 @@ test('Electron remembers the sign-in, connects on the next launch and stays in t
   let application = await launch();
   try {
     const page = await application.firstWindow();
+    await prepareSimulationLogin(page);
     await page.getByLabel('自动登录', { exact: true }).check();
     await expect(page.getByLabel('记住凭据', { exact: true })).toBeChecked();
     await login(page);

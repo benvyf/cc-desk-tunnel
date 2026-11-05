@@ -108,7 +108,22 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
           const before = previous.get(session.id);
           const now = session.activeRun;
           if (now && !before) mark(session.id, false);
-          if (now?.surface === 'terminal' || before?.surface === 'terminal') continue;
+          if (now?.surface === 'terminal' || before?.surface === 'terminal') {
+            if (
+              now?.surface === 'terminal' &&
+              now.activity === 'waiting' &&
+              (before?.surface !== 'terminal' ||
+                before.id !== now.id ||
+                before.activity !== 'waiting')
+            )
+              push({
+                kind: 'approval',
+                title: '终端等待确认或回答',
+                body: `${session.title}${session.device?.name ? ` · ${session.device.name}` : ''}`,
+                sessionId: session.id,
+              });
+            continue;
+          }
           if (now?.status === 'awaiting_approval' && before?.status !== 'awaiting_approval')
             waiting(session);
           // Claude's turn is over once only background tasks go on; their ending without another turn is no news.

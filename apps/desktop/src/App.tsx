@@ -82,6 +82,9 @@ import {
 import SettingsPage from './SettingsPage.tsx';
 import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
+import OpenProjectDialog from './OpenProjectDialog.tsx';
+import { useSshTargets } from './useSshTargets.ts';
+import { projectPreferenceKey } from './developmentProjects.ts';
 import TitleBar from './TitleBar.tsx';
 import Presence, { useColumnsGliding, useLeaving } from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
@@ -107,7 +110,7 @@ type Place = { page: Page; section: Section; sessionId: string | null };
 type OpenMenu = MenuPosition &
   (
     | { kind: 'session'; sessionId: string }
-    | { kind: 'project'; path: string }
+    | { kind: 'project'; path: string; deviceId?: string }
     | { kind: 'move'; sessionId: string }
     | { kind: 'settings' }
     | { kind: 'update' }
@@ -136,7 +139,10 @@ export function App({
   const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
   const emailOnly = !!window.desktop && !window.desktop.dev;
   const [client] = useState(() => new ProxyClient());
-  const [followUps] = useState(() => new FollowUps(client));
+  const occupiedSessions = useRef<string[]>([]);
+  const [followUps] = useState(
+    () => new FollowUps(client, (id) => occupiedSessions.current.includes(id)),
+  );
   const queued = useSyncExternalStore(followUps.subscribe, followUps.getSnapshot);
   useEffect(() => followUps.start(), [followUps]);
   useEffect(() => {
@@ -279,12 +285,26 @@ export function App({
   const [, setTrailAt] = useState(0);
   const accountOpen = place.page === 'settings' && place.section === 'account';
   const prefs = usePrefs();
+  const sshTargets = useSshTargets();
+  const projectScope = activeWorkspace ?? form.url;
   const [version, setVersion] = useState('');
   useEffect(() => {
     void window.desktop?.version().then(setVersion);
   }, []);
   const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
   const [terminalsActive, setTerminalsActive] = useState(false);
+  const [terminalSessions, setTerminalSessions] = useState<string[]>([]);
+  const readingPositions = useRef(new Map<string, { top: number; following: boolean }>());
+  const remoteCreations = useRef(new Map<string, string>());
+  const localCreations = useRef(new Map<string, string>());
+  const trackTerminalSessions = useCallback((ids: string[]) => {
+    occupiedSessions.current = ids;
+    for (const id of ids) followUps.pause(id, '此会话正在终端中使用，确认结束后继续排队');
+    setTerminalSessions((previous) => (previous.join('\n') === ids.join('\n') ? previous : ids));
+  }, []);
+  const terminalOwns = (id: string) =>
+    occupiedSessions.current.includes(id) ||
+    client.state.sessions.find((session) => session.id === id)?.activeRun?.surface === 'terminal';
   const terminalWorkspace = useRef<TerminalWorkspaceHandle | null>(null);
   const registerTerminalWorkspace = useCallback((handle: TerminalWorkspaceHandle | null) => {
     terminalWorkspace.current = handle;
@@ -292,18 +312,33 @@ export function App({
   const closeTerminal = useCallback(() => {
     setTerminalSessionId(null);
     setTerminalsActive(false);
-  }, []);
+    trackTerminalSessions([]);
+  }, [trackTerminalSessions]);
   const showTerminal = (id: string) => {
+    const session = client.state.sessions.find((item) => item.id === id);
+    if (!session || (session.activeRun && session.activeRun.surface !== 'terminal')) {
+      setError('此会话正在图形界面中运行，结束后再打开终端。');
+      return;
+    }
     if (terminalWorkspace.current) {
       terminalWorkspace.current.show(id);
       return;
     }
+    trackTerminalSessions([id]);
     setTerminalsActive(true);
     setTerminalSessionId(id);
   };
   const [menu, setMenu] = useState<OpenMenu | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const [createOpen, setCreateOpen] = useState(false);
+  const [openProjectTarget, setOpenProjectTarget] = useState<{
+    deviceId?: string;
+    path?: string;
+    forceNew?: boolean;
+    fromHome?: boolean;
+    creationId?: string;
+  } | null>(null);
+  const [remoteRename, setRemoteRename] = useState<{ deviceId: string; path: string } | null>(null);
   const [deleteSession, setDeleteSession] = useState<Session | null>(null);
   const [renameSession, setRenameSession] = useState<Session | null>(null);
   const [renameProject, setRenameProject] = useState<string | null>(null);
@@ -343,6 +378,9 @@ export function App({
   const sessions = state.sessions.filter((session) => onThis(session));
   const elsewhere = state.sessions.filter((session) => !onThis(session));
   const away = !!selected && !onThis(selected);
+  const selectedTerminal =
+    !!selected &&
+    (terminalSessions.includes(selected.id) || selected.activeRun?.surface === 'terminal');
   const preview = usePreviewWorkspace(
     state.status === 'disconnected' ? null : (activeWorkspace ?? form.url),
     selected ? `${selected.device?.id ?? ''}:${selected.id}` : undefined,
@@ -519,14 +557,14 @@ export function App({
     refreshing ||
     !!selected?.activeRun ||
     !!history?.loading ||
-    terminalsActive;
+    selectedTerminal;
   // A run is that of the computer its session is on, whichever window of whichever computer started it; any
   // of them answers and stops it while that computer can be reached.
   const ownsRun = !!selected?.activeRun && (!away || remote);
   // A native run accepts follow-up messages from wherever it can be worked on.
   const inputDisabled =
     !connected ||
-    selected?.activeRun?.surface === 'terminal' ||
+    selectedTerminal ||
     busy ||
     !!history?.loading ||
     (!!selected?.activeRun && (!nativeMode || !ownsRun)) ||
@@ -763,7 +801,7 @@ export function App({
       history?.loading ||
       selected.activeRun ||
       refreshing ||
-      terminalsActive ||
+      selectedTerminal ||
       anyChat ||
       refreshed.current.has(selected.id)
     )
@@ -778,7 +816,7 @@ export function App({
     selected?.activeRun,
     refreshing,
     anyChat,
-    terminalsActive,
+    selectedTerminal,
   ]);
   useEffect(() => {
     if (nativeMode && connected) void client.request({ type: 'account.status' }).catch(() => {});
@@ -905,7 +943,7 @@ export function App({
       !!selected?.activeRun &&
       selected.activeRun.status !== 'awaiting_approval' &&
       selected.activeRun.surface !== 'terminal' &&
-      !terminalsActive,
+      !selectedTerminal,
     stopRun,
   );
   function stopRun() {
@@ -1029,12 +1067,30 @@ export function App({
       setRefreshing(false);
     }
   }
-  async function createSession(projectPath: string) {
-    const response = await client.request({ type: 'session.create', title: '新会话', projectPath });
-    if (response.sessionId) await initializeSession(response.sessionId);
+  async function createSession(
+    projectPath: string,
+    startedAt = navigation.current,
+    generation = client.state.connectionId,
+    creationId?: string,
+  ) {
+    const key = projectPreferenceKey(projectScope, state.device?.id, projectPath);
+    const requestId = creationId ?? localCreations.current.get(key) ?? crypto.randomUUID();
+    localCreations.current.set(key, requestId);
+    const response = await client.request(
+      { type: 'session.create', title: '新会话', projectPath },
+      requestId,
+    );
+    localCreations.current.delete(key);
+    if (client.state.connectionId !== generation) return;
+    if (response.sessionId) {
+      await initializeSession(response.sessionId, false);
+      if (navigation.current === startedAt && client.state.connectionId === generation)
+        show(response.sessionId);
+    }
     return response.sessionId;
   }
-  async function initializeSession(sessionId: string) {
+  async function initializeSession(sessionId: string, navigate = true) {
+    const generation = client.state.connectionId;
     const options = sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models);
     if (options.model || options.effort) {
       try {
@@ -1053,7 +1109,7 @@ export function App({
         );
       }
     }
-    show(sessionId);
+    if (navigate && client.state.connectionId === generation) show(sessionId);
   }
   async function createInProject(path: string) {
     let created: string | undefined;
@@ -1062,7 +1118,38 @@ export function App({
     });
     return created;
   }
+  async function createRemoteProject(deviceId: string, path: string): Promise<string | undefined> {
+    const target = sshTargets.find((entry) => entry.id === deviceId && entry.available);
+    if (!target) {
+      setError('此 SSH 项目不属于当前工作空间。');
+      return;
+    }
+    const key = projectPreferenceKey(projectScope, deviceId, path);
+    const creationId = remoteCreations.current.get(key) ?? crypto.randomUUID();
+    remoteCreations.current.set(key, creationId);
+    if (target.status !== 'connected') {
+      setOpenProjectTarget({ deviceId, path, forceNew: true, creationId });
+      return;
+    }
+    const startedAt = navigation.current;
+    const generation = client.state.connectionId;
+    let created: string | undefined;
+    await act(async () => {
+      const result = await window.desktop!.ssh!.openProject(deviceId, path, true, creationId);
+      remoteCreations.current.delete(key);
+      if (client.state.connectionId !== generation) return;
+      const samePlace = navigation.current === startedAt;
+      await initializeSession(result.sessionId, false);
+      if (samePlace && navigation.current === startedAt) show(result.sessionId);
+      created = result.sessionId;
+    });
+    return created;
+  }
   async function addProject() {
+    if (window.desktop?.ssh) {
+      setOpenProjectTarget({});
+      return;
+    }
     if (!window.desktop?.chooseProject) {
       setCreateOpen(true);
       return;
@@ -1075,7 +1162,16 @@ export function App({
   // The desktop gives an ordinary session a local directory; the browser creates one on the server.
   // Makes a session where a new one goes, and tells which, once it is made and open.
   async function newSession(): Promise<string | undefined> {
+    if (!connected || busy || refreshing) return;
     let created: string | undefined;
+    const startedAt = navigation.current;
+    const generation = client.state.connectionId;
+    if (!browser && place.page === 'chat' && selected) {
+      if (selected.device?.viaSsh)
+        return createRemoteProject(selected.device.id, selected.projectPath);
+      if (onThis(selected) && !isInside(selected.projectPath, workspaceRoots))
+        return createInProject(selected.projectPath);
+    }
     if (browser) {
       await act(async () => {
         const response = await client.request({ type: 'server.session.create', title: '新会话' });
@@ -1088,7 +1184,7 @@ export function App({
       await act(async () => {
         const directory = await window.desktop!.createWorkspace();
         try {
-          created = await createSession(directory);
+          created = await createSession(directory, startedAt, generation);
         } catch (error) {
           await window.desktop!.removeWorkspace(directory);
           throw error;
@@ -1114,7 +1210,7 @@ export function App({
     });
   }
   // A due task is an ordinary message: to its session once that is idle, or to a session made for it. It is
-  // never queued into a run, and waits while this window's native terminal is open.
+  // never queued into a run; only its own target session can hold it up.
   const notifications = useNotifications(client, () =>
     place.page === 'chat' ? client.state.selectedId : null,
   );
@@ -1122,19 +1218,13 @@ export function App({
   const schedules = useSchedules(
     async (task, due) => {
       const { status, sessions, selectedId, device } = client.state;
-      if (
-        status !== 'connected' ||
-        sessions.some(
-          (session) => session.activeRun?.surface === 'terminal' && isHere(session, device),
-        )
-      )
-        return false;
+      if (status !== 'connected') return false;
       let session: Session | undefined;
       if (task.target.type === 'session') {
         const { sessionId } = task.target;
         session = sessions.find((item) => item.id === sessionId);
         if (!session) throw new Error('目标会话已不存在');
-        if (session.activeRun) return false;
+        if (session.activeRun || terminalOwns(session.id)) return false;
       } else {
         const created = await client.request({
           type: 'session.create',
@@ -1183,6 +1273,7 @@ export function App({
   // Moves a session to a directory chosen here, on this computer, which also takes it over from the computer
   // it was on: from the next message Claude works there.
   async function takeOver(session: Session) {
+    if (terminalOwns(session.id) || session.activeRun) return;
     await act(async () => {
       const projectPath = await placeHere(session);
       if (!projectPath) return;
@@ -1193,6 +1284,7 @@ export function App({
   // A fork continues from the same context in a session of its own. Forking before a message brings that
   // message back as a draft, which is how an earlier message is edited and sent again.
   async function fork(session: Session, before?: { id: string; text: string }) {
+    if (terminalOwns(session.id) || session.activeRun) return;
     const startedAt = navigation.current;
     await act(async () => {
       // The copy of a session that is on another computer needs a directory on this one.
@@ -1275,7 +1367,7 @@ export function App({
     const refs = selected ? (quoteDrafts[selected.id] ?? []) : [];
     if (override === undefined && refs.length && !draft.trim()) return;
     const text = override ?? attachmentMessage(quoteMessage(draft, refs), attached);
-    if (!selected || !text.trim() || inputDisabled) return;
+    if (!selected || !text.trim() || inputDisabled || terminalOwns(selected.id)) return;
     if (text.trim().length > messageLimit) {
       setError(`消息过长（含附件），请缩短正文或移除部分附件（最多 ${messageLimit} 字符）。`);
       return;
@@ -1299,7 +1391,7 @@ export function App({
   }
   // Takes up the last turn, which was stopped or cut off, without the user writing anything.
   function resume() {
-    if (!selected) return;
+    if (!selected || inputDisabled || terminalOwns(selected.id)) return;
     const sessionId = selected.id;
     void act(async () => {
       await client.request({ type: 'run.continue', sessionId });
@@ -1318,7 +1410,7 @@ export function App({
     effort?: Effort | null;
     permissionMode?: PermissionMode;
   }) {
-    if (!selected) return;
+    if (!selected || controlsDisabled || terminalOwns(selected.id)) return;
     await act(async () => {
       await client.request({
         type: 'session.configure',
@@ -1329,7 +1421,7 @@ export function App({
     });
   }
   function sessionMenu(session: Session): MenuItem[] {
-    const idle = connected && !busy && !terminalsActive;
+    const idle = connected && !busy && !terminalOwns(session.id);
     const pinned = prefs.pinnedSessions.includes(session.id);
     return [
       {
@@ -1366,7 +1458,7 @@ export function App({
       {
         label: '导出为 Markdown',
         icon: <FileDown />,
-        disabled: !connected || terminalsActive,
+        disabled: !connected,
         run: () => {
           void act(async () => {
             await exportSession(client, session);
@@ -1393,7 +1485,11 @@ export function App({
               icon: <SquareTerminal />,
               detail: refreshing ? '正在读取会话状态，完成后可打开终端' : undefined,
               // A terminal takes only its own session; others may be running.
-              disabled: !idle || refreshing || !!session.activeRun,
+              disabled:
+                !connected ||
+                busy ||
+                refreshing ||
+                (!!session.activeRun && !terminalOwns(session.id)),
               run: () => {
                 if (statusReading.current) return;
                 show(session.id);
@@ -1415,7 +1511,7 @@ export function App({
         icon: <Trash2 />,
         danger: true,
         separated: true,
-        disabled: !connected || !!session.activeRun || terminalsActive,
+        disabled: !connected || !!session.activeRun || terminalOwns(session.id),
         run: () => {
           setError(null);
           closeSide();
@@ -1424,16 +1520,17 @@ export function App({
       },
     ];
   }
-  function projectMenu(path: string): MenuItem[] {
-    const key = pathKey(path);
+  function projectMenu(path: string, deviceId?: string): MenuItem[] {
+    const key = projectPreferenceKey(projectScope, deviceId, path);
     const pinned = prefs.pinnedProjects.includes(key);
     return [
       {
         label: '新建会话',
         icon: <Plus />,
-        disabled: !connected || busy || refreshing || terminalsActive,
+        disabled: !connected || busy || refreshing,
         run: () => {
-          void createInProject(path);
+          if (deviceId) void createRemoteProject(deviceId, path);
+          else void createInProject(path);
         },
       },
       {
@@ -1442,11 +1539,24 @@ export function App({
         run: () =>
           setPrefs((value) => ({ ...value, pinnedProjects: toggled(value.pinnedProjects, key) })),
       },
-      { label: '修改显示名称', icon: <Pencil />, run: () => setRenameProject(path) },
+      {
+        label: '修改显示名称',
+        icon: <Pencil />,
+        run: () => (deviceId ? setRemoteRename({ deviceId, path }) : setRenameProject(path)),
+      },
       {
         label: '更改文件夹…',
         icon: <FolderInput />,
-        disabled: !connected || busy || terminalsActive,
+        disabled:
+          !!deviceId ||
+          !connected ||
+          busy ||
+          state.sessions.some(
+            (session) =>
+              onThis(session) &&
+              pathKey(session.projectPath) === pathKey(path) &&
+              (!!session.activeRun || terminalOwns(session.id)),
+          ),
         run: () => {
           if (!window.desktop) return setRepointProject(path);
           void act(async () => {
@@ -1455,7 +1565,7 @@ export function App({
           });
         },
       },
-      ...(window.desktop
+      ...(window.desktop && !deviceId
         ? [
             {
               label: isMac ? '在访达中打开' : '在资源管理器中打开',
@@ -1652,27 +1762,27 @@ export function App({
     setSearchAsked(true);
   };
   const openTerminal = () => {
-    if (terminalSessionId) {
-      terminalWorkspace.current?.show(selected?.id);
+    if (!selected) {
+      terminalWorkspace.current?.show();
       return;
     }
     if (
-      !selected ||
       !connected ||
       !nativeMode ||
       busy ||
       statusReading.current ||
-      selected.activeRun
+      (selected.activeRun && selected.activeRun.surface !== 'terminal')
     )
       return;
-    show(selected.id);
     showTerminal(selected.id);
   };
   const terminalAvailable =
     connected &&
     nativeMode &&
-    (terminalsActive || (!!selected && !busy && !refreshing && !selected.activeRun));
-  const canCreate = connected && !busy && !refreshing && !terminalsActive;
+    !busy &&
+    !refreshing &&
+    (!!selected ? !selected.activeRun || terminalOwns(selected.id) : !!terminalSessionId);
+  const canCreate = connected && !busy && !refreshing;
   const barMenus: BarMenu[] = [
     {
       label: '文件',
@@ -1689,7 +1799,7 @@ export function App({
           ? [
               {
                 label: '添加项目…',
-                disabled: !connected || busy || terminalsActive,
+                disabled: !connected || busy,
                 run: () => {
                   void addProject();
                 },
@@ -1698,7 +1808,7 @@ export function App({
           : []),
         {
           label: '导出当前会话…',
-          disabled: !selected || !connected || terminalsActive,
+          disabled: !selected || !connected,
           separated: true,
           run: () => {
             void act(async () => {
@@ -1716,7 +1826,7 @@ export function App({
         {
           label: '查找对话内容',
           hint: hint('find'),
-          disabled: !selected || place.page !== 'chat' || terminalsActive,
+          disabled: !selected || place.page !== 'chat',
           run: () => setFindRequest((value) => value + 1),
         },
         { label: sideOpen ? '收起侧栏' : '展开侧栏', hint: hint('toggleSide'), run: toggleSide },
@@ -1784,17 +1894,13 @@ export function App({
       return;
     }
     const run: Record<Action, (() => void) | false | undefined> = {
-      back: !terminalsActive && (() => step(-1)),
-      forward: !terminalsActive && (() => step(1)),
+      back: () => step(-1),
+      forward: () => step(1),
       toggleSide,
       newSession: canCreate && (() => void newSession()),
       search: openSearch,
       settings: () => open('settings'),
-      find:
-        !!selected &&
-        place.page === 'chat' &&
-        !terminalsActive &&
-        (() => setFindRequest((value) => value + 1)),
+      find: !!selected && place.page === 'chat' && (() => setFindRequest((value) => value + 1)),
       zoomIn: window.desktop && (() => window.desktop!.zoom(1)),
       zoomOut: window.desktop && (() => window.desktop!.zoom(-1)),
       zoomReset: window.desktop && (() => window.desktop!.zoom(0)),
@@ -1986,10 +2092,10 @@ export function App({
       : menu.kind === 'session'
         ? { label: `会话操作 · ${menuSession!.title}`, items: sessionMenu(menuSession!) }
         : menu.kind === 'project'
-          ? { label: `项目操作 · ${menu.path}`, items: projectMenu(menu.path) }
+          ? { label: `项目操作 · ${menu.path}`, items: projectMenu(menu.path, menu.deviceId) }
           : menu.kind === 'move'
             ? {
-                label: '会话所在的项目',
+                label: '移动当前会话到其他项目',
                 heading: menuAway
                   ? '选这个会话在这台电脑上的项目；下一条消息会告诉 Claude 换了电脑'
                   : '把会话移到另一个项目；下一条消息会告诉 Claude，聊过的会话仍沿用原项目的记忆',
@@ -2050,8 +2156,8 @@ export function App({
               ? '定时任务'
               : sectionNames[place.section]
         }
-        back={!terminalsActive && stepAvailable(-1) ? () => step(-1) : undefined}
-        forward={!terminalsActive && stepAvailable(1) ? () => step(1) : undefined}
+        back={stepAvailable(-1) ? () => step(-1) : undefined}
+        forward={stepAvailable(1) ? () => step(1) : undefined}
         sideOpen={sideOpen}
         toggleSide={toggleSide}
         menus={barMenus}
@@ -2077,6 +2183,8 @@ export function App({
               sessionId={terminalSessionId}
               onClose={closeTerminal}
               onActivity={setTerminalsActive}
+              onSessions={trackTerminalSessions}
+              projectScope={projectScope}
               register={registerTerminalWorkspace}
               nodeName={
                 loginWorkspaces?.find((workspace) => workspace.id === activeWorkspace)?.name
@@ -2164,6 +2272,12 @@ export function App({
             elsewhere={elsewhere}
             devices={state.devices}
             selectedId={selected?.id}
+            sshTargets={sshTargets}
+            projectScope={projectScope}
+            createRemoteProject={(deviceId, path) => void createRemoteProject(deviceId, path)}
+            remoteProjectMenu={(deviceId, path, position) =>
+              setMenu({ kind: 'project', deviceId, path, ...position })
+            }
             projects={host.localProjects ? projects : []}
             localProjects={host.localProjects}
             workspaceRoots={workspaceRoots}
@@ -2195,7 +2309,7 @@ export function App({
             footer={accountArea}
           />
           <main
-            className={`workspace chat-workspace${fresh && !terminalsActive ? ' new-session' : ''}`}
+            className={`workspace chat-workspace${fresh && !selectedTerminal ? ' new-session' : ''}`}
             ref={stopScope}
           >
             {currentError && (
@@ -2221,7 +2335,8 @@ export function App({
               </div>
             )}
             <Conversation
-              adjustableWidth={!terminalsActive}
+              adjustableWidth={true}
+              readingPositions={readingPositions.current}
               projectControl={
                 selected && (
                   <button
@@ -2229,14 +2344,24 @@ export function App({
                     className="chip quiet session-project"
                     aria-label="会话所在的项目"
                     aria-haspopup="menu"
-                    aria-expanded={menu?.kind === 'move' && menu.sessionId === selected.id}
-                    title={selected.projectPath}
-                    disabled={controlsDisabled || away}
+                    aria-expanded={
+                      (menu?.kind === 'move' && menu.sessionId === selected.id) ||
+                      (menu?.kind === 'project' &&
+                        menu.deviceId === selected.device?.id &&
+                        menu.path === selected.projectPath)
+                    }
+                    title={`${selected.device?.name ?? '本机'} · ${selected.projectPath} · 移动当前会话到其他项目`}
+                    disabled={controlsDisabled || (away && !selected.device?.viaSsh)}
                     onClick={(event) => {
                       const box = event.currentTarget.getBoundingClientRect();
                       setMenu({
-                        kind: 'move',
-                        sessionId: selected.id,
+                        ...(selected.device?.viaSsh
+                          ? {
+                              kind: 'project' as const,
+                              deviceId: selected.device.id,
+                              path: selected.projectPath,
+                            }
+                          : { kind: 'move' as const, sessionId: selected.id }),
                         x: box.left,
                         y: box.bottom + 6,
                       });
@@ -2246,9 +2371,19 @@ export function App({
                     <span>
                       {state.devices.some(
                         (device) => device.server && device.id === selected.device?.id,
-                      ) || isInside(selected.projectPath, workspaceRoots)
+                      ) ||
+                      (onThis(selected) && isInside(selected.projectPath, workspaceRoots))
                         ? '普通会话'
-                        : projectLabel(selected.projectPath)}
+                        : selected.device?.viaSsh
+                          ? (prefs.projectNames[
+                              projectPreferenceKey(
+                                projectScope,
+                                selected.device.id,
+                                selected.projectPath,
+                              )
+                            ] ?? folderName(selected.projectPath))
+                          : projectLabel(selected.projectPath)}
+                      {` · ${onThis(selected) ? '本机' : (selected.device?.name ?? '未知设备')}`}
                     </span>
                   </button>
                 )
@@ -2268,7 +2403,7 @@ export function App({
               }
               sideQuoteAvailable={connected && state.sideConversations}
               resume={
-                stopped && !inputDisabled && !terminalsActive ? () => void resume() : undefined
+                stopped && !inputDisabled && !selectedTerminal ? () => void resume() : undefined
               }
               events={events}
               history={history}
@@ -2346,7 +2481,7 @@ export function App({
                 </p>
               </div>
             )}
-            {selected && away && host.localProjects && (
+            {selected && away && host.localProjects && (!selected.device?.viaSsh || !remote) && (
               <div className="elsewhere-bar" role="status">
                 <Laptop />
                 {selected.device?.viaSsh ? (
@@ -2412,7 +2547,16 @@ export function App({
               </div>
             )}
 
-            {selected && (!away || remote) && !terminalsActive && (
+            {selectedTerminal && (
+              <div className="elsewhere-bar" role="status">
+                <SquareTerminal />
+                <p>此会话正在终端中使用，可继续其他会话。</p>
+                <button type="button" className="button secondary" onClick={openTerminal}>
+                  返回终端
+                </button>
+              </div>
+            )}
+            {selected && (!away || remote || selectedTerminal) && (
               <Composer
                 mascot={prefs.mascot}
                 queuedMessages={
@@ -2474,8 +2618,14 @@ export function App({
                 stop={stopRun}
               />
             )}
-            {!selected && !terminalsActive && (
+            {!selected && (
               <NewSessionComposer
+                target={browser ? '服务端 · 普通会话' : '本机 · 普通会话'}
+                chooseTarget={
+                  window.desktop?.ssh
+                    ? () => setOpenProjectTarget({ forceNew: true, fromHome: true })
+                    : undefined
+                }
                 draft={homeDraft}
                 setDraft={setHomeDraft}
                 disabled={!canCreate}
@@ -2484,7 +2634,7 @@ export function App({
                 }}
               />
             )}
-            {selected && !fresh && (!away || (browser && remote)) && !terminalsActive && (
+            {selected && !fresh && (!away || (browser && remote)) && !selectedTerminal && (
               <SessionBar
                 client={client}
                 sessionId={selected.id}
@@ -2527,6 +2677,7 @@ export function App({
                 capabilities={capabilities}
                 sessionId={tab.target}
                 draftsReady={draftsReady}
+                terminalOccupied={terminalSessions.includes(tab.target)}
                 draft={drafts[tab.target] ?? ''}
                 setDraft={(text, expectedText) => setDraft(tab.target, text, expectedText)}
                 quotes={quoteDrafts[tab.target] ?? []}
@@ -2561,6 +2712,76 @@ export function App({
                 await repoint(repointProject, path);
                 setRepointProject(null);
               });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {openProjectTarget && (
+          <OpenProjectDialog
+            client={client}
+            initial={openProjectTarget}
+            forceNew={openProjectTarget.forceNew}
+            onClose={() => setOpenProjectTarget(null)}
+            onLocal={async (written, creationId) => {
+              const generation = client.state.connectionId;
+              const startedAt = navigation.current;
+              const path = (await window.desktop?.asOnDisk(written)) ?? written;
+              if (client.state.connectionId !== generation) return;
+              setProjects((value) => withProject(value, path));
+              if (openProjectTarget.forceNew) {
+                const id = await createSession(path, startedAt, generation, creationId);
+                if (!id) throw new Error('连接已变化，请检查原会话的创建结果。');
+                if (openProjectTarget.fromHome) {
+                  setDraft(id, homeDraft);
+                  setHomeDraft('');
+                }
+              }
+            }}
+            onRemote={async (id, created) => {
+              const session = client.state.sessions.find((item) => item.id === id);
+              if (session?.device) {
+                const key = projectPreferenceKey(
+                  projectScope,
+                  session.device.id,
+                  session.projectPath,
+                );
+                if (remoteCreations.current.get(key) === openProjectTarget.creationId)
+                  remoteCreations.current.delete(key);
+              }
+              if (openProjectTarget.fromHome) {
+                setDraft(id, homeDraft);
+                setHomeDraft('');
+              }
+              if (created) await initializeSession(id);
+              else show(id);
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {remoteRename && (
+          <RenameProjectDialog
+            path={remoteRename.path}
+            name={
+              prefs.projectNames[
+                projectPreferenceKey(projectScope, remoteRename.deviceId, remoteRename.path)
+              ] ?? ''
+            }
+            close={() => setRemoteRename(null)}
+            rename={(name) => {
+              const key = projectPreferenceKey(
+                projectScope,
+                remoteRename.deviceId,
+                remoteRename.path,
+              );
+              setPrefs((value) => {
+                const projectNames = { ...value.projectNames };
+                if (name) projectNames[key] = name;
+                else delete projectNames[key];
+                return { ...value, projectNames };
+              });
+              setRemoteRename(null);
             }}
           />
         )}

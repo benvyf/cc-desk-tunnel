@@ -172,6 +172,7 @@ export default function NativeTerminal({
       bufferedBytes = 0,
       size = '',
       resizeFrame = 0;
+    let focusRequested = false;
     let outputLost = false;
     let reconnecting = false;
     let reconnectTerminalId: string | null = null;
@@ -274,8 +275,11 @@ export default function NativeTerminal({
       client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
     }
     activate.current = (focus = false) => {
+      focusRequested ||= focus;
       view.cancelAnimationFrame(resizeFrame);
       resizeFrame = view.requestAnimationFrame(() => {
+        const focus = focusRequested;
+        focusRequested = false;
         if (resize() === false) resizeFrame = view.requestAnimationFrame(() => resize());
         const document = host.current?.ownerDocument;
         if (

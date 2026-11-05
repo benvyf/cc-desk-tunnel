@@ -1,0 +1,117 @@
+{
+  "commit": "f631a61c3e195151bb0e5212dc37d8b3aed9b38c",
+  "runId": "6c392305a1f846c1a7669825f2be2bc2",
+  "started": "2026-11-05T16:42:16.638Z",
+  "realLinux": true,
+  "realClaudeInference": false,
+  "scope": "current SSH recovery, channel pool, and optional process cancellation",
+  "environment": {
+    "a": "Linux 6.18.58-0-virt x86_64\n3.24.3\ncc (Alpine 15.2.0) 15.2.0\nv24.22.1\nmaxsessions 10",
+    "b": "Linux 6.18.58-0-virt x86_64\n3.24.3\ncc (Alpine 15.2.0) 15.2.0\nv24.22.1\nmaxsessions 10"
+  },
+  "checks": [
+    {
+      "name": "real Linux guests expose MaxSessions10 and real compiler",
+      "status": "passed",
+      "ms": 642,
+      "details": {
+        "a": "Linux 6.18.58-0-virt x86_64\n3.24.3\ncc (Alpine 15.2.0) 15.2.0\nv24.22.1\nmaxsessions 10",
+        "b": "Linux 6.18.58-0-virt x86_64\n3.24.3\ncc (Alpine 15.2.0) 15.2.0\nv24.22.1\nmaxsessions 10"
+      }
+    },
+    {
+      "name": "current real Linux service starts with controlled SDK only",
+      "status": "passed",
+      "ms": 12447,
+      "details": {
+        "platform": "linux",
+        "pid": 1833,
+        "realClaudeInference": false
+      }
+    },
+    {
+      "name": "current target manager creates Linux target sessions using local authentication",
+      "status": "passed",
+      "ms": 1347,
+      "details": {
+        "sessionB": "5748863f-c7a0-4005-9451-f439122afc63",
+        "passwordPersisted": false
+      }
+    },
+    {
+      "name": "real backend shell consumes UTF8 stdin EOF and preserves stdout stderr and nonzero exit",
+      "status": "passed",
+      "ms": 1310,
+      "details": {
+        "code": 7,
+        "stdout": "STDIN_EOF_中文\n",
+        "stderr": "** WARNING: connection is not using a post-quantum key exchange algorithm.\r\n** This session may be vulnerable to \"store now, decrypt later\" attacks.\r\n** The server may need to be upgraded. See https://openssh.com/pq.html\r\nSTDERR_PROBE",
+        "platform": "linux",
+        "remoteStderr": "STDERR_PROBE",
+        "clientWarning": "** WARNING: connection is not using a post-quantum key exchange algorithm.\r\n** This session may be vulnerable to \"store now, decrypt later\" attacks.\r\n** The server may need to be upgraded. See https://openssh.com/pq.html\r\n"
+      }
+    },
+    {
+      "name": "fourteen held native commands run concurrently with SFTP metadata and scp under MaxSessions10",
+      "status": "passed",
+      "ms": 1527,
+      "details": {
+        "simultaneouslyHeld": 14,
+        "sshdMaxSessions": 10,
+        "metadataSucceeded": true,
+        "scpRoundTripSucceeded": true,
+        "allStillHeldAfterBrowsingAndTransfer": true
+      }
+    },
+    {
+      "name": "same authorized workspace refresh preserves held commands and completes each exactly once",
+      "status": "passed",
+      "ms": 341,
+      "details": {
+        "sameSession": "5748863f-c7a0-4005-9451-f439122afc63",
+        "exactOnceCompletions": 14,
+        "heldDuringRefresh": true
+      }
+    },
+    {
+      "name": "established target recovers automatically after actual sshd loss without replay or affecting the other target",
+      "status": "passed",
+      "ms": 3438,
+      "details": {
+        "automaticRecovery": true,
+        "manualConnectCalls": 0,
+        "sameSession": "5748863f-c7a0-4005-9451-f439122afc63",
+        "originalStartsStill14": true,
+        "otherTargetOnline": true
+      }
+    },
+    {
+      "name": "multi-device same-path projects preserve retry identity and execute isolated builds",
+      "status": "passed",
+      "ms": 3002,
+      "details": {
+        "firstSession": "2e0590b0-19ab-46b3-9d34-21cf3c858e0b",
+        "secondSession": "440839b0-ee7d-44dd-8cb9-e584fd358553",
+        "distinctDevices": true,
+        "retryCreatedOnce": true,
+        "realTargetBuilds": 2,
+        "localFileIsolated": true
+      }
+    },
+    {
+      "name": "manual disconnect cancels recovery and forgets the password intent",
+      "status": "passed",
+      "ms": 2423,
+      "details": {
+        "extraPasswordLogins": 0,
+        "status": "disconnected"
+      }
+    }
+  ],
+  "errors": [],
+  "finished": "2026-11-05T16:42:43.315Z",
+  "passed": 9,
+  "failed": 0,
+  "cancellationEnabled": false,
+  "cancellationAcceptance": "not executed"
+}

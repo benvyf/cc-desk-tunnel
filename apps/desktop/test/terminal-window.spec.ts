@@ -27,6 +27,7 @@ test('detached Electron terminal predicts on its own document and disables witho
     await owner.waitForFunction(() => !!(window as any).terminalTest);
     await expect.poll(() => application.windows().length).toBe(2);
     const child = application.windows().find((window) => window !== owner)!;
+    await child.bringToFront();
     await expect(child.locator('.xterm-helper-textarea')).toBeFocused();
     const events: { kind: string; label?: string; data?: string }[] = JSON.parse(
       readFileSync(new URL('./fixtures/terminal-echo/linux295.json', import.meta.url), 'utf8'),
@@ -87,6 +88,7 @@ test('detached Electron terminal predicts on its own document and disables witho
       )
       .toBe('abc');
     await child.getByRole('textbox', { name: '终端查找文字' }).press('Escape');
+    await child.bringToFront();
     await expect(child.locator('.xterm-helper-textarea')).toBeFocused();
     await owner.evaluate(() => (window as any).terminalTest.setPrediction(false));
     await expect(child.locator('[data-predictive-echo]')).toHaveCount(0);
@@ -154,6 +156,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       'true',
     );
     await expect(child.locator('.terminal-window-controls')).toHaveCount(0);
+    await child.bringToFront();
     await expect(child.locator('.xterm-helper-textarea')).toBeFocused();
     expect(await child.evaluate(() => typeof window.desktop)).toBe('undefined');
     expect(await child.evaluate(() => window.opener === null)).toBe(true);
@@ -208,7 +211,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
           viewport: [innerWidth, innerHeight],
           boxes: [
             ...document.querySelectorAll(
-              '.terminal-tabs-header > button, .terminal-workspace-footer',
+              '.terminal-tabs-header button, .terminal-workspace-footer',
             ),
           ].map((el) => ({
             text: el.getAttribute('aria-label') || el.textContent,
@@ -227,8 +230,9 @@ test('detached terminal has native window controls, exact input, resize, focus a
     );
     await child.screenshot({ path: resolve('.local/terminal-workspace-native-small.png') });
     for (const selector of [
-      '.terminal-tabs-header > button:nth-of-type(1)',
-      '.terminal-tabs-header > button:nth-of-type(2)',
+      '.terminal-new-actions > button:first-child',
+      '.terminal-new-actions > button:last-child',
+      '.terminal-tabs-header > button[aria-label="全部终端"]',
       '.terminal-workspace-footer',
     ]) {
       expect(
@@ -555,6 +559,8 @@ $graphics.Dispose(); $bitmap.Dispose()
         'powershell.exe',
         [
           '-NoProfile',
+          '-ExecutionPolicy',
+          'Bypass',
           '-File',
           capture,
           '-TargetHandle',

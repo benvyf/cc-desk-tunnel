@@ -103,7 +103,7 @@ test('official subscription: account metrics, Windows execution, running input, 
       await expect(page.locator('.connection-status')).toContainText('已连接', { timeout: 45000 });
     }
     await connect();
-    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
     await page.getByRole('button', { name: `新建会话 · ${project}`, exact: true }).click();
     await settled(page);
     const marker = `PRO-STREAM-${Date.now()}`;

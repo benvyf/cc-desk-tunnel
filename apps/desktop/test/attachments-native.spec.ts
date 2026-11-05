@@ -37,7 +37,7 @@ test('Electron chooses real files, generates bounded previews, restores and send
         filePaths: [folder],
       })) as typeof dialog.showOpenDialog;
     }, directory);
-    await page.getByRole('button', { name: '添加项目', exact: true }).click();
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
     await page.getByRole('button', { name: `新建会话 · ${directory}`, exact: true }).click();
     const title = `附件 ${Date.now()}`;
     await sessionAction(page, '重命名');

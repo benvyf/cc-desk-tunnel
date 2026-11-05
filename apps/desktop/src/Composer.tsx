@@ -786,11 +786,15 @@ export function NewSessionComposer({
   setDraft,
   disabled,
   start,
+  target,
+  chooseTarget,
 }: {
   draft: string;
   setDraft: (text: string) => void;
   disabled: boolean;
   start: (text: string) => void;
+  target?: string;
+  chooseTarget?: () => void;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
   const interfaceFontSize = usePrefs().fontSizes.interface;
@@ -829,7 +833,19 @@ export function NewSessionComposer({
           />
         </div>
         <div className="composer-toolbar">
-          <span className="new-session-note">发送后新建会话</span>
+          {chooseTarget ? (
+            <button
+              type="button"
+              className="button ghost new-session-note"
+              onClick={chooseTarget}
+              disabled={disabled}
+              title="选择设备和项目"
+            >
+              {target}
+            </button>
+          ) : (
+            <span className="new-session-note">{target ?? '发送后新建会话'}</span>
+          )}
           <span className="toolbar-space" />
           <button
             type="submit"
