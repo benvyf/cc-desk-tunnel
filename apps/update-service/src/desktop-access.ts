@@ -357,10 +357,9 @@ export class DesktopAccess {
       .get(String(session.user_id), nodeId);
     if (!node) throw new UpdateError(403, '未分配此工作空间。');
     const ticket = 'ccs_' + secret();
-    // A new connection replaces the preceding ticket for this desktop login and node.
-    this.db
-      .prepare('DELETE FROM tickets WHERE session_hash=? AND node_id=?')
-      .run(hash(token), nodeId);
+    // Main UI and SSH targets have independent connections under the same login.
+    // Issuing one ticket must not revoke another connection's renewable lease.
+    // Session expiry/logout, grant removal and device switching revoke them all.
     this.db
       .prepare('INSERT INTO tickets VALUES(?,?,?,?)')
       .run(hash(ticket), hash(token), nodeId, now + ticketLifetime);
