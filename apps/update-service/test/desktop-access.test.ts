@@ -116,6 +116,64 @@ test('parallel workspace tickets coexist while grants and session expiry still r
   assert.throws(() => store.connect(renewedLogin.token, 'ubuntu-cc'), /未分配/);
 });
 
+test('parallel tickets survive a center restart; logout revokes only their owning login', async (t) => {
+  const { root, store, input, id } = await fixture(t);
+  const now = Date.now();
+  const credentials = { ...input, deviceId: '11111111-1111-4111-8111-111111111111' };
+  const main = await store.login(credentials, 'desktop', now);
+  const sibling = await store.login(credentials, 'desktop', now + 1);
+  const tickets = Array.from({ length: 4 }, (_, i) =>
+    store.connect(main.token, 'ubuntu-cc', now + i + 2),
+  );
+  const siblingTicket = store.connect(sibling.token, 'ubuntu-cc', now + 6);
+  const reopened = new DesktopAccess(root);
+  try {
+    for (const ticket of [...tickets, siblingTicket]) {
+      assert.equal(reopened.validate(ticket.token, 'ubuntu-cc', false, now + 10).userId, id);
+      assert.throws(
+        () => reopened.validate(ticket.token, 'ubuntu-cc', false, now + 120010),
+        /失效/,
+      );
+      assert.equal(reopened.validate(ticket.token, 'ubuntu-cc', true, now + 120010).userId, id);
+      assert.throws(() => reopened.validate(ticket.token, 'other', true, now + 10), /失效/);
+    }
+    reopened.logout(main.token);
+    for (const ticket of tickets) {
+      assert.throws(() => store.validate(ticket.token, 'ubuntu-cc', false, now + 10), /失效/);
+      assert.throws(() => store.validate(ticket.token, 'ubuntu-cc', true, now + 10), /失效/);
+    }
+    assert.equal(store.validate(siblingTicket.token, 'ubuntu-cc', true, now + 10).userId, id);
+  } finally {
+    reopened.close();
+  }
+});
+
+test('expiry cleanup removes all tickets of expired logins without dropping renewable live tickets', async (t) => {
+  const { root, store, input, id } = await fixture(t);
+  const now = Date.now();
+  const credentials = { ...input, deviceId: '11111111-1111-4111-8111-111111111111' };
+  const expired = await store.login(credentials, 'desktop', now);
+  const expiredTickets = Array.from({ length: 3 }, (_, i) =>
+    store.connect(expired.token, 'ubuntu-cc', now + i),
+  );
+  const remembered = await store.login({ ...credentials, remember: true }, 'desktop', now + 4);
+  const liveTicket = store.connect(remembered.token, 'ubuntu-cc', now + 5);
+  const afterExpiry = expired.expiresAt + 1;
+  await store.login(credentials, 'desktop', afterExpiry); // Existing login cleanup path.
+  const db = new DatabaseSync(join(root, 'private', 'desktop-access.sqlite'));
+  try {
+    assert.equal(db.prepare('SELECT COUNT(*) AS count FROM tickets').get()!.count, 1);
+    const bytes = await readFile(join(root, 'private', 'desktop-access.sqlite'));
+    for (const ticket of [...expiredTickets, liveTicket])
+      assert.ok(!bytes.includes(Buffer.from(ticket.token)));
+  } finally {
+    db.close();
+  }
+  for (const ticket of expiredTickets)
+    assert.throws(() => store.validate(ticket.token, 'ubuntu-cc', true, afterExpiry), /失效/);
+  assert.equal(store.validate(liveTicket.token, 'ubuntu-cc', true, afterExpiry).userId, id);
+});
+
 test('remembered sessions survive overnight and renew during use, while idle and ordinary sessions expire', async (t) => {
   const { store, input } = await fixture(t);
   const now = Date.now(),

@@ -53,7 +53,7 @@ test('trusted proxy addresses isolate IP throttling while account throttling is 
 
 test(
   'a new computer preserves the old socket until switching is confirmed, without any Claude request',
-  { timeout: 45_000 },
+  { timeout: 80_000 },
   async (t) => {
     const root = await mkdtemp(join(tmpdir(), 'cc-access-integration-'));
     const admin = 'a'.repeat(43),
@@ -73,6 +73,10 @@ test(
     });
     const store = await UpdateStore.open(root, config.trustedKeys, config.adminName);
     const management = await createUpdateServer(store, config);
+    let validationRequests = 0;
+    management.on('request', (request) => {
+      if (request.url === '/cc-access/v1/validate') validationRequests++;
+    });
     await new Promise<void>((resolve) => management.listen(0, '127.0.0.1', resolve));
     const address = management.address();
     assert.ok(address && typeof address !== 'string');
@@ -216,6 +220,21 @@ test(
       assert.equal(renewal.status, 200);
       await renewal.text();
     }
+    const beforePeriodicRenewal = validationRequests;
+    const renewalDeadline = Date.now() + 35000;
+    while (validationRequests < beforePeriodicRenewal + 2 && Date.now() < renewalDeadline)
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.ok(
+      validationRequests >= beforePeriodicRenewal + 2,
+      'both real 30-second lease timers renewed',
+    );
+    assert.equal(socket.readyState, WebSocket.OPEN);
+    assert.equal(parallelSocket.readyState, WebSocket.OPEN);
+    assert.ok(
+      !messages.some(
+        (message) => message.type === 'connection.error' && message.code === 'unauthorized',
+      ),
+    );
     assert.equal((await fetch(proxyUrl + '/')).status, 403, 'legacy web entry disabled');
     const closed = once(socket, 'close');
     const parallelClosed = once(parallelSocket, 'close');

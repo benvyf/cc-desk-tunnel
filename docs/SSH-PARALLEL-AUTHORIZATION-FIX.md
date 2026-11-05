@@ -23,3 +23,16 @@ VPS 使用当前生产模块的精确基线，在私有临时数据库中运行�
 备份 `/var/backups/cc-update-service/parallel-tickets-20261105T062027Z`，旧程序 `/opt/cc-update-service.previous-tickets-20261105T062027Z`；VPS 精确源码 bundle、测试日志和部署证据 `/root/.cc-update-admin/parallel-ticket-fix/`。Windows pilot/stable、Linux 签名索引、配置及续期登记、节点版本/作业均未改变，没有执行 Ubuntu 更新；两个 timer active。脱敏结果见 [部署证据](evidence/parallel-workspace-tickets-2026-11-05.json)。
 
 无需重装客户端或 Ubuntu。旧逻辑已撤销的票据不恢复，用户重新登录/连接 CC Space 一次获取新票据即可；SSH 目标的系统登录与 Claude 登录不用重做。此次集成/测试证据不冒充用户真实目标 SSH 设备操作验收。
+
+## 再次 review（2026-11-05）
+
+没有发现需要进一步修改运行逻辑的阻塞问题。为补齐边界证据，新增/加强以下测试：
+
+- 同一登录的四张票据及同电脑另一个有效登录的票据在中心模块重新打开数据库后仍可验证；120 秒后首次认证全部拒绝，而已有连接仍可在有效会话下续租。
+- 退出一个登录后，它的全部票据首次认证和续租均拒绝；同电脑另一个登录的票据仍可续租，避免误扩大注销范围。
+- 经过会话过期清理后，三个过期会话票据实际从表中删除；另一个有效记住登录的票据保留，即使其最初签发期限已过也不会误删。数据库未保存原始票据文本。
+- 真实 HTTP/WebSocket 集成等待实际 30 秒周期，确认两条连接都发出周期验证、保持 OPEN 且没有 unauthorized；随后确认换设备，两个旧 socket 均被 4001 撤销。
+
+本机授权、HTTP/WebSocket 及服务管理回归共 17 项通过；部署中 `/opt/cc-update-service/apps/update-service/src/desktop-access.ts` 直接导入的 14 项 VPS 隔离数据库测试通过。TypeScript、格式和差异检查通过。运行源码清单全量摘要匹配，中心健康，两个 timer active，Windows/Linux 当前发布身份与精确续期登记一致。见 [只读线上 review 证据](evidence/parallel-workspace-tickets-review-2026-11-05.json)。本轮未创建生产账号、未重启服务、未操作 Ubuntu 或 Claude。
+
+保留的设计边界：短期票据用于首次连接，续租的最终权限仍以父登录、用户状态和节点授权决定；新增票据不再承担“踢掉旧连接”的职责，撤销通过原会话与权限管理完成。移除即时替换后，票据保留至所属会话被撤销或清理，不存在按 socket 关闭即时回收的接口；不应宣称退出 SSH 会话会立刻删除管理中心票据，也不为此复核引入新的授权协议。用户真实 SSH 设备登录仍以用户恢复连接后的反馈为准。
