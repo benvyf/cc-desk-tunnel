@@ -183,8 +183,42 @@ test(
         (x) => x.type === 'devices' && x.devices.some((d: any) => d.name === 'test-desktop'),
       ),
     );
+    const parallelTicket = await (
+      await request('/cc-access/v1/connect', login.token, { nodeId: 'ubuntu-cc' })
+    ).json();
+    const parallelSocket = new WebSocket(proxyUrl.replace('http', 'ws') + '/ws');
+    sockets.push(parallelSocket);
+    let parallelReady = false;
+    parallelSocket.on('message', (raw) => {
+      if (JSON.parse(raw.toString()).type === 'ready') parallelReady = true;
+    });
+    await once(parallelSocket, 'open');
+    parallelSocket.send(
+      JSON.stringify({
+        type: 'auth',
+        protocolVersion: PROTOCOL_VERSION,
+        token: parallelTicket.token,
+        deviceName: 'test-ssh-target',
+      }),
+    );
+    parallelSocket.send(
+      JSON.stringify({ type: 'device', id: randomUUID(), platform: 'linux', viaSsh: true }),
+    );
+    await wait(() => parallelReady);
+    // Exercise the same authenticated renewal HTTP path used by Ubuntu every 30s,
+    // without waiting for the timer or weakening the authorization requirement.
+    for (const token of [ticket.token, parallelTicket.token]) {
+      const renewal = await request('/cc-access/v1/validate', nodeToken, {
+        nodeId: 'ubuntu-cc',
+        ticket: token,
+        renewal: true,
+      });
+      assert.equal(renewal.status, 200);
+      await renewal.text();
+    }
     assert.equal((await fetch(proxyUrl + '/')).status, 403, 'legacy web entry disabled');
     const closed = once(socket, 'close');
+    const parallelClosed = once(parallelSocket, 'close');
     const nextCredentials = {
       email: userInput.email,
       password: userInput.password,
@@ -226,6 +260,7 @@ test(
     );
     await wait(() => secondReady);
     const [code] = await closed;
+    assert.equal((await parallelClosed)[0], 4001);
     assert.equal(code, 4001);
     assert.ok(messages.some((x) => x.type === 'connection.error' && x.code === 'unauthorized'));
     assert.equal(secondSocket.readyState, WebSocket.OPEN);

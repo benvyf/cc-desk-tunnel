@@ -1,0 +1,19 @@
+{
+  "deployed": true,
+  "sourceCommit": "1efc04daefde66e6cb79090cf9e6174273049cab",
+  "baseSourceCommit": "cac8006e45d6d36ed0a6227130f27f0e040bae28",
+  "changedRuntimeFiles": [
+    "apps/update-service/src/desktop-access.ts"
+  ],
+  "backup": "/var/backups/cc-update-service/parallel-tickets-20261105T062027Z",
+  "previousRuntime": "/opt/cc-update-service.previous-tickets-20261105T062027Z",
+  "releaseIndexesUnchanged": true,
+  "configAndRenewalsUnchanged": true,
+  "nodeVersionsAndJobsUnchanged": true,
+  "linuxAuthorizationTestsPassed": 12,
+  "realModelRequests": 0,
+  "timers": {
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  }
+}

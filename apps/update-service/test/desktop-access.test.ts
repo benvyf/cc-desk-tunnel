@@ -96,18 +96,21 @@ test('a password reset in flight cannot undo a newer disable or grant revocation
   assert.deepEqual(user.nodes, []);
 });
 
-test('ticket replacement, grant revocation and exact session expiry reject old authorization', async (t) => {
+test('parallel workspace tickets coexist while grants and session expiry still revoke all connections', async (t) => {
   const { store, nodes, input, id } = await fixture(t);
   const now = Date.now();
   const login = await store.login(input, 'expiry-test', now);
   const old = store.connect(login.token, 'ubuntu-cc', now);
   const next = store.connect(login.token, 'ubuntu-cc', now + 1);
-  assert.throws(() => store.validate(old.token, 'ubuntu-cc', true, now + 2), /失效/);
+  assert.notEqual(old.token, next.token);
+  assert.equal(store.validate(old.token, 'ubuntu-cc', true, now + 2).userId, id);
   assert.equal(store.validate(next.token, 'ubuntu-cc', false, now + 2).userId, id);
   assert.throws(() => store.workspaces(login.token, login.expiresAt), /失效/);
   assert.throws(() => store.validate(next.token, 'ubuntu-cc', true, login.expiresAt), /失效/);
+  assert.throws(() => store.validate(old.token, 'ubuntu-cc', true, login.expiresAt), /失效/);
   await store.saveUser(id, { ...input, password: '', nodes: [] }, nodes);
   assert.throws(() => store.validate(next.token, 'ubuntu-cc', true, now + 3), /失效/);
+  assert.throws(() => store.validate(old.token, 'ubuntu-cc', true, now + 3), /失效/);
   const renewedLogin = await store.login(input, 'expiry-test');
   assert.deepEqual(renewedLogin.workspaces, []);
   assert.throws(() => store.connect(renewedLogin.token, 'ubuntu-cc'), /未分配/);
@@ -134,7 +137,7 @@ test('reconnecting cannot revoke an in-flight maintenance ticket and maintenance
   const old = store.connect(login.token, 'ubuntu-cc', now);
   const management = store.serverConnection(login.token, 'ubuntu-cc', now);
   const next = store.connect(login.token, 'ubuntu-cc', now + 1);
-  assert.throws(() => store.validate(old.token, 'ubuntu-cc', false, now + 2), /失效/);
+  assert.ok(store.validate(old.token, 'ubuntu-cc', false, now + 2));
   assert.ok(store.validate(management.token, 'ubuntu-cc', false, now + 2));
   assert.throws(() => store.validate(management.token, 'other', false, now + 2), /失效/);
   assert.throws(() => store.validate(management.token, 'ubuntu-cc', true, now + 120001), /失效/);
@@ -143,6 +146,8 @@ test('reconnecting cannot revoke an in-flight maintenance ticket and maintenance
   assert.ok(store.validate(next.token, 'ubuntu-cc', true, now + 120001));
   const pending = store.serverConnection(login.token, 'ubuntu-cc', now + 3);
   store.logout(login.token);
+  assert.throws(() => store.validate(old.token, 'ubuntu-cc', true, now + 4), /失效/);
+  assert.throws(() => store.validate(next.token, 'ubuntu-cc', true, now + 4), /失效/);
   assert.throws(() => store.validate(pending.token, 'ubuntu-cc', false, now + 4), /失效/);
 });
 
