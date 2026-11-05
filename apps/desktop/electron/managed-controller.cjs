@@ -223,6 +223,16 @@ class ManagedController {
     );
     if (selected.status === 'scope-mismatch') throw new Error('更新通道不匹配');
     atomic(this.file('ledger.json'), { ...ledger, replay: selected.nextState });
+    // Selection authorizes only compatible installers. Keep verified newer
+    // metadata for the UI even when installation is blocked by a protocol change.
+    const offered = index.payload.release;
+    if (
+      selected.status === 'protocol-mismatch' &&
+      offered &&
+      offered.build > Math.max(this.identity.build, ledger.confirmedBuild) &&
+      offered.build >= (selected.nextState?.highestBuild ?? 0)
+    )
+      return { ...selected, release: offered };
     return selected;
   }
   async clientDownload(requiredProtocol) {

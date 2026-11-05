@@ -21,6 +21,7 @@ import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
 import * as contract from '../../../packages/managed-updates/src/index.ts';
 import { managedBuildIdentity } from '../../../scripts/managed-client-build.mjs';
+import { managedUpdateNotice } from '../src/managed-update.ts';
 
 const require = createRequire(import.meta.url);
 const { ManagedController, atomic, alive } = require('../electron/managed-controller.cjs');
@@ -214,11 +215,25 @@ test('required-client manual link uses signed matching publication without enabl
   const f = fixture(t);
   const next = { ...release, protocol: 21 };
   f.index(payload(1, next));
-  assert.equal((await f.controller.check()).phase, 'idle');
+  const checked = await f.controller.check();
+  assert.equal(checked.phase, 'idle');
+  assert.equal(
+    checked.release?.build,
+    next.build,
+    'newer signed cross-protocol release must remain visible for notification',
+  );
+  assert.equal(checked.release?.protocol, next.protocol);
+  assert.equal(managedUpdateNotice(checked), '新版客户端需要配套升级服务端');
+  await assert.rejects(f.controller.install(), /下载|兼容/);
   await assert.rejects(f.controller.download(), /兼容/);
   const result = await f.controller.clientDownload(21);
   assert.equal(result.url, identity.origin + contract.artifactPath(next));
   assert.equal(result.protocol, 21);
+  assert.equal(
+    managedUpdateNotice(await f.controller.check(false)),
+    '新版客户端需要配套升级服务端',
+    'viewing a verified manual download must not suppress the update notice',
+  );
   assert.equal(f.launches(), 0);
   assert.equal(f.quits(), 0);
   await assert.rejects(f.controller.download(), /兼容/);
@@ -227,6 +242,13 @@ test('required-client manual link uses signed matching publication without enabl
   await f.controller.clientDownload(21);
   f.index(payload(2, next));
   await assert.rejects(f.controller.clientDownload(21), /replay/);
+});
+
+test('protocol mismatch does not advertise an older or already installed build', async (t) => {
+  const f = fixture(t);
+  f.index(payload(1, { ...release, build: identity.build, protocol: identity.protocol + 1 }));
+  assert.equal((await f.controller.check()).release, null);
+  assert.equal(f.launches(), 0);
 });
 
 test('build identity fixes origin and public keys; installation ID is directory-scoped', (t) => {
