@@ -31,6 +31,7 @@ NODE_SHA = 'fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6'
 NODE_RUNTIMES = {
     'node24-cli2.1.295-v1': ('24.21.0', NODE_SHA),
     'node24-cli2.1.295-v2': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
+    'node24-cli2.1.295-v3': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
 }
 CLI_ARCHIVE_SHA = 'd45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95'
 CLI_SHA = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
@@ -170,7 +171,7 @@ USER root
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
-RUN chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
+RUN if [ -f /app/deploy/docker/terminal-runtime.mjs ]; then /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record; fi && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
 ENV HOME=/data/home
 USER ccdesktunnel
 WORKDIR /data/workspace

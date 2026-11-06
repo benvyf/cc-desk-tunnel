@@ -4,7 +4,7 @@ const windows = new WeakSet();
 function isTerminalWindow(window) {
   return windows.has(window);
 }
-function installTerminalWindow(owner, Menu) {
+function installTerminalWindow(owner, Menu, log = () => {}) {
   const nativeControls = process.platform === 'win32';
   let terminal;
   let active = false;
@@ -60,10 +60,16 @@ function installTerminalWindow(owner, Menu) {
     if (details.frameName !== 'cc-native-terminal') return;
     terminal = child;
     approved = false;
+    log('Terminal window created.');
     windows.add(child);
     if (Menu) installEditMenu(child, Menu);
     child.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
     child.webContents.on('will-navigate', (event) => event.preventDefault());
+    child.webContents.on('render-process-gone', (_event, details) => {
+      log(`Terminal renderer gone: ${details.reason}, exit code ${details.exitCode}.`);
+    });
+    child.on('unresponsive', () => log('Terminal window unresponsive.'));
+    child.on('responsive', () => log('Terminal window responsive again.'));
     const state = () => {
       if (!owner.webContents.isDestroyed())
         owner.webContents.send('terminal-window:state', { maximized: child.isMaximized() });
@@ -71,12 +77,14 @@ function installTerminalWindow(owner, Menu) {
     child.on('maximize', state);
     child.on('unmaximize', state);
     child.on('close', (event) => {
+      log(`Terminal window close requested: active=${active}, approved=${approved}.`);
       if (approved || !active) return;
       event.preventDefault();
       if (!owner.webContents.isDestroyed()) owner.webContents.send('terminal-window:request-close');
     });
     child.on('closed', () => {
       if (terminal !== child) return;
+      log('Terminal window closed.');
       terminal = undefined;
       finishClose?.(true);
       finishClose = undefined;
@@ -84,7 +92,13 @@ function installTerminalWindow(owner, Menu) {
     });
   });
   owner.on('closed', () => {
-    if (terminal && !terminal.isDestroyed()) terminal.destroy();
+    if (terminal && !terminal.isDestroyed()) {
+      log('Terminal window destroyed because its owner closed.');
+      terminal.destroy();
+    }
+  });
+  owner.webContents.on('render-process-gone', (_event, details) => {
+    log(`Primary renderer gone: ${details.reason}, exit code ${details.exitCode}.`);
   });
   return {
     window: () => terminal,
@@ -126,6 +140,7 @@ function installTerminalWindow(owner, Menu) {
         if (terminal.isMaximized()) terminal.unmaximize();
         else terminal.maximize();
       } else if (action === 'destroy') {
+        log('Terminal window destroy requested by the application.');
         approved = true;
         terminal.destroy();
       } else return false;

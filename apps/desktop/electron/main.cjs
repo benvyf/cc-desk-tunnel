@@ -1209,7 +1209,7 @@ app.whenReady().then(() => {
   window.on('closed', () => {
     if (primaryWindow === window) primaryWindow = undefined;
   });
-  terminalControllers.set(window.webContents, installTerminalWindow(window, Menu));
+  terminalControllers.set(window.webContents, installTerminalWindow(window, Menu, log));
   // Electron does not provide an editing menu by default. Native roles keep text selection, undo and paste
   // in the focused input, without exposing clipboard reads to the renderer.
   installEditMenu(window, Menu);

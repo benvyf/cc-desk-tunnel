@@ -93,6 +93,25 @@ class MigrationTests(unittest.TestCase):
         baseline['lock']=m.BASE_LOCK
         with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
 
+    def test_published_build16_is_admitted_with_exact_descriptor_and_lock(self):
+        baseline=self.baseline()
+        baseline.update(descriptor='bb97e49caf492f82abfe898b6c32bd0b017977d4b29f95e1aed015be5f722682',build=16,protocol=24,lock=m.LOCK)
+        self.assertFalse(m.check_baseline(baseline,self.release()))
+        baseline['lock']=m.PREVIOUS_LOCK
+        with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
+
+    def test_terminal_probe_is_required_and_failure_blocks_candidate(self):
+        from subprocess import CalledProcessError
+        calls=[]
+        def run(args,**kwargs):
+            calls.append(args)
+            if args[-1]=='--probe':raise CalledProcessError(1,args)
+        with patch.object(m.subprocess,'run',side_effect=run):
+            with self.assertRaises(CalledProcessError):m.candidate_check('candidate',self.release())
+        self.assertEqual(len(calls),2)
+        self.assertIn('--network=none',calls[-1])
+        self.assertEqual(calls[-1][-2:],['/app/deploy/docker/terminal-runtime.mjs','--probe'])
+
     def test_signed_target_must_match_confirmed_identity(self):
         target=self.release()
         self.assertEqual(m.verify_release(SimpleNamespace(verify_index=lambda _:target),b'index','a'*64),target)

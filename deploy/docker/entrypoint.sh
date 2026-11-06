@@ -12,6 +12,7 @@ fi
 PROGRAM=/app
 [ ! -x "$PROGRAM/cli/bin/claude" ] || PATH="$PROGRAM/cli/bin:$PATH"
 echo "Starting program $(node -p "require('$PROGRAM/apps/desktop/package.json').version") from $PROGRAM"
+node "$PROGRAM/deploy/docker/terminal-runtime.mjs" --check
 export PROXY_RUNTIME_DIR=/opt/runtime
 unset PROXY_PROGRAM_DIR
 exec node --env-file=/data/config/service.env "$PROGRAM/apps/server/src/managed-main.ts"

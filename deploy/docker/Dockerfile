@@ -58,6 +58,7 @@ COPY deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY deploy/docker/runtime-level /opt/runtime/level
 # The working directory is made here with its owner: a builder without BuildKit makes the one WORKDIR names as root.
 RUN chmod 755 /usr/local/bin/proxy-entrypoint && mkdir -p /data/workspace \
+    && /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record \
     && chmod -R go-w /app /opt/runtime /etc/claude-code \
     && chown -R ccdesktunnel:ccdesktunnel /data
 ENV PATH=/opt/runtime/node/bin:/opt/runtime/cli/bin:$PATH \

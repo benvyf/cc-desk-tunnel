@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const { installTerminalWindow, isTerminalWindow } = require('../electron/terminal-window.cjs');
-function fixture() {
+function fixture(log) {
   const owner = new EventEmitter();
   const contents = new EventEmitter();
   contents.setWindowOpenHandler = (handler) => {
@@ -14,7 +14,7 @@ function fixture() {
   contents.messages = [];
   contents.send = (...args) => contents.messages.push(args);
   owner.webContents = contents;
-  const controller = installTerminalWindow(owner);
+  const controller = installTerminalWindow(owner, undefined, log);
   const child = new EventEmitter();
   child.webContents = new EventEmitter();
   child.webContents.setWindowOpenHandler = (handler) => {
@@ -170,4 +170,33 @@ test('maximize state is sent only to the owning renderer', () => {
   f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
   f.child.emit('maximize');
   assert.deepEqual(f.contents.messages, [['terminal-window:state', { maximized: true }]]);
+});
+
+test('window failures and destruction sources are recorded without closing on a stall', () => {
+  const logs = [];
+  const f = fixture((line) => logs.push(line));
+  f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
+  f.child.emit('unresponsive');
+  f.child.emit('responsive');
+  assert.equal(f.child.destroyed, undefined);
+  f.child.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: 7 });
+  f.contents.emit('render-process-gone', {}, { reason: 'oom', exitCode: 8 });
+  f.controller.control('destroy');
+  assert.deepEqual(logs, [
+    'Terminal window created.',
+    'Terminal window unresponsive.',
+    'Terminal window responsive again.',
+    'Terminal renderer gone: crashed, exit code 7.',
+    'Primary renderer gone: oom, exit code 8.',
+    'Terminal window destroy requested by the application.',
+    'Terminal window closed.',
+  ]);
+  logs.length = 0;
+  f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
+  f.owner.emit('closed');
+  assert.deepEqual(logs, [
+    'Terminal window created.',
+    'Terminal window destroyed because its owner closed.',
+    'Terminal window closed.',
+  ]);
 });

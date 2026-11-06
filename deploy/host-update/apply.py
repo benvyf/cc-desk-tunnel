@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare/cut over signed Build 16 on the three reviewed Ubuntu nodes; keep offline rollback."""
+"""Prepare/cut over signed Build 17 on the three reviewed Ubuntu nodes; keep offline rollback."""
 import argparse
 import hashlib
 import importlib.util
@@ -18,8 +18,8 @@ import urllib.error
 import http.client
 
 ROOT = Path('/var/lib/cc-runtime-upgrade')
-BUILD, PROTOCOL = 16, 24
-RUNTIME = 'node24-cli2.1.295-v2'
+BUILD, PROTOCOL = 17, 24
+RUNTIME = 'node24-cli2.1.295-v3'
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
 LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
@@ -28,6 +28,7 @@ CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'bb97e49caf492f82abfe898b6c32bd0b017977d4b29f95e1aed015be5f722682': (16, 24),
     '075f5d15b45156218327abf8341f965c1f5cda8d00e8f75445b59f696b9fcf09': (15, 24),
     '9cb6c0924367efbc291bca06e3f7f331d360e6752bf42db5c5189b903fb0baa7': (14, 24),
     '42df8b7aad3c10c8fa99ec54c70a48637800a7a4d48bdf03704f7b689d7a87f3': (13, 24),
@@ -115,7 +116,7 @@ def verify_release(fresh, data, expected):
     need((release['build'], release['protocol'], release['appVersion'], release['runtimeLevel'],
           release['packageLockSha256'], release['sha256']) ==
          (BUILD, PROTOCOL, '0.3.10', RUNTIME, LOCK, expected),
-         'Signed target changed or is not the reviewed Build 16; obtain a new command')
+         'Signed target changed or is not the reviewed Build 17; obtain a new command')
     return release
 
 
@@ -146,7 +147,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] == 15 else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -164,7 +165,7 @@ USER root
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
-RUN chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime/node && chmod -R go-w /app /opt/runtime/node
+RUN /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime/node && chmod -R go-w /app /opt/runtime/node
 USER ccdesktunnel
 WORKDIR /data/workspace
 '''
@@ -176,11 +177,14 @@ a.equal(process.versions.node,'24.22.2');a.equal(hash(f.readFileSync('/opt/runti
 const bytes=f.readFileSync('/app/SERVER-RELEASE.json');a.equal(hash(bytes),process.argv[1]);const d=JSON.parse(bytes);
 for(const[p,v]of Object.entries(d.files)){const b=f.readFileSync('/app/'+p);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
 a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/docker/entrypoint.sh'].sha256);
-a.equal(f.readFileSync('/opt/runtime/level','utf8').trim(),'2');
+a.equal(f.readFileSync('/opt/runtime/level','utf8').trim(),'3');
 a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.286');"""
     subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint',
         '/opt/runtime/node/bin/node', image, '-e', script, release['descriptorSha256'], CLI],
         check=True, capture_output=True, timeout=90)
+    subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint',
+        '/opt/runtime/node/bin/node', image, '/app/deploy/docker/terminal-runtime.mjs', '--probe'],
+        check=True, capture_output=True, timeout=30)
 
 
 def main():
@@ -221,7 +225,7 @@ def main():
         need(release == confirmed, 'Published release changed; refresh and confirm again')
         if check_baseline(baseline, release):
             b.live_status(b.CONTAINER, release)
-            print('ALREADY_INSTALLED: Build 16 / protocol 24 / Node 24.22.2; no change.')
+            print('ALREADY_INSTALLED: Build 17 / protocol 24 / Node 24.22.2; no change.')
             return
         legacy = load('runtime_cutover', PROGRAM / 'scripts/install-cc-space-037.py')
         legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
@@ -230,26 +234,26 @@ def main():
             retain_previous_backup(b.CONTAINER)
         # All entrypoints, including the management-center host updater, must
         # reclaim safe cache without relying on callers to pass --cleanup.
-        keep_image = 'cc-space-runtime:build16-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        keep_image = 'cc-space-runtime:build17-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         cleanup = load('host_update_cleanup', PROGRAM / 'deploy/host-update/cleanup.py')
         cleanup.clean(ROOT, PROGRAM, keep_image)
         legacy.check_space(reserve=2 * 1024**3)
         # The old CLI binary, SDK version and read-only policy were authenticated above. Never execute Claude.
         b.runtime_and_policy = lambda container: verify_runtime(container, node)
-        work = Path(tempfile.mkdtemp(prefix='build16-', dir=ROOT)); work.chmod(0o755)
+        work = Path(tempfile.mkdtemp(prefix='build17-', dir=ROOT)); work.chmod(0o755)
         program = work / 'program'
-        print('1/4 Verifying signed Build 16; current service remains running.', flush=True)
-        archive = b.download('/cc-updates/server/v1/artifacts/16/linux-x64/cc-desk-tunnel-server-0.3.10-build16.tar.gz', 64 * 1024**2)
+        print('1/4 Verifying signed Build 17; current service remains running.', flush=True)
+        archive = b.download('/cc-updates/server/v1/artifacts/17/linux-x64/cc-desk-tunnel-server-0.3.10-build17.tar.gz', 64 * 1024**2)
         b.unpack(archive, program, release)
         need(hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() == LOCK and
-             (program / 'deploy/docker/runtime-level').read_text().strip() == '2', 'Candidate runtime/dependencies differ')
+             (program / 'deploy/docker/runtime-level').read_text().strip() == '3', 'Candidate runtime/dependencies differ')
         identity = json.loads((program / 'deploy/managed-server.json').read_bytes())
         need(identity['runtimeLevel'] == RUNTIME and identity['keys'] == b.KEYS and identity['origin'] == b.ORIGIN,
              'Candidate trust or runtime identity differs')
         # Recheck after extracting the signed program, before a costly build.
         legacy.check_space(reserve=2 * 1024**3)
         base = 'cc-space-runtime-base:' + original['Image'].split(':')[-1][:12]
-        image = 'cc-space-runtime:build16-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        image = 'cc-space-runtime:build17-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         subprocess.run(['docker', 'tag', original['Image'], base], check=True, capture_output=True)
         inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True)
         if inspected.returncode:
@@ -287,7 +291,7 @@ def main():
         print('3/4 Checking idle state, disconnecting clients, cold backup and image/policy cutover.', flush=True)
         legacy.install(b, disconnect_clients=True)
         retain_previous_backup(b.CONTAINER)
-        print('4/4 SUCCESS: ' + node + ' / Build 16 / protocol 24 / Node 24.22.2.', flush=True)
+        print('4/4 SUCCESS: ' + node + ' / Build 17 / protocol 24 / Node 24.22.2.', flush=True)
 
 
 if __name__ == '__main__':

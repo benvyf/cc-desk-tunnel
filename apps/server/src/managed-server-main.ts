@@ -63,7 +63,7 @@ supervisor = new ManagedServerSupervisor({
       process.platform !== 'linux' ||
       process.arch !== 'x64' ||
       process.versions.node.split('.')[0] !== '24' ||
-      readFileSync('/opt/runtime/level', 'utf8').trim() !== '1'
+      readFileSync('/opt/runtime/level', 'utf8').trim() !== '3'
     )
       return false;
     return [
@@ -102,8 +102,15 @@ process.on('SIGINT', () => {
 });
 try {
   await supervisor.start();
-} catch {
+} catch (error) {
   await stop();
+  if (
+    error instanceof Error &&
+    error.message === 'Container crash restart limit reached; administrator attention required'
+  )
+    console.error(
+      'Container crash restart limit reached (3). Repair and verify the runtime before an administrator resets attempts in /data/managed-server/journal.json. Restarting alone will not unlock it.',
+    );
   console.error('Managed server startup failed; no unverified program was launched.');
   process.exitCode = 1;
 }
