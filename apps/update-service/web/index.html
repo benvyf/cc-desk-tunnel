@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CC 管理中心</title>
+  <link rel="stylesheet" href="/cc-updates/admin/style.css">
+  <script type="module" src="/cc-updates/admin/app.js"></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="app-header"><a class="brand" href="/cc-updates/admin/" aria-label="CC 管理中心首页"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 116 237.21" focusable="false"><path d="M116 29.07L36.5 68.82A19 19 0 0 0 26 85.81L26 116.83A2 2 0 0 0 28.89 118.62L52.5 106.82L52.5 135.89L40.52 141.88A28 28 0 0 1 0 116.83L0 85.81A45 45 0 0 1 24.88 45.56L116 0Z"/><path d="M63.5 101.32L75.48 95.33A28 28 0 0 1 116 120.37L116 151.4A45 45 0 0 1 91.12 191.64L0 237.21L0 208.14L79.5 168.39A19 19 0 0 0 90 151.4L90 120.37A2 2 0 0 0 87.11 118.58L63.5 130.39Z"/></svg></span><div><p class="eyebrow">CC Space</p><h1>管理中心</h1></div></a><div class="header-actions"><span class="console-label">你的工作空间，尽在掌握</span><button id="change-password" class="quiet" hidden>修改密码</button><button id="logout" class="quiet" hidden>退出登录</button></div></header>
+    <nav id="primary-navigation" class="main-nav" aria-label="管理分区" hidden><p class="nav-label">工作空间管理</p><a id="show-accounts" href="/cc-updates/admin/accounts"><span class="nav-icon" aria-hidden="true">▦</span>账号监控<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-updates" href="/cc-updates/admin/updates"><span class="nav-icon" aria-hidden="true">↓</span>客户端更新<span class="nav-arrow" aria-hidden="true">›</span></a><a id="show-moderation" href="/cc-updates/admin/moderation"><span class="nav-icon" aria-hidden="true">◇</span>内容审核<span class="nav-arrow" aria-hidden="true">›</span></a><div class="nav-footnote"><span class="status-dot" aria-hidden="true"></span>CC Space 控制台<p>连接设备 · 管理账号 · 持续创作</p></div></nav>
+    <p id="notice" role="status" aria-live="polite"></p>
+    <section id="login-panel" class="card login"><p class="eyebrow">管理员入口</p><h2>登录管理中心</h2><p class="muted">使用你设置的管理员密码登录。首次设置或忘记密码时，通过 SSH 打开临时密码设置页面。</p><form id="password-login"><label for="admin-password">管理员密码</label><input id="admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><button type="submit">登录管理</button></form><details><summary>使用旧管理令牌</summary><form id="login"><label for="token">管理令牌</label><input id="token" type="password" autocomplete="off" required minlength="32" maxlength="128"><button type="submit" class="quiet">使用令牌登录</button></form></details></section>
+    <section id="password-setup-panel" class="card login" hidden><p class="eyebrow">管理员密码</p><h2>设置管理员密码</h2><p class="muted">请设置 8–128 个字符的密码，可以包含中文。设置链接十分钟内有效，仅能使用一次；设置后自动登录。</p><form id="password-setup"><label for="new-admin-password">新管理员密码</label><input id="new-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-admin-password">确认管理员密码</label><input id="confirm-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存密码并登录</button></form></section>
+    <main id="dashboard" hidden>
+      <section id="monitor-panel" aria-labelledby="monitor-heading" hidden>
+        <div class="section-heading page-heading"><div><p class="eyebrow">WORKSPACE OVERVIEW</p><h2 id="monitor-heading">账号监控</h2><p class="muted">设备、账号与额度，一目了然。</p></div><div class="heading-actions"><span id="monitor-updated" class="muted" aria-live="polite"></span><button id="monitor-refresh" class="quiet">刷新账号数据</button></div></div>
+        <section id="node-update-panel" class="card" aria-labelledby="node-update-heading" hidden>
+          <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="node-update-heading"></h3><p class="muted">普通程序和基础镜像均通过宿主机通道更新，只执行已签名发布。</p></div><button id="node-update-close" class="quiet" type="button">关闭更新面板</button></div>
+          <p id="node-update-channel"></p><p id="node-update-current"></p><p id="node-update-target" class="digest"></p>
+          <p class="muted">首次使用需在对应 Ubuntu 执行一次接入命令，接入本身不会触发升级。更新前结束任务并关闭原生终端；准备完成后自动断开空闲客户端。旧版服务端若不支持自动断连，会提示先退出客户端。中断或失败时查看实际服务状态、日志与恢复指引，不自动重放。</p>
+          <div class="heading-actions"><button id="node-update-refresh" class="quiet" type="button">检查设备状态</button><button id="node-update-enroll" class="quiet" type="button">生成宿主机接入命令</button><button id="node-update-install" type="button" disabled>检查更新</button></div>
+          <div id="node-update-enrollment" hidden><label for="node-update-command">一次性接入命令（十分钟有效，仅在对应 Ubuntu 执行）</label><textarea id="node-update-command" rows="6" readonly spellcheck="false"></textarea><button id="node-update-copy" class="quiet" type="button">复制宿主机接入命令</button></div>
+          <div id="node-update-confirmation" class="access-editor" hidden><p id="node-update-confirm-text"></p><button id="node-update-confirm" type="button">确认更新此设备</button><button id="node-update-cancel" type="button" class="quiet">取消</button></div>
+          <p id="node-update-error" class="error" role="alert"></p><p id="node-update-job" role="status"></p><details><summary>更新进度与恢复指引</summary><pre id="node-update-progress" class="notes"></pre></details>
+        </section>
+        <section id="desktop-access-panel" class="card" aria-labelledby="desktop-access-heading" hidden>
+          <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="desktop-access-heading"></h3><p class="muted">查看账号详情，管理连接和访问权限。</p></div><button id="desktop-access-close" class="quiet">返回账号监控</button></div>
+          <div class="access-tabs" role="tablist" aria-label="设备管理">
+            <button id="access-claude-tab" type="button" role="tab" aria-selected="false" aria-controls="access-claude">Claude 账号</button>
+            <button id="access-connection-tab" type="button" role="tab" aria-selected="true" aria-controls="access-connection">连接配置</button>
+            <button id="access-users-tab" type="button" role="tab" aria-selected="false" aria-controls="access-users">登录用户</button>
+          </div>
+          <div id="access-claude" role="tabpanel" aria-labelledby="access-claude-tab" hidden></div>
+          <div id="access-connection" role="tabpanel" aria-labelledby="access-connection-tab">
+            <form id="access-node-form">
+              <div class="access-grid"><label>工作空间名称<input id="access-node-name" required maxlength="80"></label><label>设备标识<input id="access-node-id" readonly></label></div>
+              <label>服务地址<input id="access-node-url" type="url" placeholder="wss://your-server:8443/ws" required></label>
+              <label>服务证书指纹<input id="access-node-fingerprint" placeholder="完整 SHA-256 指纹；使用受信任证书时留空" spellcheck="false"></label>
+              <details><summary>高级配置 · 传统服务凭据</summary><p id="access-credential-state" class="muted"></p><label>更新服务凭据<input id="access-node-credential" type="password" autocomplete="off" placeholder="留空保持不变"></label></details>
+              <p class="muted">客户端通过邮箱获取短期连接授权，无需填写以上信息。监控上报正常不代表此地址可连接。</p>
+              <button type="submit">保存连接配置</button>
+            </form>
+          </div>
+          <div id="access-users" role="tabpanel" aria-labelledby="access-users-tab" hidden>
+            <div class="section-heading"><h3>CC Space 登录用户</h3><button id="access-user-add" type="button">添加用户</button></div>
+            <p class="muted">这里的邮箱用于登录 CC Space，与 Claude 官方账号分开。访问同一设备会共用该设备的会话与工作区。</p>
+            <p class="muted">每个邮箱账号仅允许一台电脑在线。新电脑登录成功后，旧电脑会自动退出；同一台电脑的多个窗口可同时使用。</p>
+            <form id="access-user-form" class="access-editor" hidden>
+              <div class="access-grid"><label>邮箱<input id="access-user-email" type="email" required maxlength="254" autocomplete="off"></label><label>密码<input id="access-user-password" type="password" minlength="8" maxlength="128" autocomplete="new-password" placeholder="已有用户留空保持密码"></label></div>
+              <label class="check"><input id="access-user-enabled" type="checkbox" checked>启用此用户</label>
+              <fieldset><legend>授权工作空间</legend><div id="access-user-nodes"></div></fieldset>
+              <p class="muted">保存修改后，该用户在所有设备上的已有登录会被撤销，需要重新登录。</p>
+              <button type="submit">保存用户</button><button id="access-user-cancel" class="quiet" type="button">取消</button>
+            </form>
+            <div class="table-scroll"><table><thead><tr><th>邮箱</th><th>状态</th><th>授权设备</th><th>最近登录</th><th>操作</th></tr></thead><tbody id="access-user-list"></tbody></table></div>
+          </div>
+        </section>
+        <div id="monitor-overview">
+          <div id="monitor-node-status" class="overview-stats" aria-label="设备与账号概况" aria-live="polite"></div>
+          <div class="monitor-toolbar"><div><h3>我的设备</h3><p id="monitor-count" class="muted"></p></div><div class="monitor-filters"><label class="search-field"><span class="sr-only">搜索设备或账号</span><input id="monitor-search" aria-label="搜索设备或账号" type="search" placeholder="搜索设备、邮箱、备注…" maxlength="254"></label><label><span class="sr-only">设备状态</span><select id="monitor-filter" aria-label="设备状态"><option value="all">全部设备</option><option value="recent">近期上报</option><option value="attention">需要关注</option><option value="waiting">等待接入</option></select></label></div></div>
+          <p class="monitor-caption"><span class="status-dot" aria-hidden="true"></span>每 30 秒读取已有数据。额度超过 15 分钟未采集会标为过期，不代表设备离线。</p>
+          <div id="monitor-nodes" class="device-grid"></div>
+          <details id="monitor-history" class="card history-panel"><summary><span>全部账号记录</span><span class="muted">查看历史账号与备注</span></summary><div id="monitor-history-list" class="account-list"></div></details>
+        <section class="card enrollment-card" aria-labelledby="enrollment-heading">
+          <div class="section-heading"><div><h3 id="enrollment-heading">接入更多设备</h3><p class="muted">已有 Ubuntu 接入监控，在这里生成安装命令。</p></div><button id="enrollment-open" class="quiet">一键接入</button></div>
+          <div id="enrollment-options" hidden>
+            <p class="muted">先结束 Claude 任务并关闭 CC 客户端。安装会短暂重启服务，自动备份，失败时尝试回滚；可用节点以列表为准。</p>
+            <label for="enrollment-node">选择接入节点</label><select id="enrollment-node"></select>
+            <button id="enrollment-generate">生成接入命令</button>
+            <div id="enrollment-result" hidden>
+              <p id="enrollment-expiry" class="muted" aria-live="polite"></p>
+              <label for="enrollment-command">Ubuntu 安装命令</label><textarea id="enrollment-command" readonly rows="5" spellcheck="false" autocomplete="off"></textarea>
+              <button id="enrollment-copy" class="quiet">复制命令</button>
+              <p class="muted">命令含临时安装码，请勿转发。若安装中断，重新生成命令即可重试。安装不会主动读取 Claude 额度；完成后正常打开 CC，等待已有账号数据自然同步。这里的“刷新账号数据”只读取 VPS 缓存。</p>
+            </div>
+          </div>
+        </section>
+        </div>
+      </section>
+      <section id="password-change-panel" class="card password-change" hidden><h2>修改管理员密码</h2><p class="muted">新密码为 8–128 个字符，可包含中文。修改后其他登录会话将失效。</p><form id="password-change"><label for="current-admin-password">当前管理员密码</label><input id="current-admin-password" type="password" autocomplete="current-password" required minlength="8" maxlength="128"><label for="changed-admin-password">新密码</label><input id="changed-admin-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><label for="confirm-changed-password">确认新密码</label><input id="confirm-changed-password" type="password" autocomplete="new-password" required minlength="8" maxlength="128"><button type="submit">保存新密码</button><button id="cancel-password-change" type="button" class="quiet">取消修改</button></form></section>
+      <section id="updates-panel" hidden>
+      <div class="section-heading"><div><p class="eyebrow">DOWNLOADS</p><h2>下载安装包</h2></div></div>
+      <p class="muted">Windows x64 完整定制客户端，包含随包运行组件。退出 CC 后运行安装包，可覆盖安装并保留连接配置。账号监控与内容审核由配套 Ubuntu／VPS 提供；安装客户端不会自动升级 Ubuntu。</p>
+      <div id="downloads" class="channels" aria-live="polite"></div>
+      <section class="card" aria-labelledby="fresh-heading">
+        <h2 id="fresh-heading">Ubuntu 一键部署</h2>
+        <p class="muted">适用于空白 Ubuntu 24.04 LTS x64 虚拟机，也可明确选择清空重装旧 CC 服务。自动安装 Docker、最新已发布服务端及独立监控和审核配置；完成后显示客户端连接地址、证书指纹和服务凭据。建议 2 核、4 GB 内存、至少 6 GB 可用磁盘，安装可能需要数分钟。</p>
+        <form id="fresh-form"><label for="fresh-node">新节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-04" autocomplete="off"><label class="check"><input id="fresh-reset" type="checkbox" aria-describedby="fresh-reset-help">清空重装旧 CC 服务</label><p id="fresh-reset-help" class="muted">仅在不需要旧内容时勾选。节点名称必须与目标 Ubuntu 的主机名一致；新版检查通过后才停止旧服务，旧数据隔离保留，新服务生成新的连接凭据。预设监控节点可选择清空重装，已完成部署或审核注册的同名节点仍受保护。</p><button type="submit">生成安装命令</button></form>
+        <div id="fresh-result" hidden><p id="fresh-expiry" class="muted" aria-live="polite"></p><label for="fresh-command">在目标 Ubuntu 控制台执行</label><textarea id="fresh-command" readonly rows="6" spellcheck="false" autocomplete="off"></textarea><button id="fresh-copy" class="quiet">复制安装命令</button></div>
+        <p class="muted">每台虚拟机使用不同名称和命令。安装码十分钟内绑定一台机器，响应丢失时同机可在有效期内重试，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。普通安装遇到旧服务会停止；需要保留内容时使用更新功能。安装不会修改网络转发规则。</p>
+      </section>
+      <section class="card" aria-labelledby="server-download-heading"><h2 id="server-download-heading">配套 Linux 服务端</h2><div id="server-download" aria-live="polite"></div></section>
+      <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>
+      <div id="channels" class="channels"></div>
+      <section class="card upload-panel"><div><p class="eyebrow">NEW CANDIDATE</p><h2>准备一次发布</h2><p class="muted">先选择管理员签名的索引，再为候选上传安装包。续期或撤回使用新的签名索引。</p></div><form id="create"><label for="index-file">签名索引（JSON）</label><input id="index-file" type="file" accept=".json,application/json" required><button type="submit">添加候选</button></form></section>
+      <div class="section-heading"><div><p class="eyebrow">READY TO REVIEW</p><h2>候选发布</h2></div><span id="candidate-count" class="muted"></span></div>
+      <div id="candidates" class="candidate-list"></div>
+      <section class="card audit-panel"><div class="section-heading"><div><p class="eyebrow">HISTORY</p><h2>操作记录</h2></div></div><div class="table-scroll"><table><thead><tr><th>时间</th><th>管理员</th><th>操作</th><th>通道</th><th>Build / Revision</th></tr></thead><tbody id="audit"></tbody></table></div></section>
+      </section>
+      <section id="moderation-panel" hidden>
+        <div class="section-heading"><div><p class="eyebrow">CONTENT REVIEW</p><h2>内容审核</h2></div><button id="moderation-refresh" class="quiet">刷新审核配置</button></div>
+        <p class="muted">节点审核接口已就绪，仅对已单独部署门禁的 CC 节点生效。节点审核记录表示该次文本已检查，不代表所有节点或文件内容均已覆盖。</p>
+        <section class="card"><h2>JEV 用量</h2><p id="jev-usage" aria-live="polite">读取用量中…</p><p class="muted">仅累计本管理服务从统计起始时间收到的用量，不含此前或其他应用的调用；失败或未返回用量的请求也可能计费。输入 Token 为服务商报告的计费输入，输出价格以服务商账单为准。</p><p>剩余额度：官方公开 API 暂不提供余额查询。请在 <a href="https://console.typesafe.ai/" target="_blank" rel="noreferrer noopener">TypeSafe 官方控制台</a> 查看真实余额和账单。</p></section>
+        <form id="moderation-config">
+          <section class="card"><h2>审核策略</h2>
+            <label for="moderation-mode">处理方式</label><select id="moderation-mode"><option value="keyword_and_api">关键词直接拦截，其余交给 JEV</option><option value="keyword_triggered_jev">仅命中关键词时调用 JEV</option><option value="api_only">全部交给 JEV</option><option value="keyword_only">仅关键词拦截</option></select>
+            <label for="moderation-keywords">关键词（每行一个，忽略大小写、按子串匹配）</label><textarea id="moderation-keywords" rows="6" placeholder="输入需要拦截的关键词"></textarea>
+            <p class="muted">关键词会直接拦截包含它的文本，包括引用和代码；建议从明确的词条开始。</p>
+            <details><summary>分类阈值（分数达到阈值时拦截）</summary><p class="muted">覆盖有害行为、破甲越权、非公开提示窃取，以及利用本服务进行模型蒸馏和训练取数。中立新闻、学习、科普与防护研究不因提及主题而拦截；修改自己的需求也不等于破甲。分数衡量是否符合对应规则，不保证识别准确；阈值越低越容易拦截，也更容易误判。</p><div id="moderation-thresholds" class="thresholds"></div></details>
+          </section>
+          <section class="card"><h2>JEV 配置</h2><p class="muted">必须审核的请求遇到超时、缺少密钥或接口失败时，不会放行。仅审核提交的文本，不包含图片或工作区文件。</p>
+            <label for="jev-url">接口源地址</label><input id="jev-url" type="url" required placeholder="https://api.typesafe.ai">
+            <label for="jev-model">模型</label><input id="jev-model" required maxlength="128">
+            <p id="jev-key-status" class="muted"></p><label for="jev-key">新 API 密钥（留空保留原密钥）</label><input id="jev-key" type="password" autocomplete="off" maxlength="512">
+            <label class="check"><input id="jev-remove-key" type="checkbox">删除已保存的 API 密钥</label>
+            <label for="jev-timeout">单次超时（毫秒，1000–30000）</label><input id="jev-timeout" type="number" min="1000" max="30000" required>
+            <label for="moderation-retention">记录保留天数（1–90）</label><input id="moderation-retention" type="number" min="1" max="90" required>
+          </section><button type="submit">保存审核配置</button>
+        </form>
+        <section class="card audit-panel"><h2>文本试算</h2><p class="muted">按已保存策略检查。需要 JEV 时会发送文本到配置的服务，可能产生费用。记录只保留文本摘要哈希，不保存原文。</p><form id="moderation-preview"><label for="moderation-text">待审文本</label><textarea id="moderation-text" rows="4" required></textarea><button type="submit">按已保存策略试算</button></form><pre id="moderation-result" class="preview-result" role="status"></pre></section>
+        <section class="card audit-panel"><h2>审核记录</h2><p class="muted">显示最近 100 条配置操作和管理员试算；尚无生产节点记录。</p><div class="table-scroll"><table><thead><tr><th>时间</th><th>管理员 / 请求</th><th>类型 / 策略版本</th><th>结果与原因</th></tr></thead><tbody id="moderation-events"></tbody></table></div></section>
+      </section>
+    </main>
+    <footer>CC Space · 管理中心</footer>
+  </div>
+</body>
+</html>

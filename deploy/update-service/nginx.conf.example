@@ -1,0 +1,98 @@
+# Include these locations inside the chosen HTTPS server {} only.
+# Domain, TLS and existing routing must be checked before installation.
+
+location ^~ /cc-host/v1/ {
+    limit_except POST { deny all; }
+    client_max_body_size 8k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_cache off;
+    proxy_read_timeout 20s;
+    # Never log Authorization or request bodies here.
+}
+
+location ^~ /cc-access/v1/server/ {
+    client_max_body_size 8k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Connection "";
+    proxy_cache off;
+    # Remote staging may download and verify a server package before responding.
+    proxy_read_timeout 190s;
+    # Never log Authorization or request bodies here.
+}
+
+location ^~ /cc-access/v1/ {
+    client_max_body_size 8k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header Connection "";
+    proxy_cache off;
+    proxy_read_timeout 15s;
+    # Never log Authorization or request bodies here.
+}
+
+location ^~ /cc-updates/admin/ {
+    client_max_body_size 1g;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_request_buffering off;
+    proxy_buffering off;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+    # Do not add Authorization, request body or cookies to access logs.
+}
+
+location ~ ^/cc-updates/v1/channels/(pilot|stable)/win32-x64\.json$ {
+    limit_except GET HEAD { deny all; }
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_cache off;
+    proxy_buffering off;
+}
+
+location ~ ^/cc-updates/v1/artifacts/([1-9][0-9]*)/win32-x64/(CC-Desk-Tunnel-Setup-[0-9]+\.[0-9]+\.[0-9]+-x64\.exe)$ {
+    limit_except GET HEAD { deny all; }
+    alias /srv/cc-update-service/public/artifacts/$1/win32-x64/$2;
+    disable_symlinks on;
+    autoindex off;
+    sendfile on;
+    max_ranges 1;
+    default_type application/octet-stream;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Cache-Control "public, max-age=31536000, immutable";
+}
+
+location = /cc-updates/v1/moderation/check {
+    limit_except POST { deny all; }
+    client_max_body_size 400k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_read_timeout 40s;
+    proxy_cache off;
+}
+
+location = /cc-updates/server/v1/channels/pilot/linux-x64.json {
+    limit_except GET HEAD { deny all; }
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_cache off;
+    proxy_buffering off;
+}
+
+location ~ ^/cc-updates/server/v1/artifacts/[1-9][0-9]*/linux-x64/cc-desk-tunnel-server-[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?-build[1-9][0-9]*\.tar\.gz$ {
+    limit_except GET HEAD { deny all; }
+    # Route through the verifier: its bounded regular-file reads reject symlinks and hash damage.
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_cache off;
+    proxy_buffering off;
+}
+
+location /cc-updates/ { return 404; }
