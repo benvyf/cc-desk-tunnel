@@ -1,5 +1,13 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-06 Linux Build 18 / Windows Build 31 已发布，Ubuntu 待用户逐台安装
+
+03 镜像内 node-pty 有单字节异常，打开终端崩溃并触发三次启动锁定；用户定点恢复文件及计数后健康恢复，数据未回退，旧镜像仍异常。新增构建/安装真实 PTY、启动依赖摘要检查和明确锁定日志，保留默认空间准备、空闲受控断开、冷备份/失败恢复及备份轮转；客户端增加窗口关闭来源/无响应/渲染退出日志。偶发窗口消失/缩放卡顿及硬件根因仍未确认，不宣称已全部修复。
+
+Windows Build 31 源码 `dd8effe` / revision 46；Linux Build 18 源码 `90d50f2` / revision 30，均 0.3.10 / 协议 24。Build 17 因旧发布工具写入 v2 而迁移要求 v3，安装安全拒绝，未执行节点安装，保留原包并以 18 替代。已固定 Linux 发布/续期工具到干净源码，并对真实公开签名执行迁移准入；续期 source `/root/.cc-update-admin/linux-build18-preparation/source` 为运行引用，不得清理。管理中心程序未改/未重启，三台仍 Build 16，03 phase=failed 是此前状态，健康接口已恢复；没有提交新升级任务。
+
+Linux 隔离 40 项、首次安装 7 项、Node24 真实 PTY 和单字节损坏拒绝通过；相关核心首批 76 项通过，运行级别修正后合约/发布/启动预算 32 通过/1 条件跳过；类型检查、真实 EXE/内嵌组件、Electron 窗口回归和 24 项更新 UI 通过。公开签名/完整下载/精确续期、真实 systemd 与 agent 路由及实际签名安装准入均通过；无真实模型调用。用户应刷新管理中心选 **18**，不要重试 17；客户端内检查更新获取 31。详见 [服务端发行](docs/RELEASE-SERVER-BUILD18.md)、[客户端发行](docs/CLIENT-BUILD31-PUBLICATION.md)、[故障记录](docs/TERMINAL-RUNTIME-RECOVERY-2026-11-06.md)。
+
 ### 2026-11-06 Linux Build 16：默认只保留一套验证通过的上一代冷备份
 
 用户要求抑制历史备份堆积。其在 ubuntu-cc 实际退役 13 份旧归档，逻辑 5,211,617,680 字节，可用 2.9G→7.7G，当前必要回退完整保留。随后将同一验证规则接入签名升级默认入口：当前回退验证后清理更早归档，新安装健康且记为 installed 后轮转；失败不执行安装后轮转，退役异常记录 RETENTION_PENDING，不误报健康切换失败。只删旧归档，保留元数据/日志/挂载及所有镜像容器；Node/CLI/SDK/审核/模型网络未变。Build 16 / 协议 24，源码 `c584ecd`，revision 26；Linux 隔离 54/54、公网签名/完整下载/235 文件、精确续期/真实 systemd、现行 agent 选路通过。三台仍 Build 14，未创建安装任务，Windows/中心不变。用户刷新后新建 Build 16 任务；见 [发行记录](docs/RELEASE-SERVER-BUILD16.md)与[证据](docs/evidence/linux-build16-production-2026-11-06.json)。
