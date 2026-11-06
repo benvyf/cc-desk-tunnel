@@ -26,7 +26,7 @@ import {
   upgradeCommand,
 } from '../src/server-distribution.ts';
 
-function fixture(t: { after(fn: () => void): void }) {
+function fixture(t: { after(fn: () => void): void }, runtimeLevel = RUNTIME_LEVEL) {
   const root = mkdtempSync(join(tmpdir(), 'server-dist-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const source = join(root, 'source');
@@ -42,6 +42,7 @@ function fixture(t: { after(fn: () => void): void }) {
       p === 'packages/protocol/src/index.ts' ? 'export const PROTOCOL_VERSION = 42;\n' : p,
     ]),
   );
+  files['deploy/managed-server.json'] = JSON.stringify({ build: 1, runtimeLevel });
   for (const [p, b] of Object.entries(files)) {
     mkdirSync(dirname(join(source, p)), { recursive: true });
     writeFileSync(join(source, p), b);
@@ -88,7 +89,7 @@ function fixture(t: { after(fn: () => void): void }) {
     sha256: sha256(archive),
     descriptorSha256: sha256(descriptorBytes),
     packageLockSha256: sha256(files['package-lock.json']!),
-    runtimeLevel: RUNTIME_LEVEL,
+    runtimeLevel,
     compatibility: compatibility(source),
   };
   const signed = (revision: number, override = {}) =>
@@ -113,6 +114,11 @@ function fixture(t: { after(fn: () => void): void }) {
     );
   return { root, archive, release, signed, trusted, keys };
 }
+
+test('publication takes the runtime from the verified archive rather than its own runtime', (t) => {
+  const f = fixture(t, 'node24-cli2.1.295-v2');
+  assert.equal(releaseFromArchive(f.archive).runtimeLevel, 'node24-cli2.1.295-v2');
+});
 
 test('Linux publication verifies full archive, retains immutable builds and rejects replay/substitution after restart', (t) => {
   const f = fixture(t),

@@ -97,6 +97,11 @@ test('fresh deployment grants are private, single-use, node-bound; dynamic repor
     const code = /"--code","([A-Za-z0-9_-]{43})"/.exec(result.command)?.[1];
     assert(code);
     assert(result.command.startsWith('sudo python3 -c '));
+    assert(result.command.includes('/cc-updates/admin/fresh-install-v3.py'));
+    const installer = await fetch(origin + '/cc-updates/admin/fresh-install-v3.py');
+    assert.equal(installer.status, 200);
+    const source = await installer.text();
+    assert(source.includes("'node24-cli2.1.295-v3'"));
     return { ...result, code };
   };
   const obsolete = await issue('new-1');

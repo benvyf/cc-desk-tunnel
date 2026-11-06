@@ -70,6 +70,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['server-upgrade.cjs', 'text/plain'],
     ['server-download.js', 'text/javascript'],
     ['fresh-install.py', 'text/plain'],
+    ['fresh-install-v3.py', 'text/plain'],
     ['fresh-nodes.js', 'text/javascript'],
     ['desktop-access.js', 'text/javascript'],
     ['monitor.js', 'text/javascript'],

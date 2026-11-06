@@ -29,7 +29,6 @@ import {
   MAX_EXPANDED_BYTES,
   MAX_INDEX_BYTES,
   parseDescriptor,
-  RUNTIME_LEVEL,
   releaseFilename,
   requireValue,
   sha256,
@@ -117,10 +116,19 @@ export function releaseFromArchive(archive: Buffer): ServerRelease {
     };
     const program = join(root, 'program');
     extractRelease(archive, program, r);
+    const identity = JSON.parse(
+      readRegular(join(program, 'deploy/managed-server.json')).toString(),
+    );
+    requireValue(
+      identity.build === d.build &&
+        typeof identity.runtimeLevel === 'string' &&
+        /^node\d{1,3}-cli\d{1,4}\.\d{1,4}\.\d{1,5}-v\d{1,5}$/.test(identity.runtimeLevel),
+      'Invalid archived runtime identity',
+    );
     return {
       ...r,
       packageLockSha256: sha256(readRegular(join(program, 'package-lock.json'))),
-      runtimeLevel: RUNTIME_LEVEL,
+      runtimeLevel: identity.runtimeLevel,
       compatibility: compatibility(program),
     };
   } finally {

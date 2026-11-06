@@ -84,8 +84,8 @@ export class FreshNodes {
     const index = distribution.index()!.toString('utf8');
     nodes[id] = { grantHash: hash(code), expiresAt, index };
     this.save(nodes);
-    const installer = readFileSync(new URL('../web/fresh-install.py', import.meta.url));
-    const url = this.config.origin + '/cc-updates/admin/fresh-install.py';
+    const installer = readFileSync(new URL('../web/fresh-install-v3.py', import.meta.url));
+    const url = this.config.origin + '/cc-updates/admin/fresh-install-v3.py';
     const program = `import urllib.request,hashlib,sys,tempfile,pathlib,runpy; print("Downloading verified Ubuntu installer...",flush=True); u=${JSON.stringify(url)}; r=urllib.request.urlopen(u,timeout=30); b=r.read(262145); (r.url==u and len(b)<=262144 and hashlib.sha256(b).hexdigest()==${JSON.stringify(hash(installer))}) or sys.exit("Installer verification failed"); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/"fresh-install.py"; p.write_bytes(b); sys.argv=[str(p),"--origin",${JSON.stringify(this.config.origin)},"--node",${JSON.stringify(id)},"--code",${JSON.stringify(code)}]; runpy.run_path(str(p),run_name="__main__")`;
     return {
       nodeId: id,
