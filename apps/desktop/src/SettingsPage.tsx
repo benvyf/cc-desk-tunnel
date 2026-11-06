@@ -88,7 +88,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     name: '快捷键',
     group: '客户端',
     icon: Keyboard,
-    words: '键盘 组合键 热键 后退 前进 侧栏 缩放',
+    words: '键盘 组合键 热键 后退 前进 侧栏 缩放 终端 标签 菜单 空格 Ctrl Tab',
   },
   { id: 'help', name: '帮助', group: '其他', icon: CircleHelp, words: '说明 常见问题' },
   {

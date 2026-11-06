@@ -4,6 +4,13 @@ import { actions, comboOf, keyFor, show, usable } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
 import { Button, Switch } from './ui.tsx';
 
+const terminalShortcuts = [
+  { name: '新建同项目终端', keys: ['Ctrl', 'Shift', 'KeyT'] },
+  { name: '打开或关闭终端菜单', keys: ['Ctrl', 'Shift', 'Space'] },
+  { name: '下一个终端标签', keys: ['Ctrl', 'Tab'] },
+  { name: '上一个终端标签', keys: ['Ctrl', 'Shift', 'Tab'] },
+];
+
 export default function ShortcutSettings() {
   const prefs = usePrefs();
   const { enabled } = prefs.shortcuts;
@@ -25,13 +32,13 @@ export default function ShortcutSettings() {
       <div className="page-body">
         <h1 className="page-title">快捷键</h1>
         <p className="muted">
-          快捷键只在本窗口处于前台时起作用，不向系统注册全局热键；在内嵌的原生终端里和对话框打开时，按键原样交给它们。
+          界面快捷键只在本窗口处于前台时生效，不向系统注册全局热键；原生终端和对话框使用各自的按键操作。
         </p>
         <div className="card">
           <div className="setting-row">
             <span>
               <strong>启用快捷键</strong>
-              <small>关闭后本页快捷键全部不再响应，菜单里的功能照常可用</small>
+              <small>控制界面组合键和停止回答，菜单里的功能照常可用</small>
             </span>
             <Switch
               label="启用快捷键"
@@ -62,6 +69,33 @@ export default function ShortcutSettings() {
             </span>
           </div>
         </div>
+        {window.desktop && (
+          <>
+            <h2 className="page-heading" id="terminal-shortcuts-heading">
+              终端窗口
+            </h2>
+            <p className="muted" id="terminal-shortcuts-description">
+              固定快捷键，不支持修改，也不受上方开关影响。仅在终端区域内生效，输入法组合输入期间不触发。
+            </p>
+            <div
+              className="card"
+              role="group"
+              aria-labelledby="terminal-shortcuts-heading"
+              aria-describedby="terminal-shortcuts-description"
+            >
+              {terminalShortcuts.map(({ name, keys }) => (
+                <div className="setting-row" key={name}>
+                  <span>
+                    <strong>{name}</strong>
+                  </span>
+                  <span className="key-combo" aria-label={show(keys.join('+'))}>
+                    <kbd className="keycap">{show(keys.join('+'))}</kbd>
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
         <h2 className="page-heading">组合键</h2>
         <p className="muted">
           点一项后按下新的组合键（需要包含 Ctrl、Alt 或 Command，或是功能键）；按 Esc 取消，按

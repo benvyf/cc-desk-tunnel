@@ -1,0 +1,180 @@
+{
+  "schema": 1,
+  "dateHongKong": "2026-11-06",
+  "verifiedAtUtc": "2026-11-06T03:08:55.367068+00:00",
+  "branch": "codex/terminal-shortcuts-settings",
+  "baseCommit": "b0680aec3899f4bdd837365e30a0f8c47f8c835d",
+  "behavior": {
+    "section": "设置 → 快捷键 → 终端窗口",
+    "entries": ["Ctrl+Shift+T", "Ctrl+Shift+空格", "Ctrl+Tab", "Ctrl+Shift+Tab"],
+    "readOnly": true,
+    "desktopOnly": true,
+    "independentOfMainShortcutToggle": true,
+    "compositionAndFocusScopeExplained": true,
+    "layout": "Reuses page-heading, muted, card, setting-row, key-combo and keycap. No new CSS or colors.",
+    "search": "终端/标签/菜单/空格/Ctrl/Tab keywords indexed by existing settings category search."
+  },
+  "checks": {
+    "relatedUi": {
+      "startTime": "2026-11-06T03:05:35.360Z",
+      "duration": 109069.277,
+      "expected": 64,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/terminal-shortcuts-settings-final-ui.log",
+      "report": ".local/terminal-shortcuts-settings-final-ui.json"
+    },
+    "initialExpandedUi": {
+      "startTime": "2026-11-06T02:54:44.840Z",
+      "duration": 183579.57,
+      "expected": 89,
+      "skipped": 0,
+      "unexpected": 2,
+      "flaky": 0,
+      "log": ".local/terminal-shortcuts-settings-ui.log",
+      "report": ".local/terminal-shortcuts-settings-ui.json",
+      "failures": [
+        {
+          "file": "icons.spec.ts",
+          "title": "page and settings navigation use bold selected glyphs and restore regular glyphs"
+        },
+        {
+          "file": "settings.spec.ts",
+          "title": "the settings of this computer open by keyboard from login without a connection"
+        }
+      ],
+      "reason": "Two pre-existing assertions outside this UI delta: About expects removed project-homepage button; login settings category list omits existing Connections. About rendering and existing category list were not modified."
+    },
+    "manualUiPreview": {
+      "log": ".local/terminal-shortcuts-settings-preview.log",
+      "bridge": "Native feature availability simulated after local settings mounts; no production login or service.",
+      "observations": [
+        {
+          "browserTerminalGroupCount": 0
+        },
+        {
+          "rows": [
+            "新建同项目终端Ctrl+Shift+T",
+            "打开或关闭终端菜单Ctrl+Shift+空格",
+            "下一个终端标签Ctrl+Tab",
+            "上一个终端标签Ctrl+Shift+Tab"
+          ],
+          "accessibleKeys": ["Ctrl+Shift+T", "Ctrl+Shift+空格", "Ctrl+Tab", "Ctrl+Shift+Tab"],
+          "interactiveControls": 0
+        },
+        {
+          "disabledGlobalEdit": true,
+          "terminalStillVisible": true
+        },
+        {
+          "theme": "light",
+          "width": 1280,
+          "overflow": false
+        },
+        {
+          "theme": "light",
+          "width": 480,
+          "overflow": false
+        },
+        {
+          "theme": "light",
+          "width": 320,
+          "overflow": false
+        },
+        {
+          "theme": "dark",
+          "width": 1280,
+          "overflow": false
+        },
+        {
+          "theme": "dark",
+          "width": 480,
+          "overflow": false
+        },
+        {
+          "theme": "dark",
+          "width": 320,
+          "overflow": false
+        },
+        {
+          "searchResults": ["快捷键"]
+        },
+        {
+          "errors": []
+        }
+      ]
+    },
+    "modelBoundary": {
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "log": ".local/terminal-shortcuts-settings-core.log"
+    },
+    "typecheck": {
+      "status": "passed",
+      "log": ".local/terminal-shortcuts-settings-final-typecheck.log"
+    },
+    "build": {
+      "status": "passed with existing bundler warnings",
+      "log": ".local/terminal-shortcuts-settings-final-build.log"
+    },
+    "format": "passed",
+    "independentReview": "passed",
+    "diffWhitespace": "passed"
+  },
+  "productionSha256": {
+    "apps/desktop/src/ShortcutSettings.tsx": "b55ca296affef54bc9e2cd92a9991a19d3abf6a418a8bbf217d1a1ee86f79708",
+    "apps/desktop/src/SettingsPage.tsx": "3ef0aa51dc51ca15801cea607a00b418cc1d5fa2174460ff197becf631bc9c7a"
+  },
+  "screenshots": [
+    {
+      "path": "docs/evidence/terminal-shortcut-settings/light-1280.png",
+      "theme": "light",
+      "width": 1280,
+      "height": 1000,
+      "sha256": "97e0d436e87181acdd53cf1e621d3a79b2760c404a16131c1b1bc0ba96000938"
+    },
+    {
+      "path": "docs/evidence/terminal-shortcut-settings/light-480.png",
+      "theme": "light",
+      "width": 480,
+      "height": 1000,
+      "sha256": "752cca14e5b1b3678a7c4928e52acbe438ed74e52e22118c828f2e5f9aeb9b91"
+    },
+    {
+      "path": "docs/evidence/terminal-shortcut-settings/dark-1280.png",
+      "theme": "dark",
+      "width": 1280,
+      "height": 1000,
+      "sha256": "6c5c25a2b6627adb5d2990c0c28dd4d1d39f90020f9706d5b4ac56769006f8fa"
+    },
+    {
+      "path": "docs/evidence/terminal-shortcut-settings/dark-480.png",
+      "theme": "dark",
+      "width": 480,
+      "height": 1000,
+      "sha256": "551d1052c2b37dfa74a8a450d089a80eb33c7e4cabe5ef8574af7cf7fdd8061b"
+    }
+  ],
+  "scope": {
+    "runtimeKeyBindingsChanged": false,
+    "editableShortcutActionsChanged": false,
+    "cssChanged": false,
+    "serverProtocolMainProcessChanged": false,
+    "dependenciesChanged": false,
+    "realClaudeInference": false,
+    "pushed": false,
+    "packaged": false,
+    "published": false
+  },
+  "limits": [
+    "Expanded91 test batch was not all green; 2 stale baseline expectations remain unmodified and explicitly recorded.",
+    "Preview validates actual rendered settings with a native bridge facade, not physical IME or a packaged installation."
+  ],
+  "uiVerificationSourceSha256BeforeFinalFormatting": {
+    "apps/desktop/src/ShortcutSettings.tsx": "57f5505fc69bf05a49ba5e541c2241bf76f19c163a05cb76dd0e1b164f721f7f",
+    "apps/desktop/src/SettingsPage.tsx": "3ef0aa51dc51ca15801cea607a00b418cc1d5fa2174460ff197becf631bc9c7a"
+  },
+  "postUiVerificationChange": "Prettier normalization only; no semantic edit after the final64-case UI batch and visual preview. Typecheck/build rechecked on final formatted source."
+}
