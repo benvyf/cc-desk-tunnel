@@ -171,6 +171,7 @@ export default function TerminalWindow({
         const existing = tabsRef.current.find((tab) => tab.sessionId === id);
         if (existing) setActiveId(existing.tabId);
         else {
+          if (confirmResult.current || closePending.current) return;
           const source = client.state.sessions.find((session) => session.id === id);
           if (!source) return;
           if (source.activeRun && source.activeRun.surface !== 'terminal') {
@@ -239,7 +240,7 @@ export default function TerminalWindow({
     await task;
   }
   function add(source: Session, path?: string, historySessionId?: string) {
-    if (!multi || !connected || closing) return;
+    if (!multi || !connected || closing || confirmResult.current || closePending.current) return;
     const target = sshTargets.find((target) => target.id === source.device?.id);
     if (!path && !historySessionId && target && target.status !== 'connected') {
       setOpenProject({ deviceId: target.id, path: source.projectPath, source });
@@ -280,7 +281,7 @@ export default function TerminalWindow({
       ] || choice.name,
   }));
   function chooseProject(project: { deviceId?: string; path: string; source?: Session }) {
-    if (!multi || !connected || closing) return;
+    if (!multi || !connected || closing || confirmResult.current || closePending.current) return;
     setMenu(false);
     if (project.source) add(project.source);
     else

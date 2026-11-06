@@ -597,3 +597,94 @@ for (const key of ['Control+Shift+T', 'Control+Shift+Space', 'Control+Tab', 'Con
     await expect(outside).toBeFocused();
   });
 }
+
+for (const all of [false, true])
+  for (const entry of ['shortcut', 'project handle']) {
+    test(`pending ${all ? 'all' : 'tab'} close blocks creation from ${entry}`, async ({ page }) => {
+      await page.goto('/test/terminal-window.fixture.html');
+      await expect(page.getByRole('tab')).toHaveCount(1);
+      if (all) await page.evaluate(() => (window as any).terminalTest.closeAll());
+      else await page.getByRole('button', { name: '关闭fixture', exact: true }).click();
+      const confirm = page.getByRole('dialog', { name: '关闭终端？', exact: true });
+      await expect(confirm).toBeVisible();
+      if (entry === 'shortcut')
+        await confirm.getByRole('button', { name: '取消', exact: true }).press('Control+Shift+T');
+      else
+        await page.evaluate(() =>
+          (window as any).terminalTest.createProject({ path: 'D:\\fixture' }),
+        );
+      await expect(page.getByRole('tab')).toHaveCount(1);
+      expect(
+        await page.evaluate(
+          () =>
+            (window as any).terminalTest.requests.filter(
+              (r: any) => r.type === 'terminal.session.create',
+            ).length,
+        ),
+      ).toBe(0);
+      await confirm.getByRole('button', { name: '取消', exact: true }).click();
+      await page.getByRole('button', { name: '新建终端', exact: true }).click();
+      await expect(page.getByRole('tab')).toHaveCount(2);
+    });
+  }
+test('pending close blocks opening a new project dialog from the main window handle', async ({
+  page,
+}) => {
+  await page.goto('/test/terminal-window.fixture.html');
+  await page.evaluate(() => (window as any).terminalTest.closeAll());
+  const confirm = page.getByRole('dialog', { name: '关闭终端？', exact: true });
+  await expect(confirm).toBeVisible();
+  await page.evaluate(() => (window as any).terminalTest.createProject({ path: 'D:\\other' }));
+  await expect(page.getByRole('dialog')).toHaveCount(1);
+  await expect(page.getByRole('dialog', { name: '打开项目', exact: true })).toHaveCount(0);
+  await confirm.getByRole('button', { name: '结束终端', exact: true }).click();
+  await expect(page.getByRole('tab')).toHaveCount(0);
+});
+for (const phase of ['confirmation', 'closing'])
+  test(`close all blocks attaching an unseen session during ${phase}`, async ({ page }) => {
+    await page.goto('/test/terminal-window.fixture.html');
+    await page.evaluate(() => {
+      const f = (window as any).terminalTest;
+      const base = f.snapshot().sessions[0];
+      f.update({
+        sessions: [
+          ...f.snapshot().sessions,
+          { ...base, id: 'other-session', projectPath: 'D:\\other' },
+        ],
+      });
+      f.setCloseMode('pending');
+      f.closeAll();
+    });
+    const confirm = page.getByRole('dialog', { name: '关闭终端？', exact: true });
+    await expect(confirm).toBeVisible();
+    if (phase === 'closing') {
+      await confirm.getByRole('button', { name: '结束终端', exact: true }).click();
+      await expect
+        .poll(() =>
+          page.evaluate(
+            () =>
+              (window as any).terminalTest.requests.filter((r: any) => r.type === 'terminal.close')
+                .length,
+          ),
+        )
+        .toBe(1);
+    }
+    await page.evaluate(() => (window as any).terminalTest.showSession('other-session'));
+    await expect(page.getByRole('tab')).toHaveCount(1);
+    expect(
+      await page.evaluate(
+        () =>
+          (window as any).terminalTest.requests.filter(
+            (r: any) => r.type === 'terminal.open' && r.sessionId === 'other-session',
+          ).length,
+      ),
+    ).toBe(0);
+    if (phase === 'confirmation') {
+      await confirm.getByRole('button', { name: '取消', exact: true }).click();
+      await page.evaluate(() => (window as any).terminalTest.showSession('other-session'));
+      await expect(page.getByRole('tab')).toHaveCount(2);
+    } else {
+      await page.evaluate(() => (window as any).terminalTest.finishClose(true));
+      await expect(page.getByRole('tab')).toHaveCount(0);
+    }
+  });

@@ -127,6 +127,15 @@ test('real Electron popup owns project dialogs and opens another project without
       .toBe(true);
     await expect(child.locator('.terminal-list input')).toBeFocused();
     await child.keyboard.press('Escape');
+    await owner.evaluate(() => (window as any).terminalTest.closeAll());
+    const confirm = child.getByRole('dialog', { name: '关闭全部终端？', exact: true });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: '取消', exact: true }).press('Control+Shift+T');
+    await expect(child.getByRole('tab')).toHaveCount(4);
+    await expect(owner.getByRole('dialog')).toHaveCount(0);
+    await confirm.getByRole('button', { name: '取消', exact: true }).click();
+    await child.getByRole('tab', { selected: true }).press('Control+Shift+T');
+    await expect(child.getByRole('tab')).toHaveCount(5);
   } finally {
     await application.close();
     rmSync(directory, { recursive: true, force: true });

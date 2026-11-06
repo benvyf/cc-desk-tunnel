@@ -389,5 +389,166 @@
     "published": false,
     "packaged": false,
     "limits": "Related suite rerun, not full repository rerun; physical IME and production Claude account/egress remain outside this test review."
+  },
+  "deepReviewF52cb69": {
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:42:08.317254+00:00",
+    "baseCommit": "f52cb69599e133701767230820cb8c15b356cba8",
+    "scope": "Full aggregate b12ef04..f52cb69 reviewed against approved fix and follow-up documents, plus this correction.",
+    "independentReviews": {
+      "creationAndRetry": "No confirmed findings.",
+      "terminalInteractionAndLifecycle": "P2 close confirmation allows new tabs, fixed and independently re-reviewed.",
+      "specificationAndEvidence": "Requirements and hashes match; latest-evidence link ambiguity corrected.",
+      "remainingConfirmedFindings": []
+    },
+    "finding": {
+      "priority": "P2",
+      "trigger": "While close-all confirmation is pending, Ctrl+Shift+T or a main-window create/show handle can append a new terminal absent from the confirmed snapshot. Accepting close-all then unmounts it too.",
+      "fix": "Guard add, chooseProject and the new-tab branch of show with existing confirmation and close-all promise refs. Preserve existing-tab focus; cancellation restores creation.",
+      "regressions": 7,
+      "realElectron": "Main-window close request, shortcut inside child confirmation and post-cancel creation tested."
+    },
+    "checks": {
+      "initialBroadBatch": {
+        "status": "interrupted after concrete finding, before changing production source",
+        "log": ".local/deep-review-f52cb69-ui.log"
+      },
+      "red": {
+        "failed": 7,
+        "logs": [".local/deep-review-close-red.log", ".local/deep-review-close-show-red.log"]
+      },
+      "green": {
+        "passed": 7,
+        "log": ".local/deep-review-close-green.log"
+      },
+      "fullUiBatch": {
+        "startTime": "2026-11-06T01:33:55.903Z",
+        "duration": 466820.369,
+        "expected": 210,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0,
+        "log": ".local/deep-review-final-ui.log",
+        "report": ".local/deep-review-final-ui.json",
+        "note": "210 passed, 1 sending-mode baseline test failed due to reopening before Presence exit finished."
+      },
+      "testSynchronization": {
+        "scope": "Only follow-ups-navigation.spec.ts; Composer/ui/Presence product code unchanged since b12ef04.",
+        "unchangedRepeat": {
+          "passed": 2,
+          "failed": 1,
+          "log": ".local/deep-review-send-menu-recheck.log"
+        },
+        "fixedRepeat": {
+          "passed": 3,
+          "failed": 0,
+          "log": ".local/deep-review-send-menu-fixed.log"
+        },
+        "fix": "Wait for raw menu DOM removal before clicking reopen, preserving the existing mouse toggle checks."
+      },
+      "followupsSupplement": {
+        "startTime": "2026-11-06T01:41:08.716Z",
+        "duration": 30010.811999999998,
+        "expected": 11,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/deep-review-followups-ui.log",
+        "report": ".local/deep-review-followups-ui.json"
+      },
+      "finalDistinctUiCases": {
+        "passed": 211,
+        "failed": 0,
+        "skipped": 0,
+        "byFile": {
+          "app.spec.ts": 16,
+          "buttons.spec.ts": 7,
+          "conversation-status.spec.ts": 4,
+          "follow-ups-navigation.spec.ts": 11,
+          "layout.spec.ts": 7,
+          "motion.spec.ts": 19,
+          "multi-device-development.spec.ts": 26,
+          "multi-device-electron.spec.ts": 1,
+          "multi-device-sidebar.spec.ts": 7,
+          "new-session.spec.ts": 2,
+          "open-project-dialog.spec.ts": 9,
+          "sidebar-details.spec.ts": 8,
+          "sidebar-merge.spec.ts": 7,
+          "ssh-settings.spec.ts": 3,
+          "terminal-close.spec.ts": 3,
+          "terminal-preview-chrome.spec.ts": 3,
+          "terminal-projects.spec.ts": 40,
+          "terminal-status.spec.ts": 1,
+          "terminal-usability.spec.ts": 15,
+          "terminal-window.spec.ts": 2,
+          "terminal-workspace.spec.ts": 20
+        },
+        "note": "Complete batch plus fixed follow-ups group, deduplicated by file and test title. Production source identical across both batches."
+      },
+      "windowsElectron": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "file": "multi-device-electron.spec.ts",
+            "title": "real Electron popup owns project dialogs and opens another project without restarting original terminal",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached Electron terminal predicts on its own document and disables without restarting",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached terminal has native window controls, exact input, resize, focus and cleanup",
+            "status": "passed"
+          }
+        ]
+      },
+      "relatedCore": {
+        "passed": 72,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/deep-review-final-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/deep-review-final-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing warnings",
+        "log": ".local/deep-review-final-build.log"
+      },
+      "prettier": "passed",
+      "modelBoundary": "passed",
+      "diffWhitespace": "passed"
+    },
+    "changedProductionSha256": {
+      "apps/desktop/src/TerminalWindow.tsx": "3f0849227a33eac8688d778a4fc7bf6f742814e2e4f6d542287d979c4056bd72"
+    },
+    "testSha256": {
+      "apps/desktop/test/terminal-projects.spec.ts": "1d24fd73f5100846a135ecb60132e55e7346ca505d13d733f0413a02540c80f5",
+      "apps/desktop/test/multi-device-electron.spec.ts": "0417ffbc1e62fe42b910cf06a8a3d5c308ccefbf853e8e32517e3822838d0328",
+      "apps/desktop/test/terminal-window.fixture.tsx": "e8831d4078491e6d584692a522bc2e847262fb892afea7ccb60552d29d84865f",
+      "apps/desktop/test/terminal-window.spec.ts": "3e9643b4013de5d0c1d0c642b536e85fbaee5e72544ea0ac9336b7374f043e34",
+      "apps/desktop/test/follow-ups-navigation.spec.ts": "8a0d8be684d19a055e4964b95a4a34d4419cd68b2131803b6b0316aca44eb221"
+    },
+    "boundaries": {
+      "serverProtocolMainProcessUnchangedSinceB12ef04": true,
+      "dependenciesUnchanged": true,
+      "terminalPolishMerged": false,
+      "realClaudeInference": false,
+      "productionDevicesAccessed": false,
+      "linuxLabRerun": false,
+      "pushed": false,
+      "published": false,
+      "packaged": false
+    },
+    "limits": [
+      "Full related UI regression rerun; full repository Node batch with known baseline failures not rerun.",
+      "Physical Windows IME, production Claude account authorization and public egress not certified by this renderer review."
+    ]
   }
 }

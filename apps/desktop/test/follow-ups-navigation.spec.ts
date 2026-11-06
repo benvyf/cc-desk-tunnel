@@ -182,6 +182,8 @@ test('busy Enter and its opposite preserve queue order, edits and immediate stee
   );
   await page.keyboard.press('Escape');
   await expect(menu).toHaveCount(0);
+  // Presence removes accessibility immediately; wait for the visible exit before clicking again.
+  await expect(page.locator('.menu[aria-label="发送方式"]')).toHaveCount(0);
   await mode.click();
   await expect(menu).toBeVisible();
   await mode.click();
