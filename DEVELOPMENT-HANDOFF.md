@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-06 Linux Build 15 升级入口已发布（用户逐台执行）
+
+用户要求更新服务端升级指令后自行安装。发布 Linux Build 15 / 0.3.10 / 协议 24，源码 `4308a04`，精确准入当前 Build 14，保留 Node/CLI/SDK、账号/审核与模型网络，以及默认空间清理、空闲检查、受控断开、冷备份和回退。Linux 隔离 30+16 项通过（Docker 模拟），本机核心 36 项通过、签名分发 14 通过/2 条件跳过；完整清单、公开下载摘要/签名、精确续期、真实 systemd 与现行 agent 迁移选路已验证。revision 24，两个 timer active；三台仍 Build 14、可用 15，未创建或执行安装任务。Windows/stable/中心运行清单和节点旧作业未变，04～06 未授权。详见 [Build 15](docs/RELEASE-SERVER-BUILD15.md)及[证据](docs/evidence/linux-build15-production-2026-11-06.json)。
+
 ### 2026-11-06 Windows Build 30 已发布
 
 按用户指定 `f126a7f` 构建，发行提交 `187f3ce` 仅将 Build 29→30；0.3.10 / 协议 24 保持。管理中心 Windows pilot 下载入口已切到 Build 30，旧 Build 29 保留。真实 EXE 解包及离线启动、28 个主进程模块/691 个组件、公开索引验签/完整下载摘要、精确续期和真实 systemd 验证通过，revision 44，两个 timer active。最终更新核心 42 项、NSIS 钩子 2 项、侧栏/项目 UI 20 项、隔离适配更新 UI 24 项通过；首轮目录清理 EPERM 与旧夹具 SSH API 不匹配如实记录。没有部署服务端输出合并、重启中心或修改 Linux/stable/节点作业；未调用真实模型。详见 [Build 30 发布记录](docs/CLIENT-BUILD30-PUBLICATION.md)及[证据](docs/evidence/windows-build30-production-2026-11-06.json)。
