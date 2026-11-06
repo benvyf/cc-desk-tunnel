@@ -1,0 +1,31 @@
+{
+  "deployed": true,
+  "sourceCommit": "c194486f31dbb0c06f547c011688ba159341973f",
+  "baseRuntimeSource": "1efc04daefde66e6cb79090cf9e6174273049cab",
+  "changedRuntimeFiles": [
+    "apps/update-service/src/http.ts",
+    "apps/update-service/src/fresh-nodes.ts",
+    "apps/update-service/src/server-distribution.ts"
+  ],
+  "addedRuntimeFiles": ["apps/update-service/web/fresh-install-v3.py"],
+  "backup": "/var/backups/cc-update-service/terminal-runtime-review-20261106T104138Z",
+  "previousRuntime": "/opt/cc-update-service.previous-terminal-review-20261106T104138Z",
+  "stoppedToReadySeconds": 0.907,
+  "privateColdBackupVerified": true,
+  "releaseIndexesUnchanged": true,
+  "configAndRenewalsUnchanged": true,
+  "nodeVersionsAndJobsUnchanged": true,
+  "legacyInstallerUrlUnchanged": true,
+  "v3InstallerPublicBytesVerified": true,
+  "isolatedFullCommandPreflightPassed": true,
+  "productionGrantsCreated": 0,
+  "ubuntuInstallJobsCreated": 0,
+  "modelRequests": 0,
+  "publicInstallerVerifiedSignedBuild18": true,
+  "distinctConfigAndIndexBackupNamesVerified": true,
+  "realSystemdRenewalPassed": true,
+  "timersActive": true,
+  "node24RegressionTestsPassed": 12,
+  "typecheckPassed": true,
+  "fullUbuntuInstallVerified": false
+}
