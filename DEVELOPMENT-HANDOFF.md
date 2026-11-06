@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-06 Linux Build 16：默认只保留一套验证通过的上一代冷备份
+
+用户要求抑制历史备份堆积。其在 ubuntu-cc 实际退役 13 份旧归档，逻辑 5,211,617,680 字节，可用 2.9G→7.7G，当前必要回退完整保留。随后将同一验证规则接入签名升级默认入口：当前回退验证后清理更早归档，新安装健康且记为 installed 后轮转；失败不执行安装后轮转，退役异常记录 RETENTION_PENDING，不误报健康切换失败。只删旧归档，保留元数据/日志/挂载及所有镜像容器；Node/CLI/SDK/审核/模型网络未变。Build 16 / 协议 24，源码 `c584ecd`，revision 26；Linux 隔离 54/54、公网签名/完整下载/235 文件、精确续期/真实 systemd、现行 agent 选路通过。三台仍 Build 14，未创建安装任务，Windows/中心不变。用户刷新后新建 Build 16 任务；见 [发行记录](docs/RELEASE-SERVER-BUILD16.md)与[证据](docs/evidence/linux-build16-production-2026-11-06.json)。
+
 ### 2026-11-06 Linux Build 15 升级入口已发布（用户逐台执行）
 
 用户要求更新服务端升级指令后自行安装。发布 Linux Build 15 / 0.3.10 / 协议 24，源码 `4308a04`，精确准入当前 Build 14，保留 Node/CLI/SDK、账号/审核与模型网络，以及默认空间清理、空闲检查、受控断开、冷备份和回退。Linux 隔离 30+16 项通过（Docker 模拟），本机核心 36 项通过、签名分发 14 通过/2 条件跳过；完整清单、公开下载摘要/签名、精确续期、真实 systemd 与现行 agent 迁移选路已验证。revision 24，两个 timer active；三台仍 Build 14、可用 15，未创建或执行安装任务。Windows/stable/中心运行清单和节点旧作业未变，04～06 未授权。详见 [Build 15](docs/RELEASE-SERVER-BUILD15.md)及[证据](docs/evidence/linux-build15-production-2026-11-06.json)。
