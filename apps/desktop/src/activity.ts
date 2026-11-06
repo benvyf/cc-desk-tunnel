@@ -30,7 +30,7 @@ const words: Record<Category, [string, string, string, (count: number) => string
   search: ['搜索', '已搜索', '搜索', (count) => `搜索了 ${count} 次`],
   web: ['检索', '已检索', '检索网页', (count) => `检索了 ${count} 个网页`],
   agent: ['子任务', '子任务完成', '执行子任务', (count) => `执行了 ${count} 个子任务`],
-  question: ['提问', '已提问', '提问', (count) => `提了 ${count} 次问题`],
+  question: ['提问', '已回答', '提问', (count) => `提了 ${count} 次问题`],
   plan: ['提交计划', '计划已批准', '提交计划', () => '提交了计划'],
   other: ['调用', '已调用', '调用工具', (count) => `调用了 ${count} 个工具`],
 };
@@ -63,16 +63,39 @@ export const isRunning = (tool: Tool) =>
   !tool.endedAt && tool.state !== 'denied' && tool.state !== 'approval';
 
 // The line for a question: what was asked, and once answered, what the answer was. Claude Code reports the answers
-// as `"question"="answer"` pairs in the call's result.
-function asked(input: Record<string, unknown>, output: string | undefined) {
-  const questions = Array.isArray(input.questions)
-    ? (input.questions as Record<string, unknown>[])
-    : [];
-  const first = text(questions[0]?.question);
-  const label = questions.length > 1 ? `${first} 等 ${questions.length} 个问题` : first;
-  const answers = [...(output ?? '').matchAll(/"((?:[^"\\]|\\.)*)"="((?:[^"\\]|\\.)*)"/g)].map(
-    (match) => match[2],
-  );
+// as `"question"="answer"` pairs joined by ", ", unescaped and sometimes followed by notes, in the call's result: an
+// answer is cut out between its own question and the next one asked, up to its closing quote, rather than by quotes
+// it may contain itself.
+export function asked(input: Record<string, unknown>, output: string | undefined) {
+  const questions = (
+    Array.isArray(input.questions) ? (input.questions as Record<string, unknown>[]) : []
+  )
+    .map((item) => text(item?.question))
+    .filter(Boolean);
+  const label =
+    questions.length > 1 ? `${questions[0]} 等 ${questions.length} 个问题` : (questions[0] ?? '');
+  const result = output ?? '';
+  const answers: string[] = [];
+  let from = 0;
+  questions.forEach((question, index) => {
+    const marker = `"${question}"="`;
+    const at = result.indexOf(marker, from);
+    if (at === -1) return;
+    const begin = at + marker.length;
+    const next = questions
+      .slice(index + 1)
+      .map((item) => result.indexOf(`"${item}"=`, begin))
+      .find((position) => position !== -1);
+    const part = result.slice(begin, next ?? result.length);
+    // Notes on an answer follow its closing quote; otherwise the answer ends at the last quote before the next one.
+    const notes = ['" selected preview:', '" notes: ']
+      .map((tail) => part.indexOf(tail))
+      .filter((position) => position !== -1);
+    const close = notes.length ? Math.min(...notes) : part.lastIndexOf('"');
+    if (close === -1) return;
+    answers.push(part.slice(0, close));
+    from = begin + close;
+  });
   return answers.length ? `${label} → ${answers.join('；')}` : label;
 }
 
@@ -141,7 +164,13 @@ export function summarize(work: Work, active: boolean, latest: boolean) {
         last.at,
       );
   let label: string;
-  if (waiting) label = waiting.name === 'AskUserQuestion' ? '等待回答' : '等待审批';
+  if (waiting)
+    label =
+      waiting.name === 'AskUserQuestion'
+        ? '等待回答'
+        : waiting.name === 'ExitPlanMode'
+          ? '等待批准计划'
+          : '等待审批';
   else if (running.length)
     label = `正在${[...new Set(running.map((tool) => words[categoryOf(tool)][2]))].slice(0, 2).join('、')}`;
   else if (!tools.length) label = active && latest ? '正在思考' : '思考';

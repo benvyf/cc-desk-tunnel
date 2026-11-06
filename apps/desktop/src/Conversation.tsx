@@ -1056,11 +1056,23 @@ export default function Conversation({
       backgroundTask(tool.id);
     },
   };
-  // The calls of the latest turn that wait on an answer from here, in the order they were asked: the dock shows the
-  // first, and the next once that one is answered.
-  const waitingOn = steps
+  // The calls that wait on an answer from here, in the order they were asked: the dock shows the first, and the next
+  // once that one is answered. All turns are looked at: a message sent while one waits can join the run in a turn
+  // of its own, and the call above it must still be answerable.
+  const waitingOn = turns
+    .flatMap((turn) => turn.steps)
     .flatMap((step) => (step.kind === 'work' ? step.items : []))
     .filter((item): item is Tool => item.kind === 'tool' && live.canApprove(item));
+  // The dock folded into a bar over the input box, for the approval it was folded for; the next one opens again.
+  const [foldedFor, setFoldedFor] = useState<string | null>(null);
+  const firstWaiting = waitingOn[0]?.approvalId;
+  // A quote put into the input box shows the box (Composer.tsx asks by an event on the slot).
+  useEffect(() => {
+    if (!dock || !firstWaiting) return;
+    const show = () => setFoldedFor(firstWaiting);
+    dock.addEventListener('approval-dock:fold', show);
+    return () => dock.removeEventListener('approval-dock:fold', show);
+  }, [dock, firstWaiting]);
   const scroll = useRef<HTMLDivElement>(null);
   // The view follows new output until the reader moves up from the end, and again once they come back down to it.
   const follow = useRef(true);
@@ -1536,11 +1548,13 @@ export default function Conversation({
                   onClick={(event) => {
                     rejoin();
                     toEnd();
-                    // The button goes once the end is reached; the focus moves on to the input box below it.
+                    // The button goes once the end is reached; the focus moves on to the input box below it, or to
+                    // what waits on the user in its place.
                     if (event.currentTarget === document.activeElement)
-                      document
-                        .querySelector<HTMLElement>('.composer textarea')
-                        ?.focus({ preventScroll: true });
+                      (
+                        dock?.querySelector<HTMLElement>('.approval-dock:not([hidden])') ??
+                        document.querySelector<HTMLElement>('.composer textarea')
+                      )?.focus({ preventScroll: true });
                   }}
                 >
                   <ArrowDown />
@@ -1590,7 +1604,15 @@ export default function Conversation({
               more={waitingOn.length - 1}
               disabled={live.busy || live.answered(waitingOn[0])}
               reply={(allowed, answers) => live.reply(waitingOn[0], allowed, answers)}
-              stop={{ run: stop, disabled: live.busy }}
+              stop={
+                session?.activeRun &&
+                session.activeRun.surface !== 'terminal' &&
+                session.activeRun.waiting !== 'background'
+                  ? { run: stop, disabled: live.busy }
+                  : undefined
+              }
+              folded={foldedFor === waitingOn[0].approvalId}
+              fold={(folded) => setFoldedFor(folded ? waitingOn[0].approvalId! : null)}
             />,
             dock,
           )}

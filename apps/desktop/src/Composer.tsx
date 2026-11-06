@@ -5,7 +5,7 @@ import type { QuoteReference, SetQuotes } from './quotes.ts';
 import AttachmentTiles from './AttachmentTiles.tsx';
 import { attachmentMessage, fileName, messageLimit } from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -160,6 +160,31 @@ export default function Composer({
   stop: () => void;
 }) {
   const input = useRef<HTMLTextAreaElement>(null);
+  // While an approval or a question stands in for the box (ApprovalDock.tsx), a quote put into the box would go
+  // unseen: the dock folds away to show it. A command menu left open would sit over the dock, so it closes.
+  const slot = useRef<HTMLDivElement | null>(null);
+  const slotRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      slot.current = element;
+      dockSlot?.(element);
+    },
+    [dockSlot],
+  );
+  const quoteCount = useRef({ session: session.id, count: quotes.length });
+  useEffect(() => {
+    const before = quoteCount.current;
+    if (
+      before.session === session.id &&
+      quotes.length > before.count &&
+      slot.current?.childElementCount
+    )
+      slot.current.dispatchEvent(new Event('approval-dock:fold'));
+    quoteCount.current = { session: session.id, count: quotes.length };
+  }, [session.id, quotes.length]);
+  const awaiting = session.activeRun?.status === 'awaiting_approval';
+  useEffect(() => {
+    if (awaiting && dockSlot) setSlashOpen(false);
+  }, [awaiting]);
   const recall = useInputHistory(session.id, historyReady ? history : [], draft, setDraft, input);
   const composition = useRef({ active: false, until: 0 });
   useLayoutEffect(() => {
@@ -448,7 +473,7 @@ export default function Composer({
       <div className="composer-stack">
         {mascot && <Clawd state={clawdState} />}
         {queuedMessages}
-        {dockSlot && <div className="approval-dock-slot" ref={dockSlot} />}
+        {dockSlot && <div className="approval-dock-slot" ref={slotRef} />}
         <form
           className={`composer ${dropping ? 'dropping' : ''}`}
           onSubmit={(event) => {

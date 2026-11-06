@@ -5,7 +5,9 @@ export type Question = {
   question: string;
   header?: string;
   multiSelect?: boolean;
-  options: { label: string; description?: string }[];
+  // Two to four in the published schema; Claude Code also knows questions answered only in words (`kind` "text"
+  // or "number"), which come without any.
+  options: { label: string; description?: string; preview?: string }[];
 };
 // The input of Claude Code's AskUserQuestion tool, as far as it can be shown; null when it is something else.
 export function questionsOf(input: string): Question[] | null {
@@ -15,12 +17,13 @@ export function questionsOf(input: string): Question[] | null {
     const usable = questions.every(
       (item) =>
         typeof item?.question === 'string' &&
-        Array.isArray(item.options) &&
-        item.options.every(
-          (option: unknown) => typeof (option as { label?: unknown })?.label === 'string',
-        ),
+        (item.options === undefined ||
+          (Array.isArray(item.options) &&
+            item.options.every(
+              (option: unknown) => typeof (option as { label?: unknown })?.label === 'string',
+            ))),
     );
-    return usable ? questions : null;
+    return usable ? questions.map((item) => ({ ...item, options: item.options ?? [] })) : null;
   } catch {
     return null;
   }

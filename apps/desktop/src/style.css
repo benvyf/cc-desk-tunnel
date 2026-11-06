@@ -7559,11 +7559,14 @@ dialog::backdrop {
 
 /* What waits on the user stands where the input box stood (ApprovalDock.tsx): the same width, corners and shadow,
    so the eye finds it where it was going to type. The box keeps its draft underneath and comes back once the
-   answer is given. */
+   answer is given, or at once when the dock is folded into its bar for a message first. */
 .approval-dock-slot:empty {
   display: none;
 }
-.composer-stack:has(> .approval-dock-slot:not(:empty)) > .composer {
+.composer-stack:has(> .approval-dock-slot > .approval-dock:not([hidden])) > .composer {
+  display: none;
+}
+.approval-dock[hidden] {
   display: none;
 }
 .approval-dock {
@@ -7572,7 +7575,7 @@ dialog::backdrop {
   display: flex;
   flex-direction: column;
   width: 100%;
-  max-height: min(62vh, 560px);
+  max-height: min(62dvh, 560px);
   min-height: 0;
   border-radius: var(--radius-2xl);
   background: var(--popover);
@@ -7594,13 +7597,15 @@ dialog::backdrop {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 36px;
-  padding: 10px 12px 0 16px;
+  min-height: 40px;
+  padding: 8px 8px 0 16px;
   font-size: calc(12rem / 14);
   font-weight: 500;
   color: var(--muted);
 }
-.approval-dock-head > svg.app-icon {
+.approval-dock-head > svg.app-icon,
+.approval-dock-bar > svg.app-icon {
+  flex: none;
   width: var(--icon-sm);
   height: var(--icon-sm);
   color: var(--accent);
@@ -7613,17 +7618,34 @@ dialog::backdrop {
   content: '·';
   margin-right: 8px;
 }
+.approval-dock-tail {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
 .approval-dock-pager {
   display: flex;
   align-items: center;
   gap: 2px;
-  margin-left: auto;
   font-variant-numeric: tabular-nums;
   color: var(--muted);
 }
 .approval-dock-pager > span {
   min-width: 40px;
   text-align: center;
+}
+.approval-dock-fold {
+  min-height: var(--control-compact);
+  padding: 0 8px;
+  gap: 6px;
+  font-size: calc(12rem / 14);
+  font-weight: 400;
+  color: var(--muted);
+}
+.approval-dock-fold svg.app-icon {
+  width: var(--icon-xs);
+  height: var(--icon-xs);
 }
 .approval-dock-title,
 .approval-dock .approval-title {
@@ -7661,6 +7683,7 @@ dialog::backdrop {
 }
 .approval-dock-options {
   display: grid;
+  align-content: start;
   gap: 6px;
 }
 .approval-dock .question-option {
@@ -7671,12 +7694,16 @@ dialog::backdrop {
   flex: 1;
   min-width: 0;
 }
-.approval-dock kbd {
+.approval-dock kbd,
+.approval-dock .question-option > i,
+.question-other > i {
   display: inline-grid;
   place-items: center;
   flex: none;
   width: 22px;
   height: 22px;
+}
+.approval-dock kbd {
   padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius-xs);
@@ -7686,8 +7713,8 @@ dialog::backdrop {
 }
 .approval-dock .question-option[aria-checked='true'] kbd {
   border-color: var(--accent);
-  background: var(--accent);
-  color: #fff;
+  background: var(--popover);
+  color: var(--accent-strong);
 }
 .question-other {
   display: flex;
@@ -7698,6 +7725,7 @@ dialog::backdrop {
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   background: var(--surface);
+  font-weight: 400;
 }
 .question-other:focus-within {
   border-color: var(--accent);
@@ -7710,44 +7738,97 @@ dialog::backdrop {
   background: transparent;
   box-shadow: none;
   font-size: calc(13.5rem / 14);
+  font-weight: 400;
 }
 .question-other input:focus {
   outline: none;
   box-shadow: none;
 }
-/* The call a permission is asked for, as the transcript would show it, kept short enough to answer beside. */
-.approval-dock.tool .approval-dock-body > :is(pre, .tool-diff-view) {
-  max-height: 260px;
-}
-.approval-dock-plan {
-  margin: 0 16px 12px;
-  padding: 4px 16px;
+/* A framed part of the dock: the call a permission is asked for (as the transcript shows it, with its copy button),
+   the plan, a choice's preview. Long ones scroll inside the dock; its buttons stay in sight. */
+.approval-dock-box {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius-lg);
   background: var(--surface);
+}
+.approval-dock-box :is(pre, .tool-diff-view) {
+  max-height: 260px;
+}
+.approval-dock-plan,
+.approval-dock-preview {
+  padding: 4px 16px;
   font-size: calc(13.5rem / 14);
+}
+.approval-dock-preview {
+  margin-top: 4px;
 }
 .approval-dock-note {
   color: var(--faint);
 }
 .approval-dock-actions {
   flex: none;
+  flex-wrap: wrap;
   align-items: center;
   border-top: 1px solid var(--line-soft);
   background: transparent;
-  padding: 10px 12px 10px 16px;
+  padding: 10px 12px;
 }
-/* The input box's stop button, carried at the dock's left while the box steps aside. */
+/* The input box's stop button, carried at the dock's left while the box steps aside; last in the order of keys.
+   The answers keep to the right whether a hint stands between or not. */
 .approval-dock-actions > .stop-button {
-  margin-left: 0;
+  order: -1;
+  margin: 0 8px 0 0;
 }
-.approval-dock-actions > .stop-button:not(:has(+ .approval-dock-hint)) {
-  margin-right: auto;
+.approval-dock-actions > .approval-dock-hint + .button,
+.approval-dock-actions > .button:first-child {
+  margin-left: auto;
 }
 .approval-dock-hint {
-  margin-right: auto;
+  flex: 1 1 160px;
+  min-width: 0;
   font-size: calc(12rem / 14);
   color: var(--faint);
+}
+/* Keys mean nothing on a touch screen; a narrow dock keeps its room for the buttons. */
+@media (hover: none) {
+  .approval-dock-hint.keys {
+    display: none;
+  }
+}
+@media (max-width: 560px) {
+  .approval-dock-hint {
+    display: none;
+  }
+  .approval-dock-fold {
+    font-size: 0;
+    gap: 0;
+  }
+}
+/* Folded: one line over the input box says what still waits, with the way back to it. */
+.approval-dock-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  margin-bottom: 8px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xl);
+  background: var(--surface);
+  font-size: calc(13rem / 14);
+  color: var(--text-2);
+}
+.approval-dock-bar > span:not(.approval-dock-more) {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.approval-dock-bar > .button {
+  flex: none;
+  min-height: var(--control-compact);
+  font-size: calc(12rem / 14);
 }
 /* A question or a plan is said in words, not as code. */
 .tool.asked .tool-subject {
@@ -7755,6 +7836,10 @@ dialog::backdrop {
   font-size: calc(12.5rem / 14);
 }
 /* In the transcript, the call that waits keeps one line and says where it is answered. */
+.tool.docked .tool-verb {
+  flex: none;
+  white-space: nowrap;
+}
 .tool-await {
   flex: none;
   margin-left: 8px;
@@ -7778,7 +7863,7 @@ dialog::backdrop {
   color: var(--muted);
 }
 .side-conversation .approval-dock {
-  max-height: min(70vh, 520px);
+  max-height: min(70dvh, 520px);
 }
 .menu-heading {
   max-width: 300px;
