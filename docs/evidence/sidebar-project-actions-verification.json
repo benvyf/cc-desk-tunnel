@@ -140,5 +140,99 @@
     "published": false,
     "packaged": false,
     "fullRepositorySuiteRerun": false
+  },
+  "review487494e": {
+    "reviewedCommit": "487494e24297a5ff955446ddc48099fbec224b53",
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T02:42:56.000762+00:00",
+    "independentReviews": {
+      "dataLifecycle": "One P3 legacy folder fold-state cleanup issue found, fixed and regression tested.",
+      "layoutAndEvidence": "No additional confirmed defects; screenshot/source hashes and original test counts match."
+    },
+    "finding": {
+      "priority": "P3",
+      "trigger": "Pre-existing collapsedElsewhere folder key remains after remove; reopening SSH directory restores the group still folded.",
+      "fix": "Remove only the matching deviceId + normalized directory legacy project fold key. Preserve device-wide and sibling project fold preferences.",
+      "red": {
+        "failed": 1,
+        "passedControl": 1,
+        "log": ".local/sidebar-review-fold-red.log"
+      },
+      "regressions": 2
+    },
+    "checks": {
+      "beforeFixRelatedUi": {
+        "startTime": "2026-11-06T02:34:40.052Z",
+        "duration": 277095.453,
+        "expected": 91,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/sidebar-review-ui.log",
+        "report": ".local/sidebar-review-ui.json"
+      },
+      "afterFixRelatedUi": {
+        "startTime": "2026-11-06T02:40:10.558Z",
+        "duration": 121768.87599999999,
+        "expected": 51,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/sidebar-review-final-ui.log",
+        "report": ".local/sidebar-review-final-ui.json"
+      },
+      "distinctUi": {
+        "passed": 93,
+        "failed": 0,
+        "skipped": 0,
+        "byFile": {
+          "app.spec.ts": 16,
+          "layout.spec.ts": 7,
+          "multi-device-development.spec.ts": 34,
+          "multi-device-sidebar.spec.ts": 10,
+          "new-session.spec.ts": 2,
+          "open-project-dialog.spec.ts": 9,
+          "sidebar-details.spec.ts": 8,
+          "sidebar-merge.spec.ts": 7
+        }
+      },
+      "core": {
+        "passed": 12,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/sidebar-review-final-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/sidebar-review-final-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing bundler warnings",
+        "log": ".local/sidebar-review-final-build.log"
+      },
+      "prettier": "passed",
+      "modelBoundary": "passed",
+      "diffWhitespace": "passed"
+    },
+    "productionSha256": {
+      "apps/desktop/src/App.tsx": "4ebd48aa0e2bf0213db829846128dfd41721ce5ae8c2f3ea57f52cf4f86be6ec",
+      "apps/desktop/src/Sidebar.tsx": "1532b84a3c3f51c811cea975e8140e6175ea91b4dc698a97adfd1f95ed4f147c",
+      "apps/desktop/src/prefs.ts": "6d0adef0e0f541aa7a9209f23d13e0f3629743f6e3372401cf24d9894d273cd0",
+      "apps/desktop/src/style.css": "c4094920fa5f2dd516f5fc917058ef1d5fcf1fd55fd97a589a1508b1e07eb8ee"
+    },
+    "testSha256": {
+      "apps/desktop/test/multi-device-development.spec.ts": "a4f394606a7234818d74c1ba422939e98f5e688125e86d9df60808f1fa40d787"
+    },
+    "scope": {
+      "sessionDeletionAdded": false,
+      "projectFileDeletionAdded": false,
+      "serverProtocolMainProcessChanged": false,
+      "dependenciesChanged": false,
+      "pushed": false,
+      "packaged": false,
+      "published": false
+    },
+    "remainingConfirmedFindings": [],
+    "limits": "Related suites were rerun, not the full repository suite. Historical verification remains under prior fields."
   }
 }

@@ -986,3 +986,62 @@ test('changing a visible project folder to a removed project restores the destin
   await expect(group.locator('h2')).toHaveAttribute('title', fixture.sessions[1].projectPath);
   await expect(group.locator('.session-row')).toHaveCount(2);
 });
+
+for (const fold of ['project', 'device'])
+  test(`removal clears legacy ${fold} fold only when it belongs to the removed project`, async ({
+    page,
+  }) => {
+    const fixture = await setup(page, false, true);
+    const deviceId = fixture.sessions[2].device!.id;
+    const otherPath = '/work/other-project';
+    await page.evaluate(
+      async ({ deviceId, fold, otherPath }) => {
+        const targets = await (window as any).desktop.ssh.list();
+        targets[0].projects.push(otherPath);
+        (window as any).testSetTargetStatus('connected');
+        const modulePath = '/src/prefs.ts';
+        const { setPrefs } = await import(modulePath);
+        setPrefs((prefs: any) => ({
+          ...prefs,
+          collapsedElsewhere:
+            fold === 'device'
+              ? [deviceId]
+              : [`${deviceId}\n/work/app`, `${deviceId}\n${otherPath}`],
+        }));
+      },
+      { deviceId, fold, otherPath },
+    );
+    await select(page, '项目 B 会话');
+    const first = page.getByRole('button', { name: '展开项目 · app · 01', exact: true });
+    await expect(first).toBeVisible();
+    await page.getByRole('button', { name: '项目操作 · 01 · /work/app', exact: true }).click();
+    await page.getByRole('menuitem', { name: '移除项目', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: '移除项目？', exact: true })
+      .getByRole('button', { name: '移除项目', exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', { name: '展开项目 · other-project · 01', exact: true }),
+    ).toBeVisible();
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
+    await page.getByRole('combobox', { name: '开发设备', exact: true }).selectOption(deviceId);
+    await page
+      .getByRole('dialog', { name: '打开项目', exact: true })
+      .getByRole('button', { name: '打开项目', exact: true })
+      .click();
+    await expect(
+      page.getByRole('button', {
+        name: `${fold === 'project' ? '收起' : '展开'}项目 · app · 01`,
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: '展开项目 · other-project · 01', exact: true }),
+    ).toBeVisible();
+    const prefs = await page.evaluate(() => JSON.parse(localStorage.getItem('proxy-prefs')!));
+    expect(prefs.collapsedElsewhere).not.toContain(`${deviceId}\n/work/app`);
+    expect(prefs.collapsedElsewhere).toContain(
+      fold === 'device' ? deviceId : `${deviceId}\n${otherPath}`,
+    );
+    expect(fixture.commands.filter((c) => c.type === 'session.delete')).toHaveLength(0);
+  });

@@ -2964,6 +2964,11 @@ export function App({
                     hiddenProjects: [...new Set([...value.hiddenProjects, key])],
                     pinnedProjects: value.pinnedProjects.filter((item) => item !== key),
                     collapsedProjects: value.collapsedProjects.filter((item) => item !== key),
+                    collapsedElsewhere: deviceId
+                      ? value.collapsedElsewhere.filter(
+                          (item) => item !== `${deviceId}\n${pathKey(path)}`,
+                        )
+                      : value.collapsedElsewhere,
                   }));
                   setRemoveProjectTarget(null);
                 }}
