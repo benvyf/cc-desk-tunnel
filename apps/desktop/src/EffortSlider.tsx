@@ -96,7 +96,12 @@ export default function EffortSlider({
       value={current}
       aria-valuetext={shown ? effortNames[shown] : '跟随模型'}
       data-unset={shown ? undefined : ''}
-      style={{ '--fill': `${max ? (current / max) * 100 : 0}%` } as CSSProperties}
+      style={
+        {
+          '--fill': `${max ? (current / max) * 100 : 0}%`,
+          '--fill-at': max ? current / max : 0,
+        } as CSSProperties
+      }
       onPointerDown={() => {
         dragging.current = true;
         pending.current = current;

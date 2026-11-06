@@ -2000,17 +2000,16 @@ dialog:has(.release-notes) {
   font-size: calc(12rem / 14);
   font-weight: 500;
 }
-/* Whether another computer is connected, beside its name: its sessions can then be worked on from here. */
+/* Whether another computer is connected, at the end of its row: a dot and a word, quiet like the times. */
 .device-state {
   display: inline-flex;
   flex: none;
   white-space: nowrap;
   align-items: center;
   gap: 5px;
-  font-size: calc(11rem / 14);
-  padding: 0 7px;
-  border-radius: var(--radius-full);
-  background: var(--hover);
+  color: var(--faint);
+  font-size: calc(11.5rem / 14);
+  font-weight: 400;
 }
 .device-state::before {
   flex: none;
@@ -2022,7 +2021,6 @@ dialog:has(.release-notes) {
 }
 .device-state.online {
   color: var(--ok-text);
-  background: var(--ok-soft);
 }
 .device-state.online::before {
   background: var(--ok);
@@ -2051,16 +2049,44 @@ dialog:has(.release-notes) {
 .list-heading:has(> .heading-toggle) {
   justify-content: flex-start;
 }
-/* Each other computer: its name as a second-level heading, and whether it is online in a pill. */
+/* Each other computer is a row like a project's: its icon (the folding arrow under the pointer), its name, then
+   whether it is online and, folded, how many sessions it holds, at the column's right edge like the times. */
 .device-heading {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 28px;
-  padding: 6px 8px 2px 10px;
+  min-height: 32px;
+  margin: 2px 0;
+  padding: 0 10px 0 10px;
+  border-radius: var(--radius-md);
   color: var(--text-2);
-  font-size: calc(12.5rem / 14);
+  font-size: calc(13.5rem / 14);
   font-weight: 500;
+}
+.device-heading:hover {
+  background: var(--hover);
+}
+.device-heading > .project-toggle.heading-toggle {
+  flex: 1;
+  gap: 9px;
+}
+.device-heading > .heading-toggle > span:not(.fold-icon) {
+  flex: 1;
+}
+.device-heading:is(:hover, :has(:focus-visible)) .fold-folder {
+  visibility: hidden;
+}
+.device-heading:is(:hover, :has(:focus-visible)) .fold-caret {
+  visibility: visible;
+  color: var(--muted);
+}
+.device-heading > .heading-toggle > small {
+  position: absolute;
+  right: 10px;
+}
+.device-heading:has(> .heading-toggle > small) {
+  padding-right: 34px;
 }
 .list-heading .icon-button {
   width: var(--control-sm);
@@ -2072,6 +2098,7 @@ dialog:has(.release-notes) {
   height: var(--icon-sm);
 }
 .project-group > h2 {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -2130,15 +2157,13 @@ dialog:has(.release-notes) {
   visibility: visible;
   color: var(--muted);
 }
+/* A folded group's count: a plain number in the times' place, not a badge. */
 .project-toggle > small {
   flex: none;
   color: var(--faint);
   font-size: calc(12rem / 14);
-  min-width: 18px;
-  padding: 0 6px;
-  border-radius: var(--radius-full);
-  background: var(--hover);
-  text-align: center;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
 }
 .project-group > h2 > .pin-mark {
   width: 12px;
@@ -2245,14 +2270,38 @@ dialog:has(.release-notes) {
 .session-row:focus-within .row-action {
   display: inline-flex;
 }
-/* A project's buttons keep their place, so the name does not jump when they appear. */
+/* A project's buttons share one place at the row's end with its count: the count rests there and gives way
+   to the buttons under the pointer. The place is kept either way, so the name never jumps. */
+.project-group > h2 {
+  padding-right: 64px;
+}
 .project-group > h2 .row-action {
+  position: absolute;
+  top: 50%;
+  translate: 0 -50%;
   display: inline-flex;
   opacity: 0;
+}
+.project-group > h2 > .row-action:last-child {
+  right: 4px;
+}
+.project-group > h2 > .row-action:nth-last-child(2) {
+  right: 32px;
 }
 .project-group > h2:hover .row-action,
 .project-group > h2:focus-within .row-action {
   opacity: 1;
+}
+.project-group > h2 > .project-toggle > small {
+  position: absolute;
+  right: 10px;
+}
+.project-group > h2:is(:hover, :focus-within) > .project-toggle > small {
+  visibility: hidden;
+}
+/* Another computer's projects have no buttons: their count sits at the edge without the buttons' place. */
+.project-group > h2:not(:has(> .row-action)) {
+  padding-right: 34px;
 }
 .session-row:hover .session-select small,
 .session-row:focus-within .session-select small {
@@ -3422,10 +3471,18 @@ kbd {
   color: var(--muted);
   font-size: calc(12rem / 14);
 }
+/* The project sits in the conversation's top bar like the find button beside it: no surface of its own, only
+   the hover. A filled chip read as a patch laid over the page. */
 .conversation-tools .session-project {
   max-width: min(220px, 45vw);
   min-width: 0;
-  margin-right: 4px;
+  margin-right: 2px;
+  background: transparent;
+  color: var(--muted);
+}
+.conversation-tools .session-project[aria-expanded='true'] {
+  background: var(--hover);
+  color: var(--text);
 }
 .session-project > span {
   overflow: hidden;
@@ -5863,44 +5920,73 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
   width: var(--icon-sm);
   height: var(--icon-sm);
 }
-/* The effort slider: a pill filled up to a large round handle. */
+/* The effort slider: a slim rounded track with a dot at each level, filled in the level's colour up to a small
+   white knob that sits inside it (the knob is drawn 18px inside a 24px thumb, so it keeps a 3px margin from the
+   track's ends). The dots sit under the input, so the fill covers the ones already passed. */
+.effort-track {
+  --track: light-dark(rgb(20 20 19 / 7%), rgb(250 249 245 / 8%));
+  border-radius: var(--radius-full);
+  background: var(--track);
+}
+.effort-stops {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.effort-stops > i {
+  position: absolute;
+  top: 50%;
+  left: calc(12px + (100% - 24px) * var(--at));
+  width: 4px;
+  height: 4px;
+  margin: -2px 0 0 -2px;
+  border-radius: 50%;
+  background: light-dark(rgb(20 20 19 / 22%), rgb(250 249 245 / 24%));
+}
 .model-menu input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
+  position: relative;
   display: block;
   width: 100%;
-  height: 30px;
+  height: 24px;
   margin: 0;
   padding: 0;
   border: 0;
   border-radius: var(--radius-full);
-  /* A light sweeping over the filled part, then the fill (a warm gradient up to the level's colour), then the
-     empty track. The sweep is sized to the fill, so its stops run along the filled part only. */
+  /* A light sweeping over the filled part, then the fill: a soft gradient from a tint to the level's colour,
+     ending under the knob's centre so no edge shows beside it. The rest stays clear for the track and dots. */
   background:
     linear-gradient(
         100deg,
         transparent calc(var(--shine) - 18%),
-        rgb(255 255 255 / var(--effort-glint, 0.28)) var(--shine),
+        rgb(255 255 255 / var(--effort-glint, 0.22)) var(--shine),
         transparent calc(var(--shine) + 18%)
       )
-      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
-    linear-gradient(
-      to right,
-      var(--effort-from, var(--accent)) 0,
-      var(--effort-fill, var(--accent)) max(15px, var(--fill, 50%)),
-      var(--hover) max(15px, var(--fill, 50%)) 100%
-    );
+      0 0 / calc(12px + (100% - 24px) * var(--fill-at, 0.5)) 100% no-repeat,
+    linear-gradient(to right, var(--effort-from, var(--accent)), var(--effort-fill, var(--accent)))
+      0 0 / calc(12px + (100% - 24px) * var(--fill-at, 0.5)) 100% no-repeat;
   cursor: pointer;
   animation: effort-sweep var(--effort-pace, 2.2s) linear infinite;
 }
+.model-menu input[type='range']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
 .model-menu input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
-  width: 30px;
-  height: 30px;
+  box-sizing: border-box;
+  width: 24px;
+  height: 24px;
+  padding: 3px;
+  border: 0;
   border-radius: 50%;
-  border: 1px solid var(--line);
-  background: white;
-  box-shadow: var(--shadow-sm);
+  background: white content-box;
+  filter: drop-shadow(0 1px 1.5px rgb(0 0 0 / 28%));
+  transition: padding var(--cds-dur-fast) var(--cds-ease-out);
+}
+.model-menu input[type='range']:enabled:active::-webkit-slider-thumb {
+  padding: 2px;
 }
 /* At the top level the handle breathes a halo in the level's colour, like a running dot (2.4s). */
 .effort-view[data-effort='max'] input[type='range']:enabled::-webkit-slider-thumb {
@@ -5915,22 +6001,22 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
 }
 /* No level known yet: no fill and no handle, so nothing claims a value; picking one brings the handle back. */
 .model-menu input[type='range'][data-unset] {
-  background: var(--hover);
+  background: none;
   animation: none;
 }
 .model-menu input[type='range'][data-unset]::-webkit-slider-thumb {
   opacity: 0;
 }
-/* Level names under the track, centred on the handle's positions: the handle is 30px, so its centre runs
-   from 15px to 15px short of the other end. */
+/* Level names under the track, centred on the knob's positions: the thumb is 24px, so its centre runs from
+   12px to 12px short of the other end. */
 .effort-ticks {
   position: relative;
   height: var(--control-compact);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 .effort-ticks button {
   position: absolute;
-  left: calc(15px + (100% - 30px) * var(--at));
+  left: calc(12px + (100% - 24px) * var(--at));
   transform: translateX(-50%);
   padding: 3px 6px;
   border: 0;
@@ -6048,7 +6134,7 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
         rgb(255 255 255 / var(--effort-glint, 0.36)) var(--shine),
         transparent calc(var(--shine) + 14%)
       )
-      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
+      0 0 / calc(12px + (100% - 24px) * var(--fill-at, 1)) 100% no-repeat,
     linear-gradient(
         90deg,
         var(--effort-fill) calc(var(--flow) - 100%),
@@ -6061,8 +6147,7 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
         var(--effort-fill) calc(var(--flow) + 75%),
         var(--effort-fill) calc(var(--flow) + 100%)
       )
-      0 0 / max(15px, var(--fill, 50%)) 100% no-repeat,
-    var(--hover);
+      0 0 / calc(12px + (100% - 24px) * var(--fill-at, 1)) 100% no-repeat;
   box-shadow: 0 0 14px -2px color-mix(in srgb, var(--effort-ember) 55%, transparent);
 }
 .effort-view[data-effort='max'] input[type='range']:enabled {
@@ -6084,10 +6169,10 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
 .effort-ring {
   position: absolute;
   top: 50%;
-  left: calc(15px + (100% - 30px) * var(--at, 1));
-  width: 38px;
-  height: 38px;
-  margin: -19px 0 0 -19px;
+  left: calc(12px + (100% - 24px) * var(--at, 1));
+  width: 30px;
+  height: 30px;
+  margin: -15px 0 0 -15px;
   border-radius: 50%;
   background: conic-gradient(
     from 0deg,
@@ -6113,7 +6198,7 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
 .effort-flare > i {
   position: absolute;
   bottom: 40%;
-  left: calc(15px + (100% - 30px) * var(--x));
+  left: calc(12px + (100% - 24px) * var(--x));
   width: 4px;
   height: 4px;
   background: var(--effort-gold);
@@ -6174,14 +6259,10 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
 @keyframes effort-halo {
   0%,
   100% {
-    box-shadow:
-      var(--shadow-sm),
-      0 0 0 0 color-mix(in srgb, var(--effort-fill) 0%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--effort-fill) 0%, transparent);
   }
   50% {
-    box-shadow:
-      var(--shadow-sm),
-      0 0 0 6px color-mix(in srgb, var(--effort-fill) 28%, transparent);
+    box-shadow: 0 0 0 5px color-mix(in srgb, var(--effort-fill) 28%, transparent);
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -7277,6 +7358,10 @@ dialog::backdrop {
   }
   .project-group > h2 .row-action {
     opacity: 1;
+  }
+  /* The buttons always show here, so a folded count stands just before their place. */
+  .project-group > h2 > .project-toggle > small {
+    position: static;
   }
   .session-select small {
     display: none;

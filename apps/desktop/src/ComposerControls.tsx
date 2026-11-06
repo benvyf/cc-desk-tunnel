@@ -169,6 +169,17 @@ export default function ComposerControls({
                       } as CSSProperties
                     }
                   >
+                    {/* A dot where each level stops, under the fill: the levels read on the track itself. */}
+                    <span className="effort-stops" aria-hidden="true">
+                      {levels.map((level, index) => (
+                        <i
+                          key={level}
+                          style={
+                            { '--at': index / Math.max(1, levels.length - 1) } as CSSProperties
+                          }
+                        />
+                      ))}
+                    </span>
                     <EffortSlider
                       key={model ?? 'default'}
                       levels={levels}

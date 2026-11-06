@@ -9,6 +9,7 @@ import {
   Ellipsis,
   Folder,
   FolderOpen,
+  Laptop,
   Pin,
   Plus,
   Search,
@@ -431,7 +432,12 @@ export default function Sidebar({
         onKeyDown={onKeyDown}
       >
         <span className="fold-icon" aria-hidden="true">
-          {open ? <FolderOpen className="fold-folder" /> : <Folder className="fold-folder" />}
+          {/* An empty project has nothing to show open: its folder stays closed. */}
+          {open && members.length > 0 ? (
+            <FolderOpen className="fold-folder" />
+          ) : (
+            <Folder className="fold-folder" />
+          )}
           {open ? <ChevronDown className="fold-caret" /> : <ChevronRight className="fold-caret" />}
         </span>
         <span>{name}</span>
@@ -448,14 +454,22 @@ export default function Sidebar({
     name,
     members,
     toggle,
+    icon,
   }: {
     open: boolean;
     label: string;
     name: string;
     members: Session[];
     toggle: () => void;
+    // A computer's heading leads with its icon, which turns into the folding arrow as a project's folder does.
+    icon?: ReactNode;
   }) {
     const state = open ? undefined : topState(members);
+    const caret = open ? (
+      <ChevronDown className="fold-caret" />
+    ) : (
+      <ChevronRight className="fold-caret" />
+    );
     return (
       <button
         type="button"
@@ -465,8 +479,14 @@ export default function Sidebar({
         data-state={state}
         onClick={toggle}
       >
+        {icon && (
+          <span className="fold-icon" aria-hidden="true">
+            {icon}
+            {caret}
+          </span>
+        )}
         <span>{name}</span>
-        {open ? <ChevronDown className="fold-caret" /> : <ChevronRight className="fold-caret" />}
+        {!icon && caret}
         {state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
         {!open && members.length > 0 && <small>{members.length}</small>}
       </button>
@@ -766,6 +786,7 @@ export default function Sidebar({
                           ...device.plain,
                         ],
                         toggle: foldElsewhere(id),
+                        icon: <Laptop className="fold-folder" />,
                       })}
                       <span className={`device-state${device.online ? ' online' : ''}`}>
                         {device.online ? '在线' : '离线'}

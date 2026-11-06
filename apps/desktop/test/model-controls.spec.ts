@@ -24,16 +24,16 @@ test('effort follows sub-step pointer movement and commits only once after relea
   );
   await expect(page.locator('.model-current')).toHaveText('Opus 5.5');
   const box = (await slider.boundingBox())!;
-  const x = (position: number) => box.x + 15 + (box.width - 30) * position;
-  await page.mouse.move(x(0.5), box.y + 15);
+  const x = (position: number) => box.x + 12 + (box.width - 24) * position;
+  await page.mouse.move(x(0.5), box.y + 12);
   await page.mouse.down();
-  await page.mouse.move(x(0.54), box.y + 15);
+  await page.mouse.move(x(0.54), box.y + 12);
   const first = await slider.inputValue();
-  await page.mouse.move(x(0.58), box.y + 15);
+  await page.mouse.move(x(0.58), box.y + 12);
   const second = await slider.inputValue();
   expect(Number(second)).toBeGreaterThan(Number(first));
   await expect(page.getByLabel('已提交')).toHaveText('[]');
-  await page.mouse.move(x(0.82), box.y + 15);
+  await page.mouse.move(x(0.82), box.y + 12);
   await expect(slider).toHaveAttribute('aria-valuetext', '极高');
   await page.mouse.up();
   await expect(page.getByLabel('已提交')).toHaveText('["xhigh"]');
@@ -57,9 +57,9 @@ test('keyboard steps between supported levels; cancelled drags and failed saves 
   await expect(page.getByLabel('已提交')).toHaveText('["xhigh","low"]');
   await expect(slider).toBeEnabled();
   const box = (await slider.boundingBox())!;
-  await page.mouse.move(box.x + 15, box.y + 15);
+  await page.mouse.move(box.x + 12, box.y + 12);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 20, box.y + 15);
+  await page.mouse.move(box.x + box.width - 20, box.y + 12);
   await slider.dispatchEvent('pointercancel', { pointerId: 1 });
   await page.mouse.up();
   await expect(slider).toHaveAttribute('aria-valuetext', '低');
@@ -78,15 +78,15 @@ test('release outside the slider commits once, and closing during a drag cancels
 }) => {
   const slider = await fixture(page);
   const box = (await slider.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + 15);
+  await page.mouse.move(box.x + box.width / 2, box.y + 12);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width + 80, box.y - 60);
   await page.mouse.up();
   await expect(page.getByLabel('已提交')).toHaveText('["max"]');
   await expect(slider).toBeEnabled();
-  await page.mouse.move(box.x + box.width - 15, box.y + 15);
+  await page.mouse.move(box.x + box.width - 12, box.y + 12);
   await page.mouse.down();
-  await page.mouse.move(box.x + 20, box.y + 15);
+  await page.mouse.move(box.x + 20, box.y + 12);
   await page.keyboard.press('Escape');
   await page.mouse.up();
   await page.getByRole('button', { name: '模型与推理强度', exact: true }).click();
@@ -99,9 +99,9 @@ test('a catalog update cancels the old drag preview and keyboard navigation foll
 }) => {
   const slider = await fixture(page);
   const box = (await slider.boundingBox())!;
-  await page.mouse.move(box.x + box.width / 2, box.y + 15);
+  await page.mouse.move(box.x + box.width / 2, box.y + 12);
   await page.mouse.down();
-  await page.mouse.move(box.x + box.width - 15, box.y + 15);
+  await page.mouse.move(box.x + box.width - 12, box.y + 12);
   await expect(slider).toHaveAttribute('aria-valuetext', '最高');
   await page.evaluate(async () => {
     const path = '/test/fixtures/model-controls.tsx';
@@ -182,7 +182,7 @@ test('each effort level has its own colour and sweep; the top level burns; reduc
   const aboveHandleMoves = async () => {
     const box = (await slider.boundingBox())!;
     const at = Number(await slider.inputValue()) / Number(await slider.getAttribute('max'));
-    const x = box.x + 15 + (box.width - 30) * at;
+    const x = box.x + 12 + (box.width - 24) * at;
     const shots = new Set<string>();
     for (let i = 0; i < 4; i++) {
       shots.add(
@@ -248,7 +248,7 @@ test('each effort level has its own colour and sweep; the top level burns; reduc
     (await flare.locator('.effort-ring').boundingBox())!,
     (await slider.boundingBox())!,
   ];
-  expect(Math.abs(ring.x + ring.width / 2 - (track.x + track.width - 15))).toBeLessThan(1.5);
+  expect(Math.abs(ring.x + ring.width / 2 - (track.x + track.width - 12))).toBeLessThan(1.5);
   // The title is drawn by its gradient (the text itself is clear) and the tick keeps the level's colour.
   await expect(heading).toHaveCSS('color', 'rgba(0, 0, 0, 0)');
   await expect(heading).toHaveCSS('background-clip', 'text');
