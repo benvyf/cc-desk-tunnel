@@ -316,28 +316,114 @@
   flex-shrink: 0;
   margin-left: auto;
 }
-.terminal-state-icon {
+/* One status chip in the terminal toolbar, coloured like the sidebar's session states (TerminalWindow.tsx
+   uses the same words for the tab dots). The two full sentences stay announced beside it for screen readers. */
+.terminal-status-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
+  gap: 6px;
+  height: 22px;
+  margin-right: 4px;
+  padding: 0 9px 0 8px;
+  border-radius: var(--radius-full);
+  background: rgb(250 249 245 / 6%);
+  color: var(--terminal-white);
+  font-size: calc(12rem / 14);
+  line-height: 1;
+  white-space: nowrap;
+  cursor: default;
 }
-.terminal-state-icon[data-state='ready'],
-.terminal-state-icon[data-state='idle'] {
-  color: var(--terminal-green);
+.terminal-status-dot,
+.terminal-tab > button[role='tab']::before,
+.terminal-list-row::before {
+  --dot: #5e5d59;
+  width: 6px;
+  height: 6px;
+  flex-shrink: 0;
+  border-radius: var(--radius-full);
+  background: var(--dot);
 }
-.terminal-state-icon[data-state='waiting'],
-.terminal-state-icon[data-state='connecting'] {
-  color: var(--terminal-yellow);
+.terminal-status-chip[data-state='working'] .terminal-status-dot,
+.terminal-tab[data-state='working'] > button[role='tab']::before,
+.terminal-list-row[data-state='working']::before,
+.terminal-status-chip[data-state='connecting'] .terminal-status-dot,
+.terminal-status-chip[data-state='opening'] .terminal-status-dot,
+.terminal-tab[data-state='opening'] > button[role='tab']::before,
+.terminal-list-row[data-state='opening']::before {
+  animation: breathe 2.4s ease-in-out infinite;
 }
-.terminal-state-icon[data-state='failed'],
-.terminal-state-icon[data-state='disconnected'] {
-  color: var(--terminal-red);
+.terminal-status-chip[data-state='working'] .terminal-status-dot,
+.terminal-tab[data-state='working'] > button[role='tab']::before,
+.terminal-list-row[data-state='working']::before,
+.terminal-tab[data-state='running'] > button[role='tab']::before,
+.terminal-list-row[data-state='running']::before {
+  --dot: var(--clay);
 }
-.terminal-state-icon[data-state='unknown'],
-.terminal-state-icon[data-state='ended'] {
-  opacity: 0.6;
+.terminal-status-chip[data-state='waiting'],
+.terminal-status-chip[data-state='connecting'] {
+  color: var(--terminal-bright-yellow);
+}
+.terminal-status-chip[data-state='waiting'] {
+  background: rgb(224 164 60 / 12%);
+}
+.terminal-status-chip:is([data-state='waiting'], [data-state='connecting']) .terminal-status-dot,
+.terminal-tab[data-state='waiting'] > button[role='tab']::before,
+.terminal-list-row[data-state='waiting']::before {
+  --dot: var(--terminal-yellow);
+}
+.terminal-status-chip[data-state='waiting'] .terminal-status-dot,
+.terminal-tab[data-state='waiting'] > button[role='tab']::before,
+.terminal-list-row[data-state='waiting']::before {
+  box-shadow: 0 0 0 3px rgb(224 164 60 / 20%);
+}
+.terminal-status-chip[data-state='idle'] .terminal-status-dot,
+.terminal-tab[data-state='idle'] > button[role='tab']::before,
+.terminal-list-row[data-state='idle']::before {
+  --dot: var(--terminal-green);
+}
+.terminal-status-chip:is([data-state='failed'], [data-state='disconnected']) {
+  background: rgb(224 108 108 / 12%);
+  color: var(--terminal-bright-red);
+}
+.terminal-status-chip:is([data-state='failed'], [data-state='disconnected']) .terminal-status-dot,
+.terminal-tab[data-state='failed'] > button[role='tab']::before,
+.terminal-list-row[data-state='failed']::before {
+  --dot: var(--terminal-red);
+}
+/* Gone, not broken: a hollow ring. */
+.terminal-status-chip[data-state='ended'] .terminal-status-dot,
+.terminal-tab[data-state='ended'] > button[role='tab']::before,
+.terminal-list-row[data-state='ended']::before {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px #77756e;
+}
+.terminal-status-chip[data-state='ended'],
+.terminal-status-chip[data-state='unknown'] {
+  color: var(--muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .terminal-status-dot,
+  .terminal-tab > button[role='tab']::before,
+  .terminal-list-row::before {
+    animation: none !important;
+  }
+}
+/* In a narrow window the dot alone keeps the state; the words stay in its tooltip. */
+@media (max-width: 520px) {
+  .terminal-status-chip {
+    padding: 0 8px;
+  }
+  .terminal-status-label {
+    display: none;
+  }
+}
+.terminal-runtime-status .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .terminal-recovery-note {
   padding: 4px 12px;
@@ -8139,7 +8225,7 @@ dialog:has(.web-settings-form) {
   display: flex;
   flex: 0 0 auto;
   max-width: 230px;
-  min-width: 120px;
+  min-width: 96px;
   align-items: center;
   border: 0;
   border-radius: var(--radius-md);
@@ -8147,6 +8233,29 @@ dialog:has(.web-settings-form) {
 .terminal-tab.active {
   background: #30302e;
   box-shadow: inset 0 0 0 0.5px var(--line);
+}
+.terminal-tab:not(.active):hover {
+  background: var(--hover);
+}
+.terminal-tab > button[role='tab'] > span:first-child {
+  color: var(--text-2);
+}
+.terminal-tab.active > button[role='tab'] > span:first-child {
+  color: var(--text);
+}
+/* Close sits quietly: always on the active tab, on the others when pointed at or focused. */
+.terminal-tab > .icon-button {
+  --button-height: 22px;
+  width: 22px;
+  margin-right: 3px;
+  color: var(--muted);
+}
+.terminal-tab:not(.active):not(:hover):not(:focus-within) > .icon-button {
+  opacity: 0;
+}
+.terminal-tabs-header > .icon-button[aria-expanded='true'] {
+  background: var(--selected);
+  color: var(--text);
 }
 @media (forced-colors: active) {
   .terminal-tab.active {
@@ -8161,7 +8270,7 @@ dialog:has(.web-settings-form) {
   gap: 6px;
   flex: 1;
   min-width: 0;
-  padding: 3px 7px;
+  padding: 3px 7px 3px 10px;
   border: 0;
   background: transparent;
   color: inherit;
@@ -8169,15 +8278,6 @@ dialog:has(.web-settings-form) {
 }
 .terminal-tab > button[role='tab']::before {
   content: '';
-  width: 6px;
-  height: 6px;
-  flex-shrink: 0;
-  border: 0;
-  border-radius: var(--radius-full);
-  background: #5e5d59;
-}
-.terminal-tab[data-phase='running'] > button[role='tab']::before {
-  background: var(--clay);
 }
 .terminal-tab-ended {
   color: var(--muted);
@@ -8272,38 +8372,83 @@ dialog:has(.web-settings-form) {
   font-size: calc(13.5rem / 14);
   text-align: left;
 }
-.terminal-list-row {
+/* Both groups share one row: marker, name with the remote device, and on the right what the row is or does. */
+.terminal-list-row,
+.terminal-list .terminal-project-choice {
   position: relative;
   width: 100%;
-  padding-right: 128px;
+  min-height: 44px;
   display: grid;
-  grid-template-columns: 6px minmax(0, 1fr);
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
   column-gap: 10px;
+  row-gap: 1px;
   align-items: center;
+  padding: 6px 10px;
 }
 .terminal-list-row::before {
   content: '';
+  grid-column: 1;
   grid-row: 1;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #5e5d59;
+  justify-self: center;
 }
-.terminal-list-row[data-phase='running']::before {
-  background: var(--clay);
+.terminal-list .terminal-choice-icon {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: center;
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--faint);
 }
-.terminal-list-row > span,
-.terminal-list-row > small {
+.terminal-list-name {
   grid-column: 2;
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: calc(13.5rem / 14);
+}
+.terminal-list-row > .terminal-list-path,
+.terminal-list .terminal-project-meta {
+  grid-column: 2;
+  grid-row: 2;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--faint);
+  font-size: calc(11.5rem / 14);
 }
-.terminal-list-row > small,
-.terminal-list-name > small {
+.terminal-list-device {
+  flex: none;
+  color: var(--muted);
+  font-size: calc(11.5rem / 14);
+}
+.terminal-list .terminal-list-status {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: end;
   color: var(--muted);
   font-size: calc(12rem / 14);
+  white-space: nowrap;
+}
+.terminal-list-row[data-state='waiting'] > .terminal-list-status {
+  color: var(--terminal-bright-yellow);
+}
+.terminal-list-row[data-state='failed'] > .terminal-list-status {
+  color: var(--terminal-bright-red);
+}
+.terminal-list .terminal-list-hint {
+  grid-column: 3;
+  grid-row: 2;
+  justify-self: end;
+  color: var(--faint);
+  font-size: calc(11rem / 14);
+  white-space: nowrap;
 }
 .terminal-list-row[aria-selected='true'] {
   background: var(--selected);
@@ -9623,42 +9768,9 @@ dialog:has(.web-settings-form) {
   font-size: calc(12rem / 14);
   font-weight: 500;
 }
-.terminal-list .terminal-project-choice {
-  position: relative;
-  padding: 6px 10px;
-}
-.terminal-list .terminal-project-choice > span:first-child {
-  padding-right: 100px;
-}
 .terminal-list .terminal-project-choice[aria-selected='true'] {
-  background: var(--hover);
+  background: var(--selected);
 }
-.terminal-list .terminal-project-choice[data-offline='true'] {
+.terminal-list .terminal-project-choice[data-offline='true'] .terminal-list-name {
   color: var(--muted);
-}
-.terminal-list-hint {
-  color: var(--muted);
-  white-space: nowrap;
-  font-size: calc(11rem / 14);
-}
-.terminal-project-choice > .terminal-list-hint,
-.terminal-list-row > .terminal-list-hint {
-  position: absolute;
-  right: 10px;
-  top: 8px;
-}
-.terminal-list .terminal-project-meta {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.terminal-list-status {
-  position: absolute;
-  top: 8px;
-  right: 10px;
-}
-.terminal-list-row > .terminal-list-hint {
-  top: auto;
-  bottom: 8px;
 }

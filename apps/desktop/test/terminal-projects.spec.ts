@@ -428,9 +428,7 @@ test('opened terminal search uses project display names and shows waiting activi
   await expect(
     page.getByRole('group', { name: '已打开', exact: true }).getByRole('option'),
   ).toHaveCount(1);
-  await expect(page.getByRole('group', { name: '已打开', exact: true })).toContainText(
-    '终端等你确认',
-  );
+  await expect(page.getByRole('group', { name: '已打开', exact: true })).toContainText('等你确认');
 });
 
 for (const unavailable of ['capability', 'connection']) {

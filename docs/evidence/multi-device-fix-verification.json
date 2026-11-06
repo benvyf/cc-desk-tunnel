@@ -155,22 +155,22 @@
       "theme": "light",
       "width": 480,
       "height": 800,
-      "sha256": "3f9b188f15ae5e08baad5b45630f43bab2db2133daec2e775a386ad20fb4e69e"
+      "sha256": "b3523fcac1b06e9ff78c43474d799e0d0bc980eb630db8ca29cd8d0e3bfc8215"
     },
     {
       "path": "docs/evidence/multi-device/05-electron-projects.png",
       "theme": "light",
-      "width": 1500,
-      "height": 1023,
-      "sha256": "de6399ba5e767aa24b04dab188464e2479bf353298f04c87b20ae8908125d801"
+      "width": 1000,
+      "height": 680,
+      "sha256": "2903a55eb771f5d61454bdb006b41914bc41bb79d6cac541f94ac300a89ff9ca"
     },
     {
       "path": "docs/evidence/multi-device/06-terminal-menu.png",
       "theme": "shared",
-      "width": 1500,
-      "height": 1023,
-      "sha256": "763e258a1d1cc84e92c879084536af30966fa496cbc5e7940e88d1d4fa083a3e",
-      "note": "Terminal palette is the same under light and dark app themes; retain one menu screenshot."
+      "width": 1000,
+      "height": 680,
+      "sha256": "b368e6169709e53cf060e10c93fafbddcca80fd1cf1601becb7cf6014c93b789",
+      "note": "Terminal palette is shared by light/dark app themes; one image retained."
     },
     {
       "path": "docs/evidence/multi-device/03-unified-projects-dark.png",
@@ -184,14 +184,14 @@
       "theme": "dark",
       "width": 480,
       "height": 800,
-      "sha256": "161a8056fa818fab56c6e3c7d307b992a1f5266c0e21bf58433668c19b50bf5e"
+      "sha256": "996aac52f84b6921bece2bf359ef2574c2d0aff518bec1f9318dddb65672f261"
     },
     {
       "path": "docs/evidence/multi-device/05-electron-projects-dark.png",
       "theme": "dark",
-      "width": 1500,
-      "height": 1023,
-      "sha256": "3e48f241150c00315e9d06a189d5d6dcccb26d64e74f263b1efb4b29db019510"
+      "width": 1000,
+      "height": 680,
+      "sha256": "718a3ba201ba3b517d38ffeb71108920051872a18ff5e53eb9159fe11404b2aa"
     }
   ],
   "limits": [
@@ -550,5 +550,131 @@
       "Full related UI regression rerun; full repository Node batch with known baseline failures not rerun.",
       "Physical Windows IME, production Claude account authorization and public egress not certified by this renderer review."
     ]
+  },
+  "terminalPolishMerge": {
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:52:31.082053+00:00",
+    "baseCommit": "e3c76023120cd48af8e0efce5c5001268e30d0e5",
+    "polishCommit": "a61514e2c344921d23234286c5560b55e283b41a",
+    "remoteMainBeforeMerge": "f631a61c3e195151bb0e5212dc37d8b3aed9b38c",
+    "target": "origin/main",
+    "merge": "Merge original a61514e, preserve its ancestry and all later multi-device fixes; no conflict.",
+    "checks": {
+      "relatedUi": {
+        "startTime": "2026-11-06T01:47:52.605Z",
+        "duration": 143769.952,
+        "expected": 118,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/terminal-polish-merge-ui.log",
+        "report": ".local/terminal-polish-merge-ui.json"
+      },
+      "supplementalUi": {
+        "startTime": "2026-11-06T01:50:55.152Z",
+        "duration": 58924.455,
+        "expected": 53,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/terminal-polish-extra-verified-ui.log",
+        "report": ".local/terminal-polish-extra-verified-ui.json"
+      },
+      "distinctUiPassed": 171,
+      "byFile": {
+        "multi-device-development.spec.ts": 26,
+        "multi-device-electron.spec.ts": 1,
+        "multi-device-sidebar.spec.ts": 7,
+        "native-terminal.spec.ts": 11,
+        "stop-shortcut.spec.ts": 6,
+        "terminal-close.spec.ts": 3,
+        "terminal-predictive-echo.spec.ts": 36,
+        "terminal-preview-chrome.spec.ts": 3,
+        "terminal-projects.spec.ts": 40,
+        "terminal-status.spec.ts": 1,
+        "terminal-usability.spec.ts": 15,
+        "terminal-window.spec.ts": 2,
+        "terminal-workspace.spec.ts": 20
+      },
+      "relatedCore": {
+        "passed": 72,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/terminal-polish-merge-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/terminal-polish-merge-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing warnings",
+        "log": ".local/terminal-polish-merge-build.log"
+      },
+      "prettier": "passed",
+      "modelBoundary": "passed",
+      "independentReview": "passed"
+    },
+    "harnessRecheck": {
+      "firstSupplement": {
+        "passed": 41,
+        "failed": 12,
+        "log": ".local/terminal-polish-extra-ui.log",
+        "reason": "Supplement reused the first batch web server, which stopped when its owner finished; remaining navigations returned ERR_CONNECTION_REFUSED."
+      },
+      "resolution": "Reran the complete supplemental53 using its own managed web server;53/53 passed."
+    },
+    "productionSha256": {
+      "apps/desktop/src/NativeTerminal.tsx": "f2d6bbe178f829e1b86f56d6472ce4dbb3c997b08e0b30b119cb2982740e1a77",
+      "apps/desktop/src/TerminalWindow.tsx": "11a3f1f7f483ecc88a4e84b8767764162ac83b8f90004edc52cfc38aa6147718",
+      "apps/desktop/src/style.css": "56cdedb29ed0f56a58b965056c7509257af612c17eebfa8d64252ab749edb78c"
+    },
+    "screenshots": [
+      {
+        "path": "docs/evidence/multi-device/04-terminal-project-picker.png",
+        "theme": "light",
+        "width": 480,
+        "height": 800,
+        "sha256": "b3523fcac1b06e9ff78c43474d799e0d0bc980eb630db8ca29cd8d0e3bfc8215"
+      },
+      {
+        "path": "docs/evidence/multi-device/05-electron-projects.png",
+        "theme": "light",
+        "width": 1000,
+        "height": 680,
+        "sha256": "2903a55eb771f5d61454bdb006b41914bc41bb79d6cac541f94ac300a89ff9ca"
+      },
+      {
+        "path": "docs/evidence/multi-device/04-terminal-project-picker-dark.png",
+        "theme": "dark",
+        "width": 480,
+        "height": 800,
+        "sha256": "996aac52f84b6921bece2bf359ef2574c2d0aff518bec1f9318dddb65672f261"
+      },
+      {
+        "path": "docs/evidence/multi-device/05-electron-projects-dark.png",
+        "theme": "dark",
+        "width": 1000,
+        "height": 680,
+        "sha256": "718a3ba201ba3b517d38ffeb71108920051872a18ff5e53eb9159fe11404b2aa"
+      },
+      {
+        "path": "docs/evidence/multi-device/06-terminal-menu.png",
+        "theme": "shared",
+        "width": 1000,
+        "height": 680,
+        "sha256": "b368e6169709e53cf060e10c93fafbddcca80fd1cf1601becb7cf6014c93b789",
+        "note": "Terminal palette is shared by light/dark app themes; one image retained."
+      }
+    ],
+    "scope": {
+      "serverProtocolMainProcessUnchangedRelativeToBase": true,
+      "dependenciesUnchanged": true,
+      "realClaudeInference": false,
+      "productionDevicesAccessed": false,
+      "packaged": false,
+      "signed": false,
+      "deployed": false
+    },
+    "pushVerification": "Main push occurs after this verified merge commit; final remote SHA checked separately after push."
   }
 }

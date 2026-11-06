@@ -1,6 +1,16 @@
 # CC Space 多设备开发：实施与验收
 
-2026-11-06（香港时间）。分支 `codex/multi-device-development`，在 `b12ef04` 上继续修正，保留后续网络边界审查文档提交。按用户提供的《32-multi-device-fix-plan.md》完成桌面端界面与缺陷修复；本次未修改服务端、协议或主进程 SSH 管理器。
+2026-11-06（香港时间）。开发分支 `codex/multi-device-development`，在 `b12ef04` 上继续修正，保留后续网络边界审查文档提交。按用户提供的《32-multi-device-fix-plan.md》完成桌面端界面与缺陷修复；本次未修改服务端、协议或主进程 SSH 管理器。
+
+## terminal-polish 整合
+
+按用户要求合入 `ui/terminal-polish` 原提交 `a61514e`，目标合并并推送主分支。状态工具栏改为圆点加短词，完整连接和活动状态继续供读屏与悬停查看；标签和菜单使用一致的状态颜色，关闭按钮在活动、悬停或键盘聚焦时显示，窄窗口状态标签仅保留圆点。两组项目菜单共享行布局与右侧状态、执行提示。
+
+原提交基于 `f54784a`，本次无冲突合入较新的多设备分支，保留其后全部修复，包括状态刷新互斥、内嵌快捷键范围、创建配置重试、标签别名、输入法恢复、原生尺寸测试同步，以及关闭确认期间禁止新增标签。生产整合只涉及终端 renderer 和样式，服务端、协议、SSH 主进程、认证与依赖未改变。
+
+相关界面 **118/118**、终端原生输入/预测回显/停止快捷键补充 **53/53** 通过，共 **171 个不同用例**，包含 Windows Electron。核心 **72/72**、类型、构建、格式及模型边界检查通过，独立审查未发现待修复项。补充批次曾误用前一批的开发服务，服务退出导致 12 项连接拒绝；改用独立服务完整重跑 53/53，失败与重跑日志均保留。
+
+04–06 截图更新为合入后的实际界面。此次只合并源码并推送主分支，不生成安装包、签名或部署；原 `ui/motion` 工作区未提交内容保留。
 
 ## 使用方式
 
@@ -40,7 +50,7 @@
 | 原有聊天、布局、动效、SSH 与终端 | 原 125 项回归及原 43 项多设备用例按批准语义更新后重跑，包含新增场景 |
 | 类型、构建、格式与网络边界 | TypeScript、renderer production build、Prettier、模型依赖/导入边界与相关核心测试 |
 
-最新验收以 [指定验收 JSON](evidence/multi-device-fix-verification.json) 的 `deepReviewF52cb69` 为准，后续追加记录与历史批次分开保留。[f54784a 追加复查](MULTI-DEVICE-FOLLOWUP-REVIEW-2026-11-06.md) 及其 [记录](evidence/multi-device-followup-review-verification.json)、[b12ef04 原实施记录](evidence/multi-device-development-verification.json) 均属于历史批次。
+最新验收以 [指定验收 JSON](evidence/multi-device-fix-verification.json) 的 `terminalPolishMerge` 为准，后续追加记录与历史批次分开保留。[f54784a 追加复查](MULTI-DEVICE-FOLLOWUP-REVIEW-2026-11-06.md) 及其 [记录](evidence/multi-device-followup-review-verification.json)、[b12ef04 原实施记录](evidence/multi-device-development-verification.json) 均属于历史批次。
 
 ## 本轮审查落实
 
@@ -60,7 +70,7 @@
 - L3：Ctrl+Shift+T 与 ＋ 使用相同的连接、能力、关闭状态及活动标签条件。
 - L1：06 菜单图只保留一张，两种主题下终端配色相同；删除重复深色图，03 保留主窗口浅深色对照。
 - 上述问题的 5 个目标用例先失败、修复后通过；本次相关界面回归 **110/110 通过**，包含 Windows 真实 Electron **3/3**，核心测试 **72/72**、类型、生产构建、格式及模型边界检查通过。结果追加到 [指定验收 JSON](evidence/multi-device-fix-verification.json) 的 `f54784aReviewCorrections`，既有历史批次保留。独立审查未发现待修复项。
-- 本轮未合入附录的 `ui/terminal-polish` 视觉方案，未推送、发布或打包。
+- 当时未合入附录的 `ui/terminal-polish` 视觉方案，未推送、发布或打包；现已按后续明确指令整合，见本文开头。
 
 ## 96c2883 追加复查
 
@@ -99,7 +109,7 @@ M1/L1/L2/L3 未发现新的已确认产品缺陷。重新回归时发现真实 E
 
 原实施的双 Alpine Linux 设备联调 9/9 通过，包含真实 SSH / SFTP / Bash / GCC，使用受控 SDK 生产者，未执行真实 Claude 推理。此次仅改桌面 renderer 与测试，未重新宣称验收生产 Ubuntu、真实 Claude 账号、实体输入法或安装包。
 
-本次保留现有分支，追加提交；不推送、不合并、不生成安装器、不签名、不发布或部署。原 `ui/motion` 主工作区未提交内容不动。
+此前修复保留在开发分支；本次按后续指令合并并推送主分支，不生成安装器、不签名、不发布或部署。原 `ui/motion` 主工作区未提交内容不动。
 
 原全量 Node 批次存在 `.dockerignore` 遗漏 `deploy/host-update/cleanup.py` 的已复现基线失败，以及单独复测已通过的 Windows 临时目录清理 EPERM；不将原完整批次描述为全绿。本次按修复范围执行相关核心与界面回归。
 
