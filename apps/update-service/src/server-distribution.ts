@@ -29,6 +29,7 @@ import {
   MAX_EXPANDED_BYTES,
   MAX_INDEX_BYTES,
   parseDescriptor,
+  RUNTIME_LEVEL,
   releaseFilename,
   requireValue,
   sha256,
