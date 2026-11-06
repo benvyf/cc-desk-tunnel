@@ -113,6 +113,33 @@ class RetirementTests(unittest.TestCase):
             self.assertEqual(report['removed'], [str(old / 'data.tar.gz')])
             run.assert_called_once_with(['df', '-h', '/'], check=True)
 
+    def test_successful_new_install_rotates_kept_backup_without_deleting_either_container(self):
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            root = base / 'cc-runtime-upgrade'; root.mkdir()
+            containers, old_backup = self.fixture(root)
+            old_current, old_previous = containers
+            old_current['Name'] = '/previous-current'
+            old_current['State'] = {'Status': 'exited', 'StartedAt': 'start'}
+            new_current = {'Id': 'new-current', 'Image': 'new-image', 'Name': '/' + m.CONTAINER,
+                           'State': {'Running': True, 'Status': 'running', 'StartedAt': 'new',
+                                     'Health': {'Status': 'healthy'}}}
+            backup = root / 'backup-new'; backup.mkdir()
+            for name in ('rollback.py', 'helper.py'): (backup / name).write_text('keep')
+            (backup / 'data.tar.gz').write_bytes(b'new cold backup')
+            (backup / 'original.json').write_text(json.dumps(old_current))
+            (backup / 'record.json').write_text(json.dumps({'phase': 'installed', 'containerId': 'new-current',
+                'imageId': 'new-image', 'archiveSha256': hashlib.sha256(b'new cold backup').hexdigest()}))
+            current_inventory = [new_current, old_current, old_previous]
+            original_plan = m.plan
+            with patch.object(m, 'inventory', return_value=current_inventory), \
+                 patch.object(m, 'plan', side_effect=lambda c, k: original_plan(c, k, base)), \
+                 patch.object(m.subprocess, 'run') as run:
+                m.retire(root, apply=True)
+            self.assertFalse((old_backup / 'data.tar.gz').exists())
+            self.assertEqual((backup / 'data.tar.gz').read_bytes(), b'new cold backup')
+            run.assert_called_once_with(['df', '-h', '/'], check=True)
+
 
 if __name__ == '__main__':
     unittest.main()

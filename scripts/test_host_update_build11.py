@@ -113,6 +113,14 @@ class MigrationTests(unittest.TestCase):
                 changed = copy.copy(baseline); changed[key] = 'changed'
                 with self.assertRaises(RuntimeError): m.check_baseline(changed, self.release())
 
+    def test_published_build15_uses_exact_descriptor_and_current_lock(self):
+        baseline = self.baseline()
+        baseline.update(descriptor='075f5d15b45156218327abf8341f965c1f5cda8d00e8f75445b59f696b9fcf09',
+                        build=15, protocol=24, lock=m.LOCK)
+        self.assertFalse(m.check_baseline(baseline, self.release()))
+        baseline['lock'] = m.PREVIOUS_LOCK
+        with self.assertRaises(RuntimeError): m.check_baseline(baseline, self.release())
+
     def test_runtime_is_inherited_without_downloading_or_executing_claude(self):
         recipe=m.dockerfile('sha256:'+'c'*64)
         self.assertTrue(recipe.startswith('FROM sha256:'))
@@ -120,6 +128,14 @@ class MigrationTests(unittest.TestCase):
         self.assertNotIn('COPY --chown=root:root runtime/node',recipe)
         self.assertIn('program/deploy/docker/entrypoint.sh',recipe)
         self.assertNotIn('claude --',recipe)
+
+    def test_retention_uses_current_container_and_does_not_fail_upgrade_when_cleanup_is_uncertain(self):
+        retire = SimpleNamespace(retire=lambda *args, **kwargs: None)
+        with patch.object(m, 'load', return_value=retire), patch.object(retire, 'retire') as call:
+            m.retain_previous_backup('fixture-container')
+            call.assert_called_once_with(m.ROOT, container_name='fixture-container', apply=True)
+        with patch.object(m, 'load', side_effect=RuntimeError('fixture invalid backup')):
+            m.retain_previous_backup('fixture-container')
 
     def test_unresolved_backup_stops_before_another_cutover(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -179,7 +195,7 @@ class MigrationTests(unittest.TestCase):
                     raise RuntimeError('Insufficient backup/recovery space')
             legacy=SimpleNamespace(check_idle=idle,check_space=space,install=install_fake)
             def load(name,path):
-                return {'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
+                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
             def run(args,**kwargs):
                 if args==['docker','builder','prune','--all','--force']:
                     calls.append('cleanup')
@@ -198,7 +214,8 @@ class MigrationTests(unittest.TestCase):
                 self.assertEqual(calls.count('cleanup'),2)
                 self.assertLess(calls.index('cleanup'),calls.index('build'))
                 self.assertLess(calls.index('preflight'),len(calls)-1-calls[::-1].index('cleanup'))
-                if 'installed' in calls:self.assertEqual(calls[-3:],['cleanup','space','installed'])
+                if 'installed' in calls:self.assertEqual(calls[-4:],['cleanup','space','installed','retention'])
+                else:self.assertNotIn('retention',calls)
 
     def test_prepare_never_installs(self):self.exercise()
 

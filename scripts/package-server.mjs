@@ -27,6 +27,7 @@ const selected = (path) =>
     'scripts/install-linux.sh',
     'scripts/upgrade-message-review.py',
     'scripts/install-cc-space-037.py',
+    'scripts/retire-ubuntu-cc-backups.py',
     'apps/update-service/web/server-bootstrap.py',
     'apps/update-service/web/fresh-install.py',
   ].includes(path) ||

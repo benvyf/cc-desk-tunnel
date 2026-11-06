@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""One-node, user-authorized retirement of superseded cold-backup payloads.
+"""Verified retention of the current installation's previous cold-backup payload.
 
 Keep the rollback that created the current healthy installation, all container
 mounts, and every image/container. Never run Claude or touch live account data.
+The manual CLI is restricted to ubuntu-cc; the signed updater passes its already
+authorized node's container while holding the same upgrade lock.
 """
 import argparse
 import datetime
@@ -71,8 +73,8 @@ def references(containers):
                    json.dumps(c.get('Mounts', []), sort_keys=True)) for c in containers)
 
 
-def preserved_rollback(containers, root=UPGRADE):
-    current = next(c for c in containers if c['Name'] == '/' + CONTAINER)
+def preserved_rollback(containers, root=UPGRADE, container_name=CONTAINER):
+    current = next(c for c in containers if c['Name'] == '/' + container_name)
     need(current['State'].get('Running') and not current['State'].get('Paused') and
          current['State'].get('Health', {}).get('Status') == 'healthy',
          'Current production container must be healthy and running')
@@ -155,45 +157,51 @@ def main():
     physical(lock_path)
     with lock_path.open('a') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        containers = inventory()
-        current, keep = preserved_rollback(containers, UPGRADE)
-        targets, skipped = plan(containers, keep)
-        print('KEEP: current healthy service and verified rollback: ' + str(keep), flush=True)
-        print('PLAN: ' + str(len(targets)) + ' superseded backup payloads; logical bytes=' +
-              str(sum(item['size'] for item in targets)), flush=True)
-        print(json.dumps({'targets': targets, 'mountedBackupsPreserved': skipped}), flush=True)
-        if not args.apply:
-            print('READ_ONLY: add --apply to retire the listed historical backup payloads')
-            return
-        # Recheck the whole reference set, not just the currently running container.
-        latest = inventory()
-        need(references(latest) == references(containers), 'Container inventory changed; rerun cleanup')
-        stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ')
-        log = UPGRADE / ('retirement-' + stamp + '.json')
-        report = {'current': identity(current), 'keptRollback': str(keep), 'targets': targets,
-                  'removed': [], 'state': 'started'}
-        with log.open('x') as stream:
-            os.chmod(log, 0o600)
-            json.dump(report, stream)
-        for item in targets:
-            path = Path(item['path'])
-            physical(path)
-            info = path.lstat()
-            need((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink) ==
-                 (item['device'], item['inode'], item['size'], item['mtime'], 1),
-                 'Payload changed; remaining cleanup stopped: ' + str(path))
-            marker = path.parent / 'RETIRED-BACKUP.json'
-            physical(marker)
-            marker.write_text(json.dumps({'reason': 'User retired superseded historical rollback payloads',
-                                         'keptRollback': str(keep), 'audit': str(log)}) + '\n')
-            path.unlink()
-            report['removed'].append(str(path))
-            log.write_text(json.dumps(report) + '\n')
-        report['state'] = 'completed'
+        retire(UPGRADE, apply=args.apply)
+
+
+def retire(root, container_name=CONTAINER, apply=False):
+    # Caller holds upgrade.lock for the entire plan and deletion operation.
+    physical(root)
+    containers = inventory()
+    current, keep = preserved_rollback(containers, root, container_name)
+    targets, skipped = plan(containers, keep)
+    print('KEEP: current healthy service and verified rollback: ' + str(keep), flush=True)
+    print('PLAN: ' + str(len(targets)) + ' superseded backup payloads; logical bytes=' +
+          str(sum(item['size'] for item in targets)), flush=True)
+    print(json.dumps({'targets': targets, 'mountedBackupsPreserved': skipped}), flush=True)
+    if not apply:
+        print('READ_ONLY: add --apply to retire the listed historical backup payloads')
+        return
+    # Recheck the whole reference set, not just the currently running container.
+    latest = inventory()
+    need(references(latest) == references(containers), 'Container inventory changed; rerun cleanup')
+    stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    log = root / ('retirement-' + stamp + '.json')
+    report = {'current': identity(current), 'keptRollback': str(keep), 'targets': targets,
+              'removed': [], 'state': 'started'}
+    with log.open('x') as stream:
+        os.chmod(log, 0o600)
+        json.dump(report, stream)
+    for item in targets:
+        path = Path(item['path'])
+        physical(path)
+        info = path.lstat()
+        need((info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_nlink) ==
+             (item['device'], item['inode'], item['size'], item['mtime'], 1),
+             'Payload changed; remaining cleanup stopped: ' + str(path))
+        marker = path.parent / 'RETIRED-BACKUP.json'
+        physical(marker)
+        marker.write_text(json.dumps({'reason': 'User retired superseded historical rollback payloads',
+                                     'keptRollback': str(keep), 'audit': str(log)}) + '\n')
+        path.unlink()
+        report['removed'].append(str(path))
         log.write_text(json.dumps(report) + '\n')
-        print('DONE: superseded payloads retired; old rollback metadata/logs kept; no images, containers or live data deleted.')
-        print('AUDIT: ' + str(log))
-        subprocess.run(['df', '-h', '/'], check=True)
+    report['state'] = 'completed'
+    log.write_text(json.dumps(report) + '\n')
+    print('DONE: superseded payloads retired; old rollback metadata/logs kept; no images, containers or live data deleted.')
+    print('AUDIT: ' + str(log))
+    subprocess.run(['df', '-h', '/'], check=True)
 
 
 if __name__ == '__main__':
