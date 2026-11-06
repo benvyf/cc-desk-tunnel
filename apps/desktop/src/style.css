@@ -2003,6 +2003,8 @@ dialog:has(.release-notes) {
 /* Whether another computer is connected, beside its name: its sessions can then be worked on from here. */
 .device-state {
   display: inline-flex;
+  flex: none;
+  white-space: nowrap;
   align-items: center;
   gap: 5px;
   font-size: calc(11rem / 14);
@@ -2011,6 +2013,7 @@ dialog:has(.release-notes) {
   background: var(--hover);
 }
 .device-state::before {
+  flex: none;
   content: '';
   width: 6px;
   height: 6px;

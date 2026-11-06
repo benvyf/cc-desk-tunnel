@@ -93,7 +93,7 @@ import {
 import TitleBar from './TitleBar.tsx';
 import Presence, { useColumnsGliding, useLeaving } from './Presence.tsx';
 import type { BarMenu } from './TitleBar.tsx';
-import { IconButton, Menu, Modal } from './ui.tsx';
+import { Button, IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
 import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
@@ -349,6 +349,11 @@ export function App({
     error?: string;
     opened?: { sessionId: string; created: boolean };
     creationId?: string;
+  } | null>(null);
+  const [removeProjectTarget, setRemoveProjectTarget] = useState<{
+    path: string;
+    deviceId?: string;
+    key: string;
   } | null>(null);
   const [remoteRename, setRemoteRename] = useState<{ deviceId: string; path: string } | null>(null);
   const [deleteSession, setDeleteSession] = useState<Session | null>(null);
@@ -1273,7 +1278,10 @@ export function App({
     }
     await act(async () => {
       const path = await window.desktop!.chooseProject();
-      if (path) setProjects((value) => withProject(value, path));
+      if (path) {
+        restoreProject(path);
+        setProjects((value) => withProject(value, path));
+      }
     });
   }
   // The desktop gives an ordinary session a local directory; the browser creates one on the server.
@@ -1389,6 +1397,7 @@ export function App({
       const projectPath = await placeHere(session);
       if (!projectPath) return;
       await client.request({ type: 'session.move', sessionId: session.id, projectPath });
+      restoreProject(projectPath);
       setProjects((value) => withProject(value, projectPath));
     });
   }
@@ -1631,6 +1640,14 @@ export function App({
       },
     ];
   }
+  function restoreProject(path: string, deviceId?: string) {
+    const key = projectPreferenceKey(projectScope, deviceId, path);
+    if (getPrefs().hiddenProjects.includes(key))
+      setPrefs((value) => ({
+        ...value,
+        hiddenProjects: value.hiddenProjects.filter((item) => item !== key),
+      }));
+  }
   function projectMenu(path: string, deviceId?: string): MenuItem[] {
     const key = projectPreferenceKey(projectScope, deviceId, path);
     const pinned = prefs.pinnedProjects.includes(key);
@@ -1696,6 +1713,12 @@ export function App({
             },
           ]
         : []),
+      {
+        label: '移除项目',
+        icon: <Trash2 />,
+        separated: true,
+        run: () => setRemoveProjectTarget({ path, deviceId, key }),
+      },
     ];
   }
   const projectLabel = (path: string) => prefs.projectNames[pathKey(path)] || folderName(path);
@@ -1762,6 +1785,7 @@ export function App({
       return {
         ...value,
         projectNames,
+        hiddenProjects: value.hiddenProjects.filter((item) => item !== next),
         pinnedProjects: [
           ...new Set(value.pinnedProjects.map((item) => (item === key ? next : item))),
         ],
@@ -2861,6 +2885,7 @@ export function App({
               const startedAt = navigation.current;
               const path = (await window.desktop?.asOnDisk(written)) ?? written;
               if (client.state.connectionId !== generation) return;
+              restoreProject(path);
               setProjects((value) => withProject(value, path));
               if (openProjectTarget.forceNew) {
                 const id = await createSession(
@@ -2887,6 +2912,7 @@ export function App({
             }}
             onRemote={async (id, created) => {
               const session = client.state.sessions.find((item) => item.id === id);
+              if (session?.device?.viaSsh) restoreProject(session.projectPath, session.device.id);
               const key = session?.device
                 ? projectPreferenceKey(projectScope, session.device.id, session.projectPath)
                 : undefined;
@@ -2918,6 +2944,34 @@ export function App({
               if (creationId) terminalConfigurations.current.delete(creationId);
             }}
           />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {removeProjectTarget && (
+          <Modal title="移除项目？" onClose={() => setRemoveProjectTarget(null)}>
+            <p>仅从侧栏移除项目分组。会话和磁盘文件均保留，重新打开该目录可恢复分组。</p>
+            <p className="muted">{removeProjectTarget.path}</p>
+            <div className="dialog-actions">
+              <Button onClick={() => setRemoveProjectTarget(null)}>取消</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const { path, deviceId, key } = removeProjectTarget;
+                  if (!deviceId)
+                    setProjects((value) => value.filter((item) => pathKey(item) !== pathKey(path)));
+                  setPrefs((value) => ({
+                    ...value,
+                    hiddenProjects: [...new Set([...value.hiddenProjects, key])],
+                    pinnedProjects: value.pinnedProjects.filter((item) => item !== key),
+                    collapsedProjects: value.collapsedProjects.filter((item) => item !== key),
+                  }));
+                  setRemoveProjectTarget(null);
+                }}
+              >
+                移除项目
+              </Button>
+            </div>
+          </Modal>
         )}
       </Presence>
       <Presence kind="dialog">
@@ -2958,6 +3012,7 @@ export function App({
               void act(async () => {
                 if (!written) return;
                 const path = (await window.desktop?.asOnDisk(written)) ?? written;
+                restoreProject(path);
                 setProjects((value) => withProject(value, path));
                 setCreateOpen(false);
               });

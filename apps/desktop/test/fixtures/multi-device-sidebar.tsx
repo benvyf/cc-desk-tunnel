@@ -49,8 +49,17 @@ const elsewhere = [
   make('other', '数据统计', '02'),
   make('old', '其他电脑历史', 'unknown'),
 ];
+if (new URLSearchParams(location.search).has('longDevice')) {
+  const original = elsewhere.at(-1)!;
+  original.device = { ...original.device!, name: 'DESKTOP-DCT-LONG-DEVELOPMENT-COMPUTER' };
+  for (let index = 0; index < 3; index++)
+    elsewhere.push({ ...original, id: `old-${index}`, title: `其他电脑历史 ${index}` });
+}
 const calls: unknown[] = [];
-Object.assign(window, { sidebarFixture: { calls, setPrefs }, desktop: undefined });
+Object.assign(window, {
+  sidebarFixture: { calls, setPrefs, sessions: [local, ...elsewhere] },
+  desktop: undefined,
+});
 function Fixture() {
   const [selected, setSelected] = useState('local-session');
   const [entries, setEntries] = useState(targets);

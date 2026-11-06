@@ -63,7 +63,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await expect(page.locator('.list-heading').first()).toHaveText('置顶');
   await page.getByRole('button', { name: `项目操作 · ${project}`, exact: true }).click();
   await shot(page, '02-项目菜单');
-  await expect(page.getByRole('menuitem', { name: '移除项目' })).toHaveCount(0);
+  await expect(page.getByRole('menuitem', { name: '移除项目', exact: true })).toBeEnabled();
   await page.getByRole('menuitem', { name: '修改显示名称', exact: true }).click();
   await page.getByRole('dialog').getByLabel('显示名称').fill('我的项目');
   await page.getByRole('dialog').getByRole('button', { name: '保存', exact: true }).click();

@@ -207,10 +207,12 @@ export default function Sidebar({
     const plain: Session[] = [];
     const pinned: Session[] = [];
     const term = search.trim().toLowerCase();
-    for (const path of projects) grouped.set(pathKey(path), []);
+    for (const path of projects)
+      if (!prefs.hiddenProjects.includes(pathKey(path))) grouped.set(pathKey(path), []);
     for (const session of sessions) {
-      const loose = isInside(session.projectPath, workspaceRoots);
-      const text = `${session.title} 本机 ${session.device?.name ?? ''} ${loose ? '' : session.projectPath} ${prefs.projectNames[pathKey(session.projectPath)] ?? ''}`;
+      const workspace = isInside(session.projectPath, workspaceRoots);
+      const loose = workspace || prefs.hiddenProjects.includes(pathKey(session.projectPath));
+      const text = `${session.title} 本机 ${session.device?.name ?? ''} ${workspace ? '' : session.projectPath} ${prefs.projectNames[pathKey(session.projectPath)] ?? ''}`;
       if (!text.toLowerCase().includes(term)) continue;
       if (prefs.pinnedSessions.includes(session.id)) {
         pinned.push(session);
@@ -232,7 +234,23 @@ export default function Sidebar({
         for (const session of members)
           if (!paths.some((path) => pathKey(path) === pathKey(session.projectPath)))
             paths.push(session.projectPath);
+        for (const session of members) {
+          const key = projectPreferenceKey(projectScope, target.id, session.projectPath);
+          if (
+            prefs.hiddenProjects.includes(key) &&
+            `${session.title} ${target.name} ${session.projectPath} ${prefs.projectNames[key] ?? ''}`
+              .toLowerCase()
+              .includes(term)
+          ) {
+            if (prefs.pinnedSessions.includes(session.id)) pinned.push(session);
+            else plain.push(session);
+          }
+        }
         return paths
+          .filter(
+            (path) =>
+              !prefs.hiddenProjects.includes(projectPreferenceKey(projectScope, target.id, path)),
+          )
           .map((path) => {
             const key = projectPreferenceKey(projectScope, target.id, path);
             const matching = members.filter(
@@ -277,7 +295,7 @@ export default function Sidebar({
     const first = (key: string) => (prefs.pinnedProjects.includes(key) ? 0 : 1);
     return {
       pinned,
-      plain,
+      plain: plain.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)),
       groups: [...grouped.entries()]
         .map(([key, members]) => ({
           key,
@@ -314,6 +332,7 @@ export default function Sidebar({
     prefs.pinnedSessions,
     prefs.pinnedProjects,
     prefs.projectNames,
+    prefs.hiddenProjects,
   ]);
 
   const others = useMemo(() => {

@@ -121,3 +121,81 @@ test('opening another saved project does not reorder the sidebar project list', 
       .evaluateAll((nodes) => nodes.map((node) => node.getAttribute('title'))),
   ).toEqual(['01 · /work/app', '01 · /work/second']);
 });
+
+test('folded long device keeps offline badge and count on one line in a narrow sidebar', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/multi-device-sidebar.html?longDevice=1');
+  await page.evaluate(() => {
+    document.querySelector<HTMLElement>('.shell')!.style.setProperty('--sidebar-width', '240px');
+    (window as any).sidebarFixture.setPrefs((prefs: any) => ({
+      ...prefs,
+      elsewhereOpen: true,
+      collapsedElsewhere: ['unknown'],
+    }));
+  });
+  const row = page.locator('.device-heading').filter({ hasText: 'DESKTOP-DCT' });
+  await expect(row.getByRole('button')).toHaveAttribute('aria-expanded', 'false');
+  await expect(row.locator('.heading-toggle small')).toHaveText('4');
+  const badge = row.locator('.device-state');
+  await expect(badge).toHaveText('离线');
+  const folded = await badge.boundingBox();
+  await row.getByRole('button').click();
+  const expanded = await badge.boundingBox();
+  expect(folded!.height).toBeLessThanOrEqual(expanded!.height + 1);
+  expect(folded!.height).toBeLessThan(24);
+  expect(await row.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    await row.getByRole('button').click();
+    await expect(row.locator('.device-state')).toBeVisible();
+    await page.screenshot({
+      path: `.local/screenshots/sidebar-offline-${theme}.png`,
+      animations: 'disabled',
+    });
+    await row.getByRole('button').click();
+  }
+});
+
+test('removed project groups persist and do not hide pinned sessions or another device with the same path', async ({
+  page,
+}) => {
+  await page.evaluate(() =>
+    (window as any).sidebarFixture.setPrefs((prefs: any) => ({
+      ...prefs,
+      hiddenProjects: ['/work/app', 'remote:["test-service","01","/work/app"]'],
+      pinnedSessions: ['local-session', 'wait'],
+    })),
+  );
+  for (const reload of [false, true]) {
+    if (reload) await page.reload();
+    await expect(page.locator('.project-device')).toHaveText(['02', '03 · 离线']);
+    await expect(page.locator('.session-row').filter({ hasText: '开发任务' })).toHaveCount(1);
+    await expect(page.locator('.session-row').filter({ hasText: '确认部署' })).toHaveCount(1);
+    await expect(page.locator('.project-group')).toHaveCount(2);
+  }
+  await page.getByRole('button', { name: '搜索', exact: true }).click();
+  await page.getByRole('textbox', { name: '搜索会话', exact: true }).fill('01');
+  await expect(page.locator('.session-row')).toHaveCount(1);
+  await expect(page.locator('.session-row')).toContainText('确认部署');
+  await expect(page.locator('.project-group')).toHaveCount(0);
+});
+
+test('sessions from removed local and remote groups share newest-first Recents order', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const f = (window as any).sidebarFixture;
+    f.sessions.find((session: any) => session.id === 'wait').updatedAt = '2026-11-05T12:00:00Z';
+    f.setPrefs((prefs: any) => ({
+      ...prefs,
+      hiddenProjects: ['/work/app', 'remote:["test-service","01","/work/app"]'],
+    }));
+  });
+  await expect(page.locator('.session-list > .session-row strong')).toHaveText([
+    '确认部署',
+    '开发任务',
+  ]);
+});

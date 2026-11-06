@@ -204,6 +204,13 @@ async function setup(
           send({ type: 'session.updated', session });
         }
       }
+      if (c.type === 'project.move') {
+        for (const session of sessions)
+          if (session.device?.id === device.id && session.projectPath === c.from) {
+            session.projectPath = c.to;
+            send({ type: 'session.updated', session });
+          }
+      }
       if (c.type === 'session.subscribe')
         send({
           type: 'session.snapshot',
@@ -842,3 +849,140 @@ for (const remote of [false, true])
     });
     expect(fixture.sessions).toHaveLength(4);
   });
+
+for (const remote of [false, true])
+  test(`removing a ${remote ? 'remote' : 'local'} project preserves sessions and reopening restores its group`, async ({
+    page,
+  }) => {
+    const fixture = await setup(page, false, true);
+    await select(page, '项目 B 会话');
+    const source = fixture.sessions[remote ? 2 : 0];
+    const group = page.locator('.project-group').filter({ hasText: source.title });
+    const remove = async () => {
+      await group.getByRole('button', { name: /项目操作/ }).click();
+      await page.getByRole('menuitem', { name: '移除项目', exact: true }).click();
+    };
+    await remove();
+    const dialog = page.getByRole('dialog', { name: '移除项目？', exact: true });
+    await expect(dialog).toContainText('会话');
+    await expect(dialog).toContainText('文件');
+    await dialog.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(group).toHaveCount(1);
+    await remove();
+    await dialog.getByRole('button', { name: '移除项目', exact: true }).click();
+    await expect(group).toHaveCount(0);
+    await expect(page.locator('.session-row').filter({ hasText: source.title })).toBeVisible();
+    await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
+    fixture.send({ type: 'session.updated', session: source });
+    await expect(group).toHaveCount(0);
+    expect(
+      fixture.commands.filter((c) =>
+        ['session.delete', 'session.move', 'project.move'].includes(c.type),
+      ),
+    ).toHaveLength(0);
+    await select(page, source.title);
+    await expect(page.locator('.titlebar h1')).toHaveText(source.title);
+    await page.getByRole('button', { name: '打开项目', exact: true }).click();
+    if (remote)
+      await page
+        .getByRole('combobox', { name: '开发设备', exact: true })
+        .selectOption(source.device!.id);
+    else
+      await page
+        .getByRole('textbox', { name: '本机项目目录', exact: true })
+        .fill(source.projectPath);
+    await page
+      .getByRole('dialog', { name: '打开项目', exact: true })
+      .getByRole('button', { name: '打开项目', exact: true })
+      .click();
+    await expect(group).toHaveCount(1);
+  });
+
+for (const remote of [false, true])
+  test(`empty saved ${remote ? 'remote' : 'local'} projects can be removed without creating or deleting sessions`, async ({
+    page,
+  }) => {
+    const fixture = await setup(page, false, true);
+    await select(page, '项目 B 会话');
+    const path = remote ? '/work/empty-project' : 'D:\\work\\empty-project';
+    if (remote)
+      await page.evaluate(async (path) => {
+        const targets = await (window as any).desktop.ssh.list();
+        targets[0].projects.push(path);
+        (window as any).testSetTargetStatus('connected');
+      }, path);
+    else {
+      await page.getByRole('button', { name: '打开项目', exact: true }).click();
+      await page.getByRole('textbox', { name: '本机项目目录', exact: true }).fill(path);
+      await page.getByRole('dialog').getByRole('button', { name: '打开项目', exact: true }).click();
+    }
+    const group = page.locator('.project-group').filter({ hasText: 'empty-project' });
+    await group.getByRole('button', { name: /项目操作/ }).click();
+    await page.getByRole('menuitem', { name: '移除项目', exact: true }).click();
+    await page
+      .getByRole('dialog', { name: '移除项目？', exact: true })
+      .getByRole('button', { name: '移除项目', exact: true })
+      .click();
+    await expect(group).toHaveCount(0);
+    expect(fixture.sessions).toHaveLength(3);
+    expect(
+      fixture.commands.filter((c) =>
+        [
+          'session.create',
+          'session.delete',
+          'session.move',
+          'project.move',
+          'ssh.openProject',
+        ].includes(c.type),
+      ),
+    ).toHaveLength(0);
+  });
+
+test('legacy project opener restores a removed local group', async ({ page }) => {
+  await setup(page);
+  await select(page, '项目 B 会话');
+  const group = page.locator('.project-group').filter({ hasText: '项目 A 会话' });
+  await group.getByRole('button', { name: /项目操作/ }).click();
+  await page.getByRole('menuitem', { name: '移除项目', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '移除项目？', exact: true })
+    .getByRole('button', { name: '移除项目', exact: true })
+    .click();
+  await expect(group).toHaveCount(0);
+  await page.getByRole('button', { name: '打开项目', exact: true }).click();
+  await page.getByLabel('本机项目目录', { exact: true }).fill('D:\\work\\a');
+  await page.getByRole('dialog').getByRole('button', { name: '添加', exact: true }).click();
+  await expect(group).toHaveCount(1);
+  await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
+});
+
+test('changing a visible project folder to a removed project restores the destination group', async ({
+  page,
+}) => {
+  const fixture = await setup(page, false, true);
+  await select(page, '项目 B 会话');
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '项目 B 会话' })
+    .getByRole('button', { name: /项目操作/ })
+    .click();
+  await page.getByRole('menuitem', { name: '移除项目', exact: true }).click();
+  await page
+    .getByRole('dialog', { name: '移除项目？', exact: true })
+    .getByRole('button', { name: '移除项目', exact: true })
+    .click();
+  await page.evaluate((path) => {
+    (window as any).desktop.chooseProject = async () => path;
+  }, fixture.sessions[1].projectPath);
+  await page
+    .locator('.project-group')
+    .filter({ hasText: '项目 A 会话' })
+    .getByRole('button', { name: /项目操作/ })
+    .click();
+  await page.getByRole('menuitem', { name: '更改文件夹…', exact: true }).click();
+  await expect.poll(() => fixture.commands.filter((c) => c.type === 'project.move').length).toBe(1);
+  const group = page.locator('.project-group').filter({ hasText: '项目 A 会话' });
+  await expect(group).toHaveCount(1);
+  await expect(group.locator('h2')).toHaveAttribute('title', fixture.sessions[1].projectPath);
+  await expect(group.locator('.session-row')).toHaveCount(2);
+});

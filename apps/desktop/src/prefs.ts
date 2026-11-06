@@ -45,6 +45,8 @@ export type Prefs = {
   pinnedProjects: string[];
   // Projects whose sessions are folded away in the sidebar.
   collapsedProjects: string[];
+  // Removed sidebar groups; their sessions and project files stay available.
+  hiddenProjects: string[];
   // Whether the sessions on the user's other computers are listed in the sidebar.
   elsewhereOpen: boolean;
   // Which of the other computers, and which folders on them, are folded away: a computer by its id, a folder by
@@ -87,6 +89,7 @@ const defaults: Prefs = {
   pinnedSessions: [],
   pinnedProjects: [],
   collapsedProjects: [],
+  hiddenProjects: [],
   elsewhereOpen: false,
   collapsedElsewhere: [],
   projectNames: {},
@@ -141,6 +144,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
       pinnedSessions: strings(saved.pinnedSessions),
       pinnedProjects: strings(saved.pinnedProjects),
       collapsedProjects: strings(saved.collapsedProjects),
+      hiddenProjects: strings(saved.hiddenProjects),
       elsewhereOpen: saved.elsewhereOpen === true,
       collapsedElsewhere: strings(saved.collapsedElsewhere),
       projectNames:

@@ -1,0 +1,144 @@
+{
+  "schema": 1,
+  "dateHongKong": "2026-11-06",
+  "verifiedAtUtc": "2026-11-06T02:27:43.225647+00:00",
+  "baseCommit": "c1ae2fd8b6613dcb116cc0d90c742280bd805e0a",
+  "branch": "codex/sidebar-project-actions",
+  "behavior": {
+    "projectAction": "移除项目",
+    "scope": "Only removes sidebar grouping; sessions, pinned sessions and filesystem contents are preserved.",
+    "reference": "User clarified current Codex desktop. Observed separate 移除项目 and 归档聊天 entries; no removal/archive was performed in the real Codex app.",
+    "storage": "Local prefs.hiddenProjects, local normalized path keys and existing remote service/device/path keys.",
+    "restore": "Main OpenProjectDialog local/SSH, native folder picker, legacy AddProjectDialog, directory takeover and project repoint destination.",
+    "offlineBadge": "Unshrinkable, nowrap, fixed-size state dot; long device heading truncates first."
+  },
+  "checks": {
+    "firstRelatedUi": {
+      "startTime": "2026-11-06T02:15:11.076Z",
+      "duration": 273482.888,
+      "expected": 89,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/sidebar-fix-final-ui.log",
+      "report": ".local/sidebar-fix-final-ui.json",
+      "scope": "Before final repoint-destination restoration and merged recency ordering."
+    },
+    "finalRelatedUi": {
+      "startTime": "2026-11-06T02:22:19.272Z",
+      "duration": 151009.591,
+      "expected": 75,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/sidebar-final-ui.log",
+      "report": ".local/sidebar-final-ui.json"
+    },
+    "finalConfirmationUi": {
+      "startTime": "2026-11-06T02:26:06.548Z",
+      "duration": 16118.948,
+      "expected": 6,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/sidebar-final-confirm-ui.log",
+      "report": ".local/sidebar-final-confirm-ui.json",
+      "scope": "After confirmation copy clarified preserved pinned sessions."
+    },
+    "distinctUi": {
+      "passed": 91,
+      "failed": 0,
+      "skipped": 0,
+      "byFile": {
+        "app.spec.ts": 16,
+        "layout.spec.ts": 7,
+        "multi-device-development.spec.ts": 32,
+        "multi-device-sidebar.spec.ts": 10,
+        "new-session.spec.ts": 2,
+        "open-project-dialog.spec.ts": 9,
+        "sidebar-details.spec.ts": 8,
+        "sidebar-merge.spec.ts": 7
+      }
+    },
+    "core": {
+      "passed": 12,
+      "failed": 0,
+      "skipped": 0,
+      "log": ".local/sidebar-final-core.log"
+    },
+    "typecheck": {
+      "status": "passed",
+      "log": ".local/sidebar-final-typecheck.log"
+    },
+    "build": {
+      "status": "passed with existing bundler warnings",
+      "log": ".local/sidebar-final-build.log"
+    },
+    "format": "passed",
+    "modelBoundary": "passed",
+    "diffWhitespace": "passed"
+  },
+  "redGreen": {
+    "initialMissingMenuAndWrappedBadge": {
+      "failed": 3,
+      "redLog": ".local/sidebar-fix-red.log",
+      "greenPassed": 3,
+      "greenLog": ".local/sidebar-fix-green.log"
+    },
+    "legacyRestore": {
+      "redLog": ".local/sidebar-restore-red.log",
+      "greenInFinalUi": true
+    },
+    "repointRestore": {
+      "redLog": ".local/sidebar-repoint-red.log",
+      "greenInFinalUi": true
+    },
+    "recencyOrder": {
+      "redLog": ".local/sidebar-order-red.log",
+      "greenInFinalUi": true
+    }
+  },
+  "review": {
+    "independent": "passed",
+    "resolved": [
+      "Legacy project opener did not restore grouping.",
+      "Repoint to a removed destination hid the moved project.",
+      "Removed SSH sessions needed global recency order.",
+      "Removal captures original scoped identity."
+    ],
+    "remainingConfirmedFindings": []
+  },
+  "productionSha256": {
+    "apps/desktop/src/App.tsx": "8c2c2e1a09ddf59cba875b0c4059e3a87e5c3211379d976bacf9b4a5d9656694",
+    "apps/desktop/src/Sidebar.tsx": "1532b84a3c3f51c811cea975e8140e6175ea91b4dc698a97adfd1f95ed4f147c",
+    "apps/desktop/src/prefs.ts": "6d0adef0e0f541aa7a9209f23d13e0f3629743f6e3372401cf24d9894d273cd0",
+    "apps/desktop/src/style.css": "c4094920fa5f2dd516f5fc917058ef1d5fcf1fd55fd97a589a1508b1e07eb8ee"
+  },
+  "screenshots": [
+    {
+      "path": "docs/evidence/sidebar-project-actions/offline-device-light.png",
+      "theme": "light",
+      "sha256": "d97037bd23de4a6930ed26a6db27b35821317f79ed2ba6665035900f5fa289a9",
+      "source": ".local/screenshots/sidebar-offline-light.png",
+      "crop": [8, 124, 232, 151]
+    },
+    {
+      "path": "docs/evidence/sidebar-project-actions/offline-device-dark.png",
+      "theme": "dark",
+      "sha256": "ec8653e3c6c03bd7cbc15e5301e97a62e6ca3465a8d745dd5799595f062e1d06",
+      "source": ".local/screenshots/sidebar-offline-dark.png",
+      "crop": [8, 124, 232, 151]
+    }
+  ],
+  "limits": {
+    "serverProtocolMainProcessChanged": false,
+    "dependenciesChanged": false,
+    "realUserSessionsDeleted": false,
+    "filesystemProjectFilesDeleted": false,
+    "realClaudeInference": false,
+    "pushed": false,
+    "published": false,
+    "packaged": false,
+    "fullRepositorySuiteRerun": false
+  }
+}
