@@ -13,7 +13,7 @@ import {
 import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
-import { buildDescriptor } from '../packages/managed-server/src/index.ts';
+import { buildDescriptor, RUNTIME_LEVEL } from '../packages/managed-server/src/index.ts';
 
 const selected = (path) =>
   [
@@ -70,6 +70,8 @@ export function packageServer(root, output) {
     throw new Error('Server releases require a clean Git worktree.');
   const sourceCommit = git('rev-parse', 'HEAD').toString().trim();
   const config = JSON.parse(git('show', 'HEAD:deploy/managed-server.json'));
+  if (config.runtimeLevel !== RUNTIME_LEVEL)
+    throw new Error('Managed server identity and publication runtime level differ.');
   const { version: appVersion } = JSON.parse(git('show', 'HEAD:apps/desktop/package.json'));
   const source = git('show', 'HEAD:packages/protocol/src/index.ts').toString();
   const protocol = Number(/export const PROTOCOL_VERSION = (\d+)/.exec(source)?.[1]);

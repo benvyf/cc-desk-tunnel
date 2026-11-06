@@ -11,7 +11,7 @@ import { readFileSync, readdirSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 
 export const PRODUCT = 'cc-desk-tunnel-managed-server';
-export const RUNTIME_LEVEL = 'node24-cli2.1.295-v2';
+export const RUNTIME_LEVEL = 'node24-cli2.1.295-v3';
 export const MAX_INDEX_BYTES = 128 * 1024;
 export const MAX_ARCHIVE_BYTES = 64 * 1024 * 1024;
 export const MAX_EXPANDED_BYTES = 256 * 1024 * 1024;

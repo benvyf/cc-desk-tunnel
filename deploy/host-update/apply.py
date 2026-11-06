@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare/cut over signed Build 17 on the three reviewed Ubuntu nodes; keep offline rollback."""
+"""Prepare/cut over signed Build 18 on the three reviewed Ubuntu nodes; keep offline rollback."""
 import argparse
 import hashlib
 import importlib.util
@@ -18,7 +18,7 @@ import urllib.error
 import http.client
 
 ROOT = Path('/var/lib/cc-runtime-upgrade')
-BUILD, PROTOCOL = 17, 24
+BUILD, PROTOCOL = 18, 24
 RUNTIME = 'node24-cli2.1.295-v3'
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
@@ -116,7 +116,7 @@ def verify_release(fresh, data, expected):
     need((release['build'], release['protocol'], release['appVersion'], release['runtimeLevel'],
           release['packageLockSha256'], release['sha256']) ==
          (BUILD, PROTOCOL, '0.3.10', RUNTIME, LOCK, expected),
-         'Signed target changed or is not the reviewed Build 17; obtain a new command')
+         'Signed target changed or is not the reviewed Build 18; obtain a new command')
     return release
 
 
@@ -225,7 +225,7 @@ def main():
         need(release == confirmed, 'Published release changed; refresh and confirm again')
         if check_baseline(baseline, release):
             b.live_status(b.CONTAINER, release)
-            print('ALREADY_INSTALLED: Build 17 / protocol 24 / Node 24.22.2; no change.')
+            print('ALREADY_INSTALLED: Build 18 / protocol 24 / Node 24.22.2; no change.')
             return
         legacy = load('runtime_cutover', PROGRAM / 'scripts/install-cc-space-037.py')
         legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
@@ -234,16 +234,16 @@ def main():
             retain_previous_backup(b.CONTAINER)
         # All entrypoints, including the management-center host updater, must
         # reclaim safe cache without relying on callers to pass --cleanup.
-        keep_image = 'cc-space-runtime:build17-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        keep_image = 'cc-space-runtime:build18-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         cleanup = load('host_update_cleanup', PROGRAM / 'deploy/host-update/cleanup.py')
         cleanup.clean(ROOT, PROGRAM, keep_image)
         legacy.check_space(reserve=2 * 1024**3)
         # The old CLI binary, SDK version and read-only policy were authenticated above. Never execute Claude.
         b.runtime_and_policy = lambda container: verify_runtime(container, node)
-        work = Path(tempfile.mkdtemp(prefix='build17-', dir=ROOT)); work.chmod(0o755)
+        work = Path(tempfile.mkdtemp(prefix='build18-', dir=ROOT)); work.chmod(0o755)
         program = work / 'program'
-        print('1/4 Verifying signed Build 17; current service remains running.', flush=True)
-        archive = b.download('/cc-updates/server/v1/artifacts/17/linux-x64/cc-desk-tunnel-server-0.3.10-build17.tar.gz', 64 * 1024**2)
+        print('1/4 Verifying signed Build 18; current service remains running.', flush=True)
+        archive = b.download('/cc-updates/server/v1/artifacts/18/linux-x64/cc-desk-tunnel-server-0.3.10-build18.tar.gz', 64 * 1024**2)
         b.unpack(archive, program, release)
         need(hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() == LOCK and
              (program / 'deploy/docker/runtime-level').read_text().strip() == '3', 'Candidate runtime/dependencies differ')
@@ -253,7 +253,7 @@ def main():
         # Recheck after extracting the signed program, before a costly build.
         legacy.check_space(reserve=2 * 1024**3)
         base = 'cc-space-runtime-base:' + original['Image'].split(':')[-1][:12]
-        image = 'cc-space-runtime:build17-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        image = 'cc-space-runtime:build18-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         subprocess.run(['docker', 'tag', original['Image'], base], check=True, capture_output=True)
         inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True)
         if inspected.returncode:
@@ -291,7 +291,7 @@ def main():
         print('3/4 Checking idle state, disconnecting clients, cold backup and image/policy cutover.', flush=True)
         legacy.install(b, disconnect_clients=True)
         retain_previous_backup(b.CONTAINER)
-        print('4/4 SUCCESS: ' + node + ' / Build 17 / protocol 24 / Node 24.22.2.', flush=True)
+        print('4/4 SUCCESS: ' + node + ' / Build 18 / protocol 24 / Node 24.22.2.', flush=True)
 
 
 if __name__ == '__main__':

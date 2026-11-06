@@ -1,12 +1,20 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import {
   terminalInventory,
   verifyTerminalInventory,
 } from '../../../deploy/docker/terminal-runtime.mjs';
+import { RUNTIME_LEVEL } from '../../../packages/managed-server/src/index.ts';
+
+test('release identity and publisher advertise the same runtime requirement', () => {
+  const identity = JSON.parse(
+    readFileSync(new URL('../../../deploy/managed-server.json', import.meta.url)),
+  );
+  assert.equal(identity.runtimeLevel, RUNTIME_LEVEL);
+});
 
 test('terminal inventory rejects a single corrupt JS byte and native addon changes', (t) => {
   const root = mkdtempSync(join(tmpdir(), 'cc-pty-integrity-'));
