@@ -522,8 +522,8 @@ test('refit makes the remote program lay out again at the same size', async ({ p
       ),
     )
     .toBeGreaterThan(0);
-  const size = await page.evaluate(
-    () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)!,
+  const size = await page.evaluate(() =>
+    window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)!,
   );
   await page.evaluate(() => (window.terminalFixture.controls.length = 0));
   await page.getByRole('button', { name: '重新适配窗口' }).click();

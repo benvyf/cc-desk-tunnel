@@ -724,6 +724,7 @@ export default function NativeTerminal({
     // Maximize, restore and full screen can report an intermediate size first and the final one
     // without another observable change; measuring again once the window has settled catches it.
     let settleTimers: ReturnType<typeof setTimeout>[] = [];
+    let redrawTimer: ReturnType<typeof setTimeout> | undefined;
     const settle = () => {
       for (const timer of settleTimers) clearTimeout(timer);
       settleTimers = [150, 450].map((delay) => setTimeout(() => activate.current(), delay));
@@ -753,25 +754,24 @@ export default function NativeTerminal({
             rows,
           });
           size = '';
-          // Far enough apart that the two SIGWINCHes are not read as one unchanged size.
-          settleTimers.push(
-            setTimeout(() => {
-              activate.current();
-              settleTimers.push(
-                setTimeout(() => {
-                  if (size || !id || closeRequested || phaseNow() !== 'running') return;
-                  size = `${cols}:${rows}`;
-                  client.terminalControl({
-                    type: 'terminal.resize',
-                    sessionId,
-                    terminalId: id,
-                    cols,
-                    rows,
-                  });
-                }, 300),
-              );
-            }, 150),
-          );
+          // Far enough apart that the two SIGWINCHes are not read as one unchanged size. Kept apart
+          // from the settle timers: a window event in between must not leave the remote one column short.
+          clearTimeout(redrawTimer);
+          redrawTimer = setTimeout(() => {
+            activate.current();
+            redrawTimer = setTimeout(() => {
+              redrawTimer = undefined;
+              if (size || !id || closeRequested || phaseNow() !== 'running') return;
+              size = `${cols}:${rows}`;
+              client.terminalControl({
+                type: 'terminal.resize',
+                sessionId,
+                terminalId: id,
+                cols,
+                rows,
+              });
+            }, 300);
+          }, 150);
           return;
         }
         activate.current();
@@ -844,6 +844,7 @@ export default function NativeTerminal({
       clearTimeout(mouseTimer);
       observer.disconnect();
       for (const timer of settleTimers) clearTimeout(timer);
+      clearTimeout(redrawTimer);
       view.removeEventListener('resize', onWindowResize);
       input.dispose();
       prediction?.dispose();

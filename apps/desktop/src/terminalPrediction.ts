@@ -40,7 +40,7 @@ export function classifyTerminalInput(data: string, origin: InputOrigin): Predic
 // pointer movement with no button held. Claude Code's fullscreen renderer turns on
 // any-motion tracking (1003), so these arrive while the user types; they must not
 // read as unknown edits. Clicks and drags stay unknown: a click can move the caret.
-const sgrMouse = /\x1b\[<(\d{1,3});\d{1,4};\d{1,4}[Mm]/gu;
+const sgrMouse = /\x1b\[<(\d{1,3});\d{1,5};\d{1,5}[Mm]/gu;
 export type PassiveMouse = 'wheel' | 'motion';
 export function passiveMouseReport(data: string): PassiveMouse | null {
   if (!data.startsWith('\x1b[<')) return null;

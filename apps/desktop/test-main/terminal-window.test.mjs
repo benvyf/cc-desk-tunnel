@@ -172,6 +172,25 @@ test('maximize state is sent only to the owning renderer', () => {
   assert.deepEqual(f.contents.messages, [['terminal-window:state', { maximized: true }]]);
 });
 
+test('full screen, restore and finished drags or moves also report the window state', () => {
+  const f = fixture();
+  let maximized = false;
+  f.child.isMaximized = () => maximized;
+  f.contents.emit('did-create-window', f.child, { frameName: 'cc-native-terminal' });
+  for (const event of ['enter-full-screen', 'leave-full-screen', 'restore', 'resized', 'moved'])
+    f.child.emit(event);
+  maximized = true;
+  f.child.emit('maximize');
+  assert.deepEqual(f.contents.messages, [
+    ...Array(5).fill(['terminal-window:state', { maximized: false }]),
+    ['terminal-window:state', { maximized: true }],
+  ]);
+  // Continuous drag and move events are not forwarded: only their finished forms are.
+  f.child.emit('resize');
+  f.child.emit('move');
+  assert.equal(f.contents.messages.length, 6);
+});
+
 test('window failures and destruction sources are recorded without closing on a stall', () => {
   const logs = [];
   const f = fixture((line) => logs.push(line));
