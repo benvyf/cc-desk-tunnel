@@ -48,17 +48,30 @@ export class FreshNodes {
   issue(input: unknown, distribution: ServerDistribution) {
     const id = (input as { nodeId?: unknown } | null)?.nodeId;
     const reset = (input as { resetExisting?: unknown } | null)?.resetExisting;
+    const resume = (input as { resumeExisting?: unknown } | null)?.resumeExisting;
     if (
       !input ||
       Array.isArray(input) ||
-      Object.keys(input).some((key) => !['nodeId', 'resetExisting'].includes(key)) ||
+      Object.keys(input).some(
+        (key) => !['nodeId', 'resetExisting', 'resumeExisting'].includes(key),
+      ) ||
       (Object.hasOwn(input, 'resetExisting') && typeof reset !== 'boolean') ||
+      (Object.hasOwn(input, 'resumeExisting') && typeof resume !== 'boolean') ||
       typeof id !== 'string' ||
       !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id) ||
       ['__proto__', 'constructor', 'prototype'].includes(id)
     )
       throw new UpdateError(400, '节点名称请使用 1–64 位小写字母、数字、短横线或下划线。');
     const nodes = readFreshNodes(this.config.dataDir);
+    if (resume) {
+      if (!Object.hasOwn(nodes, id) || !nodes[id]?.monitorHash)
+        throw new UpdateError(409, '仅已领取安装配置的节点可续装；请确认节点名称及本机安装缓存。');
+      return {
+        nodeId: id,
+        resumeExisting: true,
+        command: this.command(id, Boolean(reset)),
+      };
+    }
     let moderation: Record<string, string> = {};
     try {
       moderation = JSON.parse(
@@ -86,16 +99,28 @@ export class FreshNodes {
     const index = distribution.index()!.toString('utf8');
     nodes[id] = { grantHash: hash(code), expiresAt, index };
     this.save(nodes);
-    const installer = readFileSync(new URL('../web/fresh-install-v3.py', import.meta.url));
-    const url = this.config.origin + '/cc-updates/admin/fresh-install-v3.py';
-    const resetArgs = reset ? `,"--reset-existing","--confirm-host",${JSON.stringify(id)}` : '';
-    const program = `import urllib.request,hashlib,sys,tempfile,pathlib,runpy; print("Downloading verified Ubuntu installer...",flush=True); u=${JSON.stringify(url)}; r=urllib.request.urlopen(u,timeout=30); b=r.read(262145); (r.url==u and len(b)<=262144 and hashlib.sha256(b).hexdigest()==${JSON.stringify(hash(installer))}) or sys.exit("Installer verification failed"); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/"fresh-install.py"; p.write_bytes(b); sys.argv=[str(p),"--origin",${JSON.stringify(this.config.origin)},"--node",${JSON.stringify(id)},"--code",${JSON.stringify(code)}${resetArgs}]; runpy.run_path(str(p),run_name="__main__")`;
     return {
       nodeId: id,
       expiresAt: new Date(expiresAt).toISOString(),
       build: status.payload.release.build,
-      command: "sudo python3 -c '" + program.replaceAll("'", "'\"'\"'") + "'",
+      command: this.command(id, Boolean(reset), code),
     };
+  }
+  private command(id: string, reset: boolean, code?: string) {
+    const installer = readFileSync(new URL('../web/fresh-install.py', import.meta.url));
+    const url = this.config.origin + '/cc-updates/admin/fresh-install-v4.py';
+    const args = [
+      '--origin',
+      this.config.origin,
+      '--node',
+      id,
+      ...(code ? ['--code', code] : ['--resume']),
+      ...(reset ? ['--reset-existing', '--confirm-host', id] : []),
+    ]
+      .map((value) => JSON.stringify(value))
+      .join(',');
+    const program = `import urllib.request,hashlib,sys,tempfile,pathlib,runpy; print("Downloading verified Ubuntu installer...",flush=True); u=${JSON.stringify(url)}; r=urllib.request.urlopen(u,timeout=30); b=r.read(262145); (r.url==u and len(b)<=262144 and hashlib.sha256(b).hexdigest()==${JSON.stringify(hash(installer))}) or sys.exit("Installer verification failed"); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/"fresh-install.py"; p.write_bytes(b); sys.argv=[str(p),${args}]; runpy.run_path(str(p),run_name="__main__")`;
+    return "sudo python3 -c '" + program.replaceAll("'", "'\"'\"'") + "'";
   }
   redeem(code: string, installationId: unknown) {
     if (Date.now() - this.window >= 60000) {

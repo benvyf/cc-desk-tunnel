@@ -11,7 +11,7 @@ export async function hostInstaller(config: UpdateConfig) {
     'base/upgrade-message-review.py': '../../../scripts/upgrade-message-review.py',
     'base/install-cc-space-037.py': '../../../scripts/install-cc-space-037.py',
     'base/server-bootstrap.py': '../web/server-bootstrap.py',
-    'base/fresh-install.py': '../web/fresh-install.py',
+    'base/fresh-install.py': '../web/fresh-install-host-base.py',
   };
   const entries = await Promise.all(
     Object.entries(paths).map(async ([name, path]) => [

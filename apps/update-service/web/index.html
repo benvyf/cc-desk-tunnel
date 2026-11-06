@@ -87,9 +87,9 @@
       <section class="card" aria-labelledby="fresh-heading">
         <h2 id="fresh-heading">Ubuntu 一键部署</h2>
         <p class="muted">适用于空白 Ubuntu 24.04 LTS x64 虚拟机，也可明确选择清空重装旧 CC 服务。自动安装 Docker、最新已发布服务端及独立监控和审核配置；完成后显示客户端连接地址、证书指纹和服务凭据。建议 2 核、4 GB 内存、至少 6 GB 可用磁盘，安装可能需要数分钟。</p>
-        <form id="fresh-form"><label for="fresh-node">新节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-04" autocomplete="off"><label class="check"><input id="fresh-reset" type="checkbox" aria-describedby="fresh-reset-help">清空重装旧 CC 服务</label><p id="fresh-reset-help" class="muted">仅在不需要旧内容时勾选。节点名称必须与目标 Ubuntu 的主机名一致；新版检查通过后才停止旧服务，旧数据隔离保留，新服务生成新的连接凭据。预设监控节点可选择清空重装，已完成部署或审核注册的同名节点仍受保护。</p><button type="submit">生成安装命令</button></form>
+        <form id="fresh-form"><label for="fresh-node">节点名称</label><input id="fresh-node" required pattern="[a-z0-9][a-z0-9_-]{0,63}" maxlength="64" placeholder="例如 ubuntu-cc-04" autocomplete="off"><label class="check"><input id="fresh-reset" type="checkbox" aria-describedby="fresh-reset-help">清空重装已有环境</label><p id="fresh-reset-help" class="muted">节点名称必须与目标 Ubuntu 的主机名一致。清理缓存、检查空间，备份本次操作前正常运行的环境；新版验证成功后清理更早的备份大文件。预设监控节点可选择清空重装，已领取配置的节点请使用续装命令。</p><button type="submit">生成安装命令</button><button id="fresh-resume" type="button" class="quiet">生成续装命令</button></form>
         <div id="fresh-result" hidden><p id="fresh-expiry" class="muted" aria-live="polite"></p><label for="fresh-command">在目标 Ubuntu 控制台执行</label><textarea id="fresh-command" readonly rows="6" spellcheck="false" autocomplete="off"></textarea><button id="fresh-copy" class="quiet">复制安装命令</button></div>
-        <p class="muted">每台虚拟机使用不同名称和命令。安装码十分钟内绑定一台机器，响应丢失时同机可在有效期内重试，请勿转发。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。普通安装遇到旧服务会停止；需要保留内容时使用更新功能。安装不会修改网络转发规则。</p>
+        <p class="muted">每台虚拟机使用不同名称和命令。安装码十分钟内绑定一台机器，请勿转发。已领取配置但安装中断的节点可生成续装命令，仅使用原主机缓存，不会重新领取凭据，也没有领取期限。程序部署后，再按 Ubuntu 提示通过官方 Claude Code 登录自己的账号。普通安装遇到旧服务会停止；需要保留内容时使用更新功能。安装不会修改网络转发规则。</p>
       </section>
       <section class="card" aria-labelledby="server-download-heading"><h2 id="server-download-heading">配套 Linux 服务端</h2><div id="server-download" aria-live="polite"></div></section>
       <div class="section-heading"><div><p class="eyebrow">CHANNELS</p><h2>当前发布</h2></div><button id="refresh" class="quiet">刷新</button></div>

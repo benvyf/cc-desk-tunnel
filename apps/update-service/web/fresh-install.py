@@ -12,6 +12,7 @@ import pathlib
 import platform
 import re
 import secrets
+import shlex
 import shutil
 import socket
 import subprocess
@@ -31,10 +32,18 @@ NODE_SHA = 'fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6'
 NODE_RUNTIMES = {
     'node24-cli2.1.295-v1': ('24.21.0', NODE_SHA),
     'node24-cli2.1.295-v2': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
+    'node24-cli2.1.295-v3': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
 }
 CLI_ARCHIVE_SHA = 'd45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95'
 CLI_SHA = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 KEYS = {'managed-vps-2026-10-23': '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n'}
+BUILD_SPACE = 6 * 1024 ** 3
+OPERATING_RESERVE = 512 * 1024 ** 2
+RECOVERY_SUPPORT = {
+    'scripts/install-cc-space-037.py': '30fac9186307a804a61353582413b76402afcda5a14506b033559ca56d80bd52',
+    'scripts/retire-ubuntu-cc-backups.py': 'e6be3d622b0825cf00a7419b0eac565bf04c9c4d66834704f458e5c6856e0d24',
+}
+RECOVERY_MODULE_SHA = '6234b2b59e9d762f7f8c6f500b255a8d93d12bb16786ecf858c0268a4310a11d'
 
 
 class InstallError(Exception):
@@ -67,9 +76,125 @@ def download(url, limit, data=None, token=None):
 
 def private_json(path, value):
     temporary = path.with_suffix('.next')
-    temporary.write_text(json.dumps(value))
-    temporary.chmod(0o600)
+    if temporary.is_symlink() or path.is_symlink():
+        raise InstallError('Unexpected linked installation record.')
+    with temporary.open('w') as stream:
+        temporary.chmod(0o600)
+        json.dump(value, stream)
+        stream.flush()
+        os.fsync(stream.fileno())
     temporary.replace(path)
+    if os.name == 'posix':
+        descriptor = os.open(path.parent, os.O_RDONLY)
+        try: os.fsync(descriptor)
+        finally: os.close(descriptor)
+
+
+def storage_paths():
+    paths = [ROOT, DATA.parent]
+    if shutil.which('docker'):
+        value = run(['docker', 'info', '--format', '{{.DockerRootDir}}'], capture=True, timeout=30)
+        docker = pathlib.Path(value)
+        if not value or not docker.is_absolute() or not docker.is_dir():
+            raise InstallError('Docker storage path is unavailable; no service change.')
+        paths.append(docker)
+        for path in [pathlib.Path('/var/lib/containerd'), docker / 'containerd']:
+            if path.is_dir(): paths.append(path)
+    return list(dict.fromkeys(path.resolve() for path in paths))
+
+
+def check_space(stage, required):
+    shortages = []
+    for path in storage_paths():
+        free = shutil.disk_usage(path).free
+        deficit = max(0, required - free)
+        print(f'SPACE: stage={stage}; path={path}; available={free}; required={required}; '
+              f'deficit={deficit} bytes; available={free / 1024**3:.2f} GiB; '
+              f'required={required / 1024**3:.2f} GiB.', flush=True)
+        if deficit: shortages.append(f'path={path}; deficit={deficit} bytes')
+    if shortages:
+        raise InstallError('Insufficient installation space; ' + '; '.join(shortages) +
+                           '. No cutover requested; existing service retained.')
+
+
+def prepare_space(stage, required):
+    paths = storage_paths()
+    before = {str(path): shutil.disk_usage(path).free for path in paths}
+    if shutil.which('docker'):
+        print('CLEANUP: removing unused Docker build cache; keeping running service and rollback.', flush=True)
+        run(['docker', 'builder', 'prune', '--all', '--force'], timeout=300)
+    for path in paths:
+        after = shutil.disk_usage(path).free
+        print(f'CLEANUP: path={path}; available_before={before[str(path)]}; '
+              f'available_after={after}; reclaimed={after - before[str(path)]} bytes.', flush=True)
+    check_space(stage, required)
+
+
+def cached_enrollment(args):
+    cached = ROOT / 'enrollment.json'
+    if not cached.is_file() or cached.is_symlink():
+        if getattr(args, 'resume', False):
+            raise InstallError('Local installation cache missing; resume cannot redeem a new installation code.')
+        return None
+    bundle = json.loads(cached.read_text())
+    if bundle.get('nodeId') != args.node or bundle.get('origin') != args.origin:
+        raise InstallError('Local installation cache belongs to another node or origin.')
+    return bundle
+
+
+def save_resume_installer(args):
+    installer = ROOT / 'installer.py'
+    if installer.is_symlink():
+        raise InstallError('Local resume installer cannot be a symlink.')
+    content = pathlib.Path(__file__).read_bytes()
+    temporary = ROOT / 'installer.next'
+    if temporary.is_symlink():
+        raise InstallError('Local resume staging cannot be a symlink.')
+    temporary.write_bytes(content)
+    temporary.chmod(0o700)
+    temporary.replace(installer)
+    command = ['sudo', 'python3', str(installer), '--origin', args.origin,
+               '--node', args.node, '--resume']
+    if getattr(args, 'reset_existing', False):
+        command += ['--reset-existing', '--confirm-host', args.node]
+    result = shlex.join(command)
+    private_json(ROOT / 'resume.json', {'nodeId': args.node, 'command': result})
+    print('RESUME_COMMAND: ' + result, flush=True)
+    return result
+
+
+def load_recovery(program=None):
+    directory = ROOT / 'recovery-support'
+    if directory.is_symlink(): raise InstallError('Linked recovery support directory.')
+    directory.mkdir(mode=0o700, exist_ok=True)
+    modules = []
+    for relative, expected in RECOVERY_SUPPORT.items():
+        target = directory / pathlib.Path(relative).name
+        source = program / relative if program is not None else target
+        if source.is_symlink() or not source.is_file():
+            raise InstallError('Verified offline recovery support missing; no cutover.')
+        content = source.read_bytes()
+        if hashlib.sha256(content).hexdigest() != expected:
+            raise InstallError('Offline recovery support checksum mismatch; no cutover.')
+        if target.is_symlink(): raise InstallError('Linked offline recovery support file.')
+        if program is not None: target.write_bytes(content)
+        spec = importlib.util.spec_from_file_location('fresh_' + target.stem.replace('-', '_'), target)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
+    target = ROOT / 'recovery.py'
+    if target.is_symlink(): raise InstallError('Linked recovery helper.')
+    if program is not None:
+        content = download(ORIGIN + '/cc-updates/admin/fresh-install-recovery.py', 262144)
+        if hashlib.sha256(content).hexdigest() != RECOVERY_MODULE_SHA:
+            raise InstallError('Recovery helper checksum mismatch; no cutover.')
+        target.write_bytes(content)
+    elif not target.is_file() or hashlib.sha256(target.read_bytes()).hexdigest() != RECOVERY_MODULE_SHA:
+        raise InstallError('Cached recovery helper missing or changed; keep installation directory.')
+    spec = importlib.util.spec_from_file_location('fresh_recovery', target)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module.Recovery(ROOT, DATA, socket.gethostname(), support_module(reuse=True), *modules)
 
 
 def run(args, timeout=1800, capture=False):
@@ -170,7 +295,7 @@ USER root
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
-RUN chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
+RUN if [ -f /app/deploy/docker/terminal-runtime.mjs ]; then /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record; fi && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
 ENV HOME=/data/home
 USER ccdesktunnel
 WORKDIR /data/workspace
@@ -240,7 +365,7 @@ def prepared_installation(bundle):
     return record['release'], support_module(reuse=True), program, image
 
 
-def check_empty_machine():
+def check_empty_machine(rollback=None):
     if DATA.exists() or DATA.is_symlink():
         raise InstallError('Existing /srv/cc-desk-tunnel detected. Ordinary installation never replaces existing data.')
     check_port_available()
@@ -248,6 +373,14 @@ def check_empty_machine():
         daemon = subprocess.run(['docker', 'info'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=15)
         if daemon.returncode: return
         containers = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture=True).splitlines()
+        if rollback:
+            name = 'cc-desk-tunnel-before-' + pathlib.Path(rollback['backup']).name
+            if name in containers:
+                previous = json.loads(run(['docker', 'inspect', rollback['containerId']], capture=True))[0]
+                if (previous.get('Id') != rollback['containerId'] or previous.get('Name') != '/' + name or
+                        previous['State'].get('Running') or previous['State'].get('Paused')):
+                    raise InstallError('Recorded rollback container changed; installation stopped.')
+                containers.remove(name)
         if CONTAINER in containers or any(n.startswith('cc-desk-tunnel-') for n in containers):
             raise InstallError('Existing CC container detected; use its managed upgrade instead.')
 
@@ -293,6 +426,23 @@ def reset_target(containers):
 def prepare_reset(args):
     enabled = getattr(args, 'reset_existing', False)
     confirmation = getattr(args, 'confirm_host', None)
+    journal = ROOT / 'reset.json'
+    if journal.exists():
+        previous = json.loads(journal.read_text())
+        rolled_back = previous.get('phase') == 'rolled-back'
+        if previous.get('recoveryVersion') == 1:
+            backup = pathlib.Path(previous.get('backup', ''))
+            if backup.parent != ROOT or not backup.name.startswith('backup-') or backup.resolve() != backup:
+                raise InstallError('Unexpected recovery record; no replay requested.')
+            record = json.loads((backup / 'record.json').read_text())
+            rolled_back = rolled_back or record.get('phase') == 'rolled-back'
+        if rolled_back:
+            raise InstallError('Previous attempt restored the pre-installation environment. '
+                               'Automatic replay is disabled; inspect the recorded backup before another reinstall.')
+        if getattr(args, 'resume', False) and previous.get('recoveryVersion') == 1:
+            enabled, confirmation = True, args.node
+            args.reset_existing, args.confirm_host = True, args.node
+            print('RESUME_MODE: continuing the locally recorded clean reinstall; no new reset requested.', flush=True)
     if not enabled:
         if confirmation:
             raise InstallError('--confirm-host requires --reset-existing.')
@@ -301,11 +451,13 @@ def prepare_reset(args):
         return None
     if not confirmation or confirmation != socket.gethostname():
         raise InstallError('Clean reinstall requires --confirm-host matching this machine hostname.')
-    journal = ROOT / 'reset.json'
     if journal.exists():
         plan = json.loads(journal.read_text())
         if plan['nodeId'] != args.node or plan['hostname'] != confirmation:
             raise InstallError('Clean reinstall belongs to another node or hostname.')
+        if plan['phase'] == 'rolled-back':
+            raise InstallError('Previous attempt restored the pre-installation environment. '
+                               'Automatic replay is disabled; inspect the recorded backup before another reinstall.')
         return plan
     if any((ROOT / name).exists() for name in ('configured.json', 'installed.json')):
         raise InstallError('This managed installation already has data; the original command will not reset it.')
@@ -455,12 +607,13 @@ def install(args):
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
         if LOGIN.is_symlink() or (LOGIN.exists() and LOGIN.read_text() != login_source):
             raise InstallError('Login helper already exists or is a symlink; refusing to overwrite it.')
+        bundle = cached_enrollment(args)
+        if bundle is None and not getattr(args, 'code', None):
+            raise InstallError('An installation code is required for first enrollment; use --resume only with local cache.')
         reset = prepare_reset(args)
+        save_resume_installer(args)
         cached = ROOT / 'enrollment.json'
-        if cached.exists():
-            bundle = json.loads(cached.read_text())
-            if bundle['nodeId'] != args.node: raise InstallError('This machine is already assigned to another node.')
-        else:
+        if bundle is None:
             if not reset: check_empty_machine()
             print('1/6 Redeeming this machine\'s one-time installation code...', flush=True)
             attempt_path = ROOT / 'enrollment-attempt.json'
@@ -479,6 +632,7 @@ def install(args):
             return
         # Once data exists, never reset it or roll back account/session state on a retry.
         initialized = (ROOT / 'configured.json').exists()
+        recovery = None
         if initialized:
             record = json.loads((ROOT / 'configured.json').read_text())
             if record['nodeId'] != args.node: raise InstallError('Configuration belongs to another node.')
@@ -497,14 +651,14 @@ def install(args):
         elif (ROOT / 'prepared.json').exists():
             release, support, program, image = prepared_installation(bundle)
             print('Resuming the verified image and policy; no download, dependency installation or rebuild.', flush=True)
-            finish_reset(reset)
-            check_empty_machine()
-            configure(bundle, program, image)
+            if reset and (reset.get('recoveryVersion') or reset['phase'] != 'done'):
+                recovery = load_recovery() if reset.get('recoveryVersion') else load_recovery(program)
+            check_space('cutover', OPERATING_RESERVE)
         else:
             print('2/6 Installing Docker and prerequisites (first run can take several minutes)...', flush=True)
-            if shutil.disk_usage('/').free < 6 * 1024 ** 3:
-                raise InstallError('At least 6 GiB free disk space is required before building.')
+            prepare_space('build', BUILD_SPACE)
             ensure_prerequisites(reuse_docker=bool(reset))
+            check_space('build', BUILD_SPACE)
             if not reset: check_empty_machine()
             print('3/6 Verifying the signed server release and pinned official runtime...', flush=True)
             release = verify_index(bundle['index'])
@@ -531,18 +685,45 @@ def install(args):
                 if not re.fullmatch(r'sha256:[0-9a-f]{64}', image): raise InstallError('Invalid prepared image identity.')
             print('5/6 Checking readiness offline, with no account data and no Claude execution...', flush=True)
             support.offline_preflight(image, work, release, ROOT / 'install.log')
+            prepare_space('cutover', OPERATING_RESERVE)
             if reset:
+                recovery = load_recovery(program)
+                recovery.legacy.check_space()
+
                 private_json(ROOT / 'prepared.json', {
                     'nodeId': bundle['nodeId'], 'indexSha256': hashlib.sha256(bundle['index'].encode()).hexdigest(),
                     'release': release, 'image': image,
                     'policySha256': hashlib.sha256((program / 'deploy/docker/managed-settings.json').read_bytes()).hexdigest()})
-            finish_reset(reset)
-            check_empty_machine()
+        if initialized and reset and reset.get('recoveryVersion'):
+            recovery = load_recovery()
+        activate_installation(args, bundle, release, support, image,
+                              program if not initialized else None, reset, recovery, initialized, login_source)
+
+
+def activate_installation(args, bundle, release, support, image, program, reset, recovery, initialized, login_source):
+    changed = bool(initialized and recovery)
+    try:
+        if not initialized:
+            if reset:
+                if recovery:
+                    if reset['phase'] != 'done': recovery.legacy.check_space()
+                    reset = recovery.prepare(reset)
+                    changed = True
+                    recovery.cutover(reset)
+                else:
+                    finish_reset(reset)
+            check_empty_machine(reset if recovery else None)
             configure(bundle, program, image)
         names = run(['docker', 'ps', '-a', '--format', '{{.Names}}'], capture=True).splitlines()
         if CONTAINER not in names:
+            labels = ['--label', 'cc.fresh.node=' + args.node]
+            if recovery:
+                nonce = secrets.token_hex(16)
+                private_json(pathlib.Path(reset['backup']) / 'replacement-intent.json',
+                             {'image': image, 'nonce': nonce, 'originalId': reset['containerId']})
+                labels += ['--label', 'org.cc-desk-tunnel.bootstrap=' + nonce]
             run(['docker', 'run', '-d', '--name', CONTAINER, '--restart', 'unless-stopped',
-                 '--label', 'cc.fresh.node=' + args.node, '--security-opt', 'no-new-privileges:true',
+                 *labels, '--security-opt', 'no-new-privileges:true',
                  '--cap-drop', 'ALL', '--log-opt', 'max-size=10m', '--log-opt', 'max-file=3',
                  '-p', '8787:8787', '--mount', 'type=bind,src=' + str(DATA) + ',dst=/data',
                  '--mount', 'type=bind,src=' + str(ROOT / 'policy') + ',dst=/etc/claude-code,readonly', image])
@@ -550,7 +731,18 @@ def install(args):
             label = run(['docker', 'inspect', '--format', '{{index .Config.Labels "cc.fresh.node"}}', CONTAINER], capture=True)
             if label != args.node: raise InstallError('Existing container belongs to a different installation.')
             run(['docker', 'start', CONTAINER])
+        if recovery:
+            current = support.Engine().request('GET', '/containers/' + CONTAINER + '/json')
+            intent = json.loads((pathlib.Path(reset['backup']) / 'replacement-intent.json').read_text())
+            if (current.get('Image') != intent['image'] or
+                    current.get('Config', {}).get('Labels', {}).get('org.cc-desk-tunnel.bootstrap') != intent['nonce']):
+                raise InstallError('Replacement identity changed; keep recovery records.')
+            private_json(pathlib.Path(reset['backup']) / 'replacement-record.json', {'id': current['Id']})
+            support.wait_healthy(support.Engine(), current['Id'])
         support.live_status(CONTAINER, release)
+        if recovery:
+            current = support.Engine().request('GET', '/containers/' + CONTAINER + '/json')
+            recovery.commit(reset, current)
         login = LOGIN
         if login.is_symlink() or (login.exists() and login.read_text() != login_source):
             raise InstallError('Login helper already exists; refusing to overwrite it.')
@@ -559,13 +751,22 @@ def install(args):
         private_json(ROOT / 'installed.json', {'nodeId': args.node, 'build': release['build'], 'sha256': release['sha256']})
         print('6/6 SUCCESS: managed service installed. No Claude/provider queries were made.', flush=True)
         show_connection()
+    except BaseException:
+        if changed and recovery:
+            try:
+                recovery.rollback(reset)
+                print('RECOVERY: pre-installation environment restored and health checked.', flush=True)
+            except BaseException as error:
+                print('RECOVERY_REQUIRED: automatic recovery did not complete; keep the backup and inspect its rollback command. Error=' + type(error).__name__, flush=True)
+        raise
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--origin', required=True)
     parser.add_argument('--node', required=True)
-    parser.add_argument('--code', required=True)
+    parser.add_argument('--code')
+    parser.add_argument('--resume', action='store_true', help='Resume only this node local cached enrollment; never redeem another code.')
     parser.add_argument('--reset-existing', action='store_true', help='Isolate old CC data and replace its verified container after offline preflight.')
     parser.add_argument('--confirm-host', help='Required for clean reinstall; must equal this Ubuntu hostname.')
     try:

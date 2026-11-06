@@ -73,6 +73,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     ['server-download.js', 'text/javascript'],
     ['fresh-install.py', 'text/plain'],
     ['fresh-install-v3.py', 'text/plain'],
+    ['fresh-install-recovery.py', 'text/plain'],
     ['fresh-nodes.js', 'text/javascript'],
     ['desktop-access.js', 'text/javascript'],
     ['monitor.js', 'text/javascript'],
@@ -84,6 +85,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
       type: type!,
     });
   }
+  assets.set(`${base}/fresh-install-v4.py`, assets.get(`${base}/fresh-install.py`)!);
   for (const page of ['accounts', 'updates', 'moderation'])
     assets.set(`${base}/${page}`, assets.get(base + '/')!);
   const expectedTokenHash = Buffer.from(config.adminTokenSha256, 'hex');
