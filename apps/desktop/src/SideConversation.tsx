@@ -141,6 +141,8 @@ export default function SideConversation({
     followUps.pause(sessionId);
     control('run.cancel');
   };
+  // The input box's slot for approvals and Claude's questions (ApprovalDock.tsx).
+  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
   useStopShortcut(
     stopScope,
     `${state.connectionId}:${sessionId}:${run?.id}`,
@@ -219,6 +221,7 @@ export default function SideConversation({
         </p>
       )}
       <Conversation
+        dock={dockSlot}
         session={session}
         events={events}
         history={history}
@@ -251,6 +254,7 @@ export default function SideConversation({
         }
       />
       <Composer
+        dockSlot={setDockSlot}
         session={session}
         draft={draft}
         history={recalledInputs}

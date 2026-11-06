@@ -1307,7 +1307,13 @@ test('terminal approval and queue editor targets keep their own Escape handling'
   const f = await fixture(page, { busy: true }),
     main = page.locator('.workspace'),
     box = main.getByRole('textbox', { name: '消息', exact: true });
-  for (const owner of ['native-terminal', 'xterm', 'approval-actions', 'queued-editor']) {
+  for (const owner of [
+    'native-terminal',
+    'xterm',
+    'approval-actions',
+    'approval-dock',
+    'queued-editor',
+  ]) {
     await box.focus();
     await box.press('Escape');
     await main.evaluate((root, owner) => {

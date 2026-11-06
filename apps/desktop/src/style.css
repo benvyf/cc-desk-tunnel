@@ -7556,6 +7556,230 @@ dialog::backdrop {
 .question-card .approval-actions {
   border-top: 0;
 }
+
+/* What waits on the user stands where the input box stood (ApprovalDock.tsx): the same width, corners and shadow,
+   so the eye finds it where it was going to type. The box keeps its draft underneath and comes back once the
+   answer is given. */
+.approval-dock-slot:empty {
+  display: none;
+}
+.composer-stack:has(> .approval-dock-slot:not(:empty)) > .composer {
+  display: none;
+}
+.approval-dock {
+  position: relative;
+  z-index: var(--z-content);
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: min(62vh, 560px);
+  min-height: 0;
+  border-radius: var(--radius-2xl);
+  background: var(--popover);
+  box-shadow:
+    var(--shadow-composer),
+    0 0 0 0.5px var(--line-strong);
+  overflow: hidden;
+  outline: none;
+  animation:
+    motion-fade-in var(--cds-dur-base) var(--cds-ease-out) both,
+    motion-rise var(--cds-dur-base) var(--cds-ease-snap) backwards;
+}
+.approval-dock:focus-visible {
+  box-shadow:
+    var(--shadow-composer-focus),
+    0 0 0 0.5px light-dark(rgb(31 30 29 / 45%), rgb(222 220 209 / 40%));
+}
+.approval-dock-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 10px 12px 0 16px;
+  font-size: calc(12rem / 14);
+  font-weight: 500;
+  color: var(--muted);
+}
+.approval-dock-head > svg.app-icon {
+  width: var(--icon-sm);
+  height: var(--icon-sm);
+  color: var(--accent);
+}
+.approval-dock-more {
+  color: var(--faint);
+  font-weight: 400;
+}
+.approval-dock-more::before {
+  content: '·';
+  margin-right: 8px;
+}
+.approval-dock-pager {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+}
+.approval-dock-pager > span {
+  min-width: 40px;
+  text-align: center;
+}
+.approval-dock-title,
+.approval-dock .approval-title {
+  margin: 0;
+  padding: 6px 16px 10px;
+  font-size: calc(15rem / 14);
+  font-weight: 600;
+  line-height: 1.45;
+  color: var(--text);
+}
+.approval-dock-title small {
+  margin-left: 8px;
+  font-weight: 400;
+  font-size: calc(12rem / 14);
+  color: var(--faint);
+}
+.approval-dock-question {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+.approval-dock-question > legend {
+  float: left;
+  width: 100%;
+}
+.approval-dock-body {
+  min-height: 0;
+  overflow: auto;
+  padding: 0 16px 12px;
+  overscroll-behavior: contain;
+}
+.approval-dock-options {
+  display: grid;
+  gap: 6px;
+}
+.approval-dock .question-option {
+  justify-content: flex-start;
+  min-height: 40px;
+}
+.approval-dock .question-option > span {
+  flex: 1;
+  min-width: 0;
+}
+.approval-dock kbd {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--surface-2);
+  font: 500 calc(11.5rem / 14) / 1 var(--font-mono);
+  color: var(--muted);
+}
+.approval-dock .question-option[aria-checked='true'] kbd {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+.question-other {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 4px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.question-other:focus-within {
+  border-color: var(--accent);
+}
+.question-other input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 4px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  font-size: calc(13.5rem / 14);
+}
+.question-other input:focus {
+  outline: none;
+  box-shadow: none;
+}
+/* The call a permission is asked for, as the transcript would show it, kept short enough to answer beside. */
+.approval-dock.tool .approval-dock-body > :is(pre, .tool-diff-view) {
+  max-height: 260px;
+}
+.approval-dock-plan {
+  margin: 0 16px 12px;
+  padding: 4px 16px;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  font-size: calc(13.5rem / 14);
+}
+.approval-dock-note {
+  color: var(--faint);
+}
+.approval-dock-actions {
+  flex: none;
+  align-items: center;
+  border-top: 1px solid var(--line-soft);
+  background: transparent;
+  padding: 10px 12px 10px 16px;
+}
+/* The input box's stop button, carried at the dock's left while the box steps aside. */
+.approval-dock-actions > .stop-button {
+  margin-left: 0;
+}
+.approval-dock-actions > .stop-button:not(:has(+ .approval-dock-hint)) {
+  margin-right: auto;
+}
+.approval-dock-hint {
+  margin-right: auto;
+  font-size: calc(12rem / 14);
+  color: var(--faint);
+}
+/* A question or a plan is said in words, not as code. */
+.tool.asked .tool-subject {
+  font-family: inherit;
+  font-size: calc(12.5rem / 14);
+}
+/* In the transcript, the call that waits keeps one line and says where it is answered. */
+.tool-await {
+  flex: none;
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: var(--radius-xs);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: calc(12rem / 14);
+  font-weight: 500;
+}
+.tool-input-questions {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 14px;
+  list-style: none;
+}
+.tool-input-questions small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.side-conversation .approval-dock {
+  max-height: min(70vh, 520px);
+}
 .menu-heading {
   max-width: 300px;
   font-size: calc(12rem / 14);

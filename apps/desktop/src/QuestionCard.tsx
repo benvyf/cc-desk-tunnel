@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Check, X } from './icons.tsx';
 
-type Question = {
+export type Question = {
   question: string;
   header?: string;
   multiSelect?: boolean;

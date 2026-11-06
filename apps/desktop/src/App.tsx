@@ -952,6 +952,8 @@ export function App({
     }
   }
   const stopScope = useRef<HTMLElement>(null);
+  // The input box's slot for approvals and Claude's questions (ApprovalDock.tsx).
+  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
   useStopShortcut(
     stopScope,
     `${state.connectionId}:${selected?.id}:${selected?.activeRun?.id}`,
@@ -2477,6 +2479,7 @@ export function App({
               </div>
             )}
             <Conversation
+              dock={dockSlot}
               adjustableWidth={true}
               readingPositions={readingPositions.current}
               projectControl={
@@ -2711,6 +2714,7 @@ export function App({
             )}
             {selected && (!away || remote || selectedTerminal) && (
               <Composer
+                dockSlot={setDockSlot}
                 mascot={prefs.mascot}
                 queuedMessages={
                   <FollowUpQueue

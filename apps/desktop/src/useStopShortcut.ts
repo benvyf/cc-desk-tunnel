@@ -79,7 +79,7 @@ export function useStopShortcut(
         !target ||
         !element.contains(target) ||
         target.closest(
-          '.native-terminal, .xterm, iframe, webview, [inert], .terminal-list, .approval-actions, .queued-editor, .conversation-find',
+          '.native-terminal, .xterm, iframe, webview, [inert], .terminal-list, .approval-actions, .approval-dock, .queued-editor, .conversation-find',
         ) ||
         [...doc.querySelectorAll(owners)].some((owner) => {
           const terminalOwner = owner.closest('.terminal-list');

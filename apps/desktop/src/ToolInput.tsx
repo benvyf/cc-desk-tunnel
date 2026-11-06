@@ -284,6 +284,45 @@ export function toolInput(name: string, input: string): ToolInputView {
         copy: todos.map((todo) => `${mark(todo.status)} ${text(todo.content)}`).join('\n'),
       };
     }
+    // What Claude asked, with the choices it offered; the answers are in the call's result below.
+    case 'AskUserQuestion': {
+      if (!Array.isArray(fields.questions)) break;
+      const questions = (fields.questions as Fields[]).filter((item) => text(item?.question));
+      if (!questions.length) break;
+      const choices = (item: Fields) =>
+        (Array.isArray(item.options) ? (item.options as Fields[]) : [])
+          .map((option) => text(option?.label))
+          .filter(Boolean);
+      return {
+        label: '提问',
+        body: (
+          <ul className="tool-input-questions" data-search-content>
+            {questions.map((item, index) => (
+              <li key={index}>
+                <strong>{text(item.question)}</strong>
+                {choices(item).length > 0 && <small>{choices(item).join(' · ')}</small>}
+              </li>
+            ))}
+          </ul>
+        ),
+        copy: questions
+          .map((item) => `${text(item.question)}\n${choices(item).join(' / ')}`)
+          .join('\n\n'),
+      };
+    }
+    case 'ExitPlanMode': {
+      const plan = text(fields.plan);
+      if (!plan) break;
+      return {
+        label: '计划',
+        body: (
+          <pre className="tool-input-prose" data-search-content>
+            {plan}
+          </pre>
+        ),
+        copy: plan,
+      };
+    }
   }
   return fallback();
 }
@@ -312,6 +351,8 @@ export function approvalQuestion(name: string) {
     case 'Agent':
     case 'Task':
       return '允许启动这个子任务？';
+    case 'ExitPlanMode':
+      return '按这个计划开始执行？';
     default:
       return `允许使用 ${name}？`;
   }

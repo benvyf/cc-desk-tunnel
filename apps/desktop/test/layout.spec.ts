@@ -269,7 +269,8 @@ test('a question is answered with its choices, and a session or a whole project 
   await login(page);
   const title = await createSession(page, '提问');
 
-  // Claude's question shows its choices instead of allow / deny; the answers go back by question.
+  // Claude's question shows its choices instead of allow / deny, one question at a time where the input box was;
+  // the answers go back by question.
   await send(page, '问我', 'question');
   const card = page.getByRole('form', { name: 'Claude 的提问' });
   await expect(card).toBeVisible();
@@ -278,6 +279,7 @@ test('a question is answered with its choices, and a session or a whole project 
   const submit = card.getByRole('button', { name: '提交回答', exact: true });
   await card.getByRole('checkbox', { name: '界面', exact: true }).click();
   await card.getByRole('checkbox', { name: '文档', exact: true }).click();
+  await card.getByRole('button', { name: '下一题', exact: true }).click();
   await expect(submit).toBeDisabled();
   await card.getByRole('radio', { name: '现在', exact: true }).click();
   await card.getByLabel('其他回答：什么时候开始？').fill('下周一');

@@ -185,9 +185,10 @@ async function openAll(page: Page) {
 test('an approval is asked once, in words, over the command it allows', async ({ page }) => {
   await connect(page);
   await open(page, '等待审批的会话');
-  const card = page.locator('.tool[open]').filter({ has: page.locator('.approval-actions') });
+  // Asked where the input box stood (ApprovalDock.tsx); the call keeps its line in the transcript.
+  const card = page.getByRole('region', { name: '需要你的许可' });
   await expect(card.locator('.approval-title')).toHaveText('允许运行这条命令？');
-  await expect(card.locator('.tool-section-head').first()).toContainText('命令');
+  await expect(page.locator('.tool.docked .tool-await')).toHaveText('在下方处理');
   await expect(card.locator('.tool-input-note')).toHaveText('运行登录模块测试');
   await expect(card.locator('.tool-command')).toHaveText('npm test -- --run src/auth');
   await expect(card.getByRole('button', { name: '允许', exact: true })).toBeVisible();

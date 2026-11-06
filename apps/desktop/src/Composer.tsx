@@ -110,8 +110,12 @@ export default function Composer({
   configure,
   stop,
   mascot = false,
+  dockSlot,
 }: {
   queuedMessages?: ReactNode;
+  // Where the conversation puts what waits on the user (ApprovalDock.tsx). While it holds something, it stands in
+  // for the message box (style.css), which keeps its draft underneath.
+  dockSlot?: (element: HTMLDivElement | null) => void;
   // Clawd on the box's top edge (the session's own box, when the setting is on).
   mascot?: boolean;
   session: Session;
@@ -444,6 +448,7 @@ export default function Composer({
       <div className="composer-stack">
         {mascot && <Clawd state={clawdState} />}
         {queuedMessages}
+        {dockSlot && <div className="approval-dock-slot" ref={dockSlot} />}
         <form
           className={`composer ${dropping ? 'dropping' : ''}`}
           onSubmit={(event) => {

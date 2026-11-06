@@ -2,7 +2,8 @@ import { lineChanges } from './lineDiff.ts';
 import type { TranscriptItem, Work } from './transcript.ts';
 
 type Tool = Extract<TranscriptItem, { kind: 'tool' }>;
-export type Category = 'command' | 'edit' | 'read' | 'search' | 'web' | 'agent' | 'other';
+export type Category =
+  'command' | 'edit' | 'read' | 'search' | 'web' | 'agent' | 'question' | 'plan' | 'other';
 
 const categories: Record<string, Category> = {
   Bash: 'command',
@@ -18,6 +19,8 @@ const categories: Record<string, Category> = {
   WebSearch: 'web',
   Agent: 'agent',
   Task: 'agent',
+  AskUserQuestion: 'question',
+  ExitPlanMode: 'plan',
 };
 // [while running, once done, group phrase while running, group phrase once done]
 const words: Record<Category, [string, string, string, (count: number) => string]> = {
@@ -27,7 +30,14 @@ const words: Record<Category, [string, string, string, (count: number) => string
   search: ['搜索', '已搜索', '搜索', (count) => `搜索了 ${count} 次`],
   web: ['检索', '已检索', '检索网页', (count) => `检索了 ${count} 个网页`],
   agent: ['子任务', '子任务完成', '执行子任务', (count) => `执行了 ${count} 个子任务`],
+  question: ['提问', '已提问', '提问', (count) => `提了 ${count} 次问题`],
+  plan: ['提交计划', '计划已批准', '提交计划', () => '提交了计划'],
   other: ['调用', '已调用', '调用工具', (count) => `调用了 ${count} 个工具`],
+};
+// A question is answered or left unanswered, a plan approved or sent back: not allowed or denied as a call is.
+const askedOutcomes: Partial<Record<Category, Partial<Record<Tool['state'], string>>>> = {
+  question: { approval: '等待回答', denied: '未回答' },
+  plan: { approval: '等待批准计划', denied: '继续规划' },
 };
 const outcomes: Partial<Record<Tool['state'], string>> = {
   approval: '等待审批',
@@ -51,6 +61,20 @@ const fileName = (value: unknown) => text(value).split(/[\\/]/).at(-1) ?? '';
 export const categoryOf = (tool: Tool): Category => categories[tool.name] ?? 'other';
 export const isRunning = (tool: Tool) =>
   !tool.endedAt && tool.state !== 'denied' && tool.state !== 'approval';
+
+// The line for a question: what was asked, and once answered, what the answer was. Claude Code reports the answers
+// as `"question"="answer"` pairs in the call's result.
+function asked(input: Record<string, unknown>, output: string | undefined) {
+  const questions = Array.isArray(input.questions)
+    ? (input.questions as Record<string, unknown>[])
+    : [];
+  const first = text(questions[0]?.question);
+  const label = questions.length > 1 ? `${first} 等 ${questions.length} 个问题` : first;
+  const answers = [...(output ?? '').matchAll(/"((?:[^"\\]|\\.)*)"="((?:[^"\\]|\\.)*)"/g)].map(
+    (match) => match[2],
+  );
+  return answers.length ? `${label} → ${answers.join('；')}` : label;
+}
 
 // One line for a tool call: what it did, to what, and for edits how many lines went in and out.
 export function describe(tool: Tool, active: boolean) {
@@ -77,16 +101,29 @@ export function describe(tool: Tool, active: boolean) {
   else if (category === 'search') subject = text(input.pattern) || text(input.query);
   else if (category === 'web') subject = text(input.url) || text(input.query);
   else if (category === 'agent') subject = text(input.description);
+  else if (category === 'question') subject = asked(input, tool.output);
+  else if (category === 'plan')
+    subject =
+      text(input.plan)
+        .split('\n')
+        .map((line) => line.replace(/^[#>*\-\s]+/, '').trim())
+        .find(Boolean) ?? '';
   else subject = tool.name;
   const running = active && isRunning(tool);
   return {
     category,
-    verb: outcomes[tool.state] ?? words[category][running ? 0 : 1],
+    verb:
+      askedOutcomes[category]?.[tool.state] ??
+      outcomes[tool.state] ??
+      words[category][running ? 0 : 1],
     subject,
     added,
     removed,
     running,
-    failed: ['failed', 'denied', 'cancelled', 'unknown'].includes(tool.state),
+    // Leaving a question unanswered or a plan to be reworked is a choice, not a failure.
+    failed:
+      ['failed', 'cancelled', 'unknown'].includes(tool.state) ||
+      (tool.state === 'denied' && category !== 'question' && category !== 'plan'),
   };
 }
 

@@ -10,17 +10,20 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ArrowDown,
   ArrowUpToLine,
   Bot,
   Check,
   ChevronRight,
+  CircleHelp,
   FileCode,
   FileText,
   FoldVertical,
   Globe,
   Image as ImageIcon,
+  ListChecks,
   LoaderCircle,
   Pencil,
   Search,
@@ -38,6 +41,7 @@ import RunNotice from './RunNotice.tsx';
 import { approvalQuestion, toolInput } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
+import ApprovalDock from './ApprovalDock.tsx';
 import { conversation } from './transcript.ts';
 import { usePrefs } from './prefs.ts';
 import ThinkingAccordion from './ThinkingAccordion.tsx';
@@ -91,6 +95,8 @@ type Live = {
   now: number;
   busy: boolean;
   canApprove: (tool: Tool) => boolean;
+  // The approval is answered in the dock where the input box stands (ApprovalDock.tsx), not in the transcript.
+  docked: boolean;
   // This window has answered the approval and waits for the service to take it: a second press would be
   // a second answer.
   answered: (tool: Tool) => boolean;
@@ -110,6 +116,8 @@ const icons: Record<Category, typeof Wrench> = {
   search: Search,
   web: Globe,
   agent: Bot,
+  question: CircleHelp,
+  plan: ListChecks,
   other: Wrench,
 };
 
@@ -226,9 +234,11 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
   const pictures = useMemo(() => (tool.output ? toolPictures(tool.output) : null), [tool.output]);
   const approval = live.canApprove(tool);
   const control = live.taskControl(tool);
-  // A question Claude asks is answered, not allowed or denied.
+  // A question Claude asks is answered, not allowed or denied. With the dock below, the answer is given there and
+  // the transcript keeps the call's line, marked as waiting.
   const questions = tool.name === 'AskUserQuestion' ? questionsOf(tool.input) : null;
-  if (approval && questions)
+  const docked = approval && live.docked;
+  if (approval && questions && !docked)
     return (
       <QuestionCard
         questions={questions}
@@ -239,8 +249,10 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
     );
   return (
     <Fold
-      className={`tool ${failed ? 'failed' : ''}`}
-      forced={approval}
+      className={`tool ${failed ? 'failed' : ''}${docked ? ' docked' : ''}${
+        category === 'question' || category === 'plan' ? ' asked' : ''
+      }`}
+      forced={approval && !docked}
       summary={
         <span className="tool-heading">
           {running ? <LoaderCircle className="spinning" /> : <Icon />}
@@ -262,6 +274,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
               : running && duration(tool.at, live.now)}
           </span>
           {control && <TaskActions tool={tool} control={control} live={live} />}
+          {docked && <span className="tool-await">在下方{questions ? '回答' : '处理'}</span>}
         </span>
       }
     >
@@ -274,7 +287,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
         const output = pictures ? pictures.text : tool.output || tool.liveOutput;
         return (
           <div className="tool-detail">
-            {approval && <p className="approval-title">{approvalQuestion(tool.name)}</p>}
+            {approval && !docked && <p className="approval-title">{approvalQuestion(tool.name)}</p>}
             <div className="tool-section tool-input">
               <div className="tool-section-head">
                 <span>{input.label}</span>
@@ -305,7 +318,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
                 )}
               </div>
             )}
-            {approval && (
+            {approval && !docked && (
               <div className="approval-actions">
                 <button
                   type="button"
@@ -803,8 +816,12 @@ export default function Conversation({
   adjustableWidth = false,
   readingPositions,
   resume,
+  dock,
 }: {
   projectControl?: ReactNode;
+  // The slot the input box keeps for what waits on the user (Composer.tsx); without one, approvals and questions
+  // are answered in the transcript, on the call they are about.
+  dock?: HTMLElement | null;
   session: Session | undefined;
   // This window can open the files of the session's project: a desktop on the computer they are on.
   here: boolean;
@@ -994,6 +1011,7 @@ export default function Conversation({
   const live: Live = {
     now,
     busy,
+    docked: !!dock,
     answered: (tool) => !!tool.approvalId && answered.has(tool.approvalId),
     canApprove: (tool) =>
       connected &&
@@ -1038,6 +1056,11 @@ export default function Conversation({
       backgroundTask(tool.id);
     },
   };
+  // The calls of the latest turn that wait on an answer from here, in the order they were asked: the dock shows the
+  // first, and the next once that one is answered.
+  const waitingOn = steps
+    .flatMap((step) => (step.kind === 'work' ? step.items : []))
+    .filter((item): item is Tool => item.kind === 'tool' && live.canApprove(item));
   const scroll = useRef<HTMLDivElement>(null);
   // The view follows new output until the reader moves up from the end, and again once they come back down to it.
   const follow = useRef(true);
@@ -1558,6 +1581,19 @@ export default function Conversation({
         </Presence>
         {linkCard && !contextMenu && <LinkCardView card={linkCard} />}
         <QuoteSelection key={session?.id} root={scroll} />
+        {dock &&
+          waitingOn.length > 0 &&
+          createPortal(
+            <ApprovalDock
+              key={waitingOn[0].approvalId}
+              tool={waitingOn[0]}
+              more={waitingOn.length - 1}
+              disabled={live.busy || live.answered(waitingOn[0])}
+              reply={(allowed, answers) => live.reply(waitingOn[0], allowed, answers)}
+              stop={{ run: stop, disabled: live.busy }}
+            />,
+            dock,
+          )}
       </SearchExpanded.Provider>
     </QuoteActionsContext.Provider>
   );
