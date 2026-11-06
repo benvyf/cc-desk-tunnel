@@ -242,7 +242,7 @@ test('signed dependency, protected hook, data format or runtime changes report m
         'apps/server/src/store.ts': '0'.repeat(64),
       },
     },
-    { runtimeLevel: 'node24-cli2.1.295-v3' },
+    { runtimeLevel: 'node24-cli2.1.295-v999' },
   ];
   for (let i = 0; i < variants.length; i++) {
     envelope = signServerIndex(
