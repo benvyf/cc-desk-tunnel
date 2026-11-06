@@ -577,3 +577,23 @@ test('canceling search composition by closing the menu does not disable later sh
   await page.keyboard.press('Escape');
   await expect(page.locator('.terminal-list')).toHaveCount(0);
 });
+
+for (const key of ['Control+Shift+T', 'Control+Shift+Space', 'Control+Tab', 'Control+Shift+Tab']) {
+  test(`inline terminal leaves ${key} to controls outside its workspace`, async ({ page }) => {
+    await page.goto(fixture);
+    await page.getByRole('button', { name: '新建终端', exact: true }).click();
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await page.evaluate(() => {
+      const input = document.createElement('input');
+      input.setAttribute('aria-label', '终端外的对话输入');
+      document.body.append(input);
+    });
+    const outside = page.getByRole('textbox', { name: '终端外的对话输入', exact: true });
+    await outside.focus();
+    await outside.press(key);
+    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(page.getByRole('tab').last()).toHaveAttribute('aria-selected', 'true');
+    await expect(page.locator('.terminal-list')).toHaveCount(0);
+    await expect(outside).toBeFocused();
+  });
+}

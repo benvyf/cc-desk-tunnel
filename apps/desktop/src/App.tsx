@@ -1610,7 +1610,7 @@ export function App({
             {
               label: '刷新状态',
               icon: <RefreshCw />,
-              disabled: !idle || anyChat || refreshing || !!history?.loading,
+              disabled: !idle || anyChat || anyTerminal || refreshing || !!history?.loading,
               run: () => {
                 void refreshStatus(session.id);
               },

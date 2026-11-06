@@ -92,10 +92,12 @@ test('real Electron popup owns project dialogs and opens another project without
       const menu = child.locator('.terminal-list');
       await expect(menu.getByRole('group', { name: '已打开', exact: true })).toBeVisible();
       await expect(menu.getByRole('group', { name: '新建终端', exact: true })).toBeVisible();
-      await child.screenshot({
-        path: resolve(`.local/screenshots/multi-device-electron/menu-${theme}.png`),
-        animations: 'disabled',
-      });
+      // The terminal keeps its dark palette under both app themes; retain one menu image.
+      if (theme === 'light')
+        await child.screenshot({
+          path: resolve('.local/screenshots/multi-device-electron/menu.png'),
+          animations: 'disabled',
+        });
       await child.keyboard.press('Escape');
     }
     await child.getByRole('tab').last().focus();

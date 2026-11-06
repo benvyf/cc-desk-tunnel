@@ -166,10 +166,11 @@
     },
     {
       "path": "docs/evidence/multi-device/06-terminal-menu.png",
-      "theme": "light",
+      "theme": "shared",
       "width": 1500,
       "height": 1023,
-      "sha256": "763e258a1d1cc84e92c879084536af30966fa496cbc5e7940e88d1d4fa083a3e"
+      "sha256": "763e258a1d1cc84e92c879084536af30966fa496cbc5e7940e88d1d4fa083a3e",
+      "note": "Terminal palette is the same under light and dark app themes; retain one menu screenshot."
     },
     {
       "path": "docs/evidence/multi-device/03-unified-projects-dark.png",
@@ -191,13 +192,6 @@
       "width": 1500,
       "height": 1023,
       "sha256": "3e48f241150c00315e9d06a189d5d6dcccb26d64e74f263b1efb4b29db019510"
-    },
-    {
-      "path": "docs/evidence/multi-device/06-terminal-menu-dark.png",
-      "theme": "dark",
-      "width": 1500,
-      "height": 1023,
-      "sha256": "763e258a1d1cc84e92c879084536af30966fa496cbc5e7940e88d1d4fa083a3e"
     }
   ],
   "limits": [
@@ -205,5 +199,112 @@
     "Production Anthropic authorization, public egress and existing branding risk are outside this renderer change; see network/Claude review.",
     "Full repository Node suite not rerun; historical Docker allowlist baseline failure and cleanup issue remain documented."
   ],
-  "previousVerification": "multi-device-development-verification.json"
+  "previousVerification": "multi-device-development-verification.json",
+  "f54784aReviewCorrections": {
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:08:27.762870+00:00",
+    "baseCommit": "f54784a1af735f97e3a49e0faa7864109f0d6bba",
+    "plan": {
+      "file": "32-multi-device-review-f54784a.md",
+      "sha256": "87ed0f86b84b44455bc18834b5b45666cab7b1cf2706d16ac3230b59246be025"
+    },
+    "requirements": {
+      "M1": "Session menu refresh disabled by anyTerminal; idle left unchanged.",
+      "L2": "Fallback document shortcuts ignore focus outside .terminal-workspace; all four shortcut variants tested.",
+      "L3": "Ctrl+Shift+T uses the same readiness and active-tab conditions as the plus button.",
+      "L1": "Keep one shared terminal-menu screenshot; remove byte-identical dark duplicate and clarify app-theme evidence.",
+      "windows": "Actual Electron tests run on Windows, 3/3 passed."
+    },
+    "checks": {
+      "targetRed": {
+        "failed": 5,
+        "log": ".local/f54784a-plan-red.log"
+      },
+      "targetGreen": {
+        "passed": 5,
+        "log": ".local/f54784a-plan-green.log"
+      },
+      "relatedUi": {
+        "startTime": "2026-11-06T01:05:40.976Z",
+        "duration": 144326.765,
+        "expected": 110,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/f54784a-plan-ui.log",
+        "report": ".local/f54784a-plan-ui.json",
+        "byFile": {
+          "multi-device-development.spec.ts": 26,
+          "multi-device-electron.spec.ts": 1,
+          "multi-device-sidebar.spec.ts": 7,
+          "open-project-dialog.spec.ts": 9,
+          "sidebar-details.spec.ts": 8,
+          "terminal-preview-chrome.spec.ts": 3,
+          "terminal-projects.spec.ts": 33,
+          "terminal-status.spec.ts": 1,
+          "terminal-window.spec.ts": 2,
+          "terminal-workspace.spec.ts": 20
+        }
+      },
+      "windowsElectron": {
+        "platform": "win32",
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "file": "multi-device-electron.spec.ts",
+            "title": "real Electron popup owns project dialogs and opens another project without restarting original terminal",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached Electron terminal predicts on its own document and disables without restarting",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached terminal has native window controls, exact input, resize, focus and cleanup",
+            "status": "passed"
+          }
+        ],
+        "log": ".local/f54784a-plan-ui.log"
+      },
+      "relatedCore": {
+        "passed": 72,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/f54784a-plan-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/f54784a-plan-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing bundler warnings",
+        "log": ".local/f54784a-plan-build.log"
+      },
+      "prettier": "passed",
+      "diffWhitespace": "passed"
+    },
+    "review": {
+      "independentReview": "passed",
+      "remainingConfirmedFindings": []
+    },
+    "changedProductionSha256": {
+      "apps/desktop/src/App.tsx": "011438d5ee88a712cc899f096aad77b7a8af31a524db457afaa71a0708d212ab",
+      "apps/desktop/src/TerminalWindow.tsx": "869927be3d48d3ab7dadb12ce3d1cc49dd8e3973fde8007b4a83b23df25fbbdf"
+    },
+    "scope": {
+      "production": "apps/desktop/src only",
+      "documentation": "Requested implementation description and verification evidence updated.",
+      "serverProtocolElectronMainUnchanged": true,
+      "terminalPolishMerged": false,
+      "pushed": false,
+      "published": false,
+      "packaged": false,
+      "realClaudeInference": false
+    },
+    "note": "This appended review is the latest batch for M1/L1/L2/L3; preceding checks and productionSha256 remain historical. This is a related 110-case rerun, not a new full repository run."
+  }
 }

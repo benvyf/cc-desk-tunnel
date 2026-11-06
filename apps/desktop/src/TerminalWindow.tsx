@@ -545,7 +545,7 @@ export default function TerminalWindow({
     )
       return false;
     if (event.shiftKey && event.key.toLowerCase() === 't') {
-      if (activeSource) add(activeSource);
+      if (multi && connected && !closing && active && activeSource) add(activeSource);
     } else if (event.shiftKey && (event.key === ' ' || event.code === 'Space')) toggleMenu();
     else if (event.key === 'Tab') {
       const index = tabsRef.current.findIndex((tab) => tab.tabId === activeId);
@@ -563,6 +563,7 @@ export default function TerminalWindow({
     const doc = container?.ownerDocument ?? (fallback ? document : null);
     if (!doc) return;
     const keydown = (event: KeyboardEvent) => {
+      if (fallback && !(event.target as Element)?.closest('.terminal-workspace')) return;
       if ((event.target as Element)?.closest('.xterm')) return;
       if (shortcutRef.current(event)) {
         event.preventDefault();

@@ -636,6 +636,16 @@ test('any terminal prevents status reads and refresh, then the last exit reads t
   await page.getByRole('button', { name: '终端', exact: true }).click();
   await expect.poll(() => commands.filter((c) => c.type === 'terminal.open').length).toBe(1);
   await select(page, '项目 B 会话');
+  await page
+    .locator('.session-row')
+    .filter({ hasText: '项目 B 会话' })
+    .getByRole('button', { name: '会话操作', exact: true })
+    .click();
+  await expect(page.getByRole('menuitem', { name: '刷新状态', exact: true })).toBeDisabled();
+  expect(
+    commands.filter((c) => c.type === 'session.status' && c.sessionId === sessions[1].id),
+  ).toHaveLength(0);
+  await page.keyboard.press('Escape');
   const box = page.getByRole('textbox', { name: '消息', exact: true });
   await box.fill('/refresh');
   await page.getByRole('option', { name: /刷新原生状态/ }).click();
