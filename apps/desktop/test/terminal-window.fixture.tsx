@@ -276,6 +276,24 @@ Object.assign(window, {
       update({});
     },
     terminalInstances,
+    fitSnapshot: () => {
+      const terminal = terminalInstances.at(-1);
+      if (!terminal?.element) return null;
+      const fit = new FitAddon();
+      fit.activate(terminal);
+      const proposed = fit.proposeDimensions();
+      fit.dispose();
+      const view = terminal.element.ownerDocument.defaultView!;
+      return {
+        viewport: { width: view.innerWidth, height: view.innerHeight },
+        grid: { cols: terminal.cols, rows: terminal.rows },
+        proposed: proposed && {
+          cols: Math.max(20, Math.min(400, proposed.cols)),
+          rows: Math.max(1, Math.min(160, proposed.rows)),
+        },
+        transmitted: controls.filter((entry: any) => entry.type === 'terminal.resize').at(-1),
+      };
+    },
     setPredictionRows: (rows: number) => {
       predictiveRows = rows;
       terminalInstances.at(-1)?.resize(100, rows);

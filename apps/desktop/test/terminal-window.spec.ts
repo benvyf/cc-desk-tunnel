@@ -316,6 +316,32 @@ test('detached terminal has native window controls, exact input, resize, focus a
       document.documentElement.style.fontSize = '';
       document.documentElement.dataset.theme = 'dark';
     });
+    // Native setBounds returns before ResizeObserver and xterm finish fitting the new viewport.
+    const waitForFit = async () => {
+      const viewport = await application.evaluate(({ BrowserWindow }) => {
+        const bounds = BrowserWindow.getAllWindows()
+          .find((w) => w.getTitle() === 'CC Space · 原生终端')!
+          .getContentBounds();
+        return { width: bounds.width, height: bounds.height };
+      });
+      await expect
+        .poll(() =>
+          owner.evaluate((viewport) => {
+            const snapshot = (window as any).terminalTest.fitSnapshot();
+            return (
+              !!snapshot?.proposed &&
+              snapshot.viewport.width === viewport.width &&
+              snapshot.viewport.height === viewport.height &&
+              snapshot.grid.cols === snapshot.proposed.cols &&
+              snapshot.grid.rows === snapshot.proposed.rows &&
+              snapshot.transmitted?.cols === snapshot.grid.cols &&
+              snapshot.transmitted?.rows === snapshot.grid.rows
+            );
+          }, viewport),
+        )
+        .toBe(true);
+    };
+    await waitForFit();
     const initialSize = await owner.evaluate(() =>
       (window as any).terminalTest.controls.filter((f: any) => f.type === 'terminal.resize').at(-1),
     );
@@ -331,6 +357,7 @@ test('detached terminal has native window controls, exact input, resize, focus a
       };
     });
     expect(bounds).toEqual({ resizable: true, maximizable: true, minimizable: true });
+    await waitForFit();
     await expect
       .poll(() =>
         owner.evaluate(
@@ -352,6 +379,8 @@ test('detached terminal has native window controls, exact input, resize, focus a
     const smallSize = await owner.evaluate(() =>
       (window as any).terminalTest.controls.filter((f: any) => f.type === 'terminal.resize').at(-1),
     );
+    expect(smallSize.cols).toBeLessThan(initialSize.cols);
+    expect(smallSize.rows).toBeLessThan(initialSize.rows);
     await application.evaluate(({ BrowserWindow }) =>
       BrowserWindow.getAllWindows()
         .find((w) => w.getTitle() === 'CC Space · 原生终端')!

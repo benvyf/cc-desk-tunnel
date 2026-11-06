@@ -306,5 +306,88 @@
       "realClaudeInference": false
     },
     "note": "This appended review is the latest batch for M1/L1/L2/L3; preceding checks and productionSha256 remain historical. This is a related 110-case rerun, not a new full repository run."
+  },
+  "review96c2883": {
+    "reviewedCommit": "96c28834fd9a13924adbacfaa1440e0060d491c0",
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:25:59.782844+00:00",
+    "findings": {
+      "product": "No confirmed new product defect found in M1/L1/L2/L3 or protected boundaries.",
+      "test": "Native restore-size test could capture the intermediate 1000x680 resize before 800x500 settled. Unchanged isolated repeats reproduced intermittency.",
+      "fix": "Read-only FitAddon geometry snapshot; wait for requested content viewport, proposed grid, actual grid and transmitted resize to agree before storing sizes. Original restore equality remains."
+    },
+    "independentReview": "passed; read-only review of source boundaries and test synchronization fix",
+    "checks": {
+      "initialRelatedUi": {
+        "startTime": "2026-11-06T01:16:12.041Z",
+        "duration": 119065.628,
+        "expected": 109,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0,
+        "log": ".local/review-96c2883-ui.log"
+      },
+      "unchangedNativeRepeat": {
+        "passed": 1,
+        "failed": 1,
+        "log": ".local/review-96c2883-native-recheck.log"
+      },
+      "fixedNativeRepeat": {
+        "passed": 3,
+        "failed": 0,
+        "log": ".local/review-96c2883-resize-fixed.log"
+      },
+      "finalRelatedUi": {
+        "startTime": "2026-11-06T01:23:21.792Z",
+        "duration": 144381.43699999998,
+        "expected": 110,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/review-96c2883-final-ui.log",
+        "report": ".local/review-96c2883-final-ui.json"
+      },
+      "finalWindowsElectron": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "file": "multi-device-electron.spec.ts",
+            "title": "real Electron popup owns project dialogs and opens another project without restarting original terminal",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached Electron terminal predicts on its own document and disables without restarting",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached terminal has native window controls, exact input, resize, focus and cleanup",
+            "status": "passed"
+          }
+        ]
+      },
+      "core": {
+        "passed": 72,
+        "failed": 0,
+        "log": ".local/review-96c2883-core.log"
+      },
+      "typecheck": "passed",
+      "build": "passed with existing warnings",
+      "modelBoundary": "passed",
+      "format": "passed",
+      "sourceAndScreenshotHashes": "passed"
+    },
+    "changedTestSha256": {
+      "apps/desktop/test/terminal-window.fixture.tsx": "e8831d4078491e6d584692a522bc2e847262fb892afea7ccb60552d29d84865f",
+      "apps/desktop/test/terminal-window.spec.ts": "3e9643b4013de5d0c1d0c642b536e85fbaee5e72544ea0ac9336b7374f043e34"
+    },
+    "productionCodeChanged": false,
+    "pushed": false,
+    "published": false,
+    "packaged": false,
+    "limits": "Related suite rerun, not full repository rerun; physical IME and production Claude account/egress remain outside this test review."
   }
 }
