@@ -1,6 +1,6 @@
 // Local runtime verification only. Never starts Claude or reads service/account configuration.
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, lstatSync, writeFileSync } from 'node:fs';
+import { readFileSync, readdirSync, lstatSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -18,8 +18,10 @@ export function terminalInventory(root) {
     }
   }
   walk('lib');
-  // Linux node-pty 1.1.0 loads its locally built native addon and spawn helper here.
-  files.push('build/Release/pty.node', 'build/Release/spawn-helper');
+  // Linux uses the native addon directly; some builds also carry a spawn helper.
+  files.push('build/Release/pty.node');
+  if (existsSync(join(directory, 'build/Release/spawn-helper')))
+    files.push('build/Release/spawn-helper');
   return Object.fromEntries(
     files.sort().map((path) => [path, digest(readFileSync(join(directory, path)))]),
   );

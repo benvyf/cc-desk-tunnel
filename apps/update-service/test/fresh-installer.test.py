@@ -136,6 +136,7 @@ class InstallerTests(unittest.TestCase):
     def test_full_install_orchestration_and_retry_use_cached_credentials_without_reset(self):
         import types
         release = {'build': 3, 'protocol': 20, 'appVersion': '0.3.6', 'sha256': 'b' * 64,
+                   'runtimeLevel': 'node24-cli2.1.295-v3',
                    'packageLockSha256': hashlib.sha256(b'fixture lock').hexdigest()}
         bundle = {'nodeId': 'fixture-2', 'origin': fresh.ORIGIN, 'index': 'synthetic index',
                   'monitorToken': 'm' * 43, 'moderationToken': 'r' * 43}
