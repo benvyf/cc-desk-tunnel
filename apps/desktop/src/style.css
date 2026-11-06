@@ -2296,7 +2296,7 @@ dialog:has(.release-notes) {
   position: absolute;
   right: 10px;
 }
-.project-group > h2:is(:hover, :focus-within) > .project-toggle > small {
+.project-group > h2:has(> .row-action):is(:hover, :focus-within) > .project-toggle > small {
   visibility: hidden;
 }
 /* Another computer's projects have no buttons: their count sits at the edge without the buttons' place. */

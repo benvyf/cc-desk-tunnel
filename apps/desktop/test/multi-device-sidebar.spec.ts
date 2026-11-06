@@ -199,3 +199,28 @@ test('sessions from removed local and remote groups share newest-first Recents o
     '开发任务',
   ]);
 });
+
+test('read-only other-device project counts stay visible on hover and keyboard focus', async ({
+  page,
+}) => {
+  await page.evaluate(() =>
+    (window as any).sidebarFixture.setPrefs((prefs: any) => ({
+      ...prefs,
+      elsewhereOpen: true,
+      collapsedElsewhere: ['unknown\n/work/app'],
+    })),
+  );
+  const row = page.locator('.elsewhere-project > h2');
+  const toggle = row.getByRole('button');
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  await expect(row.locator('.row-action')).toHaveCount(0);
+  const count = toggle.locator('small');
+  await expect(count).toHaveText('1');
+  await expect(count).toBeVisible();
+  await row.hover();
+  await expect(count).toBeVisible();
+  await page.mouse.move(700, 20);
+  await toggle.focus();
+  await expect(toggle).toBeFocused();
+  await expect(count).toBeVisible();
+});
