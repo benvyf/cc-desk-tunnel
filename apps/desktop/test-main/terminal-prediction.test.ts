@@ -5,6 +5,7 @@ import { PredictiveEchoAddon, type XtermTerminal } from 'xterm-zerolag-input';
 import {
   classifyTerminalInput,
   createTerminalPrediction,
+  passiveMouseReport,
   type PredictionContext,
   type TerminalPrediction,
 } from '../src/terminalPrediction.ts';
@@ -464,6 +465,50 @@ test('automatic focus and device-attribute replies are not treated as editor cha
   for (const reply of ['\x1b[I', '\x1b[O', '\x1b[?1;2c']) f.prediction.beforeInput(reply);
   f.key('a');
   assert.equal(f.overlay(), 'a');
+});
+
+test('classifies only wheel and button-less motion SGR mouse reports as passive', () => {
+  assert.equal(passiveMouseReport('\x1b[<64;10;5M'), 'wheel');
+  assert.equal(passiveMouseReport('\x1b[<65;1;1M'), 'wheel');
+  assert.equal(passiveMouseReport('\x1b[<81;3;4M'), 'wheel'); // Ctrl+wheel down
+  assert.equal(passiveMouseReport('\x1b[<35;80;24M'), 'motion');
+  assert.equal(passiveMouseReport('\x1b[<35;1;1M\x1b[<64;1;1M'), 'wheel');
+  for (const data of [
+    '\x1b[<0;10;5M', // left press
+    '\x1b[<0;10;5m', // left release
+    '\x1b[<2;10;5M', // right press
+    '\x1b[<32;10;5M', // drag with the left button
+    '\x1b[<35;10;5Ma', // trailing text
+    'a\x1b[<35;10;5M',
+    '\x1b[<35;10;5', // incomplete
+    '\x1b[M #!', // X10 encoding is not SGR
+    '\x1b[A',
+    '',
+  ])
+    assert.equal(passiveMouseReport(data), null, JSON.stringify(data));
+});
+
+test('wheel and hover reports while typing keep predictions and do not hold the editor', async () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.key('a');
+  for (const report of ['\x1b[<35;5;5M', '\x1b[<64;5;5M', '\x1b[<65;5;5M'])
+    f.prediction.beforeInput(report);
+  assert.equal(f.overlay(), 'a');
+  f.key('b');
+  assert.equal(f.overlay(), 'ab');
+  f.composer('ab');
+  await f.parsed();
+  f.key('c');
+  assert.equal(f.overlay(), 'c');
+});
+
+test('a mouse click is still an unknown edit that holds prediction', () => {
+  const f = fixture();
+  f.prediction.setEnabled(true);
+  f.prediction.beforeInput('\x1b[<0;5;5M');
+  f.key('a');
+  assert.equal(f.overlay(), '');
 });
 
 test('is off by default and restores the per-terminal proposed API option', async () => {

@@ -6,11 +6,15 @@ import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import type { TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { Search, X } from './icons.tsx';
+import { RefreshCw, Search, X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
 import { terminalLinks } from './terminalLinks.ts';
-import { createTerminalPrediction, type TerminalPrediction } from './terminalPrediction.ts';
+import {
+  createTerminalPrediction,
+  passiveMouseReport,
+  type TerminalPrediction,
+} from './terminalPrediction.ts';
 import '@xterm/xterm/css/xterm.css';
 
 export type TerminalPhase =
@@ -20,6 +24,8 @@ export type TerminalHandle = {
   retry: () => void;
   focus: () => void;
   paste: (text: string) => void;
+  /** Measure again after the window changed; `redraw` also makes the remote program repaint. */
+  refit: (redraw?: boolean) => void;
 };
 // The canvas takes its colours from the stylesheet's `--terminal-*` tokens (top of style.css): the same warm
 // night in either app theme. Each ANSI colour has a token of its name, its bright one `--terminal-bright-…`.
@@ -254,9 +260,10 @@ export default function NativeTerminal({
         else ackTimer ??= setTimeout(acknowledge, 20);
       });
     }
+    // false: nothing measurable yet (a window still maximizing, restoring or changing DPI); try again.
     function resize() {
-      if (!visible.current || !host.current?.clientWidth || !host.current.clientHeight || disposed)
-        return;
+      if (!visible.current || disposed) return;
+      if (!host.current?.clientWidth || !host.current.clientHeight) return false;
       const dimensions = fit.proposeDimensions();
       // Character metrics can be unavailable while a window becomes visible or changes DPI.
       if (!dimensions || !Number.isFinite(dimensions.cols) || !Number.isFinite(dimensions.rows))
@@ -282,7 +289,12 @@ export default function NativeTerminal({
       resizeFrame = view.requestAnimationFrame(() => {
         const focus = focusRequested;
         focusRequested = false;
-        if (resize() === false) resizeFrame = view.requestAnimationFrame(() => resize());
+        let attempts = 0;
+        const retry = () => {
+          if (resize() === false && ++attempts < 30)
+            resizeFrame = view.requestAnimationFrame(retry);
+        };
+        retry();
         const document = host.current?.ownerDocument;
         if (
           focus &&
@@ -644,22 +656,8 @@ export default function NativeTerminal({
       predictionRef.current = null;
       prediction = null;
     }
-    const input = terminal.onData((data) => {
-      if (
-        !visible.current ||
-        !id ||
-        closeRequested ||
-        phaseNow() !== 'running' ||
-        host.current?.ownerDocument.querySelector('dialog[open]')
-      )
-        return;
-      try {
-        prediction?.beforeInput(data);
-      } catch {
-        try {
-          prediction?.dispose();
-        } catch {}
-      }
+    function send(data: string) {
+      if (!id) return;
       for (let offset = 0; offset < data.length;) {
         let end = Math.min(offset + 4096, data.length);
         const last = data.charCodeAt(end - 1);
@@ -672,20 +670,113 @@ export default function NativeTerminal({
         });
         offset = end;
       }
+    }
+    // Claude Code's fullscreen renderer asks for every pointer movement (DECSET 1003). Hover reports
+    // within one frame keep only the latest position and wheel ticks travel together, so the tunnel
+    // carries at most two messages a frame instead of one per cell crossed. Keys flush them first.
+    let mouseQueue = '',
+      mouseMotion = '',
+      mouseTimer: ReturnType<typeof setTimeout> | undefined;
+    function flushMouse() {
+      clearTimeout(mouseTimer);
+      mouseTimer = undefined;
+      const data = mouseQueue + mouseMotion;
+      mouseQueue = mouseMotion = '';
+      if (data && visible.current && id && !closeRequested && phaseNow() === 'running') send(data);
+    }
+    const input = terminal.onData((data) => {
+      if (
+        !visible.current ||
+        !id ||
+        closeRequested ||
+        phaseNow() !== 'running' ||
+        host.current?.ownerDocument.querySelector('dialog[open]')
+      )
+        return;
+      const mouse = passiveMouseReport(data);
+      if (mouse) {
+        // The first report goes at once; later ones within the frame wait for its end.
+        if (!mouseTimer) {
+          send(data);
+          mouseTimer = setTimeout(flushMouse, 16);
+        } else if (mouse === 'motion') mouseMotion = data;
+        else {
+          mouseQueue += mouseMotion + data;
+          mouseMotion = '';
+        }
+        return;
+      }
+      flushMouse();
+      try {
+        prediction?.beforeInput(data);
+      } catch {
+        try {
+          prediction?.dispose();
+        } catch {}
+      }
+      send(data);
     });
     const observer = new view.ResizeObserver(() => activate.current());
     observer.observe(host.current!);
     // xterm can finish measuring characters after the host has already stopped resizing.
     const screen = terminal.element?.querySelector('.xterm-screen');
     if (screen) observer.observe(screen);
+    // Maximize, restore and full screen can report an intermediate size first and the final one
+    // without another observable change; measuring again once the window has settled catches it.
+    let settleTimers: ReturnType<typeof setTimeout>[] = [];
+    const settle = () => {
+      for (const timer of settleTimers) clearTimeout(timer);
+      settleTimers = [150, 450].map((delay) => setTimeout(() => activate.current(), delay));
+    };
     const onWindowResize = () => {
       prediction?.refresh();
       activate.current();
+      settle();
     };
     view.addEventListener('resize', onWindowResize);
     handle.current = {
       close,
       focus: () => activate.current(true),
+      refit: (redraw = false) => {
+        if (disposed) return;
+        prediction?.refresh();
+        if (redraw && id && !closeRequested && phaseNow() === 'running' && visible.current) {
+          // Same size is never sent twice, and an unchanged size gives the program no SIGWINCH.
+          // One column less, then the real size, makes it lay the screen out again.
+          const cols = Math.max(20, Math.min(400, terminal.cols)),
+            rows = Math.max(minimumRows, Math.min(160, terminal.rows));
+          client.terminalControl({
+            type: 'terminal.resize',
+            sessionId,
+            terminalId: id,
+            cols: cols > 20 ? cols - 1 : cols + 1,
+            rows,
+          });
+          size = '';
+          // Far enough apart that the two SIGWINCHes are not read as one unchanged size.
+          settleTimers.push(
+            setTimeout(() => {
+              activate.current();
+              settleTimers.push(
+                setTimeout(() => {
+                  if (size || !id || closeRequested || phaseNow() !== 'running') return;
+                  size = `${cols}:${rows}`;
+                  client.terminalControl({
+                    type: 'terminal.resize',
+                    sessionId,
+                    terminalId: id,
+                    cols,
+                    rows,
+                  });
+                }, 300),
+              );
+            }, 150),
+          );
+          return;
+        }
+        activate.current();
+        settle();
+      },
       paste: (text) => {
         if (
           disposed ||
@@ -750,7 +841,9 @@ export default function NativeTerminal({
     return () => {
       disposed = true;
       clearTimeout(ackTimer);
+      clearTimeout(mouseTimer);
       observer.disconnect();
+      for (const timer of settleTimers) clearTimeout(timer);
       view.removeEventListener('resize', onWindowResize);
       input.dispose();
       prediction?.dispose();
@@ -869,6 +962,17 @@ export default function NativeTerminal({
       >
         <Search scale="sm" />
       </IconButton>
+      {phase === 'running' && (
+        <IconButton
+          title="重新适配窗口"
+          onClick={() => {
+            handle.current?.refit(true);
+            terminalRef.current?.focus();
+          }}
+        >
+          <RefreshCw scale="sm" />
+        </IconButton>
+      )}
     </div>
   );
   return (

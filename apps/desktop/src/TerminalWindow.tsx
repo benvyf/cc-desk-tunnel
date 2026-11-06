@@ -97,6 +97,8 @@ export default function TerminalWindow({
     setTabsState(next);
   }, []);
   const [activeId, setActiveId] = useState(() => tabs[0].tabId);
+  const activeRef = useRef(activeId);
+  activeRef.current = activeId;
   const [container, setContainer] = useState<HTMLElement | null>(null);
   const [fallback, setFallback] = useState(false);
   const [maximized, setMaximized] = useState(false);
@@ -408,7 +410,13 @@ export default function TerminalWindow({
         bridge.onRequestClose?.(() => {
           void closeAll().then((allowed) => bridge.finishClose?.(allowed));
         }) ?? (() => {});
-      unstate = bridge.onState?.((state) => setMaximized(state.maximized)) ?? (() => {});
+      unstate =
+        bridge.onState?.((state) => {
+          setMaximized(state.maximized);
+          // The window says it changed (maximize, restore, full screen, a finished drag): measure again
+          // even if the document saw no size change of its own.
+          handles.current.get(activeRef.current)?.refit();
+        }) ?? (() => {});
       setContainer(root);
       void bridge.focus();
     });

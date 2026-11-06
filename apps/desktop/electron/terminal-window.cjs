@@ -74,8 +74,18 @@ function installTerminalWindow(owner, Menu, log = () => {}) {
       if (!owner.webContents.isDestroyed())
         owner.webContents.send('terminal-window:state', { maximized: child.isMaximized() });
     };
-    child.on('maximize', state);
-    child.on('unmaximize', state);
+    // Also after full screen, restore and a finished drag or move (another monitor may have another DPI):
+    // the renderer measures the terminal again, whether or not its document noticed a size change.
+    for (const event of [
+      'maximize',
+      'unmaximize',
+      'restore',
+      'enter-full-screen',
+      'leave-full-screen',
+      'resized',
+      'moved',
+    ])
+      child.on(event, state);
     child.on('close', (event) => {
       log(`Terminal window close requested: active=${active}, approved=${approved}.`);
       if (approved || !active) return;

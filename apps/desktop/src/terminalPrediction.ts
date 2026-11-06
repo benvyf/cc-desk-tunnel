@@ -36,6 +36,28 @@ export function classifyTerminalInput(data: string, origin: InputOrigin): Predic
   return { kind: 'text', text: data };
 }
 
+// SGR mouse reports (DECSET 1006) that cannot edit the composer: wheel ticks and
+// pointer movement with no button held. Claude Code's fullscreen renderer turns on
+// any-motion tracking (1003), so these arrive while the user types; they must not
+// read as unknown edits. Clicks and drags stay unknown: a click can move the caret.
+const sgrMouse = /\x1b\[<(\d{1,3});\d{1,4};\d{1,4}[Mm]/gu;
+export type PassiveMouse = 'wheel' | 'motion';
+export function passiveMouseReport(data: string): PassiveMouse | null {
+  if (!data.startsWith('\x1b[<')) return null;
+  let kind: PassiveMouse | null = null;
+  let consumed = 0;
+  for (const match of data.matchAll(sgrMouse)) {
+    if (match.index !== consumed) return null;
+    consumed += match[0].length;
+    const code = Number(match[1]);
+    const wheel = (code & 64) !== 0 && (code & 128) === 0;
+    const motion = !wheel && (code & 32) !== 0 && (code & 3) === 3;
+    if (!wheel && !motion) return null;
+    kind = wheel || kind === 'wheel' ? 'wheel' : 'motion';
+  }
+  return consumed === data.length ? kind : null;
+}
+
 // Only the sampled Linux composer is recognized. History/model/project text is irrelevant.
 function inspectComposer(terminal: Terminal) {
   const { cols, rows } = terminal;
@@ -494,6 +516,8 @@ export function createTerminalPrediction(
         if (origin === 'paste' && data === '\x1b[200~\x1b[201~') return;
         // xterm's own focus/device replies share onData but do not edit the remote composer.
         if (origin === 'unknown' && /^\x1b\[(?:[IO]|\?[0-9;]*c)$/u.test(data)) return;
+        // Wheel and hover reports scroll Claude's view or move the pointer, never the composer.
+        if (origin === 'unknown' && passiveMouseReport(data)) return;
         if (!addon) {
           if (inspectComposer(terminal) || heldSignatures !== null) {
             holdEditor();

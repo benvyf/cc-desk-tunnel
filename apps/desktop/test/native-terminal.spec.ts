@@ -456,3 +456,122 @@ test('native terminal can be dismissed after the remote process exits', async ({
     await page.evaluate(() => window.terminalFixture.requests.map((request) => request.type)),
   ).toEqual(['terminal.open']);
 });
+
+test('fullscreen hover and wheel reports are coalesced per frame without reordering keys', async ({
+  page,
+}) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  // Claude Code's fullscreen renderer: any-motion tracking with SGR encoding.
+  await page.evaluate(() => {
+    const data = '\x1b[?1049h\x1b[?1000h\x1b[?1002h\x1b[?1003h\x1b[?1006h';
+    window.terminalFixture.receive({ type: 'terminal.data', data, bytes: data.length });
+  });
+  const box = (await page.locator('.xterm-screen').boundingBox())!;
+  await page.mouse.move(box.x + 5, box.y + 5);
+  await page.evaluate(() => (window.terminalFixture.controls.length = 0));
+  // About 60 cells crossed inside one or two frames.
+  await page.evaluate(
+    ({ x, y, width }) => {
+      const screen = document.querySelector('.xterm-screen')!;
+      for (let i = 0; i < 60; i++)
+        screen.dispatchEvent(
+          new MouseEvent('mousemove', {
+            bubbles: true,
+            clientX: x + 5 + (i * (width - 10)) / 60,
+            clientY: y + 5,
+          }),
+        );
+    },
+    { x: box.x, y: box.y, width: box.width },
+  );
+  await page.keyboard.type('a');
+  await page.waitForTimeout(100);
+  const inputs = await page.evaluate(() =>
+    window.terminalFixture.controls.filter((r) => r.type === 'terminal.input').map((r) => r.data!),
+  );
+  expect(inputs.length).toBeLessThanOrEqual(4);
+  expect(inputs.at(-1)).toBe('a');
+  const reports = inputs.join('').match(/\x1b\[<35;(\d+);\d+M/g) ?? [];
+  expect(reports.length).toBeGreaterThan(0);
+  expect(reports.length).toBeLessThanOrEqual(3);
+  // The position the pointer last reached before the key is the one sent.
+  const lastCol = Number(reports.at(-1)!.split(';')[1]);
+  expect(lastCol).toBeGreaterThan(50);
+
+  await page.evaluate(() => (window.terminalFixture.controls.length = 0));
+  for (let i = 0; i < 8; i++) await page.mouse.wheel(0, 100);
+  await page.waitForTimeout(100);
+  const wheel = await page.evaluate(() =>
+    window.terminalFixture.controls
+      .filter((r) => r.type === 'terminal.input')
+      .map((r) => r.data!)
+      .join(''),
+  );
+  // Every wheel tick still reaches the program; none is merged away.
+  expect((wheel.match(/\x1b\[<65;\d+;\d+M/g) ?? []).length).toBeGreaterThanOrEqual(8);
+});
+
+test('refit makes the remote program lay out again at the same size', async ({ page }) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const size = await page.evaluate(
+    () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)!,
+  );
+  await page.evaluate(() => (window.terminalFixture.controls.length = 0));
+  await page.getByRole('button', { name: '重新适配窗口' }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.terminalFixture.controls
+          .filter((r) => r.type === 'terminal.resize')
+          .map((r) => `${r.cols}:${r.rows}`),
+      ),
+    )
+    .toEqual([`${size.cols! - 1}:${size.rows}`, `${size.cols}:${size.rows}`]);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+});
+
+test('a window that reports no size while maximizing is measured once it has one', async ({
+  page,
+}) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  const before = await page.evaluate(
+    () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)!.cols!,
+  );
+  await page.evaluate(async () => {
+    const terminal = document.querySelector<HTMLElement>('.native-terminal')!;
+    const host = terminal.querySelector<HTMLElement>('.xterm')!.parentElement!;
+    // The host collapses for a few frames, then the final, wider size arrives without the
+    // element observer seeing another change on the terminal itself.
+    host.style.display = 'none';
+    window.dispatchEvent(new Event('resize'));
+    for (let i = 0; i < 4; i++) await new Promise(requestAnimationFrame);
+    terminal.style.width = '1800px';
+    host.style.display = '';
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () =>
+          window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').at(-1)
+            ?.cols ?? 0,
+      ),
+    )
+    .toBeGreaterThan(before);
+});
