@@ -106,6 +106,9 @@ export default function NativeTerminal({
   const [found, setFound] = useState<boolean | null>(null);
   const [reading, setReading] = useState(false);
   const [unseenOutput, setUnseenOutput] = useState(false);
+  // Median time from a key leaving to the next output of this terminal, over the latest keys: the round trip the
+  // user feels (network, service and the CLI redrawing). Shown in the status tooltip only.
+  const [echo, setEcho] = useState<number | null>(null);
   const toBottom = useRef(() => {});
   const findInput = useRef<HTMLInputElement>(null);
   const composingFind = useRef(false);
@@ -179,6 +182,9 @@ export default function NativeTerminal({
     const phaseNow = (): TerminalPhase => current;
     let closeTask: Promise<boolean> | null = null;
     let openTask: Promise<void> = Promise.resolve();
+    // When the oldest key not yet followed by output left; samples of that wait for the tooltip.
+    let echoStart = 0,
+      echoSamples: number[] = [];
     let pendingBytes = 0,
       bufferedBytes = 0,
       size = '',
@@ -488,8 +494,15 @@ export default function NativeTerminal({
       if (disposed && !opening) return;
       if (message.type === 'terminal.opened') accept(message.terminalId);
       else if (message.type === 'terminal.data' && !disposed) {
-        if (message.terminalId === id) write(message);
-        else if (!id && opening && bufferedBytes + message.bytes <= 128 * 1024) {
+        if (message.terminalId === id) {
+          if (echoStart) {
+            echoSamples = [...echoSamples.slice(-19), performance.now() - echoStart];
+            echoStart = 0;
+            const sorted = [...echoSamples].sort((a, b) => a - b);
+            setEcho(Math.round(sorted[Math.floor(sorted.length / 2)]));
+          }
+          write(message);
+        } else if (!id && opening && bufferedBytes + message.bytes <= 128 * 1024) {
           early.push(message);
           bufferedBytes += message.bytes;
         } else if (!id && opening) {
@@ -522,6 +535,7 @@ export default function NativeTerminal({
         status('ended', `已结束 · ${reason}`);
       } else if (message.type === 'terminal.detached' && message.terminalId === id) {
         prediction?.clear();
+        echoStart = 0;
         reconnectTerminalId = id;
         renderGeneration++;
         id = null;
@@ -714,6 +728,7 @@ export default function NativeTerminal({
         return;
       }
       flushMouse();
+      echoStart ||= performance.now();
       try {
         prediction?.beforeInput(data);
       } catch {
@@ -941,7 +956,7 @@ export default function NativeTerminal({
       <span
         className="terminal-status-chip"
         data-state={chip.state}
-        title={`${activityText}\n${connectionText}`}
+        title={`${activityText}\n${connectionText}${echo === null ? '' : `\n按键到画面更新约 ${echo} ms`}`}
         aria-hidden="true"
       >
         <span className="terminal-status-dot" />

@@ -29,3 +29,27 @@
 沙盒 Node 22 + chrome-headless-shell：类型检查、格式检查通过；`terminal-prediction`、`terminal-window` 单元测试；Playwright `native-terminal`（含鼠标合并、重新适配、尺寸暂缺后恢复）、`terminal-predictive-echo`、`terminal-usability`、`terminal-status`、`terminal-close`、`terminal-workspace`、`terminal-projects`、`terminal-preview-chrome`。
 
 未验证：Windows 真实窗口的最大化/全屏切换、真实网络下的手感、`terminal-window.spec`（需要 Electron 可执行文件）。
+
+## 补充：终端显示方式与往返审查（同日）
+
+### 终端显示方式
+
+“设置 → 常规 → 终端显示方式”：**滚动模式**（官方经典渲染，输出留在本机滚动缓冲，滚动、选中复制和查找没有网络往返）与 **整屏模式**（官方 fullscreen 渲染）。默认滚动模式；说明文字写明与窗口是否最大化无关，只对新开的终端生效。
+
+服务端在 `ready` 中声明 `terminalDisplay: { version: 1 }`；客户端只向声明了它的服务端、且只在新开进程（非接回原终端）时发送 `terminal.open.display`。服务端通过官方 CLI 自己的开关应用：在该终端的 `--settings` 文件写 `tui: "default" | "fullscreen"`，并设 `CLAUDE_CODE_NO_FLICKER=0/1`。旧服务端不会收到这个字段（`terminal.open` 为严格校验），保持 CLI 自身设置。`tui` 设置键与说明取自官方 SDK 0.3.286 的设置类型；未在真实 CLI 上验证，需要升级服务端后实际确认。
+
+滚动模式下输入预测不生效（预测只识别整屏模式的输入框），设置说明已注明。
+
+### 往返审查结论
+
+逐段检查了按键到回显的路径，没有发现可安全去掉的额外等待：
+
+| 环节 | 结论 |
+| --- | --- |
+| 渲染页 → 主进程本地桥（回环 WebSocket）→ 服务端 WSS | 两端 `ws` 8.22 均 `setNoDelay()`；TLS 包装的代理套接字同样转到底层 TCP，不存在 Nagle 叠加延迟确认 |
+| 消息解析 | 主进程与渲染页各做一次 JSON + zod 判别联合解析：小帧约 3 µs、16 KB 帧约 14 µs |
+| 服务端接收 | 按收到顺序同步处理，终端输入不进入请求队列，直接写 PTY |
+| 服务端输出 | 首段起最多合并 5 ms（为避免半帧重绘），保留；ACK 只影响 128 KiB 背压，不影响回显 |
+| nginx 模式 | `proxy_buffering off`，WebSocket 代理默认 `tcp_nodelay on` |
+
+剩余延迟主要由网络往返（含系统代理线路）与 CLI 重绘决定。终端状态提示（鼠标悬停右上角状态）新增“按键到画面更新约 N ms”：最近 20 次按键到该终端下一次输出的中位数，用来判断慢在哪里；没有按键等待时的输出不计入。主进程日志中 `Reached … through the system proxy` 表示连接经过系统代理，代理线路绕远会直接增加每次往返。

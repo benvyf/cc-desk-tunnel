@@ -575,3 +575,25 @@ test('a window that reports no size while maximizing is measured once it has one
     )
     .toBeGreaterThan(before);
 });
+
+test('the status tooltip tells how long a key waits for the screen to change', async ({ page }) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  const chip = page.locator('.terminal-status-chip');
+  expect(await chip.getAttribute('title')).not.toContain('按键到画面更新');
+  await page.keyboard.type('a');
+  await page.waitForTimeout(120);
+  await page.evaluate(() =>
+    window.terminalFixture.receive({ type: 'terminal.data', data: 'a', bytes: 1 }),
+  );
+  await expect
+    .poll(async () => Number((await chip.getAttribute('title'))?.match(/约 (\d+) ms/)?.[1]))
+    .toBeGreaterThanOrEqual(100);
+  // Output that no key is waiting for is not a sample.
+  await page.waitForTimeout(300);
+  await page.evaluate(() =>
+    window.terminalFixture.receive({ type: 'terminal.data', data: 'b', bytes: 1 }),
+  );
+  const shown = Number((await chip.getAttribute('title'))?.match(/约 (\d+) ms/)?.[1]);
+  expect(shown).toBeLessThan(300);
+});
