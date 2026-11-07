@@ -145,6 +145,97 @@ function event(sessionId, sequence, text = 'text') {
   };
 }
 
+function archiveSink(cached) {
+  return { ready() {}, changed() {}, page() {}, event() {}, suspend() {}, close() {}, cached };
+}
+test('late login bridges and old socket closes cannot attach or suspend another account archive', async (t) => {
+  const f = fixture(t);
+  let older, newer;
+  let oldClosed = 0,
+    newReady = 0,
+    newSuspended = 0;
+  const oldSink = {
+    ...archiveSink(async () => undefined),
+    close() {
+      oldClosed++;
+    },
+  };
+  const newSink = {
+    ...archiveSink(async () => undefined),
+    ready() {
+      newReady++;
+    },
+    suspend() {
+      newSuspended++;
+    },
+  };
+  f.client.connect(
+    'ws://127.0.0.1:1/ws',
+    'first-account-token-long-enough',
+    null,
+    true,
+    () =>
+      new Promise((r) => {
+        older = r;
+      }),
+  );
+  f.client.connect(
+    'ws://127.0.0.1:1/ws',
+    'second-account-token-long-enough',
+    null,
+    true,
+    () =>
+      new Promise((r) => {
+        newer = r;
+      }),
+  );
+  newer({ url: 'ws://127.0.0.1:2/ws', token: 'new-token', history: newSink });
+  await new Promise((r) => setImmediate(r));
+  const socket = globalThis.WebSocket.current;
+  older({ url: 'ws://127.0.0.1:3/ws', token: 'old-token', history: oldSink });
+  await new Promise((r) => setImmediate(r));
+  socket.message({
+    type: 'ready',
+    protocolVersion: PROTOCOL_VERSION,
+    version: '0.0.1',
+    connectionId: randomUUID(),
+    adapter: 'simulation',
+    sessions: [],
+  });
+  f.socket.onclose({ code: 1006 });
+  assert.equal(oldClosed, 1);
+  assert.equal(newReady, 1);
+  assert.equal(newSuspended, 0);
+});
+test('local history paints while loading but cannot become a verified cursor or replace a fresh snapshot', async (t) => {
+  const { client, socket, sessions, snapshot } = fixture(t);
+  const session = sessions[0];
+  let release;
+  client.setHistoryArchive(
+    archiveSink(
+      () =>
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+    ),
+  );
+  client.select(session.id);
+  assert.equal(socket.sent.at(-1).afterSequence, 0);
+  release({ events: [event(session.id, 90, '缓存副本')], first: 90 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(client.state.history[session.id].local, true);
+  assert.equal(client.state.history[session.id].loading, true);
+  snapshot(session, [event(session.id, 1, '实时记录')]);
+  assert.equal(client.state.history[session.id].local, undefined);
+  assert.equal(client.state.events[session.id][0].payload.text, '实时记录');
+  client.select(sessions[1].id);
+  snapshot(sessions[1], [event(sessions[1].id, 1, '新页先到')]);
+  release({ events: [event(sessions[1].id, 90, '迟到的旧副本')], first: 90 });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(client.state.events[sessions[1].id][0].payload.text, '新页先到');
+  assert(!socket.sent.some((c) => c.type === 'message.send' || c.type === 'approval.reply'));
+});
+
 test('late terminal controls after exit do not show a connection error, but active terminal errors remain visible', (t) => {
   const { client, socket, sessions } = fixture(t);
   const sessionId = sessions[0].id;

@@ -376,7 +376,9 @@ handle('file:save', async (event, name, text) => {
   const result = await dialog.showSaveDialog(BrowserWindow.fromWebContents(event.sender), {
     title: '导出',
     defaultPath: path.join(app.getPath('downloads'), path.basename(String(name))),
-    filters: [{ name: 'Markdown', extensions: ['md'] }],
+    filters: String(name).endsWith('.jsonl')
+      ? [{ name: 'CC 聊天归档', extensions: ['jsonl'] }]
+      : [{ name: 'Markdown', extensions: ['md'] }],
   });
   if (result.canceled || !result.filePath) return false;
   await writeFile(result.filePath, String(text), 'utf8');
@@ -771,6 +773,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
     return response === 1;
   },
   onExpired: (message) => {
+    historyIdentityChanged();
     serverClient?.cancel();
     void disconnectProxy().catch((error) =>
       log(`Close expired email connection: ${error.message}`),
@@ -786,9 +789,43 @@ setInterval(
   () => void desktopAccess.check().catch((error) => log(`Check email session: ${error.message}`)),
   15_000,
 ).unref();
-handle('access:load', () => desktopAccess.load());
+handle('access:load', () => {
+  const previous = desktopAccess.localIdentity();
+  const saved = desktopAccess.load();
+  if (previous !== desktopAccess.localIdentity()) historyIdentityChanged();
+  return saved;
+});
+const historyLocal = require('./local-history.cjs');
+function historyIdentityChanged() {
+  for (const window of BrowserWindow.getAllWindows())
+    window.webContents.send('history:identity-changed');
+}
+handle('history:identity', () => {
+  const email = desktopAccess.localIdentity();
+  const owner = historyLocal.historyOwner('https://api.ghostapi.org', email);
+  return owner ? { owner, email } : null;
+});
+handle('history:report', (_event, input) => {
+  if (
+    !input ||
+    !['write', 'sync'].includes(input.operation) ||
+    !/^[a-f0-9]{64}$/.test(input.server) ||
+    !/^[A-Za-z0-9_-]{1,80}$/.test(input.error)
+  )
+    return;
+  log(`Local history ${input.operation} failed; server=${input.server}; error=${input.error}`);
+});
+handle('history:attachment', async (_event, input) => {
+  const owner = () =>
+    historyLocal.historyOwner('https://api.ghostapi.org', desktopAccess.localIdentity());
+  if (!input?.owner || input.owner !== owner()) throw new Error('账号已变化，附件归档已取消。');
+  const data = await historyLocal.readHistoryAttachment(input.path);
+  if (input.owner !== owner()) throw new Error('账号已变化，附件归档已取消。');
+  return data;
+});
 handle('access:login', async (_event, input) => {
   const result = await desktopAccess.login(input);
+  historyIdentityChanged();
   serverClient?.cancel();
   writeSettings({ login: undefined });
   return result;
@@ -817,7 +854,11 @@ handle('access:open-upgrade', async (_event, requiredProtocol) => {
 handle('access:logout', async () => {
   serverClient?.cancel();
   await (await sshTargets()).setService(null);
-  return desktopAccess.logout();
+  try {
+    return await desktopAccess.logout();
+  } finally {
+    historyIdentityChanged();
+  }
 });
 handle('login:load', () => {
   if (app.isPackaged) return null;
@@ -1165,8 +1206,16 @@ app.whenReady().then(() => {
         ? Menu.buildFromTemplate(development)
         : null,
   );
-  session.defaultSession.setPermissionRequestHandler((_contents, _permission, callback) =>
-    callback(false),
+  session.defaultSession.setPermissionRequestHandler((contents, permission, callback, details) =>
+    callback(
+      historyLocal.allowHistoryPersistence(
+        contents,
+        permission,
+        details,
+        primaryWindow?.webContents,
+        path.join(__dirname, '../dist/index.html'),
+      ),
+    ),
   );
   const window = new BrowserWindow({
     width: 1240,

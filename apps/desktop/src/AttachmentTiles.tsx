@@ -1,18 +1,25 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { FileCode, FileText, X } from './icons.tsx';
 import { attachmentKind, fileName } from './attachments.ts';
 import type { Attachment } from './attachments.ts';
 import { localPicture } from './links.ts';
 import { Modal } from './ui.tsx';
+export const ArchivedAttachments = createContext<Record<string, string> | null>(null);
 
 // A picture's small preview, read by the desktop app; none in the browser or for other files.
 function usePreview(path: string | undefined, kind: string) {
+  const archive = useContext(ArchivedAttachments);
   const [preview, setPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   useEffect(() => {
     setPreview(null);
     setLoading(false);
+    if (archive !== null) {
+      const data = path ? archive[path] : undefined;
+      if (data && /^data:image\/(?:png|jpeg|gif|webp);base64,/.test(data)) setPreview(data);
+      return;
+    }
     if (kind !== 'IMAGE' || !path || !window.desktop?.attachmentPreview) return;
     let current = true;
     setLoading(true);
@@ -30,7 +37,7 @@ function usePreview(path: string | undefined, kind: string) {
     return () => {
       current = false;
     };
-  }, [path, kind]);
+  }, [path, kind, archive]);
   return { preview, loading, drop: () => setPreview(null) };
 }
 
@@ -38,6 +45,7 @@ function usePreview(path: string | undefined, kind: string) {
 // pictures take little room. A picture opens whole on a click, read from this computer; where it cannot be (sent
 // from another, or since moved), its preview is shown larger instead.
 function SentFile({ item }: { item: Attachment }) {
+  const archive = useContext(ArchivedAttachments);
   const kind = attachmentKind(fileName(item.path ?? item.name));
   const { preview, drop } = usePreview(item.path, kind);
   const [open, setOpen] = useState(false);
@@ -83,7 +91,7 @@ function SentFile({ item }: { item: Attachment }) {
           <Modal title={item.name} onClose={() => setOpen(false)}>
             <div className="picture-view" onContextMenu={(event) => event.stopPropagation()}>
               <img
-                src={whole && item.path ? localPicture(item.path) : preview}
+                src={archive === null && whole && item.path ? localPicture(item.path) : preview}
                 alt={item.name}
                 onError={() => setWhole(false)}
               />

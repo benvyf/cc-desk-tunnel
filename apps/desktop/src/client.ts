@@ -6,6 +6,7 @@ import type {
   ServerMessage,
 } from '../../../packages/protocol/src/account-display.ts';
 import type { EventPayload } from '@cc-desk-tunnel/protocol';
+import type { HistoryPage } from '@cc-desk-tunnel/protocol';
 import type {
   Command,
   Device,
@@ -31,11 +32,13 @@ type DataMessage = Extract<
       | 'web.certificate.state'
       | 'terminal.state'
       | 'terminal.file'
-      | 'terminal.histories';
+      | 'terminal.histories'
+      | 'session.archive.page';
   }
 >;
 // Commands answered with a data frame, and the frame each one gets.
 type Replies = {
+  'session.archive': 'session.archive.page';
   'terminal.history.list': 'terminal.histories';
   'terminal.file.read': 'terminal.file';
   'terminal.state': 'terminal.state';
@@ -87,6 +90,7 @@ export class RequestInterruptedError extends Error {
     const readOnly = [
       'session.subscribe',
       'session.history',
+      'session.archive',
       'session.status',
       'terminal.state',
       'terminal.file.read',
@@ -119,6 +123,7 @@ export class RequestInterruptedError extends Error {
 }
 
 export type HistoryState = {
+  local?: boolean;
   loaded?: boolean;
   firstSequence: number;
   lastSequence: number;
@@ -127,6 +132,7 @@ export type HistoryState = {
   loadingEarlier: boolean;
 };
 export type ClientState = {
+  localHistory?: boolean;
   status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
   connectionId: string | null;
   terminalWorkspace?: { version: 1; minRows?: 1; resumable?: boolean };
@@ -172,11 +178,32 @@ export type ClientState = {
 };
 export type TaskProgress = Extract<EventPayload, { type: 'native.progress' }>;
 export type ConnectedDevice = Extract<ServerMessage, { type: 'devices' }>['devices'][number];
+export type HistorySink = {
+  deleted?: (id: string) => void;
+  ready: (sessions: Session[], completeSync: boolean) => void;
+  changed: (session: Session) => void;
+  page: (page: HistoryPage) => void;
+  event: (session: Session, event: SessionEvent) => void;
+  cached: (id: string) => Promise<{ events: SessionEvent[]; first: number } | undefined>;
+  suspend: () => void;
+  close: () => void;
+};
 
 // The renderer's single connection and its state store: components read `state` through subscribe / getSnapshot
 // and send commands with request(). A connection that breaks is made again, for as long as it takes, and what
 // was missed is read from the service's record; nothing is resent automatically.
 export class ProxyClient {
+  private archive?: HistorySink;
+  setHistoryArchive(archive?: HistorySink) {
+    this.archive?.close();
+    this.archive = archive;
+    if (archive && this.state.status === 'connected')
+      archive.ready(this.state.sessions, !!this.state.localHistory);
+  }
+  retryHistoryArchive() {
+    if (this.state.status === 'connected')
+      this.archive?.ready(this.state.sessions, !!this.state.localHistory);
+  }
   state: ClientState = {
     status: 'disconnected',
     connectionId: null,
@@ -216,7 +243,7 @@ export class ProxyClient {
     reconnect: boolean;
     // Remote mode: opens the bridge in the main process and resolves to its address. A bridge serves one
     // connection, so every attempt asks for a new one.
-    bridge?: () => Promise<string | { url: string; token: string }>;
+    bridge?: () => Promise<string | { url: string; token: string; history?: HistorySink }>;
   } | null = null;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   retryAttempt = 0;
@@ -266,7 +293,7 @@ export class ProxyClient {
     token: string,
     device: Device,
     reconnect = true,
-    bridge?: () => Promise<string | { url: string; token: string }>,
+    bridge?: () => Promise<string | { url: string; token: string; history?: HistorySink }>,
   ) {
     const address = new URL(url);
     if (
@@ -391,9 +418,13 @@ export class ProxyClient {
     const current = () => this.credentials === credentials && this.turn === turn;
     credentials.bridge().then(
       (connection) => {
-        if (!current()) return;
+        if (!current()) {
+          if (typeof connection !== 'string') connection.history?.close();
+          return;
+        }
         credentials.url = typeof connection === 'string' ? connection : connection.url;
         if (typeof connection !== 'string') credentials.token = connection.token;
+        this.setHistoryArchive(typeof connection === 'string' ? undefined : connection.history);
         this.attach(credentials);
       },
       (error) => {
@@ -472,6 +503,7 @@ export class ProxyClient {
           if (!message.sessions.some((session) => session.id === id)) this.observers.delete(id);
         this.update({
           status: 'connected',
+          localHistory: !!message.localHistory,
           connectionId: message.connectionId,
           terminalWorkspace: message.terminalWorkspace,
           terminalFiles: message.terminalFiles,
@@ -492,6 +524,7 @@ export class ProxyClient {
         });
         if (selectedId) this.load(selectedId);
         else this.restoreObserved();
+        this.archive?.ready(message.sessions, !!message.localHistory);
       } else if (message.type === 'response') {
         const request = this.pending.get(message.requestId);
         if (!request) return;
@@ -556,7 +589,8 @@ export class ProxyClient {
         message.type === 'web.certificate.state' ||
         message.type === 'terminal.state' ||
         message.type === 'terminal.file' ||
-        message.type === 'terminal.histories'
+        message.type === 'terminal.histories' ||
+        message.type === 'session.archive.page'
       ) {
         if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
       } else if (message.type === 'service.update') {
@@ -572,6 +606,7 @@ export class ProxyClient {
         this.update({ devices: message.devices });
       } else if (message.type === 'session.updated') {
         this.upsert(message.session);
+        this.archive?.changed(message.session);
       } else if (
         message.type === 'terminal.opened' ||
         message.type === 'terminal.detached' ||
@@ -586,6 +621,7 @@ export class ProxyClient {
         }
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
+        this.archive?.deleted?.(message.sessionId);
         this.observers.delete(message.sessionId);
         this.activity.delete(message.sessionId);
         const events = { ...this.state.events };
@@ -605,6 +641,11 @@ export class ProxyClient {
           this.state.selectedId === message.sessionId ? null : this.state.selectedId;
         this.update({ sessions, events, live, history, progress, selectedId });
       } else if (message.type === 'session.snapshot') {
+        if (
+          this.pending.has(message.requestId) &&
+          this.state.sessions.some((s) => s.id === message.session.id)
+        )
+          this.archive?.page(message);
         this.flushStream();
         if (
           !this.pending.has(message.requestId) ||
@@ -637,6 +678,8 @@ export class ProxyClient {
         };
         this.merge(id, message.events, history, message.mode === 'replace');
       } else if (message.type === 'session.event') {
+        const archivedSession = this.state.sessions.find((s) => s.id === message.event.sessionId);
+        if (archivedSession) this.archive?.event(archivedSession, message.event);
         const payload = message.event.payload;
         const at = Date.parse(message.event.createdAt);
         this.ahead = Math.min(this.ahead, Date.now() - at);
@@ -663,6 +706,7 @@ export class ProxyClient {
     socket.onclose = (event) => {
       clearTimeout(timeout);
       if (this.socket !== socket) return;
+      this.archive?.suspend();
       this.socket = null;
       if (credentials.browser && event.code === 4001) {
         this.credentials = null;
@@ -707,6 +751,7 @@ export class ProxyClient {
     this.open();
   }
   disconnect() {
+    this.setHistoryArchive(undefined);
     this.flushStream();
     const browser = this.credentials?.browser;
     this.credentials = null;
@@ -843,7 +888,7 @@ export class ProxyClient {
     const socket = this.socket;
     const observer = this.observers.get(sessionId);
     const previous = this.state.history[sessionId];
-    const afterSequence = previous?.lastSequence ?? 0;
+    const afterSequence = previous?.local ? 0 : (previous?.lastSequence ?? 0);
     this.update({
       history: {
         ...this.state.history,
@@ -859,6 +904,32 @@ export class ProxyClient {
         },
       },
     });
+    const loading = this.state.history[sessionId];
+    if (!this.state.events[sessionId]?.length && this.archive) {
+      void this.archive
+        .cached(sessionId)
+        .then((cached) => {
+          if (!cached || this.socket !== socket || this.state.history[sessionId] !== loading)
+            return;
+          this.merge(
+            sessionId,
+            cached.events,
+            {
+              ...loading,
+              local: true,
+              loaded: true,
+              loading: true,
+              firstSequence: cached.first,
+              lastSequence: cached.events.at(-1)?.sequence ?? 0,
+              hasEarlier: true,
+            },
+            true,
+          );
+        })
+        .catch(() => {
+          /* Archive sync reports disk failures separately; online history remains usable. */
+        });
+    }
     void this.request({
       type: 'session.subscribe',
       sessionId,
@@ -944,7 +1015,7 @@ export class ProxyClient {
   }
   async loadEarlier(sessionId: string) {
     const history = this.state.history[sessionId];
-    if (!history?.hasEarlier || history.loadingEarlier || history.loading) return;
+    if (!history?.hasEarlier || history.local || history.loadingEarlier || history.loading) return;
     const socket = this.socket;
     this.update({
       history: { ...this.state.history, [sessionId]: { ...history, loadingEarlier: true } },

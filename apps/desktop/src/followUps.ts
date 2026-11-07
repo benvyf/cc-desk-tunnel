@@ -114,7 +114,8 @@ export class FollowUps {
       }
       if (this.state.paused[sessionId]) continue;
       const session = current.sessions.find((s) => s.id === sessionId);
-      if (!session || current.history[sessionId]?.loading) continue;
+      if (!session || current.history[sessionId]?.loading || current.history[sessionId]?.local)
+        continue;
       if (session.activeRun) {
         this.waiting.set(sessionId, session.activeRun.id);
         continue;

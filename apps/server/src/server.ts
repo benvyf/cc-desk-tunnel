@@ -2024,6 +2024,20 @@ export function createProxyServer(options: ServerOptions) {
         });
         return undefined;
       }
+      case 'session.archive': {
+        if (peer.browser)
+          throw new DomainError('web_forbidden', '本机归档同步仅供桌面客户端使用。');
+        send(peer, {
+          type: 'session.archive.page',
+          ...store.history(
+            command.sessionId,
+            command.requestId,
+            command.afterSequence,
+            command.beforeSequence,
+          ),
+        });
+        return command.sessionId;
+      }
       case 'project.move': {
         const from = pathKey(command.from);
         if (
@@ -2270,6 +2284,7 @@ export function createProxyServer(options: ServerOptions) {
     peer.name = auth.data.deviceName;
     send(peer, {
       type: 'ready',
+      localHistory: { version: 1 },
       protocolVersion: PROTOCOL_VERSION,
       connectionId: peer.id,
       adapter,

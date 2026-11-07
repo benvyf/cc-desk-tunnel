@@ -1,5 +1,5 @@
 import { BrandMark } from './Brand.tsx';
-import { CalendarClock, Download, MessagesSquare, Plus, Search } from './icons.tsx';
+import { CalendarClock, Database, Download, MessagesSquare, Plus, Search } from './icons.tsx';
 import type { MenuPosition } from './ui.tsx';
 
 export type Page = 'chat' | 'schedules' | 'settings';
@@ -19,6 +19,7 @@ export default function Rail({
   updatePopup = 'menu',
   openUpdate,
   openAccount,
+  openHistory,
 }: {
   page: Page;
   schedules?: boolean;
@@ -31,6 +32,7 @@ export default function Rail({
   updatePopup?: 'menu' | 'dialog';
   openUpdate: (position: MenuPosition) => void;
   openAccount: (position: MenuPosition) => void;
+  openHistory?: () => void;
 }) {
   // A menu opens beside the rail, clear of its edge, and grows upward from the button's foot.
   const beside = (element: HTMLElement): MenuPosition => {
@@ -74,6 +76,11 @@ export default function Rail({
         </button>
       )}
       <span className="rail-space" />
+      {openHistory && (
+        <button type="button" title="本地聊天记录" aria-label="本地聊天记录" onClick={openHistory}>
+          <Database />
+        </button>
+      )}
       {update && (
         <button
           type="button"

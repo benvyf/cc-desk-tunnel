@@ -102,6 +102,45 @@ async function fixture(t: TestContext, stepMs = 2, graceMs?: number) {
   return { directory, server, url, clients, connect, create };
 }
 
+test('archive pagination is read-only and never changes subscriptions or starts a run', async (t) => {
+  const f = await fixture(t);
+  const owner = await f.connect();
+  const reader = await f.connect();
+  const id = await f.create(owner);
+  const before = f.server.store.snapshot(id).events.length;
+  assert.equal((await reader.request({ type: 'session.archive', sessionId: id })).type, 'response');
+  const archive = await reader.wait((message) => message.type === 'session.archive.page');
+  assert.equal(archive.type, 'session.archive.page');
+  assert.equal(archive.session.id, id);
+  assert.equal(f.server.store.snapshot(id).events.length, before);
+  await owner.request({
+    type: 'message.send',
+    sessionId: id,
+    text: 'only the owner subscribes',
+    scenario: 'chat',
+  });
+  await owner.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.sessionId === id &&
+      message.event.payload.type === 'run.status' &&
+      message.event.payload.status === 'completed',
+  );
+  assert.equal(
+    reader.messages.some(
+      (message) => message.type === 'session.event' && message.event.sessionId === id,
+    ),
+    false,
+  );
+  const invalid = await reader.request({
+    type: 'session.archive',
+    sessionId: id,
+    afterSequence: Number.MAX_SAFE_INTEGER,
+  });
+  assert.equal(invalid.type, 'response');
+  assert.equal(invalid.type === 'response' && invalid.code, 'invalid_cursor');
+});
+
 test('device rename updates every seat peer and owned sessions without reconnecting', async (t) => {
   const f = await fixture(t);
   const client = await f.connect();

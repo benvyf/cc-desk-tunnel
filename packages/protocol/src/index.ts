@@ -731,6 +731,15 @@ export const commandSchema = z.discriminatedUnion('type', [
     .strict(),
   z
     .object({
+      type: z.literal('session.archive'),
+      ...request,
+      sessionId: id,
+      afterSequence: z.number().int().nonnegative().default(0),
+      beforeSequence: z.number().int().positive().optional(),
+    })
+    .strict(),
+  z
+    .object({
       type: z.literal('session.history'),
       ...request,
       sessionId: id,
@@ -849,6 +858,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({
     type: z.literal('ready'),
+    localHistory: z.object({ version: z.literal(1) }).optional(),
     sideConversations: z.literal(true).optional(),
     protocolVersion: z.literal(PROTOCOL_VERSION),
     connectionId: id,
@@ -882,6 +892,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     message: z.string().optional(),
   }),
   z.object({ type: z.literal('session.snapshot'), ...historyPageSchema.shape }),
+  z.object({ type: z.literal('session.archive.page'), ...historyPageSchema.shape }),
   z.object({ type: z.literal('session.updated'), session: sessionSchema }),
   z.object({ type: z.literal('session.deleted'), sessionId: id }),
   z.object({ type: z.literal('session.event'), event: eventSchema }),

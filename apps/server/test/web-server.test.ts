@@ -388,6 +388,7 @@ test('browser controls an existing device session but cannot claim a device or i
   );
   for (const command of [
     { type: 'session.create', title: 'forbidden', projectPath: '/tmp' },
+    { type: 'session.archive', sessionId: created.sessionId },
     { type: 'device.rename', name: 'forbidden browser rename' },
     { type: 'session.fork', sessionId: created.sessionId },
     { type: 'session.move', sessionId: created.sessionId, projectPath: '/tmp' },

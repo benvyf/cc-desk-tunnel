@@ -11,6 +11,7 @@ async function desktopLogin(page: Page, fingerprint = '') {
       boot: { connection: '', shared: { connections: [], busy: [] } },
       version: async () => '0.3.6',
       managedUpdate: undefined,
+      ssh: undefined,
       windowSettings: async () => ({ closeToTray: false }),
       connections: async () => [],
       loadSchedules: async (text: string) => ({ path: '', text }),

@@ -82,6 +82,9 @@ export function DeleteSessionDialog({
     >
       <p className="delete-question">删除“{session.title}”？</p>
       <p className="muted">会话记录会被删除，项目文件不受影响。</p>
+      {typeof window.desktop?.localHistory?.identity === 'function' && (
+        <p className="muted">已保存的本地归档会保留，可在“本地聊天记录”中单独删除。</p>
+      )}
       {error && (
         <p className="error-text" role="alert">
           {error}

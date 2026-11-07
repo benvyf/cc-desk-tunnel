@@ -4,6 +4,12 @@ import { resolve } from 'node:path';
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const noOp = () => {};
+    let historyIdentity: { owner: string; email: string } | null = null;
+    let identityChanged = noOp;
+    (window as any).setHistoryIdentity = (value: typeof historyIdentity) => {
+      historyIdentity = value;
+      identityChanged();
+    };
     localStorage.setItem('proxy-url', 'wss://old-service.example/ws');
     (window as any).legacyLoginReads = 0;
     const api = {
@@ -12,6 +18,17 @@ test.beforeEach(async ({ page }) => {
       boot: { connection: '', shared: { connections: [], busy: [] } },
       version: async () => '0.3.7',
       managedUpdate: undefined,
+      ssh: undefined,
+      localHistory: {
+        identity: async () => historyIdentity,
+        attachment: async () => {
+          throw new Error('fixture: no attachment access');
+        },
+        onIdentityChanged: (callback: () => void) => {
+          identityChanged = callback;
+          return noOp;
+        },
+      },
       windowSettings: async () => ({ closeToTray: false }),
       connections: async () => [],
       loadSchedules: async (text: string) => ({ path: '', text }),
@@ -109,6 +126,67 @@ test('email-only login ignores legacy credentials, selects a workspace and exits
   await expect(page.getByLabel('密码', { exact: true })).toHaveValue('');
   await page.setViewportSize({ width: 390, height: 844 });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test('remembered local archives remain readable before connecting, and an account switch closes the view', async ({
+  page,
+}) => {
+  const sockets: string[] = [];
+  page.on('websocket', (socket) => sockets.push(socket.url()));
+  await page.evaluate(async () => {
+    const owner = 'e'.repeat(64);
+    (window as any).setHistoryIdentity({ owner, email: 'remembered@example.com' });
+    const source = '/src/local-history.ts';
+    const { localHistory } = await import(source);
+    const session = {
+      id: crypto.randomUUID(),
+      title: '离线恢复的记录',
+      autoTitle: false,
+      permissionMode: 'auto' as const,
+      model: null,
+      effort: null,
+      projectPath: 'D:\\test',
+      createdAt: '2026-11-07T00:00:00.000Z',
+      updatedAt: '2026-11-07T00:00:00.000Z',
+      activeRun: null,
+    };
+    const event = {
+      sessionId: session.id,
+      runId: crypto.randomUUID(),
+      sequence: 1,
+      createdAt: session.createdAt,
+      payload: {
+        type: 'message.user' as const,
+        messageId: crypto.randomUUID(),
+        text: 'Ubuntu 不在线也能看到',
+        scenario: 'chat' as const,
+      },
+    };
+    const record = await localHistory.save(
+      { owner, server: 'f'.repeat(64), label: '记住的工作空间' },
+      {
+        session,
+        events: [event],
+        requestId: crypto.randomUUID(),
+        mode: 'replace',
+        firstSequence: 1,
+        lastSequence: 1,
+        hasEarlier: false,
+      },
+    );
+    await localHistory.complete(owner, record.key, 1);
+  });
+  await page.getByRole('button', { name: '本地聊天记录（可离线查看）' }).click();
+  await page.getByRole('button', { name: /离线恢复的记录/ }).click();
+  await expect(page.getByText('Ubuntu 不在线也能看到', { exact: true })).toBeVisible();
+  expect(sockets).toEqual([]);
+  await page.evaluate(() =>
+    (window as any).setHistoryIdentity({ owner: 'd'.repeat(64), email: 'other@example.com' }),
+  );
+  await expect(page.getByRole('dialog', { name: '本地聊天记录', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: '本地聊天记录（可离线查看）' }).click();
+  await expect(page.getByText(/当前本机账号：other@example.com/)).toBeVisible();
+  await expect(page.getByRole('button', { name: /离线恢复的记录/ })).toHaveCount(0);
 });
 
 test('email sign-in layout stays readable in both themes and supports password visibility', async ({

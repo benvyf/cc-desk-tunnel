@@ -6,6 +6,26 @@ import type { ClientState, ProxyClient } from '../src/client.ts';
 import type { SessionEvent } from '@cc-desk-tunnel/protocol';
 
 const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+test('unverified locally restored history cannot release queued messages', async () => {
+  const { id, state, queue, calls, end, update, close } = fixture();
+  queue.enqueue(id, 'must wait for fresh history', 'chat');
+  state.history[id] = {
+    local: true,
+    loading: false,
+    loadingEarlier: false,
+    firstSequence: 1,
+    lastSequence: 2,
+    hasEarlier: false,
+  };
+  end('completed');
+  await tick();
+  assert.equal(calls.length, 0);
+  state.history[id] = { ...state.history[id], local: false };
+  update();
+  await tick();
+  assert.equal(calls.length, 1);
+  close();
+});
 function fixture() {
   const id = randomUUID();
   const initialRun = randomUUID();

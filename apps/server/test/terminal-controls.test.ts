@@ -219,6 +219,20 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     for (let i = 0; i < 100 && state.statusReads.length === beforeReads; i++) await delay(5);
     assert.equal(state.statusReads.length, beforeReads + 1);
     assert.equal(
+      (
+        await other.request({
+          type: 'session.archive',
+          sessionId: separate.sessionId,
+          afterSequence: 0,
+        })
+      ).ok,
+      true,
+      'background archive reads must not use the native CLI or mutation lock',
+    );
+    const archived = await other.wait((message) => message.type === 'session.archive.page');
+    assert.equal(archived.type, 'session.archive.page');
+    assert.equal(archived.session.id, separate.sessionId);
+    assert.equal(
       (await other.request({ type: 'session.subscribe', sessionId: separate.sessionId })).ok,
       true,
       'opening cached history must remain available during native status initialization',

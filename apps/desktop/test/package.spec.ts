@@ -80,6 +80,29 @@ test('packaged exe runs without development dependencies and reclaims bundled re
     await expect(page.getByRole('heading', { name: '登录 CC Space', exact: true })).toBeVisible();
     expect(await page.evaluate(() => window.desktop!.access.load())).toBeNull();
     expect(await page.evaluate(() => typeof window.desktop!.access.onExpired)).toBe('function');
+    expect(await page.evaluate(() => typeof window.desktop!.localHistory?.identity)).toBe(
+      'function',
+    );
+    expect(await page.evaluate(() => window.desktop!.localHistory!.identity())).toBeNull();
+    const durable = await page.evaluate(async () => {
+      try {
+        return await navigator.storage.persist();
+      } catch {
+        return false;
+      }
+    });
+    writeFileSync(
+      join(directory, 'local-history-permission.json'),
+      JSON.stringify({ localHistoryIpc: true, durable }),
+    );
+    await page.getByRole('button', { name: '本地聊天记录（可离线查看）' }).click();
+    await expect(page.getByRole('dialog', { name: '本地聊天记录', exact: true })).toContainText(
+      '请先登录一次并记住登录',
+    );
+    await page
+      .getByRole('dialog', { name: '本地聊天记录', exact: true })
+      .getByRole('button', { name: '关闭', exact: true })
+      .click();
     await expect(page.getByLabel('邮箱', { exact: true })).toBeVisible();
     await expect(page.getByLabel('密码', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: '使用服务地址连接' })).toHaveCount(0);

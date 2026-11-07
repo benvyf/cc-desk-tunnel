@@ -24,6 +24,16 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   dev: process.argv.includes('--cc-desk-tunnel-dev'),
   platform: process.platform,
+  localHistory: {
+    report: (input) => ipcRenderer.invoke('history:report', input),
+    identity: () => ipcRenderer.invoke('history:identity'),
+    attachment: (owner, file) => ipcRenderer.invoke('history:attachment', { owner, path: file }),
+    onIdentityChanged: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('history:identity-changed', listener);
+      return () => ipcRenderer.removeListener('history:identity-changed', listener);
+    },
+  },
   ssh: {
     list: () => ipcRenderer.invoke('ssh:list'),
     save: (input) => ipcRenderer.invoke('ssh:save', input),

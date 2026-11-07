@@ -46,6 +46,16 @@ declare global {
       // Run from the source tree, not installed: the login page then also offers the simulation service.
       dev: boolean;
       platform: 'win32' | 'darwin' | 'linux';
+      localHistory?: {
+        report?: (input: {
+          operation: 'write' | 'sync';
+          server: string;
+          error: string;
+        }) => Promise<void>;
+        identity: () => Promise<{ owner: string; email: string } | null>;
+        attachment: (owner: string, path: string) => Promise<string>;
+        onIdentityChanged: (callback: () => void) => () => void;
+      };
       ssh?: {
         list: () => Promise<SshTarget[]>;
         save: (input: SshTargetInput) => Promise<string>;

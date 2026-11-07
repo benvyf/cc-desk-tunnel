@@ -14,6 +14,7 @@ export default function EmailLoginPage({
   choose,
   back,
   recover,
+  localHistory,
 }: {
   form: ConnectionForm;
   change: (input: Partial<ConnectionForm>) => void;
@@ -24,6 +25,7 @@ export default function EmailLoginPage({
   choose: (id: string) => void;
   back: () => void;
   recover?: () => void;
+  localHistory?: () => void;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
@@ -176,6 +178,7 @@ export default function EmailLoginPage({
           </div>
         </section>
         <p className="email-login-footer">账号与工作空间由 CC 管理中心统一管理</p>
+        {localHistory && <Button onClick={localHistory}>本地聊天记录（可离线查看）</Button>}
       </div>
     </main>
   );

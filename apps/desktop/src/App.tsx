@@ -41,6 +41,8 @@ import { CertificateWarning } from './WebGate.tsx';
 import { hostCapabilities } from './host-capabilities.ts';
 import AccountPanel from './AccountPanel.tsx';
 import { ProxyClient, RequestInterruptedError } from './client.ts';
+import { LocalHistorySync } from './local-history-sync.ts';
+import { historyServer } from './local-history.ts';
 import Composer, { NewSessionComposer } from './Composer.tsx';
 import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
@@ -106,6 +108,7 @@ import { previewSpan, usePreviewWorkspace } from './preview.ts';
 import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
 
 const NativeTerminal = lazy(() => import('./TerminalWindow.tsx'));
+const LocalHistoryPanel = lazy(() => import('./LocalHistoryPanel.tsx'));
 // The notes of every version so far are read only when asked for, and stay out of what the window starts with.
 const ReleaseNotes = lazy(() => import('./ReleaseNotes.tsx'));
 
@@ -142,9 +145,24 @@ export function App({
   browser,
 }: { browser?: { selfSigned: boolean; expired: () => void; logout: () => Promise<void> } } = {}) {
   const host = hostCapabilities(!!browser);
+  const localHistoryAvailable =
+    typeof window.desktop?.localHistory?.identity === 'function' &&
+    typeof window.desktop?.localHistory?.onIdentityChanged === 'function' &&
+    typeof window.desktop?.localHistory?.attachment === 'function';
   const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
   const emailOnly = !!window.desktop && !window.desktop.dev;
   const [client] = useState(() => new ProxyClient());
+  const [localHistoryOpen, setLocalHistoryOpen] = useState(false);
+  useEffect(
+    () =>
+      localHistoryAvailable
+        ? window.desktop!.localHistory!.onIdentityChanged(() => {
+            client.setHistoryArchive(undefined);
+            setLocalHistoryOpen(false);
+          })
+        : undefined,
+    [client, localHistoryAvailable],
+  );
   const occupiedSessions = useRef<string[]>([]);
   const [followUps] = useState(
     () => new FollowUps(client, (id) => occupiedSessions.current.includes(id)),
@@ -169,13 +187,20 @@ export function App({
   // The version whose notes are shown, over whichever page is up.
   const [notes, setNotes] = useState<string | null>(null);
   const notesDialog = (
-    <Presence kind="dialog">
-      {notes ? (
+    <>
+      {localHistoryOpen && (
         <Suspense fallback={null}>
-          <ReleaseNotes version={notes} onClose={() => setNotes(null)} />
+          <LocalHistoryPanel client={client} close={() => setLocalHistoryOpen(false)} />
         </Suspense>
-      ) : null}
-    </Presence>
+      )}
+      <Presence kind="dialog">
+        {notes ? (
+          <Suspense fallback={null}>
+            <ReleaseNotes version={notes} onClose={() => setNotes(null)} />
+          </Suspense>
+        ) : null}
+      </Presence>
+    </>
   );
   const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
   const managedUpdate = useManagedUpdate();
@@ -818,6 +843,7 @@ export function App({
       !selected ||
       !connected ||
       history?.loading ||
+      history?.local ||
       selected.activeRun ||
       refreshing ||
       anyTerminal ||
@@ -832,6 +858,7 @@ export function App({
     selected?.id,
     connected,
     history?.loading,
+    history?.local,
     selected?.activeRun,
     refreshing,
     anyChat,
@@ -931,6 +958,8 @@ export function App({
     try {
       const device = await thisDevice();
       client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
+        const historyApi = localHistoryAvailable ? window.desktop!.localHistory : undefined;
+        const identity = await historyApi?.identity();
         const connection = await window.desktop!.access.ticket(nodeId);
         if ('error' in connection)
           throw Object.assign(new Error(connection.error), {
@@ -943,7 +972,17 @@ export function App({
           fingerprint: connection.fingerprint,
           waits: getPrefs().connection,
         });
-        return { url: bridge.url, token: connection.token };
+        const currentIdentity = await historyApi?.identity();
+        if (identity?.owner !== currentIdentity?.owner)
+          throw new Error('账号已切换，请重新连接工作空间。');
+        const history = identity
+          ? new LocalHistorySync(client, {
+              owner: identity.owner,
+              server: await historyServer(nodeId, connection.url, connection.fingerprint),
+              label: nodeId,
+            })
+          : undefined;
+        return { url: bridge.url, token: connection.token, history };
       });
     } catch (error) {
       setError(error instanceof Error ? error.message : '连接工作空间失败。');
@@ -2170,6 +2209,7 @@ export function App({
         )}
         {emailOnly || (form.authMethod === 'email' && emailLoginAvailable) ? (
           <EmailLoginPage
+            localHistory={localHistoryAvailable ? () => setLocalHistoryOpen(true) : undefined}
             form={form}
             change={(values) => {
               loginInteracted.current = true;
@@ -2341,6 +2381,7 @@ export function App({
         </div>
       )}
       <Rail
+        openHistory={localHistoryAvailable ? () => setLocalHistoryOpen(true) : undefined}
         page={place.page}
         go={(page) => open(page)}
         schedules={host.schedules}
@@ -2457,6 +2498,11 @@ export function App({
             className={`workspace chat-workspace${fresh && !selectedTerminal ? ' new-session' : ''}`}
             ref={stopScope}
           >
+            {history?.local && (
+              <p className="connection-banner" role="status">
+                正在显示本机保存的副本，等待服务端历史核对；不会据此自动发送排队消息。
+              </p>
+            )}
             {currentError && (
               <div className="error-banner" role="alert">
                 <span>{currentError}</span>

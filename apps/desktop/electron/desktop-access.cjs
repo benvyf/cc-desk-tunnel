@@ -73,6 +73,9 @@ function createDesktopAccess({
     }
   }
   return {
+    localIdentity() {
+      return session?.email ?? null;
+    },
     async serverRequest(nodeId, route, body, signal) {
       if (!session || typeof nodeId !== 'string' || !/^[a-z0-9_-]{1,80}$/.test(nodeId))
         throw new Error('请先登录邮箱并选择工作空间。');
