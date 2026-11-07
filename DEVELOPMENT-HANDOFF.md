@@ -1,16 +1,22 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-08 按 4fe343a 审查意见完成修正（源码，未发行）
+
+同一 `feat/local-history-cache` 分支逐项落实审查 1–10：订阅失败清 pending/unconfirmed、loading=false 并恢复原有控件行为，重新点击当前会话可重试；主/侧聊停止和双 Escape 不再受历史同步限制；渲染器只发完整尾部 run，主进程 replace 独立裁剪约 6 MB 输入。最新整轮始终保留，1.5 MB 可保存/注水，仅最新单轮超过 4 MiB 才跳过该会话；删除 discardedRun。追加使用主进程内存索引，维护只在重写后触发且一分钟限频；open 接受真实 PROTOCOL_VERSION；复用现有 log()；瞬时 IO 错误不删历史文件；清除按钮使用 button 样式；同步中终端入口禁用，未选过会话首次打开终端的原有路径也保留。
+
+最新全量 987 通过/63 条件跳过/0 失败，专项 68/68；UI 组合 83/83、终端补测 2/2（含一项重复，共 84 个独立用例）。2000 条真实 select→state 15.6 ms，主进程最长同步回调 1.44 ms；类型、格式、索引及 diff 检查通过。两份独立复审文档已合并到[本机副本说明的验证一节](docs/LOCAL-HISTORY-CACHE.md#验证)，三份 evidence 合并为[一份](docs/evidence/local-history-cache-2026-11-08.json)，current 为本次结果、history 保留原三份数据；旧过程计划已删除。以下旧记录的强制失败只读、丢弃最新超长 run、discardedRun 及每次追加扫描策略属于历史，已由本次审查修正取代。三项基线修复保持原样。未 push、合并、打包或发布，原 ui/motion、服务端与协议均未修改。
+
 ### 2026-11-08 本机副本故障、并发与容量再次复审（源码，未发行）
 
 从 `3567224` 再次审查，修复磁盘写入/清除故障和清除/开关交错造成的网络订阅丢失、清除期间 snapshot 连续性证明丢失、正常淘汰后追加失败误停用缓存、追加绕过全局容量、被整组裁掉的活动 run 再次以半截写入，以及崩溃临时文件不回收。空窗口头部增加内部可选 discardedRun 哈希，跨重开阻止同 run 延续；不进入 IPC，format 1 / protocol 24 保持。维护任务合并，真实子进程突然退出与活动临时文件保护均有回归。
 
-最新全量 975 通过/63 条件跳过/0 失败，缓存专项 56/56，主聊/侧聊/终端/邮箱/缓存 UI 78/78；类型、格式、索引和 diff 检查通过。2000 条真实 select→state 17.8 ms，主进程最长同步回调 1.396 ms。详见[故障复审](docs/LOCAL-HISTORY-CACHE-FAULT-REVIEW-2026-11-08.md)及[证据](docs/evidence/local-history-cache-fault-review-2026-11-08.json)。本轮继续只提交独立 worktree，未触碰 ui/motion、服务端或协议，未 push、合并、打包或发布。
+最新全量 975 通过/63 条件跳过/0 失败，缓存专项 56/56，主聊/侧聊/终端/邮箱/缓存 UI 78/78；类型、格式、索引和 diff 检查通过。2000 条真实 select→state 17.8 ms，主进程最长同步回调 1.396 ms。详见[故障复审](docs/LOCAL-HISTORY-CACHE.md#验证)及[证据](docs/evidence/local-history-cache-2026-11-08.json)。本轮继续只提交独立 worktree，未触碰 ui/motion、服务端或协议，未 push、合并、打包或发布。
 
 ### 2026-11-08 本机副本 P1 细节复审（源码，未发行）
 
 在首轮 `c36dbe8` 上复审并修复：未同步尾部被 prepend 提升为可信游标、迟到 invalid_cursor 重试抢占主订阅、同步失败后的旧副本可写、重新开启未恢复记录、读盘期间关闭导致丢失订阅，以及完整 JSON 末行缺换行导致追加粘连。未确认的磁盘副本保留私有来源标记，主聊/侧聊、审批任务控制、快捷键和原生入口都保持保护；关闭缓存后也沿用可信游标，直到有效 snapshot 到达。补齐旧侧聊 SSH 测试夹具的 list/onChanged，未改 SSH 产品逻辑。
 
-最新 Node 全量 965 通过/63 条件跳过/0 失败，缓存专项 46/46，主聊/侧聊/终端/邮箱/缓存组合 UI 78/78；类型、格式、索引及 diff 检查通过。2000 条真实 Electron 从 select 入口到 events 写入 state 15.5 ms，主进程最长同步回调 1.402 ms。详见[复审记录](docs/LOCAL-HISTORY-CACHE-REVIEW-2026-11-08.md)及[复审证据](docs/evidence/local-history-cache-review-2026-11-08.json)。继续保留独立分支/worktree，不修改原 ui/motion、服务端或协议 24，未 push、合并、打包或发布。
+最新 Node 全量 965 通过/63 条件跳过/0 失败，缓存专项 46/46，主聊/侧聊/终端/邮箱/缓存组合 UI 78/78；类型、格式、索引及 diff 检查通过。2000 条真实 Electron 从 select 入口到 events 写入 state 15.5 ms，主进程最长同步回调 1.402 ms。详见[复审记录](docs/LOCAL-HISTORY-CACHE.md#验证)及[复审证据](docs/evidence/local-history-cache-2026-11-08.json)。继续保留独立分支/worktree，不修改原 ui/motion、服务端或协议 24，未 push、合并、打包或发布。
 
 ### 2026-11-08 本机聊天记录副本 P1（源码，未发行）
 
