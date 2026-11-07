@@ -34,7 +34,9 @@ export function deviceTerms(
               : ' Git Bash is unavailable; do not use device-bash.') +
             ` The preferred shell is ${execution.shell === 'bash' && execution.shells.includes('bash') ? 'Git Bash' : 'PowerShell 7'}; the other available shell may be used when better suited.`
           : ''),
-      command: `The host device runs a command line as it is, parsed by cmd.exe on Windows, and is the one for scp or sftp, where an absolute drive path takes forward slashes and a slash before its drive: the project directory is ${JSON.stringify(`device:${remote}`)}.`,
+      command: remote.startsWith('//')
+        ? `The host device runs a command line as it is, parsed by cmd.exe on Windows. The project uses a UNC or extended Windows path ${JSON.stringify(projectPath)}; its scp/sftp representation is unverified. Do not invent a drive mapping; use the device shell for project file operations.`
+        : `The host device runs a command line as it is, parsed by cmd.exe on Windows, and is the one for scp or sftp, where an absolute drive path takes forward slashes and a slash before its drive: the project directory is ${JSON.stringify(`device:${remote}`)}.`,
     };
   }
   const name = platform === 'darwin' ? 'macOS' : 'Linux';

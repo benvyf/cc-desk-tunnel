@@ -6,4 +6,5 @@ test('Windows transfer paths are absolute for sftp as well as scp', () => {
   assert.ok(deviceTerms('win32', 'C:\\项目 甲').command.includes('device:/C:/项目 甲'));
   assert.ok(deviceTerms('win32', '/C:/项目').command.includes('device:/C:/项目'));
   assert.ok(deviceTerms('linux', '/home/me/项目', true).command.includes('device:/home/me/项目'));
+  assert.match(deviceTerms('win32', '\\\\server\\share\\project').command, /UNC.*unverified/);
 });

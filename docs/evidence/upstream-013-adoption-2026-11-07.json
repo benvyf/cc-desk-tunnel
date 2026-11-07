@@ -1,0 +1,119 @@
+{
+  "date": "2026-11-07",
+  "timezone": "Asia/Hong_Kong",
+  "branch": "codex/upstream-013-adoption",
+  "baseline": "2550318f11a9ec85b5f37cb93bf5bbc862f10f61",
+  "upstream": "8a2358ccdb60d7ef3ad624244f4add172068bfd8",
+  "sourceCommit": "5f6d15794e14758784c7b4deee35f1bb24e34216",
+  "committedFileSha256": {
+    "apps/server/src/tunnel.ts": "06e4ecab4f40a78fb3756ab9813bbeaaba0e5e04d47f9714358e16eec9b9fe46",
+    "apps/server/src/terminal-history.ts": "e9ddf53113be24227e23b73816a80a8b6327af594ee06c4c3e84dc03b6625a53",
+    "apps/server/src/terminal-transcript.ts": "026a4460d79b8a53dc45e04415c7cb17f05c2430d6131c14a70388f9cc6e0044",
+    "apps/server/src/native-settings.ts": "fe2faff0b66c7a524873955616e55edf4073ba7716d02e6762f2e05c08bdd3b7",
+    "apps/server/src/store.ts": "95fd2b9100b9009bb4b12c6d33e6e73f62e5c79af1f4a0a18fb8936fc00941c1",
+    "packages/protocol/src/index.ts": "65ba58ca32a19fde886591d4c9d776f2cce2aa6ff34e6220dece1858549f3eca"
+  },
+  "scope": {
+    "ccdt": false,
+    "idleCacheReminders": false,
+    "idleAutoCompaction": false,
+    "wireProtocol": 24,
+    "realProviderCallsRequired": false
+  },
+  "checks": {
+    "scopedWindowsCore": {
+      "passed": 154,
+      "failed": 0,
+      "note": "Later settings/manual-compact/prompt changes have the supplementary targeted runs below."
+    },
+    "shellCompatibilityAndDiscovery": {
+      "passed": 40,
+      "failed": 0
+    },
+    "deviceAuthority": {
+      "passed": 1,
+      "failed": 0
+    },
+    "managedUpdates": {
+      "passed": 56,
+      "failed": 0
+    },
+    "linuxChannels": {
+      "passed": 116,
+      "failed": 0,
+      "skipped": 0,
+      "platform": "Ubuntu 24.04 isolated container"
+    },
+    "finalLinuxSettingsHistoryTranscriptAndPrompt": {
+      "passed": 27,
+      "failed": 0,
+      "skipped": 0,
+      "network": "none",
+      "rootFilesystem": "read-only"
+    },
+    "windowsNativeTunnelShellAndScp": {
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "windowsCmdChineseFromGitBash": {
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0
+    },
+    "ui": {
+      "shellAndExistingSettingsPassed": 8,
+      "sshSettingsPassed": 3,
+      "conversationExistingScenariosPassed": 5,
+      "manualCompactTargetedRerunPassed": 1,
+      "note": "The first added compact selector expected only the label; it was corrected to include the displayed 31,000-token metadata and then passed."
+    },
+    "manualCompactRegression": {
+      "passed": 22,
+      "failed": 0,
+      "realCliFixture": true
+    },
+    "compactPromptTransaction": {
+      "passed": 17,
+      "failed": 0
+    },
+    "typecheck": true,
+    "desktopBuild": true,
+    "repositoryCheck": true,
+    "ssrBridgeImport": true
+  },
+  "officialCliExecution": {
+    "run": "4a1891e9-b463-40f9-bba1-3213ded3f472",
+    "windowsSdk": true,
+    "windowsTerminal": true,
+    "linuxSdk": true,
+    "linuxTerminal": true,
+    "windowsWrites": 2,
+    "linuxWrites": 2,
+    "provider": "synthetic localhost API",
+    "cli": "2.1.295",
+    "boundary": "Linux Docker CLI/SDK → existing WSS/SSH → Windows or Windows SSH adapter → Linux target"
+  },
+  "executionLimit": "Linux target is an independent SSH executor/HOME/project in the same Ubuntu container; this is not separate physical-node deployment.",
+  "publicUpdateIndices": {
+    "client": {
+      "build": 31,
+      "protocol": 24,
+      "revision": 46
+    },
+    "server": {
+      "build": 18,
+      "protocol": 24,
+      "revision": 30
+    },
+    "signaturesVerified": true,
+    "publicationChanged": false
+  },
+  "publication": {
+    "newBuildAssigned": false,
+    "installerCreated": false,
+    "published": false,
+    "productionNodesChanged": false
+  },
+  "providerLimit": "Official CLI/SDK used a synthetic localhost HTTP/SSE API, per user instruction. No real provider validation is claimed."
+}
