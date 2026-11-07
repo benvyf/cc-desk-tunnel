@@ -100,6 +100,16 @@ class MigrationTests(unittest.TestCase):
         baseline['lock']=m.PREVIOUS_LOCK
         with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
 
+    def test_published_build18_requires_exact_descriptor_runtime_and_lock(self):
+        baseline = self.baseline()
+        baseline.update(descriptor='6201439cf95e495eb0741296cf7fe0d286a9c9c738cde335813a6794e3f31b33',
+                        build=18, protocol=24, lock=m.LOCK)
+        self.assertFalse(m.check_baseline(baseline, self.release()))
+        for key in baseline:
+            with self.subTest(key=key):
+                changed = copy.copy(baseline); changed[key] = 'changed'
+                with self.assertRaises(RuntimeError): m.check_baseline(changed, self.release())
+
     def test_terminal_probe_is_required_and_failure_blocks_candidate(self):
         from subprocess import CalledProcessError
         calls=[]
