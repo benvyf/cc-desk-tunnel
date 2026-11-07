@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
   historyCache: {
-    open: (owner) => ipcRenderer.invoke('history-cache:open', owner),
+    open: (owner, protocol) => ipcRenderer.invoke('history-cache:open', owner, protocol),
     read: (id) => ipcRenderer.invoke('history-cache:read', id),
     append: (id, events) => ipcRenderer.invoke('history-cache:append', id, events),
     replace: (id, value) => ipcRenderer.invoke('history-cache:replace', id, value),

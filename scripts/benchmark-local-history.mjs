@@ -5,6 +5,7 @@ import { mkdtemp, rm, mkdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { setImmediate as pause } from 'node:timers/promises';
+import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
 
 const { createHistoryCache } = createRequire(import.meta.url)(
   '../apps/desktop/electron/history-cache.cjs',
@@ -36,7 +37,7 @@ const hook = createHook({
 });
 const durations = [];
 try {
-  await cache.open('local|benchmark');
+  await cache.open('local|benchmark', PROTOCOL_VERSION);
   // Warm the runtime before sampling filesystem work and JSON callbacks.
   await cache.replace(sessionId, { firstSequence: 1, hasEarlier: false, events });
   await cache.read(sessionId);

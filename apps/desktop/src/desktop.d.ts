@@ -6,7 +6,7 @@ export type CachedHistory = {
   events: import('@cc-desk-tunnel/protocol').SessionEvent[];
 };
 export type HistoryCache = {
-  open(owner: string): Promise<void>;
+  open(owner: string, protocol: number): Promise<void>;
   read(sessionId: string): Promise<CachedHistory | null>;
   append(sessionId: string, events: CachedHistory['events']): Promise<void>;
   replace(sessionId: string, value: CachedHistory): Promise<void>;

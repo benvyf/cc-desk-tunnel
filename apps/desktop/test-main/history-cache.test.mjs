@@ -25,7 +25,7 @@ async function fixture(t, options = {}) {
     await cache.idle();
     await import('node:fs/promises').then((fs) => fs.rm(root, { recursive: true, force: true }));
   });
-  await cache.open('email|user@example.org|one');
+  await cache.open('email|user@example.org|one', 24);
   const file = path.join(root, hash('email|user@example.org|one'), `${id}.jsonl`);
   const replace = (events, hasEarlier = false) =>
     cache.replace(id, { firstSequence: events[0]?.sequence ?? 0, hasEarlier, events });
@@ -63,27 +63,27 @@ test('ignores a torn final line and repairs it before appending; middle corrupti
 test('owner directories isolate the same session and survive switching back and forth', async (t) => {
   const { cache, replace } = await fixture(t);
   await replace([event(1)]);
-  await cache.open('email|user@example.org|two');
+  await cache.open('email|user@example.org|two', 24);
   assert.equal(await cache.read(id), null);
   await replace([event(2)]);
-  await cache.open('email|user@example.org|one');
+  await cache.open('email|user@example.org|one', 24);
   assert.equal((await cache.read(id)).events[0].sequence, 1);
-  await cache.open('email|user@example.org|two');
+  await cache.open('email|user@example.org|two', 24);
   assert.equal((await cache.read(id)).events[0].sequence, 2);
 });
 for (const key of ['format', 'protocol'])
   test(`${key} mismatch clears only the selected owner`, async (t) => {
     const { cache, root, replace } = await fixture(t);
     await replace([event(1)]);
-    await cache.open('local|other');
+    await cache.open('local|other', 24);
     await replace([event(2)]);
     await writeFile(
       path.join(root, hash('local|other'), 'meta.json'),
       JSON.stringify({ format: 1, protocol: 24, [key]: -1 }),
     );
-    await cache.open('local|other');
+    await cache.open('local|other', 24);
     assert.equal(await cache.read(id), null);
-    await cache.open('email|user@example.org|one');
+    await cache.open('email|user@example.org|one', 24);
     assert.equal((await cache.read(id)).events.length, 1);
   });
 test('rejects unsafe identifiers, malformed events and calls over 4 MB', async (t) => {
@@ -91,7 +91,9 @@ test('rejects unsafe identifiers, malformed events and calls over 4 MB', async (
   await assert.rejects(cache.read('../escape'));
   await assert.rejects(cache.append(id, [{ sequence: 0, runId: 'x' }]));
   await assert.rejects(cache.append(id, [{ sequence: 1, runId: 1 }]));
-  await assert.rejects(replace([{ ...event(1), payload: { text: 'x'.repeat(4 * 1024 * 1024) } }]));
+  await assert.rejects(
+    cache.append(id, [{ ...event(1), payload: { text: 'x'.repeat(4 * 1024 * 1024) } }]),
+  );
 });
 test('trims whole runs by event count and byte size', async (t) => {
   const { cache, replace } = await fixture(t, { maxEvents: 3, maxBytes: 1024 });
@@ -108,9 +110,14 @@ test('trims whole runs by event count and byte size', async (t) => {
   );
 });
 test('global LRU skips protected sessions across owners and expires unused owners after 90 days', async (t) => {
-  const { cache, root, file, replace } = await fixture(t, { maxTotalBytes: 1300 });
+  let now = Date.now();
+  const { cache, root, file, replace } = await fixture(t, { maxTotalBytes: 1300, now: () => now });
+  await cache.idle();
+  now += 60000;
   await cache.protect([id]);
   await replace([event(1)]);
+  await cache.idle();
+  now += 60000;
   const otherId = randomUUID();
   await cache.replace(otherId, {
     firstSequence: 1,
@@ -120,26 +127,28 @@ test('global LRU skips protected sessions across owners and expires unused owner
   await cache.idle();
   assert.ok(await stat(file));
   assert.equal(await cache.read(otherId), null);
-  await cache.open('local|other');
+  await cache.open('local|other', 24);
   await cache.idle();
   const ownerDir = path.join(root, hash('local|other'));
   const old = new Date(Date.now() - 91 * 86400000);
   await utimes(ownerDir, old, old);
-  await cache.open('local|new');
+  now += 60000;
+  await cache.open('local|new', 24);
+  await replace([event(3)]);
   await cache.idle();
   assert.ok(!(await readdir(root)).includes(hash('local|other')));
 });
 test('retain reconciles the active owner, clear and usage cover every owner', async (t) => {
   const { cache, replace } = await fixture(t);
   await replace([event(1)]);
-  await cache.open('local|other');
+  await cache.open('local|other', 24);
   await replace([event(2)]);
   await cache.retain([]);
   assert.equal(await cache.read(id), null);
   assert.ok((await cache.usage()) > 0);
   const freed = await cache.clear();
   assert.ok(freed > 0);
-  await cache.open('email|user@example.org|one');
+  await cache.open('email|user@example.org|one', 24);
   assert.equal(await cache.read(id), null);
 });
 
@@ -154,20 +163,23 @@ test('owner switches bind pending reconciliation to the original directory', asy
   const { cache, replace } = await fixture(t);
   await replace([event(1)]);
   const retaining = cache.retain([]);
-  await cache.open('local|other');
+  await cache.open('local|other', 24);
   await replace([event(2)]);
   await retaining;
   assert.equal((await cache.read(id)).events[0].sequence, 2);
-  await cache.open('email|user@example.org|one');
+  await cache.open('email|user@example.org|one', 24);
   assert.equal(await cache.read(id), null);
 });
 
 test('switching owner releases obsolete LRU protection', async (t) => {
-  const { cache, replace, file } = await fixture(t, { maxTotalBytes: 1300 });
+  let now = Date.now();
+  const { cache, replace, file } = await fixture(t, { maxTotalBytes: 1300, now: () => now });
   await replace([{ ...event(1), payload: { text: 'x'.repeat(900) } }]);
   await cache.protect([id]);
-  await cache.open('local|other');
+  await cache.open('local|other', 24);
   await cache.protect([id]);
+  await cache.idle();
+  now += 60000;
   await replace([{ ...event(2), payload: { text: 'y'.repeat(900) } }]);
   await cache.idle();
   assert.equal((await cache.read(id)).events[0].sequence, 2);
@@ -183,19 +195,37 @@ test('clear removes the directory entirely and a later proven replacement recrea
   assert.equal((await cache.read(id)).events[0].sequence, 2);
 });
 
-test('appending after an oversized run was entirely trimmed updates the empty window header', async (t) => {
-  const { cache, replace } = await fixture(t, { maxBytes: 1024 });
-  await replace([{ ...event(1, 'large'), payload: { text: 'x'.repeat(1200) } }]);
-  assert.deepEqual((await cache.read(id)).events, []);
-  await cache.append(id, [event(2, 'next')]);
-  assert.equal((await cache.read(id))?.firstSequence, 2);
+test('retains the newest whole run above both soft caps', async (t) => {
+  const { cache, replace } = await fixture(t, { maxEvents: 2, maxBytes: 1024 });
+  const events = [
+    event(1, 'a'),
+    event(2, 'b'),
+    event(3, 'b'),
+    { ...event(4, 'b'), payload: { text: 'x'.repeat(1200) } },
+  ];
+  await replace(events);
+  assert.deepEqual((await cache.read(id)).events, events.slice(1));
+  await cache.append(id, [event(5, 'b')]);
+  assert.equal((await cache.read(id)).events.length, 4);
 });
 
-test('a valid append under 4 MB can exceed the cap together with the old window and is still trimmed', async (t) => {
+test('replace trims a 6 MB input and skips only a newest run above 4 MiB', async (t) => {
   const { cache, replace } = await fixture(t);
-  await replace([{ ...event(1, 'old'), payload: { text: 'a'.repeat(900000) } }]);
-  await cache.append(id, [{ ...event(2, 'large'), payload: { text: 'b'.repeat(3400000) } }]);
-  assert.deepEqual((await cache.read(id)).events, []);
+  const large = (sequence, runId, size) => ({
+    ...event(sequence, runId),
+    payload: { text: 'x'.repeat(size) },
+  });
+  await replace([large(1, 'a', 3000000), large(2, 'b', 3000000)]);
+  assert.deepEqual(
+    (await cache.read(id)).events.map((e) => e.sequence),
+    [2],
+  );
+  await cache.append(id, [large(3, 'b', 1300000)]);
+  assert.equal(await cache.read(id), null);
+  await replace([large(4, 'c', 4300000)]);
+  assert.equal(await cache.read(id), null);
+  await replace([event(5)]);
+  assert.equal((await cache.read(id)).firstSequence, 5);
 });
 
 test('a complete final JSON record without newline remains separated from a later append', async (t) => {
@@ -210,34 +240,106 @@ test('a complete final JSON record without newline remains separated from a late
   );
 });
 
-test('append growth enforces the global byte cap without needing another rewrite', async (t) => {
-  const { cache, replace } = await fixture(t, { maxTotalBytes: 700 });
+test('normal appends neither read the window nor scan directories; rewrite scans are throttled', async (t) => {
+  let now = Date.now();
+  const { cache, replace, file } = await fixture(t, { now: () => now, maxEvents: 4 });
+  await cache.idle();
+  const fs = require('node:fs/promises');
+  const reading = t.mock.method(fs, 'readFile');
+  const scanning = t.mock.method(fs, 'readdir');
   await replace([event(1)]);
   await cache.idle();
-  await cache.append(id, [event(2), event(3), event(4)]);
+  reading.mock.resetCalls();
+  scanning.mock.resetCalls();
+  await cache.append(id, [event(2)]);
+  await cache.append(id, [event(3)]);
   await cache.idle();
-  assert.ok((await cache.usage()) <= 700);
-  assert.equal(await cache.read(id), null);
+  assert.equal(reading.mock.callCount(), 0);
+  assert.equal(scanning.mock.callCount(), 0);
+  await replace([event(4)]);
+  await cache.idle();
+  assert.equal(scanning.mock.callCount(), 0);
+  now += 60000;
+  await replace([event(5)]);
+  await cache.idle();
+  assert.ok(scanning.mock.callCount() > 0);
+  reading.mock.resetCalls();
+  scanning.mock.resetCalls();
+  await replace([event(6)]);
+  await cache.idle();
+  assert.equal(scanning.mock.callCount(), 0);
+  assert.ok(await stat(file));
 });
-test('a fully trimmed active run cannot return as a partial run, including after reopen', async (t) => {
-  const { cache, replace } = await fixture(t, { maxEvents: 2 });
-  await replace([event(1, 'a'), event(2, 'a')]);
-  await cache.append(id, [event(3, 'a')]);
-  assert.deepEqual((await cache.read(id)).events, []);
-  await cache.open('email|user@example.org|one');
-  await cache.append(id, [event(4, 'a')]);
-  assert.deepEqual((await cache.read(id)).events, []);
-  await cache.append(id, [event(5, 'b'), event(6, 'b')]);
+
+test('a reopened session reads once lazily, then appends using remembered state', async (t) => {
+  const { cache, root, file, replace } = await fixture(t);
+  await replace([event(1)]);
+  await cache.idle();
+  const reopened = require('../electron/history-cache.cjs').createHistoryCache(root);
+  await reopened.open('email|user@example.org|one', 24);
+  await reopened.idle();
+  const fs = require('node:fs/promises');
+  const reads = t.mock.method(fs, 'readFile');
+  await reopened.append(id, [event(2)]);
+  await reopened.append(id, [event(3)]);
+  await reopened.idle();
+  assert.equal(reads.mock.calls.filter((call) => call.arguments[0] === file).length, 1);
   assert.deepEqual(
-    (await cache.read(id)).events.map((e) => e.sequence),
-    [5, 6],
+    (await reopened.read(id)).events.map((e) => e.sequence),
+    [1, 2, 3],
   );
 });
-test('startup reclaims a flushed atomic temporary file left by abrupt process exit', async (t) => {
+
+test('an oversized latest run removes only its session and preserves another session', async (t) => {
+  const { cache, replace } = await fixture(t);
+  const other = randomUUID();
+  await cache.replace(other, {
+    firstSequence: 1,
+    hasEarlier: false,
+    events: [{ ...event(1), sessionId: other }],
+  });
+  await replace([{ ...event(1, 'large'), payload: { text: 'x'.repeat(3000000) } }]);
+  await cache.append(id, [{ ...event(2, 'large'), payload: { text: 'x'.repeat(1300000) } }]);
+  assert.equal(await cache.read(id), null);
+  await cache.append(other, [{ ...event(2), sessionId: other }]);
+  assert.equal((await cache.read(other)).events.length, 2);
+});
+
+test('protocol is required, validated, and invalidates only the changed owner', async (t) => {
+  const { cache, replace } = await fixture(t);
+  await replace([event(1)]);
+  await cache.open('local|other', 25);
+  await replace([event(2)]);
+  await cache.open('email|user@example.org|one', 25);
+  assert.equal(await cache.read(id), null);
+  await cache.open('local|other', 25);
+  assert.equal((await cache.read(id)).firstSequence, 2);
+  for (const protocol of [undefined, 0, -1, 1.5, '24', Number.MAX_SAFE_INTEGER + 1])
+    await assert.rejects(cache.open('invalid', protocol), /protocol/i);
+});
+
+for (const code of ['EBUSY', 'EPERM'])
+  test(`transient ${code} read failures preserve the file`, async (t) => {
+    const { cache, file, replace } = await fixture(t);
+    await replace([event(1)]);
+    await cache.idle();
+    const fs = require('node:fs/promises'),
+      original = fs.readFile;
+    const mocked = t.mock.method(fs, 'readFile', async (target, ...args) => {
+      if (target === file) throw Object.assign(new Error('locked'), { code });
+      return original(target, ...args);
+    });
+    assert.equal(await cache.read(id), null);
+    mocked.mock.restore();
+    assert.ok(await stat(file));
+    assert.equal((await cache.read(id)).firstSequence, 1);
+  });
+
+test('rewrite maintenance reclaims a flushed atomic temporary left by abrupt process exit', async (t) => {
   const { cache, root, file } = await fixture(t);
   await cache.idle();
   const modulePath = require.resolve('../electron/history-cache.cjs');
-  const script = `(async()=>{const fs=require('node:fs/promises');const {createHistoryCache}=require(${JSON.stringify(modulePath)});const cache=createHistoryCache(${JSON.stringify(root)});await cache.open('email|user@example.org|one');await cache.idle();const rename=fs.rename;fs.rename=async(from,to)=>{if(to===${JSON.stringify(file)})process.exit(77);return rename(from,to);};await cache.replace(${JSON.stringify(id)},{firstSequence:1,hasEarlier:false,events:[${JSON.stringify(event(1))}]});})().catch(()=>process.exit(1));`;
+  const script = `(async()=>{const fs=require('node:fs/promises');const {createHistoryCache}=require(${JSON.stringify(modulePath)});const cache=createHistoryCache(${JSON.stringify(root)});await cache.open('email|user@example.org|one', 24);await cache.idle();const rename=fs.rename;fs.rename=async(from,to)=>{if(to===${JSON.stringify(file)})process.exit(77);return rename(from,to);};await cache.replace(${JSON.stringify(id)},{firstSequence:1,hasEarlier:false,events:[${JSON.stringify(event(1))}]});})().catch(()=>process.exit(1));`;
   const child = spawnSync(process.execPath, ['-e', script], {
     encoding: 'utf8',
     windowsHide: true,
@@ -245,8 +347,15 @@ test('startup reclaims a flushed atomic temporary file left by abrupt process ex
   });
   assert.equal(child.status, 77, child.stderr);
   assert.ok((await readdir(path.dirname(file))).some((name) => name.endsWith('.tmp')));
-  await cache.open('email|user@example.org|one');
-  await cache.idle();
+  const restarted = require('../electron/history-cache.cjs').createHistoryCache(root);
+  await restarted.open('email|user@example.org|one', 24);
+  const other = randomUUID();
+  await restarted.replace(other, {
+    firstSequence: 1,
+    hasEarlier: false,
+    events: [{ ...event(1), sessionId: other }],
+  });
+  await restarted.idle();
   assert.ok(!(await readdir(path.dirname(file))).some((name) => name.endsWith('.tmp')));
 });
 
@@ -273,7 +382,13 @@ test('orphan cleanup never removes an atomic temporary file still being written'
   const temporary = await arrived;
   try {
     const other = require('../electron/history-cache.cjs').createHistoryCache(root);
-    await other.open('local|maintenance');
+    await other.open('local|maintenance', 24);
+    const otherId = randomUUID();
+    await other.replace(otherId, {
+      firstSequence: 1,
+      hasEarlier: false,
+      events: [{ ...event(1), sessionId: otherId }],
+    });
     await other.idle();
     assert.ok(await stat(temporary));
   } finally {

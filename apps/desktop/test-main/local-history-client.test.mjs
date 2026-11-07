@@ -603,13 +603,14 @@ test('a delayed invalid_cursor retry uses the current observed role and never st
   assert.equal(f.client.state.selectedId, b);
 });
 
-test('unconfirmed disk history stays pending after failure and cache disable until a real snapshot arrives', async (t) => {
+test('failed subscribe restores controls and errors, and selecting again recovers', async (t) => {
   const f = fixture(t),
     id = f.sessions[0].id;
   f.api.read = async () => ({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
   const socket = await f.connect();
-  assert.equal(f.client.historyPending(id), true);
+  assert.equal(f.client.historyPending(id), false);
   f.client.select(id);
+  assert.equal(f.client.historyPending(id), true);
   await settle();
   const request = socket.sent.at(-1);
   socket.message({
@@ -621,11 +622,12 @@ test('unconfirmed disk history stays pending after failure and cache disable unt
   });
   await settle();
   assert.equal(f.client.state.history[id].loading, false);
-  assert.equal(f.client.historyPending(id), true);
+  assert.equal(f.client.historyPending(id), false);
+  assert.equal(f.client.state.error, 'busy');
   socket.message({ type: 'session.event', event: f.event(30) });
   await new Promise((resolve) => setTimeout(resolve, 40));
   await f.client.setHistoryCacheEnabled(false);
-  assert.equal(f.client.historyPending(id), true);
+  assert.equal(f.client.historyPending(id), false);
   f.client.select(id);
   assert.equal(socket.sent.at(-1).afterSequence, 1);
   socket.message({
@@ -636,7 +638,7 @@ test('unconfirmed disk history stays pending after failure and cache disable unt
     message: 'missing',
   });
   await settle();
-  assert.equal(f.client.historyPending(id), true);
+  assert.equal(f.client.historyPending(id), false);
   f.client.select(id);
   f.snapshot(socket, [f.event(2)]);
   assert.equal(f.client.historyPending(id), false);
@@ -768,4 +770,72 @@ test('a late failed append cannot rebuild the old window after switching cache o
   writing.resolve();
   await settle();
   assert.equal(f.calls.filter((call) => call[0] === 'replace').length, 0);
+});
+
+for (const mode of ['replace', 'prepend'])
+  test(`${mode} of a 6 MB memory history persists only the bounded tail and keeps caching enabled`, async (t) => {
+    const f = fixture(t, null),
+      socket = await f.connect(),
+      id = f.sessions[0].id;
+    const runs = Array.from({ length: 15 }, () => randomUUID());
+    const events = Array.from({ length: 30 }, (_, i) => ({
+      ...f.event(i + 1),
+      runId: runs[Math.floor(i / 2)],
+      payload: { ...f.event(i + 1).payload, text: 'x'.repeat(200000) },
+    }));
+    f.api.replace = async (sessionId, value) => {
+      assert.ok(Buffer.byteLength(JSON.stringify(value)) < 4 * 1024 * 1024);
+      f.calls.push(['replace', sessionId, value]);
+    };
+    f.client.select(id);
+    await settle();
+    if (mode === 'replace') f.snapshot(socket, events, 'replace');
+    else {
+      f.snapshot(socket, events.slice(-2), 'replace');
+      await settle();
+      f.client.update({ history: { [id]: { ...f.client.state.history[id], hasEarlier: true } } });
+      const earlier = f.client.loadEarlier(id),
+        request = socket.sent.at(-1);
+      socket.message({
+        type: 'session.snapshot',
+        requestId: request.requestId,
+        session: f.sessions[0],
+        mode: 'prepend',
+        firstSequence: 1,
+        lastSequence: 28,
+        hasEarlier: false,
+        events: events.slice(0, -2),
+      });
+      socket.message({ type: 'response', requestId: request.requestId, ok: true });
+      await earlier;
+    }
+    await settle();
+    assert.equal(f.client.historyCacheReady, true);
+    assert.equal(f.client.state.events[id].length, 30);
+    const saved = f.calls.filter((call) => call[0] === 'replace').at(-1)[2];
+    assert.equal(saved.events.length, 4);
+    assert.equal(saved.firstSequence, 27);
+    assert.equal(saved.hasEarlier, true);
+  });
+test('a 1.5 MB newest run can hydrate, while an oversized latest run skips only its own session', async (t) => {
+  const f = fixture(t),
+    socket = await f.connect(),
+    id = f.sessions[0].id;
+  const event = { ...f.event(1), payload: { ...f.event(1).payload, text: 'x'.repeat(1500000) } };
+  f.api.read = async () => ({ firstSequence: 1, hasEarlier: false, events: [event] });
+  f.client.select(id);
+  await settle();
+  assert.equal(f.client.state.events[id][0].payload.text.length, 1500000);
+  f.snapshot(socket, [event], 'replace');
+  await settle();
+  assert.equal(f.client.historyCacheReady, true);
+  f.client.select(id);
+  f.snapshot(
+    socket,
+    [{ ...event, payload: { ...event.payload, text: 'x'.repeat(4300000) } }],
+    'replace',
+  );
+  await settle();
+  assert.equal(f.client.historyCacheReady, true);
+  assert.ok(f.calls.some((call) => call[0] === 'remove' && call[1] === id));
 });
