@@ -409,6 +409,8 @@ export type SessionEvent = z.infer<typeof eventSchema>;
 // The systems a device may run. What runs its scripts and how its paths are written follow from it.
 export const devicePlatformSchema = z.enum(['win32', 'darwin', 'linux']);
 export type DevicePlatform = z.infer<typeof devicePlatformSchema>;
+export const deviceShellSchema = z.enum(['pwsh', 'bash', 'zsh']);
+export type DeviceShell = z.infer<typeof deviceShellSchema>;
 // One of the user's computers: the client there makes the ID once and keeps it. Its system is recorded
 // unless it is Windows, which is what every computer was before others were supported.
 export const deviceSchema = z.object({
@@ -452,12 +454,16 @@ export const sessionSchema = z.object({
       // The system the prompt describes; Windows where none is recorded.
       platform: devicePlatformSchema.optional(),
       termsRevision: z.number().int().nonnegative().optional(),
+      shells: z.array(deviceShellSchema).min(1).max(3).optional(),
+      shell: deviceShellSchema.optional(),
       told: z
         .object({
           projectPath: z.string(),
           device: id.optional(),
           platform: devicePlatformSchema.optional(),
           termsRevision: z.number().int().nonnegative().optional(),
+          shells: z.array(deviceShellSchema).min(1).max(3).optional(),
+          shell: deviceShellSchema.optional(),
         })
         .optional(),
       compacted: z.boolean().optional(),
@@ -506,6 +512,9 @@ export type ServiceUpdate = z.infer<typeof serviceUpdateSchema>;
 const request = { requestId: id };
 export const commandSchema = z.discriminatedUnion('type', [
   ...webCommandSchemas,
+  z
+    .object({ type: z.literal('device.shell'), ...request, shell: deviceShellSchema.nullable() })
+    .strict(),
   z
     .object({
       type: z.literal('device.rename'),
@@ -854,6 +863,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     terminalFiles: z.object({ version: z.literal(1) }).optional(),
     terminalDisplay: z.object({ version: z.literal(1) }).optional(),
     terminalHistory: z.object({ version: z.literal(1) }).optional(),
+    deviceShells: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),
     // The service's own release version, and where it stands against the published releases if it follows them.
     version: versionSchema,
@@ -990,7 +1000,12 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('devices'),
     devices: z.array(
-      deviceSchema.extend({ ready: z.boolean(), server: z.literal(true).optional() }),
+      deviceSchema.extend({
+        ready: z.boolean(),
+        server: z.literal(true).optional(),
+        shells: z.array(deviceShellSchema).min(1).max(3).optional(),
+        shell: deviceShellSchema.optional(),
+      }),
     ),
   }),
   // The execution channel runs over connections the device opens to this same address. `secret` signs them
@@ -1027,6 +1042,7 @@ export const tunnelCredentialsSchema = z
       .regex(/^[a-zA-Z0-9_.\\@-]+$/),
     privateKey: z.string().min(1).max(16384),
     hostPublicKey: z.string().regex(/^ssh-ed25519 [A-Za-z0-9+/=]+$/),
+    shells: z.array(deviceShellSchema).min(1).max(3).optional(),
   })
   .strict();
 export type TunnelCredentials = z.infer<typeof tunnelCredentialsSchema>;

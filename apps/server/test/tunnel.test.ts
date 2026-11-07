@@ -79,7 +79,7 @@ function collect(socket: Socket) {
 
 test('SSH config pins loopback target and host key, disallows interactive/agent forwarding', () => {
   const files = sshConfig('/tmp/private', 32123, 'user', 'ssh-ed25519 AAAATEST');
-  assert.match(files.config, /^Host device windows device-script$/m);
+  assert.match(files.config, /^Host device windows device-script device-pwsh$/m);
   // The name that takes a script: the same computer with the command fixed, its variable kept from `ssh`.
   assert.match(
     files.config,
@@ -130,7 +130,7 @@ test('context references native SSH configuration without inventing execution to
   // The path given for scp is the project's own: an example on another drive was taken for the drive to use.
   assert.match(
     prompt,
-    /scp or sftp, where a Windows path takes forward slashes: the project directory is "device:D:\/中文 空格\/it's"/,
+    /scp or sftp, where an absolute drive path takes forward slashes and a slash before its drive: the project directory is "device:\/D:\/中文 空格\/it's"/,
   );
   assert.match(prompt, /CC_DESK_TUNNEL_SCHEDULES/);
   // Nothing of the device's own layout: where its programs and the client's files are is the device's to know.
@@ -154,7 +154,15 @@ test('a session keeps one SSH path, and so one system prompt, across reconnects'
   const prompts = ['first', 'second'].map((connection) => {
     const configPath = join(directory, 'connections', connection, 'ssh_config');
     const ssh = sessionSsh(directory, session, { configPath });
-    assert.equal(readFileSync(ssh.configPath, 'utf8'), `Include ${JSON.stringify(configPath)}\n`);
+    assert.ok(
+      readFileSync(ssh.configPath, 'utf8').startsWith(`Include ${JSON.stringify(configPath)}\n`),
+    );
+    assert.ok(
+      readFileSync(ssh.configPath, 'utf8').includes(
+        'Host * !device !windows !device-script !device-pwsh !device-bash !device-zsh',
+      ),
+    );
+    assert.ok(readFileSync(join(ssh.bin!, 'ssh'), 'utf8').includes(`-F '${ssh.configPath}' "$@"`));
     return remotePrompt('D:\\work', ssh, session);
   });
   assert.equal(prompts[0], prompts[1]);
@@ -162,6 +170,75 @@ test('a session keeps one SSH path, and so one system prompt, across reconnects'
   assert.notEqual(
     sessionSsh(directory, randomUUID(), { configPath: '/x' }).configPath,
     sessionSsh(directory, session, { configPath: '/x' }).configPath,
+  );
+});
+
+test('new shell aliases preserve the Windows legacy command and refuse unavailable shells locally', () => {
+  const config = sshConfig(
+    '/tmp/private',
+    32123,
+    'user',
+    'ssh-ed25519 AAAATEST',
+    'linux',
+    15,
+    'win32',
+    ['pwsh', 'bash'],
+  ).config;
+  assert.match(config, /^Host device-script\n  RemoteCommand "%%CC_DESK_TUNNEL_PWSH%%"/m);
+  assert.match(
+    config,
+    /^Host device-bash\n  RemoteCommand chcp.com 65001 >nul & "%%CC_DESK_TUNNEL_BASH%%" -s/m,
+  );
+  assert.match(config, /^Host device-zsh\n  HostName 127.0.0.1\n  ProxyCommand/m);
+  const target = sshConfig(
+    '/tmp/target',
+    32123,
+    'user',
+    'ssh-ed25519 AAAATEST',
+    'linux',
+    15,
+    'linux',
+    ['bash'],
+  ).config;
+  assert.match(target, /^Host device-bash\n  RemoteCommand exec "\$CC_DESK_TUNNEL_SHELL" -s/m);
+  assert.doesNotMatch(target, /CC_DESK_TUNNEL_PWSH|CC_DESK_TUNNEL_BASH/);
+});
+
+test('an optional Git Bash probe failure keeps PowerShell ready and removes the advertised alias', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'cc-shell-probe-'));
+  const calls: (string | undefined)[] = [];
+  const id = randomUUID();
+  const tunnel = new Tunnel(
+    {
+      probe: async (_config, host) => {
+        calls.push(host);
+        if (host === 'device-bash') throw new Error('fixture: Git Bash unavailable');
+      },
+    },
+    directory,
+    id,
+    () => false,
+    () => {},
+  );
+  t.after(async () => {
+    await tunnel.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  await tunnel.start();
+  await tunnel.accept({
+    type: 'tunnel.credentials',
+    connectionId: id,
+    username: 'fixture',
+    privateKey: 'fixture-not-a-real-key',
+    hostPublicKey: 'ssh-ed25519 AAAATEST',
+    shells: ['pwsh', 'bash'],
+  });
+  assert.deepEqual(tunnel.shells, ['pwsh']);
+  assert.deepEqual(calls, [undefined, 'device-bash']);
+  assert.ok(tunnel.ssh);
+  assert.match(
+    readFileSync(tunnel.ssh.configPath, 'utf8'),
+    /^Host device-bash\n  HostName 127.0.0.1\n  ProxyCommand/m,
   );
 });
 test('the tunnel offers a secret of its own and compares it without leaking its length', async (t) => {

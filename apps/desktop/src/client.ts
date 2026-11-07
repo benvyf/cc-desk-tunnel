@@ -133,6 +133,7 @@ export type ClientState = {
   terminalFiles?: { version: 1 };
   terminalDisplay?: { version: 1 };
   terminalHistory?: { version: 1 };
+  deviceShells?: { version: 1 };
   sideConversations: boolean;
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
@@ -476,6 +477,7 @@ export class ProxyClient {
           terminalFiles: message.terminalFiles,
           terminalDisplay: message.terminalDisplay,
           terminalHistory: message.terminalHistory,
+          deviceShells: message.deviceShells,
           sideConversations: message.sideConversations === true,
           browser: message.browser ?? null,
           sessions: message.sessions,

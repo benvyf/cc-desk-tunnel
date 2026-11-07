@@ -1,23 +1,29 @@
-import { execFile } from 'node:child_process';
-import { mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
+import { execFile, execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs';
 import { createServer } from 'node:net';
 import type { AddressInfo, Server, Socket } from 'node:net';
-import { join } from 'node:path';
+import { delimiter, join } from 'node:path';
 import { createHash, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import { createWebSocketStream } from 'ws';
 import type { WebSocket } from 'ws';
-import type { DevicePlatform, ServerMessage, TunnelCredentials } from '@cc-desk-tunnel/protocol';
+import type {
+  DevicePlatform,
+  DeviceShell,
+  ServerMessage,
+  TunnelCredentials,
+} from '@cc-desk-tunnel/protocol';
+import { systemShell } from './device-terms.ts';
 
 export type TunnelOptions = {
   // How long an SSH connection waits for the device to open its channel before it is dropped.
   pairMs?: number;
   // Tells whether a command reaches the device through the SSH configuration; `sshProbe` unless a test replaces it.
-  probe?: (configPath: string) => Promise<void>;
+  probe?: (configPath: string, host?: string) => Promise<void>;
   // How long a command started while its device is away waits for the device to come back.
   holdMs?: number;
 };
-export type SshConnection = { configPath: string };
+export type SshConnection = { configPath: string; bin?: string };
 
 // SSH connections that may wait for their channel at once, and that may be open at once. Far above what one
 // device's commands need; they bound what a stray local process connecting to the port can make the device do.
@@ -31,13 +37,41 @@ const MAX_CHANNELS = 128;
 export function sessionSshPath(dataDir: string, sessionId: string) {
   return join(dataDir, 'session-ssh', `${sessionId}.conf`);
 }
+export function sessionSshBinPath(dataDir: string, sessionId: string) {
+  return join(dataDir, 'session-ssh', sessionId, 'bin');
+}
 export function sessionSsh(dataDir: string, sessionId: string, ssh: SshConnection): SshConnection {
   const configPath = sessionSshPath(dataDir, sessionId);
   mkdirSync(join(dataDir, 'session-ssh'), { recursive: true, mode: 0o700 });
   const next = `${configPath}.${randomBytes(6).toString('hex')}`;
-  writeFileSync(next, `Include ${JSON.stringify(ssh.configPath)}\n`, { mode: 0o600 });
+  writeFileSync(
+    next,
+    `Include ${JSON.stringify(ssh.configPath)}\nHost * !device !windows !device-script !device-pwsh !device-bash !device-zsh\n  Include ~/.ssh/config /etc/ssh/ssh_config\n`,
+    { mode: 0o600 },
+  );
   renameSync(next, configPath);
-  return { ...ssh, configPath };
+  const bin = sessionSshBinPath(dataDir, sessionId);
+  mkdirSync(bin, { recursive: true, mode: 0o700 });
+  const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+  for (const name of ['ssh', 'scp', 'sftp']) {
+    const executable =
+      (process.env.PATH ?? '')
+        .split(delimiter)
+        .filter(Boolean)
+        .map((path) => join(path, name))
+        .find((path) => existsSync(path)) ?? `/usr/bin/${name}`;
+    const path = join(bin, name),
+      next = `${path}.${randomBytes(6).toString('hex')}`;
+    writeFileSync(next, `#!/bin/sh\nexec ${quote(executable)} -F ${quote(configPath)} "$@"\n`, {
+      mode: 0o700,
+    });
+    renameSync(next, path);
+  }
+  // A noexec data mount could make Bash skip these wrappers and find plain ssh later on PATH.
+  // Validate on the actual session filesystem before allowing a CLI/SDK process to use the aliases.
+  if (process.platform === 'linux')
+    execFileSync(join(bin, 'ssh'), ['-G', 'device-script'], { timeout: 5000, stdio: 'ignore' });
+  return { ...ssh, configPath, bin };
 }
 
 // What the device runs for the host `device-script`: a PowerShell script read whole from standard input. The
@@ -57,13 +91,25 @@ export const SCRIPT_COMMAND = `"%CC_DESK_TUNNEL_PWSH%" -NoLogo -NoProfile -NonIn
 const POSIX_SCRIPT_COMMAND = 'exec "$CC_DESK_TUNNEL_SHELL" -s';
 export const scriptCommand = (device: DevicePlatform) =>
   device === 'win32' ? SCRIPT_COMMAND : POSIX_SCRIPT_COMMAND;
+export const shellCommand = (device: DevicePlatform, shell: DeviceShell) =>
+  device !== 'win32'
+    ? POSIX_SCRIPT_COMMAND
+    : shell === 'bash'
+      ? 'chcp.com 65001 >nul & "%CC_DESK_TUNNEL_BASH%" -s'
+      : SCRIPT_COMMAND;
+export function shellsOf(platform: DevicePlatform, said?: DeviceShell[]): DeviceShell[] {
+  if (!said?.length) return [systemShell(platform)];
+  return platform === 'win32'
+    ? ['pwsh', ...(said.includes('bash') ? ['bash' as const] : [])]
+    : [said.find((shell) => shell === 'bash' || shell === 'zsh') ?? systemShell(platform)];
+}
 
 // Runs a script the way the system prompt tells Claude to.
-export function sshProbe(configPath: string) {
+export function sshProbe(configPath: string, host = 'device-script') {
   return new Promise<void>((resolve, reject) => {
     const child = execFile(
       'ssh',
-      ['-F', configPath, 'device-script'],
+      ['-F', configPath, host],
       { timeout: 20000, maxBuffer: 65536 },
       (error, stdout) => {
         if (error || !stdout.includes('CC_DESK_TUNNEL_SSH_READY'))
@@ -93,6 +139,7 @@ export function sshConfig(
   connectSeconds = 15,
   // The system of the device, which decides what its scripts are run by.
   device: DevicePlatform = 'win32',
+  shells: DeviceShell[] = [systemShell(device)],
 ) {
   if (directory.includes('\n') || directory.includes('"'))
     throw new Error('Unsupported data directory');
@@ -105,8 +152,20 @@ export function sshConfig(
       'Host device-script',
       `  RemoteCommand ${scriptCommand(device).replaceAll('%', '%%')}`,
       '  RequestTTY no',
+      ...shells.flatMap((shell) => [
+        `Host device-${shell}`,
+        `  RemoteCommand ${shellCommand(device, shell).replaceAll('%', '%%')}`,
+        '  RequestTTY no',
+      ]),
+      ...(['pwsh', 'bash', 'zsh'] as const)
+        .filter((shell) => !shells.includes(shell))
+        .flatMap((shell) => [
+          `Host device-${shell}`,
+          '  HostName 127.0.0.1',
+          `  ProxyCommand sh -c 'echo "目标 Shell ${shell} 不可用" >&2; exit 1'`,
+        ]),
       // `device` is the name the system prompt gives; conversations begun before 0.2.11 know it as `windows`.
-      'Host device windows device-script',
+      `Host device windows device-script ${shells.map((shell) => `device-${shell}`).join(' ')}`,
       '  HostName 127.0.0.1',
       `  Port ${port}`,
       `  User ${username}`,
@@ -161,6 +220,7 @@ export class Tunnel {
   // What the device registered with, once its SSH service answered through this tunnel.
   credentials?: TunnelCredentials;
   platform: DevicePlatform = 'win32';
+  shells: DeviceShell[] = ['pwsh'];
   private secret = randomBytes(32).toString('base64url');
   private pairMs: number;
   private probe: NonNullable<TunnelOptions['probe']>;
@@ -250,6 +310,7 @@ export class Tunnel {
     if (this.ssh || credentials.connectionId !== this.id || this.controller.signal.aborted)
       throw new Error('Inactive SSH registration');
     this.platform = platform;
+    this.shells = shellsOf(platform, credentials.shells);
     const files = sshConfig(
       this.directory,
       this.port,
@@ -258,6 +319,7 @@ export class Tunnel {
       process.platform,
       15,
       platform,
+      this.shells,
     );
     const configPath = join(this.directory, 'ssh_config');
     writeFileSync(join(this.directory, 'identity'), credentials.privateKey, { mode: 0o600 });
@@ -267,6 +329,28 @@ export class Tunnel {
       if (this.controller.signal.aborted) throw new Error('Tunnel closed');
       try {
         await this.probe(configPath);
+        if (this.controller.signal.aborted) throw new Error('Tunnel closed');
+        for (const shell of this.shells.filter(
+          (value) => platform === 'win32' && value === 'bash',
+        )) {
+          try {
+            await this.probe(configPath, `device-${shell}`);
+          } catch {
+            // Optional Git Bash must not take a working PowerShell connection down.
+            this.shells = this.shells.filter((value) => value !== shell);
+            const next = sshConfig(
+              this.directory,
+              this.port,
+              credentials.username,
+              credentials.hostPublicKey,
+              process.platform,
+              15,
+              platform,
+              this.shells,
+            );
+            writeFileSync(configPath, next.config, { mode: 0o600 });
+          }
+        }
         if (this.controller.signal.aborted) throw new Error('Tunnel closed');
         this.ssh = { configPath };
         this.credentials = credentials;
@@ -366,6 +450,7 @@ export class Door {
       process.platform,
       Math.ceil(this.holdMs / 1000) + 15,
       tunnel.platform,
+      tunnel.shells,
     );
     const write = (name: string, text: string) => {
       const next = join(this.directory, `${name}.${randomBytes(6).toString('hex')}`);
@@ -388,6 +473,9 @@ export class Door {
   // Whether a command reaches the device now, rather than waiting for it to come back.
   get ready() {
     return !!this.tunnel?.ssh;
+  }
+  get shells() {
+    return this.tunnel?.shells;
   }
   async close() {
     if (this.closed) return;

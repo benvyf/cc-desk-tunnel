@@ -121,13 +121,13 @@ async function service() {
     tunnel: {
       // The service is made for Linux, where the login key it writes is private by its file mode. Here it runs
       // on Windows, whose `ssh` refuses a key that inherited access for anyone else from the temporary folder.
-      async probe(configPath) {
+      async probe(configPath, host) {
         await execute(
           'icacls.exe',
           [join(dirname(configPath), 'identity'), '/inheritance:r', '/grant:r', `*${account}:F`],
           { windowsHide: true },
         );
-        return sshProbe(configPath);
+        return sshProbe(configPath, host);
       },
     },
   });
@@ -312,6 +312,45 @@ test('commands started together each get through', windows(120000), async () => 
   );
   await until(() => dev.forward.channels().length === 0, 10, 'finished channels to close');
 });
+
+test(
+  'registered PowerShell and Git Bash preserve UTF-8, stdin and exit codes',
+  windows(120000),
+  async (t) => {
+    const { svc, connectionId } = await connected();
+    const config = configOf(svc, connectionId);
+    async function script(host, input) {
+      return new Promise((resolve, reject) => {
+        const child = execFile(
+          'ssh',
+          ['-F', config, host],
+          { timeout: 30000, encoding: 'utf8', windowsHide: true },
+          (error, stdout, stderr) =>
+            error && error.code !== 7
+              ? reject(error)
+              : resolve({ code: error?.code ?? 0, stdout, stderr }),
+        );
+        child.stdin.on('error', reject);
+        child.stdin.end(input);
+      });
+    }
+    const powershell = await script('device-pwsh', "Write-Output '中文 PowerShell'; exit 7\n");
+    assert.equal(powershell.code, 7);
+    assert.match(powershell.stdout, /中文 PowerShell/);
+    const { findGitBash } = await import('../electron/git-bash.mjs');
+    if (!(await findGitBash())) {
+      t.skip('Git for Windows is not installed');
+      return;
+    }
+    const bash = await script(
+      'device-bash',
+      "printf '%s\\n' '中文 Bash'; cmd.exe //c 'echo 原生 中文'; exit 7\n",
+    );
+    assert.equal(bash.code, 7);
+    assert.match(bash.stdout, /中文 Bash/);
+    assert.match(bash.stdout, /原生 中文/);
+  },
+);
 test('large output and input pass unchanged', windows(180000), async () => {
   const { svc, connectionId } = await connected();
   // 48 MiB out of the device, each mebibyte filled with its own number.
@@ -346,7 +385,7 @@ test('files are copied both ways with scp', windows(180000), async (t) => {
   t.after(() => rm(directory, { recursive: true, force: true }));
   const content = randomBytes(12 * 1024 * 1024);
   await writeFile(join(directory, 'source.bin'), content);
-  const remote = (name) => `windows:${join(directory, name).replaceAll('\\', '/')}`;
+  const remote = (name) => `windows:/${join(directory, name).replaceAll('\\', '/')}`;
   const scp = (from, to) =>
     execute('scp', ['-q', '-F', configOf(svc, connectionId), from, to], {
       timeout: 120000,

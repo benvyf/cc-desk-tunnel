@@ -12,9 +12,11 @@ import {
   terminalStatuses,
 } from '@cc-desk-tunnel/protocol';
 import { deviceTerms, DEVICE_TERMS_REVISION } from './device-terms.ts';
+import type { DeviceExecution } from './device-terms.ts';
 import { DomainError } from './errors.ts';
 import type {
   Device,
+  DeviceShell,
   Effort,
   EventPayload,
   Fragment,
@@ -125,6 +127,9 @@ export class SessionStore {
         native_id TEXT NOT NULL, root TEXT NOT NULL, device_id TEXT NOT NULL,
         path_key TEXT NOT NULL, config_key TEXT NOT NULL, mode TEXT NOT NULL,
         created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS device_shell_preferences (
+        device_id TEXT PRIMARY KEY, shell TEXT NOT NULL
       );
     `);
     try {
@@ -896,6 +901,7 @@ export class SessionStore {
       for (const { payload, createdAt } of records) {
         const event: SessionEvent = { sessionId, runId, sequence: ++sequence, createdAt, payload };
         if (!stateReadings.has(payload.type)) session.updatedAt = event.createdAt;
+        if (payload.type === 'native.compact' && session.prompt) session.prompt.compacted = true;
         if (payload.type === 'run.status')
           session.activeRun = terminalStatuses.has(payload.status)
             ? null
@@ -1011,7 +1017,26 @@ export class SessionStore {
   // The text that tells Claude what its system prompt no longer has right, to go in front of the user's next
   // message: a project directory or a computer other than the one it knows, from the prompt or from an
   // earlier notice. It is given out once.
-  notice(sessionId: string) {
+  preferShell(deviceId: string, shell: DeviceShell | null) {
+    if (shell === null)
+      this.database
+        .prepare('DELETE FROM device_shell_preferences WHERE device_id = ?')
+        .run(deviceId);
+    else
+      this.database
+        .prepare(
+          'INSERT INTO device_shell_preferences VALUES (?, ?) ON CONFLICT(device_id) DO UPDATE SET shell = excluded.shell',
+        )
+        .run(deviceId, shell);
+  }
+  preferredShell(deviceId?: string): DeviceShell | undefined {
+    if (!deviceId) return undefined;
+    const row = this.database
+      .prepare('SELECT shell FROM device_shell_preferences WHERE device_id = ?')
+      .get(deviceId);
+    return row ? (String(row.shell) as DeviceShell) : undefined;
+  }
+  notice(sessionId: string, execution?: DeviceExecution) {
     const { session } = this.get(sessionId);
     const said = session.prompt;
     if (!said || said.compacted) return '';
@@ -1019,41 +1044,60 @@ export class SessionStore {
     const device = session.device?.id;
     const platform = platformOf(session.device);
     const revised = platform === 'win32' && (known.termsRevision ?? 0) < DEVICE_TERMS_REVISION;
-    if (known.projectPath === session.projectPath && known.device === device && !revised) return '';
+    const shellChanged =
+      !!execution &&
+      (JSON.stringify(known.shells) !== JSON.stringify(execution.shells) ||
+        known.shell !== execution.shell);
+    if (
+      known.projectPath === session.projectPath &&
+      known.device === device &&
+      !revised &&
+      !shellChanged
+    )
+      return '';
     said.told = {
       projectPath: session.projectPath,
       device,
       platform,
       termsRevision: DEVICE_TERMS_REVISION,
+      ...(execution ?? (known.shells ? { shells: known.shells, shell: known.shell } : {})),
     };
     this.save(session);
-    const terms = deviceTerms(platform, session.projectPath, session.device?.viaSsh);
+    const terms = deviceTerms(platform, session.projectPath, session.device?.viaSsh, execution);
+    const update = `${shellChanged ? `${terms.script} ` : ''}${terms.command}`;
     if (known.projectPath === session.projectPath && known.device === device)
-      return `[CC Desk Tunnel: updated device transfer instructions. ${terms.command}]\n\n`;
+      return `[CC Desk Tunnel: updated device instructions. ${update}]\n\n`;
     // The prompt's account of scripts and command lines holds for one system only.
     const system =
       (known.platform ?? 'win32') === platform
-        ? revised
-          ? ` ${terms.command}`
+        ? revised || shellChanged
+          ? ` ${update}`
           : ''
         : ` It runs another system than the one described so far, and this replaces what was said of scripts and command lines. For device-script: ${terms.script} ${terms.command}`;
     const paths = `The project directory is now ${JSON.stringify(session.projectPath)} (it was ${JSON.stringify(known.projectPath)}).`;
     return known.device === device
-      ? `[CC Desk Tunnel: the user moved this session to another project on the device. ${paths} From now on use the new directory as the project directory, in place of the one given earlier.${revised ? ` ${terms.command}` : ''}]\n\n`
+      ? `[CC Desk Tunnel: the user moved this session to another project on the device. ${paths} From now on use the new directory as the project directory, in place of the one given earlier.${revised || shellChanged ? ` ${update}` : ''}]\n\n`
       : `[CC Desk Tunnel: the user now continues this session from another of their computers, ${JSON.stringify(session.device!.name)}. From now on the device is that computer: ${terms.name}. ${paths} What the earlier computer had, its files, paths and running processes, is not on this one unless you find it there.${system}]\n\n`;
   }
   // What the system prompt of a run says. A prompt that changes costs the whole conversation's prompt cache,
   // so it stays what it first was — through moves, which `notice` tells Claude of — until a compaction,
   // which rewrites everything after the prompt anyway; the run after that says what is current.
-  promptValues(sessionId: string) {
+  promptValues(sessionId: string, execution?: DeviceExecution) {
     const { session } = this.get(sessionId);
     const said = session.prompt;
     if (said && !said.compacted)
-      return { projectPath: said.projectPath, platform: said.platform ?? 'win32' };
+      return {
+        projectPath: said.projectPath,
+        platform: said.platform ?? 'win32',
+        ...(said.shells
+          ? { shells: said.shells, ...(said.shell ? { shell: said.shell } : {}) }
+          : {}),
+      };
     const now = {
       projectPath: session.projectPath,
       device: session.device?.id,
       platform: platformOf(session.device),
+      ...(execution ?? {}),
     };
     session.prompt = { ...now, termsRevision: DEVICE_TERMS_REVISION };
     this.save(session);

@@ -223,6 +223,7 @@ async function start({
       username,
       privateKey: keys.loginPrivate,
       hostPublicKey: keys.hostPublic.trim().split(' ').slice(0, 2).join(' '),
+      shells: [basename(shell)],
     },
   });
 }

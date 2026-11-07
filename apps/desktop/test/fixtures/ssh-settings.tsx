@@ -12,6 +12,14 @@ const waitingDirectories: (() => void)[] = [];
 Object.assign(window, {
   sshFixture: {
     calls,
+    connectShell() {
+      client.connect(
+        'ws://127.0.0.1:18927/ws',
+        'shell-settings-test-token',
+        { id: '11111111-2222-4333-8444-555555555555', name: '这台电脑' },
+        false,
+      );
+    },
     releaseDirectories() {
       waitingDirectories.splice(0).forEach((resolve) => resolve());
     },

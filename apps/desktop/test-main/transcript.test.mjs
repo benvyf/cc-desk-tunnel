@@ -105,6 +105,29 @@ test('terminal notes follow the completed answer without changing its duration o
   assert.equal(turns[1].endedAt, undefined);
 });
 
+test('a terminal manual compact finishes on its boundary even without another Stop hook', () => {
+  const turns = conversation([
+    event('terminal', 0, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'idle',
+      connectionId: 'c',
+    }),
+    event('terminal', 1, {
+      type: 'message.user',
+      messageId: 'compact',
+      text: '/compact',
+      scenario: 'chat',
+    }),
+    event('terminal', 2, { type: 'native.compact', trigger: 'manual', previousTokens: 31000 }),
+  ]);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].endedAt, at(2));
+  assert.equal(turns[0].steps[0].kind, 'compact');
+  assert.equal(turns[0].answer, undefined);
+});
+
 test('an automatic compaction is one mark among the steps, with what came after it under it', () => {
   const turns = conversation([
     event('run', 0, { type: 'message.user', messageId: 'question', text: '做事' }),

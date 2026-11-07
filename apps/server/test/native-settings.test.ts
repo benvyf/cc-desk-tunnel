@@ -36,6 +36,14 @@ test('a terminal resolves its selected settings without reading the global user 
     rmSync(file);
     assert.equal(terminalCompactWindow(config, cwd, explicit), expected);
   }
+  writeFileSync(explicit, JSON.stringify({ autoCompactWindow: 50000 }));
+  assert.equal(
+    terminalCompactWindow(config, cwd, explicit),
+    100000,
+    'CLI 2.1.295 ignores an invalid explicit key and keeps the valid user window',
+  );
+  rmSync(user);
+  assert.equal(terminalCompactWindow(config, cwd, explicit), null);
 });
 
 test('native settings edit only the listed keys of the CLI user settings file', (t) => {

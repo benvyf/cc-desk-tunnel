@@ -5,6 +5,7 @@ import type { Session } from '@cc-desk-tunnel/protocol';
 import type { ClaudeOptions } from './claude.ts';
 import { remotePrompt } from './claude.ts';
 import type { SshConnection } from './tunnel.ts';
+import type { DeviceExecution } from './device-terms.ts';
 import { readFileSync } from 'node:fs';
 import headless from '@xterm/headless';
 import serialize from '@xterm/addon-serialize';
@@ -56,6 +57,7 @@ export function terminalArguments(
   session: Session,
   ssh?: SshConnection,
   history?: { nativeId: string; mode: 'new' | 'resume' },
+  execution?: DeviceExecution,
 ) {
   return [
     '--permission-mode',
@@ -70,6 +72,7 @@ export function terminalArguments(
             session.id,
             platformOf(session.device),
             session.device?.viaSsh,
+            execution,
           ),
         ]
       : []),

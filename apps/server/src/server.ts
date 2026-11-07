@@ -2,7 +2,7 @@ import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
 import { mkdirSync, readFileSync, rmSync, unwatchFile, watchFile } from 'node:fs';
 import { createServer } from 'node:http';
 import { totalmem } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { IncomingMessage, RequestListener } from 'node:http';
 import { createServer as createHttpsServer } from 'node:https';
@@ -69,6 +69,8 @@ import {
 } from './terminal-transcript.ts';
 import { readTerminalFile } from './terminal-files.ts';
 import { DomainError } from './errors.ts';
+import { systemShell } from './device-terms.ts';
+import type { DeviceExecution } from './device-terms.ts';
 import { accountMessageForClient } from './account-presentation.ts';
 import { NativeInput } from './native-input.ts';
 import {
@@ -83,7 +85,7 @@ import { simulate } from './simulation.ts';
 import { SessionStore } from './store.ts';
 import { sideForkBoundary } from './side-fork.ts';
 import { Throttle } from './throttle.ts';
-import { Door, Tunnel, sessionSsh, sessionSshPath } from './tunnel.ts';
+import { Door, Tunnel, sessionSsh, sessionSshPath, sessionSshBinPath } from './tunnel.ts';
 import type { TunnelOptions } from './tunnel.ts';
 import { serviceVersion } from './updates.ts';
 import type { UpdateOptions } from './updates.ts';
@@ -557,10 +559,26 @@ export function createProxyServer(options: ServerOptions) {
           : []),
         ...[...seats.values()].flatMap((seat) => {
           const device = [...seat.peers].findLast((peer) => peer.device)?.device;
-          return device ? [{ ...device, ready: !options.tunnel || !!seat.door?.ready }] : [];
+          return device
+            ? [
+                {
+                  ...device,
+                  ready: !options.tunnel || !!seat.door?.ready,
+                  ...deviceExecution(device),
+                },
+              ]
+            : [];
         }),
       ],
     };
+  }
+  function deviceExecution(device?: Device): DeviceExecution {
+    const platform = platformOf(device);
+    const shells = device?.viaSsh
+      ? ['bash' as const]
+      : (seats.get(device?.id ?? '')?.door?.shells ?? [systemShell(platform)]);
+    const shell = store.preferredShell(device?.id);
+    return { shells, ...(shell ? { shell } : {}) };
   }
   function announce() {
     const message = devices();
@@ -703,12 +721,13 @@ export function createProxyServer(options: ServerOptions) {
     try {
       const { session } = store.get(run.sessionId);
       const ssh = run.device === serverDevice.id ? undefined : seats.get(run.device)!.door!.ssh!;
-      const said = store.promptValues(run.sessionId);
+      const said = store.promptValues(run.sessionId, deviceExecution(session.device));
       const status = await runClaude(options.claude!, {
         sessionId: run.sessionId,
         nativeRoot: session.nativeRoot ?? session.id,
         projectPath: said.projectPath,
         platform: said.platform,
+        ...(said.shells ? { shells: said.shells, shell: said.shell } : {}),
         ...(session.device?.viaSsh ? { viaSsh: true } : {}),
         permissionMode: session.permissionMode,
         model: session.model,
@@ -981,6 +1000,8 @@ export function createProxyServer(options: ServerOptions) {
         cwd,
         current.continued.settingsPath,
       );
+      const reach = ssh ? sessionSsh(store.directory, session.id, ssh) : undefined;
+      if (reach?.bin) env.PATH = `${reach.bin}:${env.PATH ?? '/usr/bin:/bin'}`;
       if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
       current.process = new NativeTerminal(
@@ -988,8 +1009,9 @@ export function createProxyServer(options: ServerOptions) {
         terminalArguments(
           { ...options.claude, settingsPath: current.continued.settingsPath },
           session,
-          ssh ? sessionSsh(store.directory, session.id, ssh) : undefined,
+          reach,
           { ...history, mode: saved ? 'resume' : history.mode },
+          deviceExecution(session.device),
         ),
         {
           cwd,
@@ -1211,7 +1233,11 @@ export function createProxyServer(options: ServerOptions) {
     try {
       const status: unknown = JSON.parse(readFileSync(continued.statusPath, 'utf8'));
       windows = statusLineQuota(status);
-      context = continued.elsewhere ? null : statusLineContext(status, continued.compactWindow);
+      const session = (status as { session_id?: unknown } | null)?.session_id;
+      context =
+        continued.elsewhere || (typeof session === 'string' && session !== continued.nativeId)
+          ? null
+          : statusLineContext(status, continued.compactWindow);
     } catch {
       return;
     }
@@ -1341,6 +1367,10 @@ export function createProxyServer(options: ServerOptions) {
       if (command.type === 'session.delete') {
         store.delete(command.sessionId);
         rmSync(sessionSshPath(store.directory, command.sessionId), { force: true });
+        rmSync(dirname(sessionSshBinPath(store.directory, command.sessionId)), {
+          recursive: true,
+          force: true,
+        });
         broadcast({ type: 'session.deleted', sessionId: command.sessionId });
         for (const other of peers) other.subscriptions.delete(command.sessionId);
       } else {
@@ -1536,7 +1566,13 @@ export function createProxyServer(options: ServerOptions) {
       active.input.assertWritable();
       subscribe(peer, command.sessionId);
       emit(active, { type: 'message.user', messageId: command.requestId, text, scenario });
-      active.input.submit(command.requestId, store.notice(command.sessionId) + text);
+      active.input.submit(
+        command.requestId,
+        store.notice(
+          command.sessionId,
+          deviceExecution(store.get(command.sessionId).session.device),
+        ) + text,
+      );
       return;
     }
     if (options.claude && mutations.size)
@@ -1569,7 +1605,13 @@ export function createProxyServer(options: ServerOptions) {
     emit(run, { type: 'run.status', status: 'running', connectionId: run.connectionId });
     // What Claude's system prompt no longer has right is told to it with this message; the transcript shows the
     // user's own text.
-    run.input?.submit(command.requestId, store.notice(command.sessionId) + text);
+    run.input?.submit(
+      command.requestId,
+      store.notice(
+        command.sessionId,
+        deviceExecution(store.get(command.sessionId).session.device),
+      ) + text,
+    );
     track(
       options.claude
         ? native(run)
@@ -1974,6 +2016,19 @@ export function createProxyServer(options: ServerOptions) {
         announce();
         return undefined;
       }
+      case 'device.shell': {
+        const device = deviceOf(peer);
+        if (platformOf(device) !== 'win32' || device.viaSsh)
+          throw new DomainError('shell_unavailable', '此设备不支持 Windows Shell 偏好。');
+        if (command.shell && !deviceExecution(device).shells.includes(command.shell))
+          throw new DomainError(
+            'shell_unavailable',
+            '此设备尚未检测到这个 Shell，请安装后重新连接。',
+          );
+        store.preferShell(device.id, command.shell);
+        announce();
+        return undefined;
+      }
       case 'session.create': {
         const session = store.create(
           command.requestId,
@@ -2100,6 +2155,7 @@ export function createProxyServer(options: ServerOptions) {
         terminalDisplay: { version: 1 },
         terminalFiles: { version: 1 },
         terminalHistory: { version: 1 },
+        deviceShells: { version: 1 },
         sideConversations: true,
         model: options.claude?.model,
         version,
@@ -2174,6 +2230,7 @@ export function createProxyServer(options: ServerOptions) {
       terminalDisplay: { version: 1 },
       terminalFiles: { version: 1 },
       terminalHistory: { version: 1 },
+      deviceShells: { version: 1 },
       sideConversations: true,
       model: options.claude?.model,
       version,

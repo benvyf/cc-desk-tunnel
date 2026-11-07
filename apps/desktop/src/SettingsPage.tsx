@@ -15,6 +15,7 @@ import {
 import type { ProxyClient } from './client.ts';
 import WebAccessSettings from './WebAccessSettings.tsx';
 import SshConnectionsSettings from './SshConnectionsSettings.tsx';
+import ShellSettings from './ShellSettings.tsx';
 import Help from './Help.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { connectionWaits, replyFonts, setPrefs, themes, usePrefs, waitRange } from './prefs.ts';
@@ -41,6 +42,7 @@ export type Section =
   | 'claude'
   | 'general'
   | 'connections'
+  | 'shell'
   | 'notifications'
   | 'shortcuts'
   | 'help'
@@ -75,6 +77,13 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     group: '客户端',
     icon: Globe,
     words: 'SSH 主机 设备 密钥 远程 连接',
+  },
+  {
+    id: 'shell',
+    name: 'Shell',
+    group: '客户端',
+    icon: SlidersHorizontal,
+    words: 'PowerShell Git Bash 脚本 执行 首选 偏好',
   },
   {
     id: 'notifications',
@@ -1037,6 +1046,7 @@ export default function SettingsPage({
     (item) =>
       (!back || item.group === '客户端' || item.id === 'about') &&
       (!browser || !['account', 'claude', 'connections'].includes(item.id)) &&
+      (item.id !== 'shell' || (!browser && window.desktop?.platform === 'win32')) &&
       `${item.name} ${item.words}`.toLowerCase().includes(term),
   );
   return (
@@ -1111,6 +1121,8 @@ export default function SettingsPage({
           />
         ) : section === 'connections' && !browser ? (
           <SshConnectionsSettings client={client} openSession={openSshSession} />
+        ) : section === 'shell' && !browser && window.desktop?.platform === 'win32' ? (
+          <ShellSettings client={client} />
         ) : section === 'notifications' ? (
           <Notices />
         ) : section === 'shortcuts' ? (

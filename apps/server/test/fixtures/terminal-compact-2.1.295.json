@@ -1,0 +1,621 @@
+[
+  {
+    "type": "queue-operation",
+    "timestamp": "2026-11-07T04:17:32.731Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35",
+    "content": "isolated context"
+  },
+  {
+    "type": "queue-operation",
+    "timestamp": "2026-11-07T04:17:32.742Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": null,
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "isolated context"
+    },
+    "uuid": "73eb2149-2d60-4de1-95a0-a98bdcd6c0ed",
+    "timestamp": "2026-11-07T04:17:32.898Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "73eb2149-2d60-4de1-95a0-a98bdcd6c0ed",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "8b2d86ca-5000-48d3-a64c-d1d1c9b1ba85",
+    "timestamp": "2026-11-07T04:17:32.895Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "8b2d86ca-5000-48d3-a64c-d1d1c9b1ba85",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "715ca8b7-28f3-478e-affa-f93298d9663f",
+    "timestamp": "2026-11-07T04:17:32.896Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "715ca8b7-28f3-478e-affa-f93298d9663f",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "d22d334d-da39-4491-a941-0efd085ee02e",
+    "timestamp": "2026-11-07T04:17:32.896Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "d22d334d-da39-4491-a941-0efd085ee02e",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "0cdbdba7-dea8-4b05-a99c-7165a9d02690",
+    "timestamp": "2026-11-07T04:17:32.896Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "0cdbdba7-dea8-4b05-a99c-7165a9d02690",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "a59f58fe-7851-4412-b362-e2e974ee9fc3",
+    "timestamp": "2026-11-07T04:17:32.896Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "a59f58fe-7851-4412-b362-e2e974ee9fc3",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "3f91da4e-cbf2-49cf-a434-caa11c7cc51a",
+    "timestamp": "2026-11-07T04:17:32.896Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "3f91da4e-cbf2-49cf-a434-caa11c7cc51a",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "eb52b58a-8435-4d77-8692-9066095c6092",
+    "timestamp": "2026-11-07T04:17:32.945Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "eb52b58a-8435-4d77-8692-9066095c6092",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "2f9ad5a9-17f3-423d-a58e-8eb1fc1d1958",
+    "timestamp": "2026-11-07T04:17:32.946Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "2f9ad5a9-17f3-423d-a58e-8eb1fc1d1958",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "4303aa85-ebfa-436d-8170-5d2bc8834ad3",
+    "timestamp": "2026-11-07T04:17:32.950Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "4303aa85-ebfa-436d-8170-5d2bc8834ad3",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "693572d5-783f-49a0-9206-bde6890c7f6e",
+    "timestamp": "2026-11-07T04:17:32.951Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "693572d5-783f-49a0-9206-bde6890c7f6e",
+    "isSidechain": false,
+    "message": {
+      "id": "msg_a31c54997eb246b5bb364f0feb85280d",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [
+        {
+          "type": "text",
+          "text": "Summary of isolated acceptance context; retain the test marker."
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 30000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 1000,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard",
+        "fallback_credit": null
+      }
+    },
+    "type": "assistant",
+    "uuid": "a9d10bfc-040e-4306-b75b-b2b64d36f7a7",
+    "timestamp": "2026-11-07T04:17:33.076Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "a9d10bfc-040e-4306-b75b-b2b64d36f7a7",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "6a0b25d7-6440-497a-8909-7fafa6310be3",
+    "timestamp": "2026-11-07T04:17:33.092Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "cost-state",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "queue-operation",
+    "timestamp": "2026-11-07T04:17:33.640Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35",
+    "content": "/compact"
+  },
+  {
+    "type": "queue-operation",
+    "timestamp": "2026-11-07T04:17:33.642Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": null,
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "compact_boundary",
+    "content": "Conversation compacted",
+    "isMeta": false,
+    "timestamp": "2026-11-07T04:17:33.879Z",
+    "uuid": "56591ac6-2873-4ae6-a688-2b88a92321a4",
+    "compactMetadata": {
+      "trigger": "manual",
+      "preTokens": 31000,
+      "durationMs": 164,
+      "postTokens": 929,
+      "cumulativeDroppedTokens": 30071
+    },
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "56591ac6-2873-4ae6-a688-2b88a92321a4",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary of isolated acceptance context; retain the test marker.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /tmp/cc-space-adoption-20261107-01a1b3d1/compact-b156f65624dc44798f7f8e5f0f3e4d3a/config/projects/-tmp-cc-space-adoption-20261107-01a1b3d1-compact-b156f65624dc44798f7f8e5f0f3e4d3a/f52a9dff-d069-494e-b84b-9056b9995a35.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+    },
+    "isCompactSummary": true,
+    "uuid": "cf1b4234-26ca-424c-a5f3-1af96f869e6d",
+    "timestamp": "2026-11-07T04:17:33.877Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "cf1b4234-26ca-424c-a5f3-1af96f869e6d",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"
+    },
+    "isMeta": true,
+    "uuid": "aef6fbd8-0b06-4655-a2eb-e0fc9d3ae54e",
+    "timestamp": "2026-11-07T04:17:33.714Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "aef6fbd8-0b06-4655-a2eb-e0fc9d3ae54e",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>"
+    },
+    "uuid": "8350d138-7299-4f41-91c9-8a57764dc5d2",
+    "timestamp": "2026-11-07T04:17:33.714Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "8350d138-7299-4f41-91c9-8a57764dc5d2",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"
+    },
+    "uuid": "0348e7af-6568-4b5f-b2a5-76c1060bfff9",
+    "timestamp": "2026-11-07T04:17:33.998Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "0348e7af-6568-4b5f-b2a5-76c1060bfff9",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "125b56ee-0cc1-49c2-85b4-11ea95a72575",
+    "timestamp": "2026-11-07T04:17:33.885Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "125b56ee-0cc1-49c2-85b4-11ea95a72575",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "f61eae0c-0c61-4174-83c0-559485428dfe",
+    "timestamp": "2026-11-07T04:17:33.885Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "f61eae0c-0c61-4174-83c0-559485428dfe",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "62a3af41-1ad8-4786-bd29-fbd4c65a4f54",
+    "timestamp": "2026-11-07T04:17:33.885Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "cost-state",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "file-history-snapshot"
+  },
+  {
+    "parentUuid": "62a3af41-1ad8-4786-bd29-fbd4c65a4f54",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "isolated interactive context"
+    },
+    "uuid": "a95ff02d-4100-403a-8bac-7e5f244a0163",
+    "timestamp": "2026-11-07T04:17:38.104Z",
+    "origin": {
+      "kind": "human"
+    },
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "a95ff02d-4100-403a-8bac-7e5f244a0163",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "1a6b8c96-67ea-46b4-a5f1-832c471182ce",
+    "timestamp": "2026-11-07T04:17:38.101Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "1a6b8c96-67ea-46b4-a5f1-832c471182ce",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "8ed9a6e8-8208-4b7d-a902-2ab9329c2948",
+    "timestamp": "2026-11-07T04:17:38.101Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "8ed9a6e8-8208-4b7d-a902-2ab9329c2948",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "709e962b-f6a4-4da4-b171-ef05fb68d1b1",
+    "timestamp": "2026-11-07T04:17:38.101Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "709e962b-f6a4-4da4-b171-ef05fb68d1b1",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "24bf010c-c9ae-4f53-a3e4-a3065e8efed9",
+    "timestamp": "2026-11-07T04:17:38.101Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "24bf010c-c9ae-4f53-a3e4-a3065e8efed9",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "46b7b57a-f761-4acd-ac81-e80a8a737a06",
+    "timestamp": "2026-11-07T04:17:38.174Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "46b7b57a-f761-4acd-ac81-e80a8a737a06",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "c1035e5e-f9a7-414f-9dd7-c2e006f15881",
+    "timestamp": "2026-11-07T04:17:38.175Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "c1035e5e-f9a7-414f-9dd7-c2e006f15881",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "942fae7a-093b-40ce-b88d-cf770a6c9361",
+    "timestamp": "2026-11-07T04:17:38.183Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "942fae7a-093b-40ce-b88d-cf770a6c9361",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "ac1c4040-ee09-4251-b86b-30b8e80091b2",
+    "timestamp": "2026-11-07T04:17:38.185Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "permission-mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "ac1c4040-ee09-4251-b86b-30b8e80091b2",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "informational",
+    "content": "Streaming response ended before any complete data was received. Retrying without streaming. If this keeps happening, check any proxy or gateway between Claude Code and your model provider.",
+    "isMeta": false,
+    "timestamp": "2026-11-07T04:17:38.314Z",
+    "uuid": "5ee89ece-50d8-4662-a7d2-45083a23db3f",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "5ee89ece-50d8-4662-a7d2-45083a23db3f",
+    "isSidechain": false,
+    "message": {
+      "id": "msg_9d7b389e571349b0a6e508c28996bd8c",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [
+        {
+          "type": "text",
+          "text": "Summary of isolated acceptance context; retain the test marker."
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 30000,
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0,
+        "output_tokens": 1000,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard",
+        "fallback_credit": null
+      }
+    },
+    "type": "assistant",
+    "uuid": "86d32ad2-43e6-488d-975b-5cce7edbb249",
+    "timestamp": "2026-11-07T04:17:38.352Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "86d32ad2-43e6-488d-975b-5cce7edbb249",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "2b40b7c6-0ba7-46dd-8949-d9d7f9df018e",
+    "timestamp": "2026-11-07T04:17:38.361Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "2b40b7c6-0ba7-46dd-8949-d9d7f9df018e",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "turn_duration",
+    "timestamp": "2026-11-07T04:17:38.374Z",
+    "uuid": "0a04caa0-e9da-4886-a49c-d077024aa822",
+    "isMeta": false,
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "permission-mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "file-history-snapshot"
+  },
+  {
+    "parentUuid": "0a04caa0-e9da-4886-a49c-d077024aa822",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "/compact"
+    },
+    "uuid": "916e9e77-3821-42d1-88ef-66e7f6111d02",
+    "timestamp": "2026-11-07T04:17:43.188Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "permission-mode",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": null,
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "compact_boundary",
+    "content": "Conversation compacted",
+    "compactMetadata": {
+      "trigger": "manual",
+      "preTokens": 31000,
+      "postTokens": 1196,
+      "cumulativeDroppedTokens": 59875,
+      "durationMs": 154
+    },
+    "uuid": "07715c3e-c595-40fd-b760-8250208950c6",
+    "timestamp": "2026-11-07T04:17:43.386Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "07715c3e-c595-40fd-b760-8250208950c6",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.\n\nSummary of isolated acceptance context; retain the test marker.\n\nIf you need specific details from before compaction (like exact code snippets, error messages, or content you generated), read the full transcript at: /tmp/cc-space-adoption-20261107-01a1b3d1/compact-b156f65624dc44798f7f8e5f0f3e4d3a/config/projects/-tmp-cc-space-adoption-20261107-01a1b3d1-compact-b156f65624dc44798f7f8e5f0f3e4d3a/f52a9dff-d069-494e-b84b-9056b9995a35.jsonl\nContinue the conversation from where it left off without asking the user any further questions. Resume directly — do not acknowledge the summary, do not recap what was happening, do not preface with \"I'll continue\" or similar. Pick up the last task as if the break never happened."
+    },
+    "isCompactSummary": true,
+    "uuid": "f5d60feb-d94e-471d-b597-753efd0490ac",
+    "timestamp": "2026-11-07T04:17:43.360Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "f5d60feb-d94e-471d-b597-753efd0490ac",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "<local-command-caveat>The command below was run directly in Claude Code, not sent to you as a request, and its output goes straight to the user. It's recorded here as context for later messages.</local-command-caveat>"
+    },
+    "isMeta": true,
+    "uuid": "d15ec7ec-92fe-4453-9e43-4f7ce4c20796",
+    "timestamp": "2026-11-07T04:17:43.207Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "d15ec7ec-92fe-4453-9e43-4f7ce4c20796",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "<command-name>/compact</command-name>\n            <command-message>compact</command-message>\n            <command-args></command-args>"
+    },
+    "uuid": "fa1db7a0-867a-4ad7-a69a-9ef6f2cd1e03",
+    "timestamp": "2026-11-07T04:17:43.207Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "fa1db7a0-867a-4ad7-a69a-9ef6f2cd1e03",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"
+    },
+    "uuid": "b6e80723-f818-48a2-8dd0-3a43bd2cbfce",
+    "timestamp": "2026-11-07T04:17:43.485Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "b6e80723-f818-48a2-8dd0-3a43bd2cbfce",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "b8c107bb-7e75-465c-9ead-8e3d2341e6b0",
+    "timestamp": "2026-11-07T04:17:43.373Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "b8c107bb-7e75-465c-9ead-8e3d2341e6b0",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "21a8e973-c150-4a49-b3cf-4eb320d6f24a",
+    "timestamp": "2026-11-07T04:17:43.373Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "parentUuid": "21a8e973-c150-4a49-b3cf-4eb320d6f24a",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "69e760b4-85e8-47f2-99ea-a32542124409",
+    "timestamp": "2026-11-07T04:17:43.373Z",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "cost-state",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  },
+  {
+    "type": "cost-state",
+    "sessionId": "f52a9dff-d069-494e-b84b-9056b9995a35"
+  }
+]

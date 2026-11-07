@@ -4,12 +4,14 @@ import { query, getSessionInfo, getSessionMessages } from '@anthropic-ai/claude-
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
   DevicePlatform,
+  DeviceShell,
   Effort,
   EventPayload,
   NativeMetrics,
   PermissionMode,
 } from '@cc-desk-tunnel/protocol';
 import { deviceTerms } from './device-terms.ts';
+import type { DeviceExecution } from './device-terms.ts';
 import { ClaudeStream } from './claude-stream.ts';
 import type { SshConnection } from './tunnel.ts';
 import { loginOf, nativeCapabilities, nativeMetrics, Quotas } from './native-controls.ts';
@@ -42,6 +44,8 @@ export type ClaudeRun = {
   projectPath: string;
   // The system of the device, as the session's prompt has it.
   platform: DevicePlatform;
+  shells?: DeviceShell[];
+  shell?: DeviceShell;
   viaSsh?: true;
   permissionMode: PermissionMode;
   model?: string | null;
@@ -97,13 +101,14 @@ export function remotePrompt(
   sessionId: string,
   platform: DevicePlatform = 'win32',
   viaSsh = false,
+  execution?: DeviceExecution,
 ) {
-  const terms = deviceTerms(platform, projectPath, viaSsh);
+  const terms = deviceTerms(platform, projectPath, viaSsh, execution);
   return [
     "The user's projects are on their own computer, the device, NOT on this Linux host, which only runs Claude Code and has no copy of them.",
     `Device: ${terms.name}. Project directory: ${JSON.stringify(projectPath)}.`,
-    `Do all project reads, edits, searches and commands on the device with your native Bash tool over SSH, with the configuration ${JSON.stringify(ssh.configPath)}. Do not use this host's Read/Edit tools on project files, and do not print, read into conversation or copy the key the configuration names.`,
-    `Send a script on standard input, as a quoted Bash here-document: ssh -F ${JSON.stringify(ssh.configPath)} device-script <<'PS' ... PS. ${terms.script}`,
+    `Do all project reads, edits, searches and commands on the device with your native Bash tool over SSH${ssh.bin ? ', using the session-provided ssh, scp and sftp commands' : `, with the configuration ${JSON.stringify(ssh.configPath)}`}. Do not use this host's Read/Edit tools on project files, and do not print, read into conversation or copy the SSH keys.`,
+    `Send a script on standard input, as a quoted Bash here-document: ssh ${ssh.bin ? '' : `-F ${JSON.stringify(ssh.configPath)} `}${execution ? `device-${execution.shells[0]}` : 'device-script'} <<'PS' ... PS. ${terms.script}`,
     `device-script is the host device with one fixed command, which the configuration shows as RemoteCommand, and takes none of its own. ${terms.command}`,
     'If the device is unreachable, say so; never fall back to this host. After an interruption report results as unknown; do not repeat side effects on your own.',
     'To look at a picture on the device, such as a pasted screenshot or an attached image, copy that one file with scp to a temporary file on this host, open it with the Read tool, and delete the copy afterwards. That is the only use of Read on this host for a file from the device.',
@@ -220,6 +225,7 @@ export async function runClaude(
                   run.sessionId,
                   run.platform,
                   run.viaSsh,
+                  run.shells ? { shells: run.shells, shell: run.shell } : undefined,
                 ),
               }
             : {}),
@@ -247,7 +253,16 @@ export async function runClaude(
           ],
         },
         maxTurns: options.maxTurns,
-        env: { ...process.env, ...options.environment, CLAUDE_CODE_ENTRYPOINT: 'sdk-ts' },
+        env: {
+          ...process.env,
+          ...options.environment,
+          CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+          ...(run.ssh?.bin
+            ? {
+                PATH: `${run.ssh.bin}:${options.environment?.PATH ?? process.env.PATH ?? '/usr/bin:/bin'}`,
+              }
+            : {}),
+        },
         stderr: (text) => {
           stderr = (stderr + text).slice(-8192);
         },

@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import { connect, createServer } from 'node:net';
 import { setTimeout as delay } from 'node:timers/promises';
 import { componentFailure, missingComponent } from './connect-errors.mjs';
+import { findGitBash } from './git-bash.mjs';
 
 function execute(file, args, timeout) {
   return new Promise((resolve, reject) => {
@@ -73,6 +74,8 @@ export async function startWindowsSsh(connectionId, binaries, signal, onFailure,
   if (process.platform !== 'win32') throw new Error('Windows OpenSSH requires Windows.');
   const directory = await mkdtemp(join(tmpdir(), 'cc-desk-tunnel-ssh-'));
   const powershell = binaries.powershell ?? 'pwsh.exe';
+  const bash =
+    binaries.gitBash === undefined ? await findGitBash().catch(() => undefined) : binaries.gitBash;
   const scriptPath = (name) =>
     binaries.scriptDirectory
       ? join(binaries.scriptDirectory, name)
@@ -100,7 +103,7 @@ export async function startWindowsSsh(connectionId, binaries, signal, onFailure,
     const child = spawn(file, args, {
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
-      env: { ...process.env, ...binaries.environment },
+      env: { ...process.env, ...binaries.environment, CC_DESK_TUNNEL_BASH: bash ?? undefined },
     });
     const started = Date.now();
     let output = '';
@@ -177,6 +180,7 @@ export async function startWindowsSsh(connectionId, binaries, signal, onFailure,
         username: metadata.username,
         privateKey: metadata.privateKey,
         hostPublicKey: metadata.hostPublicKey,
+        shells: bash ? ['pwsh', 'bash'] : ['pwsh'],
       },
       async close() {
         await close();

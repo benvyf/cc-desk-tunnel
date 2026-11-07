@@ -377,6 +377,11 @@ export function conversation(events: SessionEvent[]): Turn[] {
   } else if (last && !last.endedAt && last.question?.terminal) {
     const idle = stops.get(runId)?.findLast((at) => at >= last.startedAt);
     if (idle) close(last, idle);
+    else if (/^\/compact(?:\s|$)/.test(last.question.text)) {
+      // Local /compact can finish without another Stop hook; the boundary is its completion.
+      const compact = last.steps.at(-1);
+      if (compact?.kind === 'compact' && compact.endedAt) close(last, compact.endedAt);
+    }
   }
   // A page of history may start after the question a report belongs to. A turn taken up again is reported once
   // for each of its messages, and each report may come several times: the last one counts.

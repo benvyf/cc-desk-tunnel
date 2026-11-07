@@ -154,6 +154,8 @@ export class TerminalHistoryReader {
     const raw = new Map(
       this.entries.map((entry) => [String(entry.uuid), entry as Record<string, unknown>]),
     );
+    const selected = new Set(messages.map((message) => message.uuid));
+    const normalized: typeof messages = [];
     for (const message of messages) {
       const entry = raw.get(message.uuid);
       // SDK 0.3.286 selects these system records but drops their content. Normalize only
@@ -168,10 +170,43 @@ export class TerminalHistoryReader {
       if (entry?.isCompactSummary) {
         const boundary = raw.get(String(entry.parentUuid));
         Object.assign(message, { compact: boundary?.compactMetadata });
+        // Fast /compact may finish between polls. The SDK then drops the pre-boundary
+        // chain, including the actual typed question, and keeps only a repeated command
+        // after the summary. Recover that last human question only for the selected
+        // manual boundary. Do not replay any other pre-boundary messages.
+        if ((boundary?.compactMetadata as { trigger?: string } | undefined)?.trigger === 'manual') {
+          const index = this.entries.findIndex((row) => row.uuid === entry.parentUuid);
+          for (let i = index - 1; i >= 0; i--) {
+            const row = this.entries[i] as Record<string, unknown>;
+            if (row.type === 'system' && row.subtype === 'compact_boundary') break;
+            if (!['user', 'assistant'].includes(String(row.type)) || row.isMeta || row.isSidechain)
+              continue;
+            const content = (row.message as { content?: unknown } | undefined)?.content;
+            const origin = (row.origin as { kind?: unknown } | undefined)?.kind;
+            if (
+              row.type === 'user' &&
+              (!origin || origin === 'human') &&
+              typeof content === 'string' &&
+              /^\/compact(?:\s|$)/.test(content) &&
+              typeof row.uuid === 'string' &&
+              !selected.has(row.uuid)
+            )
+              normalized.push({
+                type: 'user',
+                uuid: row.uuid,
+                session_id: this.nativeId,
+                parent_tool_use_id: null,
+                message: row.message,
+                timestamp: row.timestamp,
+              } as unknown as typeof message);
+            break;
+          }
+        }
       }
+      normalized.push(message);
     }
-    this.result = messages;
-    return messages;
+    this.result = normalized;
+    return normalized;
   }
   private reset() {
     this.entries = [];

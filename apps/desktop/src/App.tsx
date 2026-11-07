@@ -2277,6 +2277,7 @@ export function App({
     claude: 'Claude Code 设置',
     general: '常规设置',
     connections: '连接',
+    shell: 'Shell 设置',
     notifications: '通知设置',
     shortcuts: '快捷键',
     help: '帮助',

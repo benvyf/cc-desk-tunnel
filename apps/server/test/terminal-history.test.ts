@@ -101,6 +101,43 @@ test('real Linux CLI 2.1.295 main-chain and system local commands import through
   );
 });
 
+test('a fast real CLI manual compaction preserves its question even after the SDK drops the old chain', async (t) => {
+  const rows = JSON.parse(
+    readFileSync(new URL('./fixtures/terminal-compact-2.1.295.json', import.meta.url), 'utf8'),
+  );
+  const root = mkdtempSync(join(tmpdir(), 'cc-fast-compact-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  const id = rows.find((row: { sessionId?: string }) => row.sessionId)?.sessionId;
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, rows.map((row: object) => JSON.stringify(row)).join('\n') + '\n');
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  const events: EventPayload[] = [],
+    known = new Set<string>();
+  const transcript = new TerminalTranscript((event) => events.push(event));
+  for (const message of await reader.read()) {
+    transcript.accept([message], known);
+    known.add(message.uuid);
+  }
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['message.user', 'native.compact'],
+  );
+  assert.equal(events[0].type === 'message.user' && events[0].text, '/compact');
+  assert.equal(events[1].type === 'native.compact' && events[1].trigger, 'manual');
+  for (const message of await reader.read({ reconcile: true })) {
+    transcript.accept([message], known);
+    known.add(message.uuid);
+  }
+  assert.equal(
+    events.length,
+    2,
+    'Stop reconciliation does not duplicate the compact question or mark',
+  );
+});
+
 test('incremental history waits for complete UTF-8 rows, follows the SDK chain and handles replacement', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'cc-history-incremental-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

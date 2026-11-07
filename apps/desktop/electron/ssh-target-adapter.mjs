@@ -371,6 +371,7 @@ export async function startTargetAdapter(connectionId, target, options, signal, 
         username: 'device',
         privateKey: keys.loginPrivate,
         hostPublicKey: keys.hostPublic.trim().split(' ').slice(0, 2).join(' '),
+        shells: ['bash'],
       },
     };
   } catch (error) {

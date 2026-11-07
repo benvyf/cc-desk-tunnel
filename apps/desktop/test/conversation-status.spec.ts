@@ -204,6 +204,32 @@ async function openAll(page: Page) {
       await page.locator(`${selector}:not([open]) > summary`).first().click();
 }
 
+test('a fast manual terminal compact shows its original question and one completed mark', async ({
+  page,
+}) => {
+  const compacted = session('终端快速压缩', { surface: 'terminal', activity: 'idle' });
+  history(compacted, compacted.activeRun!.id, [
+    { type: 'run.status', status: 'running', surface: 'terminal', activity: 'idle', connectionId },
+    ask('/compact'),
+    { type: 'native.compact', trigger: 'manual', previousTokens: 31000 },
+  ]);
+  sessions.push(compacted);
+  try {
+    await connect(page);
+    await open(page, compacted.title);
+    await openAll(page);
+    await expect(page.getByText('/compact', { exact: true })).toBeVisible();
+    await expect(
+      page.getByText('上下文已压缩 · 压缩前 31,000 tokens', { exact: true }),
+    ).toHaveCount(1);
+    await expect(page.getByText(/Compacted \(ctrl\+o/)).toHaveCount(0);
+    await page.screenshot({ path: '.local/adoption-manual-compact.png' });
+  } finally {
+    sessions.pop();
+    histories.delete(compacted.id);
+  }
+});
+
 test('an approval is asked once, in words, over the command it allows', async ({ page }) => {
   await connect(page);
   await open(page, '等待审批的会话');

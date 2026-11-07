@@ -39,6 +39,7 @@ function ran(store: SessionStore, sessionId: string) {
 
 test('terminal source events roll back together when a later event fails to persist', (t) => {
   const { store, session } = fixture(t);
+  store.promptValues(session.id);
   const before = store.get(session.id).events.length;
   store.database.exec(`CREATE TEMP TRIGGER fail_terminal_text BEFORE INSERT ON events
     WHEN json_extract(NEW.data, '$.payload.type') = 'text.delta'
@@ -57,12 +58,31 @@ test('terminal source events roll back together when a later event fails to pers
         },
         {
           createdAt: new Date().toISOString(),
+          payload: { type: 'native.compact', trigger: 'manual', previousTokens: 31000 },
+        },
+        {
+          createdAt: new Date().toISOString(),
           payload: { type: 'text.delta', messageId: randomUUID(), text: 'answer' },
         },
       ]),
     /fixture write failure/,
   );
   assert.equal(store.get(session.id).events.length, before);
+  assert.notEqual(store.get(session.id).session.prompt?.compacted, true);
+});
+
+test('a committed terminal compaction refreshes the frozen project prompt like a chat compaction', (t) => {
+  const { store, session } = fixture(t);
+  ran(store, session.id);
+  store.move(session.id, 'D:\\项目 乙', device);
+  assert.equal(store.promptValues(session.id).projectPath, 'D:\\项目 甲');
+  store.appendMany(session.id, randomUUID(), [
+    {
+      createdAt: new Date().toISOString(),
+      payload: { type: 'native.compact', trigger: 'manual', previousTokens: 31000 },
+    },
+  ]);
+  assert.equal(store.promptValues(session.id).projectPath, 'D:\\项目 乙');
 });
 
 test('legacy Windows prompts receive the corrected transfer rule once without moving projects', (t) => {
@@ -77,6 +97,35 @@ test('legacy Windows prompts receive the corrected transfer rule once without mo
   assert.doesNotMatch(notice, /moved this session/);
   assert.equal(store.notice(made.session.id), '');
   assert.equal(store.promptValues(made.session.id).projectPath, 'D:\\项目 甲');
+});
+
+test('Shell preferences persist per device and notices do not rebuild the initial prompt', (t) => {
+  const made = fixture(t),
+    id = made.session.id;
+  const original = made.store.promptValues(id, { shells: ['pwsh', 'bash'] });
+  assert.equal(made.store.notice(id, { shells: ['pwsh', 'bash'] }), '');
+  made.store.preferShell(device.id, 'bash');
+  assert.equal(made.store.preferredShell(randomUUID()), undefined);
+  const store = made.reopen();
+  assert.equal(store.preferredShell(device.id), 'bash');
+  assert.match(
+    store.notice(id, { shells: ['pwsh', 'bash'], shell: 'bash' }),
+    /preferred shell is Git Bash/,
+  );
+  assert.equal(store.notice(id, { shells: ['pwsh', 'bash'], shell: 'bash' }), '');
+  assert.deepEqual(store.promptValues(id, { shells: ['pwsh', 'bash'], shell: 'bash' }), {
+    projectPath: original.projectPath,
+    platform: original.platform,
+    shells: original.shells,
+  });
+  assert.match(store.notice(id, { shells: ['pwsh'], shell: 'bash' }), /Git Bash is unavailable/);
+  assert.equal(
+    store.preferredShell(device.id),
+    'bash',
+    'capability loss does not erase a saved preference',
+  );
+  store.preferShell(device.id, null);
+  assert.equal(store.preferredShell(device.id), undefined);
 });
 
 test('a session that never ran simply changes its project', (t) => {

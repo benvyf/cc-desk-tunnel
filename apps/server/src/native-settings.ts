@@ -52,7 +52,7 @@ export function readNativeSettings(path = settingsPath()): NativeSettings {
 // CLI 2.1.295: explicit --settings wins over local, project and selected user settings.
 // The terminal's generated settings retain the provider's explicit values.
 export function terminalCompactWindow(config: string, cwd: string, explicit: string) {
-  let window: unknown;
+  let window: number | null = null;
   for (const path of [
     settingsPath(config),
     join(cwd, '.claude', 'settings.json'),
@@ -60,11 +60,26 @@ export function terminalCompactWindow(config: string, cwd: string, explicit: str
     explicit,
     ...(process.platform === 'linux' ? ['/etc/claude-code/managed-settings.json'] : []),
   ]) {
-    const values = readFile(path);
-    if (Object.hasOwn(values, 'autoCompactWindow')) window = values.autoCompactWindow;
+    try {
+      const values = readFile(path);
+      // The CLI discards an invalid key at its source, so it cannot shadow a valid lower-priority value.
+      const parsed = nativeSettingsSchema.shape.autoCompactWindow.safeParse(
+        values.autoCompactWindow,
+      );
+      if (parsed.success && parsed.data !== null) window = parsed.data;
+    } catch (error) {
+      // Context sampling must not make a recoverable settings issue stop a terminal.
+      // Do not log parser messages: they can quote provider configuration bytes.
+      console.warn('Terminal context settings could not be read', {
+        path,
+        code:
+          error instanceof SyntaxError
+            ? 'invalid_json'
+            : ((error as NodeJS.ErrnoException).code ?? 'unreadable'),
+      });
+    }
   }
-  const parsed = nativeSettingsSchema.shape.autoCompactWindow.safeParse(window ?? null);
-  return parsed.success ? parsed.data : null;
+  return window;
 }
 
 export function updateNativeSettings(values: Partial<NativeSettings>, path = settingsPath()) {
