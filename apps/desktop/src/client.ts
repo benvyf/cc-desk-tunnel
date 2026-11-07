@@ -1,4 +1,5 @@
-import { continues, isFragment, PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import { continues, eventSchema, isFragment, PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import type { CachedHistory, HistoryCache } from './desktop.d.ts';
 import { serverMessageSchema } from '../../../packages/protocol/src/account-display.ts';
 import type {
   AccountState,
@@ -232,6 +233,136 @@ export class ProxyClient {
   // Event history is kept for the most recently viewed sessions only.
   cacheOrder: string[] = [];
   private observers = new Map<string, { count: number }>();
+  historyCacheReady = false;
+  private historyCacheEnabled = true;
+  private historyOwner?: string;
+  private cacheGeneration = 0;
+  private synced = new Set<string>();
+  private persistedLast = new Map<string, number>();
+  private provenLast = new Map<string, number>();
+  private diskReads = new Map<string, Promise<CachedHistory | null>>();
+  private diskWrites = new Map<string, Promise<void>>();
+  private dirtyHistory = new Set<string>();
+  private persistTimer?: ReturnType<typeof setTimeout>;
+  private cacheApi(): HistoryCache | undefined {
+    const api =
+      typeof window !== 'undefined' && !this.credentials?.browser
+        ? window.desktop?.historyCache
+        : undefined;
+    return typeof api?.open === 'function' ? api : undefined;
+  }
+  private cacheLog(message: string) {
+    void this.cacheApi()
+      ?.log(message)
+      .catch(() => {});
+  }
+  private async prepareHistoryCache(owner: string, generation: number) {
+    try {
+      await this.cacheApi()!.open(owner);
+      if (generation === this.cacheGeneration && this.historyCacheEnabled)
+        this.historyCacheReady = true;
+    } catch {
+      if (generation === this.cacheGeneration) this.cacheLog('history-cache disabled: open failed');
+    }
+  }
+  async setHistoryCacheEnabled(enabled: boolean) {
+    if (enabled === this.historyCacheEnabled) return;
+    this.historyCacheEnabled = enabled;
+    const generation = ++this.cacheGeneration;
+    this.historyCacheReady = false;
+    this.synced.clear();
+    this.persistedLast.clear();
+    this.diskReads.clear();
+    clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    this.dirtyHistory.clear();
+    if (!enabled) {
+      await this.clearHistoryCache();
+    } else if (this.historyOwner && this.cacheApi()) {
+      await this.prepareHistoryCache(this.historyOwner, generation);
+    }
+  }
+  async clearHistoryCache() {
+    this.persistedLast.clear();
+    this.dirtyHistory.clear();
+    clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    await Promise.allSettled([...this.diskWrites.values()]);
+    return (await this.cacheApi()?.clear()) ?? 0;
+  }
+  private protectHistory() {
+    if (!this.historyCacheReady) return;
+    const ids = [
+      ...new Set([
+        ...(this.state.selectedId ? [this.state.selectedId] : []),
+        ...this.observers.keys(),
+      ]),
+    ];
+    void this.cacheApi()
+      ?.protect(ids)
+      .catch(() => {});
+  }
+  private removeHistoryCopy(id: string) {
+    this.synced.delete(id);
+    this.persistedLast.delete(id);
+    this.provenLast.delete(id);
+    this.dirtyHistory.delete(id);
+    if (this.historyCacheReady)
+      void this.cacheApi()
+        ?.remove(id)
+        .catch(() => {});
+  }
+  private persistHistory(id: string, afterSequence?: number, immediate = false) {
+    if (!this.historyCacheReady || !this.synced.has(id)) return;
+    const api = this.cacheApi();
+    if (!api) return;
+    const generation = this.cacheGeneration,
+      socket = this.socket;
+    const events = this.state.events[id] ?? [];
+    const history = this.state.history[id];
+    if (!history) return;
+    const value = {
+      firstSequence: events[0]?.sequence ?? 0,
+      hasEarlier: history.hasEarlier,
+      events,
+    };
+    const write = async () => {
+      if (
+        generation !== this.cacheGeneration ||
+        socket !== this.socket ||
+        !this.synced.has(id) ||
+        !this.historyCacheReady
+      )
+        return;
+      const last = this.persistedLast.get(id);
+      if (afterSequence !== undefined && last === afterSequence) {
+        const added = events.filter((event) => event.sequence > last);
+        if (added.length) await api.append(id, added);
+      } else await api.replace(id, value);
+      if (generation === this.cacheGeneration)
+        this.persistedLast.set(id, events.at(-1)?.sequence ?? 0);
+    };
+    // Unload cannot wait for renderer Promise callbacks. Submit a complete window now;
+    // the main process serializes it behind already submitted writes for this owner/session.
+    const previous = immediate ? undefined : this.diskWrites.get(id);
+    const pending = (previous ? previous.then(write) : write()).catch(() => {
+      if (generation === this.cacheGeneration) {
+        this.historyCacheReady = false;
+        this.cacheLog('history-cache disabled: write failed');
+      }
+    });
+    this.diskWrites.set(id, pending);
+    void pending.finally(() => {
+      if (this.diskWrites.get(id) === pending) this.diskWrites.delete(id);
+    });
+  }
+  flushHistoryCache(immediate = false) {
+    clearTimeout(this.persistTimer);
+    this.persistTimer = undefined;
+    for (const id of this.dirtyHistory)
+      this.persistHistory(id, immediate ? undefined : this.persistedLast.get(id), immediate);
+    this.dirtyHistory.clear();
+  }
   // When something last came from each session's run, by the service's clock, for telling a run that goes on
   // from one that has been quiet for long. Readings of the context and the quota repeat through a long turn
   // and say nothing of it.
@@ -247,6 +378,7 @@ export class ProxyClient {
       reject: (error: Error) => void;
       timer: ReturnType<typeof setTimeout>;
       type: Command['type'];
+      afterSequence?: number;
     }
   >();
   private terminals = new Map<string, { sessionId: string; ended: boolean }>();
@@ -267,6 +399,7 @@ export class ProxyClient {
     device: Device,
     reconnect = true,
     bridge?: () => Promise<string | { url: string; token: string }>,
+    historyOwner?: string,
   ) {
     const address = new URL(url);
     if (
@@ -308,7 +441,13 @@ export class ProxyClient {
       metrics: null,
       account: null,
     });
-    this.open();
+    this.historyOwner = historyOwner;
+    const generation = this.cacheGeneration;
+    if (historyOwner && this.historyCacheEnabled && this.cacheApi()) {
+      void this.prepareHistoryCache(historyOwner, generation).then(() => {
+        if (generation === this.cacheGeneration) this.open();
+      });
+    } else this.open();
   }
   // The browser has an HttpOnly session, not a desktop identity or execution channel.
   connectBrowser(url: string, expired: () => void, validate?: () => Promise<boolean>) {
@@ -460,6 +599,10 @@ export class ProxyClient {
         return;
       }
       if (message.type === 'ready') {
+        if (this.historyCacheReady)
+          void this.cacheApi()
+            ?.retain(message.sessions.map((session) => session.id))
+            .catch(() => {});
         if (message.adapter === 'claude-code' && !credentials.bridge && !credentials.browser)
           credentials.reconnect = false;
         this.established = true;
@@ -586,6 +729,7 @@ export class ProxyClient {
         }
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
+        this.removeHistoryCopy(message.sessionId);
         this.observers.delete(message.sessionId);
         this.activity.delete(message.sessionId);
         const events = { ...this.state.events };
@@ -636,6 +780,12 @@ export class ProxyClient {
           loadingEarlier: false,
         };
         this.merge(id, message.events, history, message.mode === 'replace');
+        if (this.historyCacheReady) {
+          if (message.mode !== 'prepend') this.synced.add(id);
+          this.provenLast.set(id, this.state.history[id].lastSequence);
+          const afterSequence = this.pending.get(message.requestId)?.afterSequence;
+          this.persistHistory(id, message.mode === 'append' ? afterSequence : undefined);
+        }
       } else if (message.type === 'session.event') {
         const payload = message.event.payload;
         const at = Date.parse(message.event.createdAt);
@@ -664,6 +814,10 @@ export class ProxyClient {
       clearTimeout(timeout);
       if (this.socket !== socket) return;
       this.socket = null;
+      this.synced.clear();
+      this.dirtyHistory.clear();
+      clearTimeout(this.persistTimer);
+      this.persistTimer = undefined;
       if (credentials.browser && event.code === 4001) {
         this.credentials = null;
         credentials.browser();
@@ -708,6 +862,14 @@ export class ProxyClient {
   }
   disconnect() {
     this.flushStream();
+    this.flushHistoryCache(true);
+    this.synced.clear();
+    this.persistedLast.clear();
+    this.provenLast.clear();
+    this.diskReads.clear();
+    this.historyCacheReady = false;
+    this.historyOwner = undefined;
+    this.cacheGeneration++;
     const browser = this.credentials?.browser;
     this.credentials = null;
     this.observers.clear();
@@ -795,7 +957,15 @@ export class ProxyClient {
     this.streamEvents = [];
     if (progress !== this.state.progress) this.update({ progress });
     if (moved) this.update({ live });
-    for (const [id, events] of grouped) this.merge(id, events);
+    for (const [id, events] of grouped) {
+      this.merge(id, events);
+      if (this.historyCacheReady && this.synced.has(id)) {
+        this.provenLast.set(id, this.state.history[id].lastSequence);
+        this.dirtyHistory.add(id);
+      }
+    }
+    if (this.dirtyHistory.size)
+      this.persistTimer ??= setTimeout(() => this.flushHistoryCache(), 1000);
   }
   private merge(
     sessionId: string,
@@ -840,10 +1010,81 @@ export class ProxyClient {
       : recorded;
   }
   private load(sessionId: string, retain = false) {
+    if (this.historyCacheReady && !this.state.history[sessionId]) {
+      const generation = this.cacheGeneration,
+        socket = this.socket;
+      const started = performance.now();
+      let reading = this.diskReads.get(sessionId);
+      if (reading) return;
+      const api = this.cacheApi()!;
+      reading = api.read(sessionId).catch(() => null);
+      this.diskReads.set(sessionId, reading);
+      void reading.then(async (value) => {
+        if (this.diskReads.get(sessionId) === reading) this.diskReads.delete(sessionId);
+        if (
+          generation !== this.cacheGeneration ||
+          socket !== this.socket ||
+          !this.historyCacheReady ||
+          (this.state.selectedId !== sessionId && !this.observers.has(sessionId)) ||
+          this.state.history[sessionId]
+        )
+          return;
+        if (
+          value &&
+          ![...value.events.slice(0, 20), ...value.events.slice(-20)].every(
+            (event) => event.sessionId === sessionId && eventSchema.safeParse(event).success,
+          )
+        ) {
+          await api.remove(sessionId).catch(() => {});
+          value = null;
+        }
+        // A schema failure also crossed an await; repeat all race guards before applying anything.
+        if (
+          generation !== this.cacheGeneration ||
+          socket !== this.socket ||
+          !this.historyCacheReady ||
+          (this.state.selectedId !== sessionId && !this.observers.has(sessionId)) ||
+          this.state.history[sessionId]
+        )
+          return;
+        if (value) {
+          const lastSequence = value.events.at(-1)?.sequence ?? 0;
+          this.persistedLast.set(sessionId, lastSequence);
+          this.provenLast.set(sessionId, lastSequence);
+          this.update({
+            events: { ...this.state.events, [sessionId]: value.events },
+            history: {
+              ...this.state.history,
+              [sessionId]: {
+                firstSequence: value.firstSequence,
+                lastSequence,
+                hasEarlier: value.hasEarlier,
+                loaded: false,
+                loading: true,
+                loadingEarlier: false,
+              },
+            },
+          });
+          this.cacheLog(
+            `history-cache hydrate events=${value.events.length} selectToStateMs=${(performance.now() - started).toFixed(3)}`,
+          );
+        }
+        if (this.state.status === 'connected') this.subscribeHistory(sessionId, retain);
+      });
+      return;
+    }
+    if (this.state.status === 'connected') this.subscribeHistory(sessionId, retain);
+  }
+  private subscribeHistory(sessionId: string, retain = false, retried = false) {
     const socket = this.socket;
     const observer = this.observers.get(sessionId);
     const previous = this.state.history[sessionId];
-    const afterSequence = previous?.lastSequence ?? 0;
+    // A timed-out subscription may still receive global stream frames. They cannot prove
+    // a cursor until a snapshot fills the missed interval, even though they render in memory.
+    const afterSequence = this.historyCacheReady
+      ? (this.provenLast.get(sessionId) ?? this.persistedLast.get(sessionId) ?? 0)
+      : (previous?.lastSequence ?? 0);
+    if (this.historyCacheReady) this.synced.delete(sessionId);
     this.update({
       history: {
         ...this.state.history,
@@ -871,6 +1112,19 @@ export class ProxyClient {
         (retain && this.observers.get(sessionId) !== observer)
       )
         return;
+      if (this.historyCacheReady && error instanceof RequestFailedError) {
+        if (error.code === 'invalid_cursor' && !retried) {
+          this.removeHistoryCopy(sessionId);
+          const events = { ...this.state.events },
+            history = { ...this.state.history };
+          delete events[sessionId];
+          delete history[sessionId];
+          this.update({ events, history });
+          this.subscribeHistory(sessionId, retain, true);
+          return;
+        }
+        if (error.code === 'not_found') this.removeHistoryCopy(sessionId);
+      }
       const history = this.state.history[sessionId];
       if (history)
         this.update({
@@ -899,7 +1153,11 @@ export class ProxyClient {
       observer = { count: 0 };
       this.observers.set(sessionId, observer);
       this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
-      if (sessionId !== this.state.selectedId && this.state.status === 'connected')
+      this.protectHistory();
+      if (
+        sessionId !== this.state.selectedId &&
+        (this.state.status === 'connected' || this.historyCacheReady)
+      )
         this.load(sessionId, true);
     }
     observer.count++;
@@ -910,6 +1168,7 @@ export class ProxyClient {
       if (this.observers.get(sessionId) !== observer) return;
       if (--observer.count > 0) return;
       this.observers.delete(sessionId);
+      this.protectHistory();
       const evicted = this.trimCache();
       if (evicted) this.update(evicted);
       if (
@@ -933,6 +1192,8 @@ export class ProxyClient {
     const history = { ...this.state.history };
     const progress = { ...this.state.progress };
     for (const id of removed) {
+      this.synced.delete(id);
+      this.provenLast.delete(id);
       delete events[id];
       delete live[id];
       delete history[id];
@@ -968,7 +1229,8 @@ export class ProxyClient {
     this.flushStream();
     this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
     this.update({ selectedId: sessionId, ...this.trimCache(sessionId) });
-    if (this.state.status === 'connected') this.load(sessionId);
+    this.protectHistory();
+    if (this.state.status === 'connected' || this.historyCacheReady) this.load(sessionId);
   }
   // Terminal output bypasses the state store; xterm consumes it directly.
   onTerminal = (listener: (message: TerminalMessage) => void) => {
@@ -1011,7 +1273,15 @@ export class ProxyClient {
           ? 30000
           : 10000,
       );
-      this.pending.set(requestId, { resolve, reject, timer, type: command.type });
+      this.pending.set(requestId, {
+        resolve,
+        reject,
+        timer,
+        type: command.type,
+        ...(command.type === 'session.subscribe'
+          ? { afterSequence: command.afterSequence ?? 0 }
+          : {}),
+      });
       this.socket!.send(JSON.stringify({ ...command, requestId }));
     });
   }

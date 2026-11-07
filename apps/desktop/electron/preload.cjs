@@ -1,5 +1,17 @@
 const { contextBridge, ipcRenderer, webFrame, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('desktop', {
+  historyCache: {
+    open: (owner) => ipcRenderer.invoke('history-cache:open', owner),
+    read: (id) => ipcRenderer.invoke('history-cache:read', id),
+    append: (id, events) => ipcRenderer.invoke('history-cache:append', id, events),
+    replace: (id, value) => ipcRenderer.invoke('history-cache:replace', id, value),
+    remove: (id) => ipcRenderer.invoke('history-cache:remove', id),
+    retain: (ids) => ipcRenderer.invoke('history-cache:retain', ids),
+    protect: (ids) => ipcRenderer.invoke('history-cache:protect', ids),
+    clear: () => ipcRenderer.invoke('history-cache:clear'),
+    usage: () => ipcRenderer.invoke('history-cache:usage'),
+    log: (message) => ipcRenderer.invoke('history-cache:log', message),
+  },
   terminalWindow: {
     appearance: (theme) => ipcRenderer.invoke('terminal-window:appearance', theme),
     focus: () => ipcRenderer.invoke('terminal-window:focus'),

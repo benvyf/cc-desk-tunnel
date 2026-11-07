@@ -175,6 +175,36 @@ function handle(channel, listener) {
   });
 }
 
+const historyCache = require('./history-cache.cjs').createHistoryCache(
+  path.join(app.getPath('userData'), 'history-cache'),
+);
+for (const method of [
+  'open',
+  'read',
+  'append',
+  'replace',
+  'remove',
+  'retain',
+  'protect',
+  'clear',
+  'usage',
+])
+  handle(`history-cache:${method}`, (_event, ...args) => historyCache[method](...args));
+// Cache diagnostics contain counts and durations only. Keep their IO asynchronous too.
+handle('history-cache:log', async (_event, message) => {
+  const directory = path.join(app.getPath('userData'), 'logs');
+  await mkdir(directory, { recursive: true });
+  const file = path.join(directory, 'client.log');
+  try {
+    if ((await stat(file)).size > 1024 * 1024)
+      await require('node:fs/promises').rename(file, path.join(directory, 'client.1.log'));
+  } catch {}
+  await require('node:fs/promises').appendFile(
+    file,
+    `${new Date().toISOString()} ${String(message).replace(/\s+/g, ' ').slice(0, 300)}\n`,
+  );
+});
+
 const previewFiles = require('./preview-files.cjs').createPreviewFiles();
 const previewBrowsers = new WeakMap();
 function previewBrowser(event, surface = 'main', create = true, pane = 'primary') {

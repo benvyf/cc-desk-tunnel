@@ -1,5 +1,22 @@
 /// <reference types="vite/client" />
 export {};
+export type CachedHistory = {
+  firstSequence: number;
+  hasEarlier: boolean;
+  events: import('@cc-desk-tunnel/protocol').SessionEvent[];
+};
+export type HistoryCache = {
+  open(owner: string): Promise<void>;
+  read(sessionId: string): Promise<CachedHistory | null>;
+  append(sessionId: string, events: CachedHistory['events']): Promise<void>;
+  replace(sessionId: string, value: CachedHistory): Promise<void>;
+  remove(sessionId: string): Promise<void>;
+  retain(sessionIds: string[]): Promise<void>;
+  protect(sessionIds: string[]): Promise<void>;
+  clear(): Promise<number>;
+  usage(): Promise<number>;
+  log(message: string): Promise<void>;
+};
 export type SshTarget = {
   id: string;
   name: string;
@@ -33,6 +50,7 @@ export type SshTargetInput = {
 declare global {
   interface Window {
     desktop?: {
+      historyCache?: HistoryCache;
       terminalWindow: {
         appearance?: (theme: 'light' | 'dark') => Promise<{ nativeControls: boolean }>;
         focus: () => Promise<boolean>;
