@@ -646,6 +646,8 @@ test('disabling during hydration falls back to an uncached network subscription 
     f = fixture(t, () => pending.promise),
     socket = await f.connect();
   f.client.select(f.sessions[0].id);
+  socket.message({ type: 'session.event', event: f.event(30) });
+  await new Promise((resolve) => setTimeout(resolve, 40));
   await f.client.setHistoryCacheEnabled(false);
   await settle();
   assert.equal(
@@ -653,4 +655,117 @@ test('disabling during hydration falls back to an uncached network subscription 
     0,
   );
   pending.resolve(null);
+});
+
+test('a failed write cannot strand another selected conversation waiting for disk', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect(),
+    writing = deferred(),
+    reading = deferred();
+  f.api.replace = async () => {
+    await writing.promise;
+    throw Error('disk full');
+  };
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.snapshot(socket, [f.event(1)], 'replace');
+  f.api.read = () => reading.promise;
+  f.client.select(f.sessions[1].id);
+  writing.resolve();
+  await settle();
+  reading.resolve(null);
+  await settle();
+  assert.ok(
+    socket.sent.some(
+      (frame) =>
+        frame.type === 'session.subscribe' &&
+        frame.sessionId === f.sessions[1].id &&
+        frame.afterSequence === 0,
+    ),
+  );
+});
+test('a failed clear resumes network loading after cancelling a disk read', async (t) => {
+  const reading = deferred(),
+    f = fixture(t, () => reading.promise),
+    socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  f.api.clear = async () => {
+    throw Error('permission denied');
+  };
+  await assert.rejects(f.client.clearHistoryCache());
+  reading.resolve(null);
+  await settle();
+  assert.ok(socket.sent.some((frame) => frame.type === 'session.subscribe'));
+});
+test('overlapping clear and disable preserve the pending conversation network load', async (t) => {
+  const reading = deferred(),
+    clearing = deferred(),
+    f = fixture(t, () => reading.promise),
+    socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  f.api.clear = () => clearing.promise;
+  const one = f.client.clearHistoryCache(),
+    two = f.client.setHistoryCacheEnabled(false);
+  clearing.resolve(0);
+  await Promise.all([one, two]);
+  reading.resolve(null);
+  await settle();
+  assert.ok(
+    socket.sent.some((frame) => frame.type === 'session.subscribe' && frame.afterSequence === 0),
+  );
+});
+test('an evicted disk file is replaced from the proven memory window instead of disabling caching', async (t) => {
+  const f = fixture(t);
+  f.api.read = async () => ({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
+  const socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.api.append = async () => {
+    throw Error('Missing history window');
+  };
+  f.snapshot(socket, [f.event(2)]);
+  await settle();
+  assert.equal(f.client.historyCacheReady, true);
+  assert.deepEqual(f.calls.find((call) => call[0] === 'replace')?.[2].events, [
+    f.event(1),
+    f.event(2),
+  ]);
+});
+
+test('an authoritative snapshot during clear still proves the next streamed write', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect(),
+    clearing = deferred();
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.api.clear = () => clearing.promise;
+  const clear = f.client.clearHistoryCache();
+  f.snapshot(socket, [f.event(1)], 'replace');
+  clearing.resolve(0);
+  await clear;
+  f.calls.length = 0;
+  socket.message({ type: 'session.event', event: f.event(2) });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  f.client.flushHistoryCache();
+  await settle();
+  assert.ok(f.calls.some((call) => call[0] === 'replace' || call[0] === 'append'));
+});
+
+test('a late failed append cannot rebuild the old window after switching cache owners', async (t) => {
+  const f = fixture(t),
+    writing = deferred();
+  f.api.read = async () => ({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
+  const socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.api.append = async () => {
+    await writing.promise;
+    throw Error('missing');
+  };
+  f.snapshot(socket, [f.event(2)]);
+  await f.connect('email|other@example.org|two');
+  f.calls.length = 0;
+  writing.resolve();
+  await settle();
+  assert.equal(f.calls.filter((call) => call[0] === 'replace').length, 0);
 });
