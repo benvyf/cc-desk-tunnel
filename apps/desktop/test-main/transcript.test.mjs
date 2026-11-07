@@ -63,6 +63,50 @@ test('a finished terminal turn becomes an answer while the terminal remains open
   assert.equal(conversation(running).at(-1).endedAt, undefined);
 });
 
+test('an older terminal idle cannot finish a later-imported question while the CLI is working', () => {
+  const events = [
+    event('terminal', 0, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId: 'c',
+    }),
+    event('terminal', 1, {
+      type: 'message.user',
+      messageId: 'first',
+      text: 'first question',
+      scenario: 'chat',
+    }),
+    said('terminal', 2, 'answer-one', 'first answer'),
+    event('terminal', 5, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'idle',
+      connectionId: 'c',
+    }),
+    event('terminal', 6, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId: 'c',
+    }),
+    event('terminal', 4, {
+      type: 'message.user',
+      messageId: 'second',
+      text: 'second question',
+      scenario: 'chat',
+    }),
+    said('terminal', 7, 'answer-two', 'still writing'),
+  ];
+  const turns = conversation(events);
+  assert.equal(turns[0].answer?.text, 'first answer');
+  assert.equal(turns[1].endedAt, undefined);
+  assert.equal(turns[1].answer, undefined);
+});
+
 test('terminal notes follow the completed answer without changing its duration or joining its next question', () => {
   const events = [
     event('terminal', 0, {

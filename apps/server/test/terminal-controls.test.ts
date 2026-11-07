@@ -379,6 +379,24 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     readings,
     'a new sampling timestamp does not create a duplicate context event',
   );
+  server.store.database.exec(`CREATE TEMP TRIGGER fail_terminal_status BEFORE INSERT ON events
+    WHEN json_extract(NEW.data, '$.payload.type') = 'native.metrics'
+      AND json_extract(NEW.data, '$.payload.context.model') = 'fixture-metrics-write-failure'
+    BEGIN SELECT RAISE(ABORT, 'fixture metrics write failed'); END;`);
+  writeFileSync(
+    statusPath,
+    JSON.stringify({
+      model: { id: 'fixture-metrics-write-failure' },
+      context_window: {
+        context_window_size: 200000,
+        current_usage: { input_tokens: 50001 },
+      },
+    }),
+  );
+  await owner.wait(
+    (message) => message.type === 'connection.error' && message.code === 'terminal_status_failed',
+  );
+  // A failed optional status write must not take the service or its PTY controls down.
   for (const data of ['\x1b[B', '\r', '中文🙂', '\x03'])
     owner.send({ type: 'terminal.input', sessionId, terminalId, data });
   // A response on the same socket is a processing barrier for earlier control frames.

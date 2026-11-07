@@ -7,6 +7,7 @@ import {
   readNativeSettings,
   updateNativeSettings,
   terminalCompactWindow,
+  writeSessionSshSettings,
 } from '../src/native-settings.ts';
 
 test('a terminal resolves its selected settings without reading the global user configuration', (t) => {
@@ -44,6 +45,83 @@ test('a terminal resolves its selected settings without reading the global user 
   );
   rmSync(user);
   assert.equal(terminalCompactWindow(config, cwd, explicit), null);
+});
+
+test('session settings retain provider values while binding PATH after all user setting layers', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-session-path-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  mkdirSync(config);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(config, 'settings.json'), JSON.stringify({ env: { PATH: '/user/bin' } }));
+  writeFileSync(
+    join(cwd, '.claude', 'settings.local.json'),
+    JSON.stringify({ env: { PATH: '/local/bin:/usr/bin' } }),
+  );
+  const source = join(root, 'provider.json'),
+    target = join(root, 'runtime.json');
+  const provider = {
+    env: { PATH: '/provider/bin:/usr/bin', KEEP: 'test-only-value' },
+    hooks: { UserPromptSubmit: [] },
+    autoCompactWindow: 160000,
+  };
+  writeFileSync(source, JSON.stringify(provider));
+  const path = writeSessionSshSettings(target, {
+    source,
+    config,
+    cwd,
+    bin: '/session/bin',
+    inheritedPath: '/inherited',
+  });
+  assert.equal(path, '/session/bin:/provider/bin:/usr/bin');
+  assert.deepEqual(
+    JSON.parse(readFileSync(source, 'utf8')),
+    provider,
+    'the original provider file stays untouched',
+  );
+  const scoped = JSON.parse(readFileSync(target, 'utf8'));
+  assert.equal(scoped.env.KEEP, provider.env.KEEP);
+  assert.deepEqual(scoped.hooks, provider.hooks);
+  assert.equal(scoped.autoCompactWindow, 160000);
+  writeFileSync(source, JSON.stringify({ env: { KEEP: 'test-only-value' } }));
+  assert.equal(
+    writeSessionSshSettings(target, {
+      source,
+      config,
+      cwd,
+      bin: '/session/bin',
+      inheritedPath: '/inherited',
+    }),
+    '/session/bin:/local/bin:/usr/bin',
+  );
+  writeFileSync(source, JSON.stringify({ env: { INVALID: 1 } }));
+  assert.throws(
+    () =>
+      writeSessionSshSettings(target, {
+        source,
+        config,
+        cwd,
+        bin: '/session/bin',
+        inheritedPath: '/inherited',
+      }),
+    /env values must be strings/,
+  );
+  writeFileSync(source, '{"private-field":"test-only-sensitive-value",broken');
+  assert.throws(
+    () =>
+      writeSessionSshSettings(target, {
+        source,
+        config,
+        cwd,
+        bin: '/session/bin',
+        inheritedPath: '/inherited',
+      }),
+    (error) =>
+      error instanceof Error &&
+      error.message.includes('invalid_json') &&
+      !error.message.includes('test-only-sensitive-value'),
+  );
 });
 
 test('native settings edit only the listed keys of the CLI user settings file', (t) => {

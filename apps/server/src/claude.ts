@@ -1,5 +1,6 @@
-import { mkdirSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 import { query, getSessionInfo, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
 import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
 import type {
@@ -16,7 +17,7 @@ import { ClaudeStream } from './claude-stream.ts';
 import type { SshConnection } from './tunnel.ts';
 import { loginOf, nativeCapabilities, nativeMetrics, Quotas } from './native-controls.ts';
 import type { NativeInput } from './native-input.ts';
-import { readNativeSettings } from './native-settings.ts';
+import { readNativeSettings, writeSessionSshSettings } from './native-settings.ts';
 import { questionTally } from './question.ts';
 
 // Whether reasoning summaries are asked for. A settings file that cannot be read leaves them on.
@@ -108,7 +109,7 @@ export function remotePrompt(
     "The user's projects are on their own computer, the device, NOT on this Linux host, which only runs Claude Code and has no copy of them.",
     `Device: ${terms.name}. Project directory: ${JSON.stringify(projectPath)}.`,
     `Do all project reads, edits, searches and commands on the device with your native Bash tool over SSH${ssh.bin ? ', using the session-provided ssh, scp and sftp commands' : `, with the configuration ${JSON.stringify(ssh.configPath)}`}. Do not use this host's Read/Edit tools on project files, and do not print, read into conversation or copy the SSH keys.`,
-    `Send a script on standard input, as a quoted Bash here-document: ssh ${ssh.bin ? '' : `-F ${JSON.stringify(ssh.configPath)} `}${execution ? `device-${execution.shells[0]}` : 'device-script'} <<'PS' ... PS. ${terms.script}`,
+    `Send a script on standard input, as a quoted Bash here-document: ssh ${ssh.bin ? '' : `-F ${JSON.stringify(ssh.configPath)} `}${execution?.shells?.length ? `device-${execution.shells[0]}` : 'device-script'} <<'PS' ... PS. ${terms.script}`,
     `device-script is the host device with one fixed command, which the configuration shows as RemoteCommand, and takes none of its own. ${terms.command}`,
     'If the device is unreachable, say so; never fall back to this host. After an interruption report results as unknown; do not repeat side effects on your own.',
     'To look at a picture on the device, such as a pasted screenshot or an attached image, copy that one file with scp to a temporary file on this host, open it with the Read tool, and delete the copy afterwards. That is the only use of Read on this host for a file from the device.',
@@ -202,7 +203,30 @@ export async function runClaude(
   let outputSoFar: number | undefined = resume ? undefined : 0;
   let settle: ReturnType<typeof setTimeout> | undefined;
   let settled = false;
+  let scopedSettings: string | undefined;
   try {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...options.environment,
+      CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+    };
+    let settings = options.settingsPath;
+    let ssh = run.ssh;
+    if (run.ssh?.bin) {
+      scopedSettings = join(dirname(run.ssh.bin), 'sdk-settings.json');
+      const config = resolve(cwd, env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'));
+      const path = writeSessionSshSettings(scopedSettings, {
+        source: options.settingsPath,
+        config,
+        cwd,
+        bin: run.ssh.bin,
+        inheritedPath: env.PATH ?? '/usr/bin:/bin',
+      });
+      if (path) {
+        env.PATH = path;
+        settings = scopedSettings;
+      } else ssh = { configPath: run.ssh.configPath };
+    }
     session = query({
       prompt: run.input.stream(initialPrefix),
       options: {
@@ -217,11 +241,11 @@ export async function runClaude(
         systemPrompt: {
           type: 'preset',
           preset: 'claude_code',
-          ...(run.ssh
+          ...(ssh
             ? {
                 append: remotePrompt(
                   run.projectPath,
-                  run.ssh,
+                  ssh,
                   run.sessionId,
                   run.platform,
                   run.viaSsh,
@@ -237,7 +261,7 @@ export async function runClaude(
         // Newer models return no reasoning text unless a summary is asked for; headless runs ignore the
         // showThinkingSummaries setting, so this is the only switch. It follows that setting.
         extraArgs: thinkingShown() ? { 'thinking-display': 'summarized' } : {},
-        settings: options.settingsPath,
+        settings,
         settingSources: ['user', 'project', 'local'],
         hooks: {
           UserPromptSubmit: [
@@ -253,16 +277,7 @@ export async function runClaude(
           ],
         },
         maxTurns: options.maxTurns,
-        env: {
-          ...process.env,
-          ...options.environment,
-          CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
-          ...(run.ssh?.bin
-            ? {
-                PATH: `${run.ssh.bin}:${options.environment?.PATH ?? process.env.PATH ?? '/usr/bin:/bin'}`,
-              }
-            : {}),
-        },
+        env,
         stderr: (text) => {
           stderr = (stderr + text).slice(-8192);
         },
@@ -476,9 +491,26 @@ export async function runClaude(
     run.controls.refresh = undefined;
     run.controls.stopTask = undefined;
     run.controls.backgroundTask = undefined;
-    run.input.close();
-    session?.close();
-    run.signal.removeEventListener('abort', stop);
+    try {
+      try {
+        run.input.close();
+      } finally {
+        session?.close();
+      }
+    } finally {
+      run.signal.removeEventListener('abort', stop);
+      if (scopedSettings) {
+        try {
+          rmSync(scopedSettings, { force: true });
+        } catch (error) {
+          console.warn('Session SSH settings cleanup failed', {
+            sessionId: run.sessionId,
+            path: scopedSettings,
+            code: (error as NodeJS.ErrnoException).code,
+          });
+        }
+      }
+    }
   }
   const context = await getSessionInfo(run.sessionId, { dir: cwd });
   run.emit({

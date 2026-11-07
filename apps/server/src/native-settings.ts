@@ -51,15 +51,19 @@ export function readNativeSettings(path = settingsPath()): NativeSettings {
 
 // CLI 2.1.295: explicit --settings wins over local, project and selected user settings.
 // The terminal's generated settings retain the provider's explicit values.
-export function terminalCompactWindow(config: string, cwd: string, explicit: string) {
-  let window: number | null = null;
-  for (const path of [
+function cliSettingPaths(config: string, cwd: string, explicit?: string) {
+  return [
     settingsPath(config),
     join(cwd, '.claude', 'settings.json'),
     join(cwd, '.claude', 'settings.local.json'),
-    explicit,
+    ...(explicit ? [explicit] : []),
     ...(process.platform === 'linux' ? ['/etc/claude-code/managed-settings.json'] : []),
-  ]) {
+  ];
+}
+
+export function terminalCompactWindow(config: string, cwd: string, explicit: string) {
+  let window: number | null = null;
+  for (const path of cliSettingPaths(config, cwd, explicit)) {
     try {
       const values = readFile(path);
       // The CLI discards an invalid key at its source, so it cannot shadow a valid lower-priority value.
@@ -80,6 +84,64 @@ export function terminalCompactWindow(config: string, cwd: string, explicit: str
     }
   }
   return window;
+}
+
+// The CLI applies settings.env after the inherited process environment. Put the
+// session PATH in its private explicit settings as well, retaining all provider keys.
+export function writeSessionSshSettings(
+  path: string,
+  options: {
+    source?: string;
+    config: string;
+    cwd: string;
+    bin: string;
+    inheritedPath: string;
+  },
+) {
+  let settings: Record<string, unknown>;
+  try {
+    settings = options.source ? readFile(options.source) : {};
+  } catch (error) {
+    const code =
+      error instanceof SyntaxError
+        ? 'invalid_json'
+        : ((error as NodeJS.ErrnoException).code ?? 'unreadable');
+    throw new Error(`CLI session settings could not be read (${code}): ${options.source}`);
+  }
+  if (Object.values(environment(settings)).some((value) => typeof value !== 'string'))
+    throw new Error(`CLI session env values must be strings: ${options.source}`);
+  let base = options.inheritedPath;
+  for (const file of cliSettingPaths(options.config, options.cwd, options.source)) {
+    let values;
+    try {
+      values = file === options.source ? settings : readFile(file);
+    } catch (error) {
+      // The CLI also ignores malformed optional setting files; the provider file above is required.
+      console.warn('Session SSH PATH settings could not be read', {
+        path: file,
+        code:
+          error instanceof SyntaxError
+            ? 'invalid_json'
+            : ((error as NodeJS.ErrnoException).code ?? 'unreadable'),
+      });
+      continue;
+    }
+    const value = environment(values).PATH;
+    if (typeof value !== 'string') continue;
+    if (file === '/etc/claude-code/managed-settings.json') {
+      // Keep the administrator's PATH and use explicit ssh -F guidance instead.
+      console.warn('Session SSH uses explicit configuration because PATH is managed');
+      return undefined;
+    }
+    base = value;
+  }
+  const scoped = `${options.bin}:${base}`;
+  writeFileSync(
+    path,
+    JSON.stringify({ ...settings, env: { ...environment(settings), PATH: scoped } }),
+    { mode: 0o600 },
+  );
+  return scoped;
 }
 
 export function updateNativeSettings(values: Partial<NativeSettings>, path = settingsPath()) {

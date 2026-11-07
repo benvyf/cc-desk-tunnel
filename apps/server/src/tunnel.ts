@@ -13,7 +13,6 @@ import type {
   ServerMessage,
   TunnelCredentials,
 } from '@cc-desk-tunnel/protocol';
-import { systemShell } from './device-terms.ts';
 
 export type TunnelOptions = {
   // How long an SSH connection waits for the device to open its channel before it is dropped.
@@ -69,8 +68,19 @@ export function sessionSsh(dataDir: string, sessionId: string, ssh: SshConnectio
   }
   // A noexec data mount could make Bash skip these wrappers and find plain ssh later on PATH.
   // Validate on the actual session filesystem before allowing a CLI/SDK process to use the aliases.
-  if (process.platform === 'linux')
-    execFileSync(join(bin, 'ssh'), ['-G', 'device-script'], { timeout: 5000, stdio: 'ignore' });
+  if (process.platform === 'linux') {
+    try {
+      execFileSync(join(bin, 'ssh'), ['-G', 'device-script'], { timeout: 5000, stdio: 'ignore' });
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code !== 'EACCES' && code !== 'EPERM') throw error;
+      console.warn('Session SSH wrappers are not executable; using explicit configuration', {
+        sessionId,
+        code,
+      });
+      return { configPath };
+    }
+  }
   return { ...ssh, configPath, bin };
 }
 
@@ -97,11 +107,17 @@ export const shellCommand = (device: DevicePlatform, shell: DeviceShell) =>
     : shell === 'bash'
       ? 'chcp.com 65001 >nul & "%CC_DESK_TUNNEL_BASH%" -s'
       : SCRIPT_COMMAND;
-export function shellsOf(platform: DevicePlatform, said?: DeviceShell[]): DeviceShell[] {
-  if (!said?.length) return [systemShell(platform)];
+export function shellsOf(
+  platform: DevicePlatform,
+  said?: DeviceShell[],
+): DeviceShell[] | undefined {
+  if (!said?.length) return platform === 'win32' ? ['pwsh'] : undefined;
+  const posix = said.find((shell) => shell === 'bash' || shell === 'zsh');
   return platform === 'win32'
     ? ['pwsh', ...(said.includes('bash') ? ['bash' as const] : [])]
-    : [said.find((shell) => shell === 'bash' || shell === 'zsh') ?? systemShell(platform)];
+    : posix
+      ? [posix]
+      : undefined;
 }
 
 // Runs a script the way the system prompt tells Claude to.
@@ -139,7 +155,7 @@ export function sshConfig(
   connectSeconds = 15,
   // The system of the device, which decides what its scripts are run by.
   device: DevicePlatform = 'win32',
-  shells: DeviceShell[] = [systemShell(device)],
+  shells: DeviceShell[] = device === 'win32' ? ['pwsh'] : [],
 ) {
   if (directory.includes('\n') || directory.includes('"'))
     throw new Error('Unsupported data directory');
@@ -220,7 +236,7 @@ export class Tunnel {
   // What the device registered with, once its SSH service answered through this tunnel.
   credentials?: TunnelCredentials;
   platform: DevicePlatform = 'win32';
-  shells: DeviceShell[] = ['pwsh'];
+  shells?: DeviceShell[];
   private secret = randomBytes(32).toString('base64url');
   private pairMs: number;
   private probe: NonNullable<TunnelOptions['probe']>;
@@ -319,7 +335,7 @@ export class Tunnel {
       process.platform,
       15,
       platform,
-      this.shells,
+      this.shells ?? [],
     );
     const configPath = join(this.directory, 'ssh_config');
     writeFileSync(join(this.directory, 'identity'), credentials.privateKey, { mode: 0o600 });
@@ -330,14 +346,14 @@ export class Tunnel {
       try {
         await this.probe(configPath);
         if (this.controller.signal.aborted) throw new Error('Tunnel closed');
-        for (const shell of this.shells.filter(
+        for (const shell of (this.shells ?? []).filter(
           (value) => platform === 'win32' && value === 'bash',
         )) {
           try {
             await this.probe(configPath, `device-${shell}`);
           } catch {
             // Optional Git Bash must not take a working PowerShell connection down.
-            this.shells = this.shells.filter((value) => value !== shell);
+            this.shells = this.shells?.filter((value) => value !== shell);
             const next = sshConfig(
               this.directory,
               this.port,
@@ -450,7 +466,7 @@ export class Door {
       process.platform,
       Math.ceil(this.holdMs / 1000) + 15,
       tunnel.platform,
-      tunnel.shells,
+      tunnel.shells ?? [],
     );
     const write = (name: string, text: string) => {
       const next = join(this.directory, `${name}.${randomBytes(6).toString('hex')}`);

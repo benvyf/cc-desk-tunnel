@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { Door, SCRIPT_COMMAND, sshConfig, sessionSsh, Tunnel } from '../src/tunnel.ts';
+import { Door, SCRIPT_COMMAND, sshConfig, sessionSsh, Tunnel, shellsOf } from '../src/tunnel.ts';
 import { mkdtempSync, rmSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -202,6 +202,46 @@ test('new shell aliases preserve the Windows legacy command and refuse unavailab
   ).config;
   assert.match(target, /^Host device-bash\n  RemoteCommand exec "\$CC_DESK_TUNNEL_SHELL" -s/m);
   assert.doesNotMatch(target, /CC_DESK_TUNNEL_PWSH|CC_DESK_TUNNEL_BASH/);
+});
+
+test('legacy POSIX clients keep their original shell contract without guessed Bash or zsh aliases', async (t) => {
+  assert.equal(shellsOf('linux'), undefined);
+  assert.equal(shellsOf('darwin'), undefined);
+  assert.deepEqual(shellsOf('linux', ['zsh']), ['zsh']);
+  assert.deepEqual(shellsOf('darwin', ['bash']), ['bash']);
+  assert.deepEqual(shellsOf('win32'), ['pwsh']);
+  const directory = mkdtempSync(join(tmpdir(), 'cc-legacy-shell-'));
+  const id = randomUUID();
+  const tunnel = new Tunnel(
+    { probe: async () => {} },
+    directory,
+    id,
+    () => false,
+    () => {},
+  );
+  t.after(async () => {
+    await tunnel.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
+  await tunnel.start();
+  await tunnel.accept(
+    {
+      type: 'tunnel.credentials',
+      connectionId: id,
+      username: 'fixture',
+      privateKey: 'fixture-only',
+      hostPublicKey: 'ssh-ed25519 AAAATEST',
+    },
+    'linux',
+  );
+  assert.equal(tunnel.shells, undefined);
+  const config = readFileSync(tunnel.ssh!.configPath, 'utf8');
+  assert.match(config, /^Host device-script\n  RemoteCommand exec "\$CC_DESK_TUNNEL_SHELL" -s/m);
+  assert.match(config, /^Host device-bash\n  HostName 127.0.0.1\n  ProxyCommand/m);
+  const prompt = remotePrompt('/project', tunnel.ssh!, id, 'linux', false, {});
+  assert.match(prompt, /device-script <<'PS'/);
+  assert.doesNotMatch(prompt, /device-undefined/);
+  assert.match(prompt, /did not report its shell/);
 });
 
 test('an optional Git Bash probe failure keeps PowerShell ready and removes the advertised alias', async (t) => {

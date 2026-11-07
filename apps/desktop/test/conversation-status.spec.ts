@@ -162,6 +162,47 @@ test('a terminal final answer and local command note remain separate and the not
   expect((await note.boundingBox())!.y).toBeGreaterThan((await answer.boundingBox())!.y);
   await page.screenshot({ path: '.local/adoption-terminal-notes.png' });
 });
+test('late-imported terminal questions keep their live answer unfinished', async ({ page }) => {
+  const target = session('终端第二轮仍在输出', { surface: 'terminal', activity: 'working' });
+  history(target, target.activeRun!.id, [
+    {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId,
+    },
+    ask('第一轮问题'),
+    { type: 'text.delta', messageId: randomUUID(), text: '第一轮最终回答' },
+    { type: 'run.status', status: 'running', surface: 'terminal', activity: 'idle', connectionId },
+    {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId,
+    },
+    ask('第二轮问题'),
+    { type: 'text.delta', messageId: randomUUID(), text: '第二轮仍在输出' },
+  ]);
+  (histories.get(target.id)![5] as { createdAt: string }).createdAt = at(118);
+  sessions.push(target);
+  try {
+    await connect(page);
+    await open(page, target.title);
+    await openAll(page);
+    await expect(
+      page.locator('.message.assistant').filter({ hasText: '第一轮最终回答' }),
+    ).toBeVisible();
+    const partial = page.locator('.message.assistant').filter({ hasText: '第二轮仍在输出' });
+    await expect(partial).toBeVisible();
+    await expect(partial.getByRole('button', { name: '复制消息', exact: true })).toHaveCount(0);
+    await expect(partial.getByRole('button', { name: '引用回答', exact: true })).toHaveCount(0);
+  } finally {
+    sessions.pop();
+    histories.delete(target.id);
+  }
+});
 const open = (page: Page, title: string) =>
   page.locator('.session-row').filter({ hasText: title }).locator('.session-select').click();
 

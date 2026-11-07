@@ -198,6 +198,111 @@ test('incremental history waits for complete UTF-8 rows, follows the SDK chain a
   await assert.rejects(reader.read(), /Invalid terminal transcript at line 2/);
 });
 
+test('a question whose parent is still being written waits for the complete SDK chain', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-pending-parent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const q1 = randomUUID(),
+    q2 = randomUUID(),
+    late = randomUUID();
+  const first = {
+    type: 'user',
+    uuid: q1,
+    parentUuid: null,
+    sessionId: id,
+    timestamp: '2026-11-07T00:00:01Z',
+    message: { role: 'user', content: 'question 1' },
+  };
+  const second = {
+    type: 'user',
+    uuid: q2,
+    parentUuid: late,
+    sessionId: id,
+    timestamp: '2026-11-07T00:00:04Z',
+    message: { role: 'user', content: 'question 2' },
+  };
+  const answer = {
+    type: 'assistant',
+    uuid: late,
+    parentUuid: q1,
+    sessionId: id,
+    timestamp: '2026-11-07T00:00:03Z',
+    message: {
+      role: 'assistant',
+      id: 'late-answer',
+      content: [{ type: 'text', text: 'answer to question 1' }],
+    },
+  };
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  writeFileSync(path, JSON.stringify(first) + '\n');
+  const initial = await reader.read();
+  appendFileSync(path, JSON.stringify(second) + '\n');
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [q1],
+  );
+  assert.deepEqual(
+    (await reader.read({ reconcile: true })).map((row) => row.uuid),
+    [q1],
+  );
+  await assert.rejects(reader.read({ final: true }), /Unresolved parent in terminal transcript/);
+  appendFileSync(path, JSON.stringify(answer) + '\n');
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [q1, late, q2],
+  );
+  assert.equal(initial.length, 1);
+});
+
+test('incremental completeness checks preserve a pre-existing historical root with an archived parent', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-archived-parent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id),
+    q = randomUUID(),
+    a = randomUUID();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      type: 'user',
+      uuid: q,
+      parentUuid: randomUUID(),
+      sessionId: id,
+      message: { role: 'user', content: 'historical root' },
+    }) + '\n',
+  );
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  assert.deepEqual(
+    (await reader.read({ final: true })).map((row) => row.uuid),
+    [q],
+  );
+  appendFileSync(
+    path,
+    JSON.stringify({
+      type: 'assistant',
+      uuid: a,
+      parentUuid: q,
+      sessionId: id,
+      message: {
+        role: 'assistant',
+        id: 'new-answer',
+        content: [{ type: 'text', text: 'new answer' }],
+      },
+    }) + '\n',
+  );
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [q, a],
+  );
+});
+
 test('corrupt transcript rows are reported instead of being treated as an empty history', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'cc-transcript-corrupt-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

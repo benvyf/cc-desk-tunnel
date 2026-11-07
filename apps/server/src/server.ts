@@ -77,6 +77,7 @@ import {
   readNativeSettings,
   updateNativeSettings,
   terminalCompactWindow,
+  writeSessionSshSettings,
 } from './native-settings.ts';
 import { readInstructions, writeInstructions } from './native-instructions.ts';
 import type { NativeTerminal } from './native-terminal.ts';
@@ -169,6 +170,7 @@ type Terminal = {
     statusPath: string;
     quota?: string;
     contextKey?: string;
+    statusFailed?: boolean;
     compactWindow?: number | null;
     offset: number;
     heard: Promise<void>;
@@ -576,7 +578,8 @@ export function createProxyServer(options: ServerOptions) {
     const platform = platformOf(device);
     const shells = device?.viaSsh
       ? ['bash' as const]
-      : (seats.get(device?.id ?? '')?.door?.shells ?? [systemShell(platform)]);
+      : (seats.get(device?.id ?? '')?.door?.shells ??
+        (platform === 'win32' ? [systemShell(platform)] : undefined));
     const shell = store.preferredShell(device?.id);
     return { shells, ...(shell ? { shell } : {}) };
   }
@@ -1001,7 +1004,17 @@ export function createProxyServer(options: ServerOptions) {
         current.continued.settingsPath,
       );
       const reach = ssh ? sessionSsh(store.directory, session.id, ssh) : undefined;
-      if (reach?.bin) env.PATH = `${reach.bin}:${env.PATH ?? '/usr/bin:/bin'}`;
+      if (reach?.bin) {
+        const path = writeSessionSshSettings(current.continued.settingsPath, {
+          source: current.continued.settingsPath,
+          config: context.config,
+          cwd,
+          bin: reach.bin,
+          inheritedPath: env.PATH ?? '/usr/bin:/bin',
+        });
+        if (path) env.PATH = path;
+        else delete reach.bin;
+      }
       if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
       current.process = new NativeTerminal(
@@ -1228,6 +1241,7 @@ export function createProxyServer(options: ServerOptions) {
   // to the account's quota, and every connection is told, as the quota is the account's, not the session's.
   function terminalQuota(terminal: Terminal) {
     const continued = terminal.continued!;
+    if (continued.statusFailed) return;
     let windows;
     let context;
     try {
@@ -1247,25 +1261,53 @@ export function createProxyServer(options: ServerOptions) {
       context && JSON.stringify([context.model, context.usedTokens, context.windowTokens]);
     const contextChanged = !!contextKey && contextKey !== continued.contextKey;
     if (!quotaChanged && !contextChanged) return;
-    const last = store.lastMetrics(terminal.sessionId);
-    const observed = quotaChanged ? quotas.observeTerminal(windows) : null;
-    const rateLimits = observed?.available ? observed : (last?.rateLimits ?? null);
-    const event = store.append(terminal.sessionId, terminal.id, {
-      type: 'native.metrics',
-      context: contextChanged ? context! : (last?.context ?? null),
-      usage: last?.usage ?? null,
-      rateLimits,
-    });
-    if (quotaChanged) continued.quota = heard;
-    if (contextChanged) continued.contextKey = contextKey!;
-    if (observed?.available) {
-      usage.observe(observed);
-      accountMonitor?.observe(event.payload, terminal.sessionId, terminal.id);
+    try {
+      const last = store.lastMetrics(terminal.sessionId);
+      const observed = quotaChanged ? quotas.observeTerminal(windows) : null;
+      const rateLimits = observed?.available ? observed : (last?.rateLimits ?? null);
+      const event = store.append(terminal.sessionId, terminal.id, {
+        type: 'native.metrics',
+        context: contextChanged ? context! : (last?.context ?? null),
+        usage: last?.usage ?? null,
+        rateLimits,
+      });
+      if (quotaChanged) continued.quota = heard;
+      if (contextChanged) continued.contextKey = contextKey!;
+      if (observed?.available) {
+        usage.observe(observed);
+        accountMonitor?.observe(event.payload, terminal.sessionId, terminal.id);
+      }
+      broadcast(
+        { type: 'session.event', event },
+        observed?.available ? undefined : terminal.sessionId,
+      );
+    } catch (error) {
+      continued.statusFailed = true;
+      unwatchFile(continued.statusPath);
+      console.error(
+        'Terminal status synchronization failed',
+        {
+          sessionId: terminal.sessionId,
+          terminalId: terminal.id,
+          path: continued.statusPath,
+        },
+        error,
+      );
+      const message = '终端状态同步失败，终端仍可继续使用；请检查服务端日志。';
+      try {
+        record(terminal.sessionId, terminal.id, { type: 'native.notice', text: message });
+      } catch {}
+      broadcast(
+        {
+          type: 'connection.error',
+          code: 'terminal_status_failed',
+          message,
+          sessionId: terminal.sessionId,
+          terminalId: terminal.id,
+        },
+        terminal.sessionId,
+      );
     }
-    broadcast(
-      { type: 'session.event', event },
-      observed?.available ? undefined : terminal.sessionId,
-    );
   }
   async function importTerminal(terminal: Terminal, ended = false, reconcile = false) {
     const continued = terminal.continued!;
@@ -2020,7 +2062,7 @@ export function createProxyServer(options: ServerOptions) {
         const device = deviceOf(peer);
         if (platformOf(device) !== 'win32' || device.viaSsh)
           throw new DomainError('shell_unavailable', '此设备不支持 Windows Shell 偏好。');
-        if (command.shell && !deviceExecution(device).shells.includes(command.shell))
+        if (command.shell && !deviceExecution(device).shells?.includes(command.shell))
           throw new DomainError(
             'shell_unavailable',
             '此设备尚未检测到这个 Shell，请安装后重新连接。',
@@ -2306,7 +2348,10 @@ export function createProxyServer(options: ServerOptions) {
     peer.registering = true;
     track(
       peer.tunnel
-        .accept(credentials, peer.device?.platform)
+        .accept(
+          peer.device?.viaSsh ? { ...credentials, shells: ['bash'] } : credentials,
+          peer.device?.platform,
+        )
         .then(() => adopt(peer))
         .then(() => {
           send(peer, { type: 'tunnel.ready', connectionId: peer.id });

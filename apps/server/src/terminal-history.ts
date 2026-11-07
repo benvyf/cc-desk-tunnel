@@ -81,6 +81,8 @@ export class TerminalHistoryReader {
     this.path = terminalHistoryPath(config, cwd, nativeId);
   }
   async read({ final = false, reconcile = false } = {}) {
+    const previous = this.result;
+    let replaced = false;
     const file = await openTerminalHistory(this.config, this.cwd, this.nativeId);
     if (!file) {
       // A replaced or removed file must not masquerade as the old cached chain.
@@ -101,14 +103,12 @@ export class TerminalHistoryReader {
         this.result
       )
         return this.result;
-      if (
-        reconcile ||
-        (this.identity !== undefined &&
-          (identity !== this.identity ||
-            stat.size < this.offset ||
-            (stat.size === this.offset && stat.mtimeMs !== this.modified)))
-      )
-        this.reset();
+      replaced =
+        this.identity !== undefined &&
+        (identity !== this.identity ||
+          stat.size < this.offset ||
+          (stat.size === this.offset && stat.mtimeMs !== this.modified));
+      if (reconcile || replaced) this.reset();
       this.identity = identity;
       // Capture the limit on the same descriptor used to read the initial snapshot.
       const limit = final || reconcile ? stat.size : Math.min(stat.size, this.offset + 1024 * 1024);
@@ -154,6 +154,29 @@ export class TerminalHistoryReader {
     const raw = new Map(
       this.entries.map((entry) => [String(entry.uuid), entry as Record<string, unknown>]),
     );
+    // The SDK can expose a new leaf before an earlier queued append writes its parent.
+    // Keep the established view until that chain is complete, or its first answer can
+    // be appended after the next question and displayed as that next turn's answer.
+    if (previous?.length && !replaced) {
+      const settled = new Set(previous.map((message) => message.uuid));
+      for (const message of messages) {
+        let row = raw.get(message.uuid);
+        while (row && !settled.has(String(row.uuid))) {
+          settled.add(String(row.uuid));
+          if (typeof row.parentUuid !== 'string') break;
+          const parent = raw.get(row.parentUuid);
+          if (!parent) {
+            if (final)
+              throw new Error(
+                `Unresolved parent in terminal transcript: ${this.path} (record ${this.entries.indexOf(row as SessionStoreEntry) + 1})`,
+              );
+            this.result = previous;
+            return previous;
+          }
+          row = parent;
+        }
+      }
+    }
     const selected = new Set(messages.map((message) => message.uuid));
     const normalized: typeof messages = [];
     for (const message of messages) {

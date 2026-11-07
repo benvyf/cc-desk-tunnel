@@ -282,7 +282,11 @@ export function conversation(events: SessionEvent[]): Turn[] {
   const endedHow = new Map<string, string>();
   // Each time a run stopped working, finished or not: a question put in later ends the turn at the last of them.
   const stops = new Map<string, string[]>();
-  for (const { runId, createdAt, payload } of events)
+  const terminalIdle = new Map<string, { at: string; sequence: number }[]>();
+  const terminalActivity = new Map<string, string>();
+  for (const { runId, createdAt, payload, sequence } of events) {
+    if (payload.type === 'run.status' && payload.surface === 'terminal' && payload.activity)
+      terminalActivity.set(runId, payload.activity);
     if (payload.type !== 'run.status') continue;
     else if (
       ['completed', 'cancelled', 'failed'].includes(payload.status) ||
@@ -293,10 +297,12 @@ export function conversation(events: SessionEvent[]): Turn[] {
       stops.set(runId, [...(stops.get(runId) ?? []), createdAt]);
     } else if (payload.surface === 'terminal' && payload.activity === 'idle') {
       stops.set(runId, [...(stops.get(runId) ?? []), createdAt]);
+      terminalIdle.set(runId, [...(terminalIdle.get(runId) ?? []), { at: createdAt, sequence }]);
     } else if (payload.status === 'running' && payload.surface !== 'terminal') {
       ended.delete(runId);
       endedHow.delete(runId);
     }
+  }
   // How the run ended, when it did not finish.
   const outcome = (runId: string) => {
     const how = endedHow.get(runId);
@@ -375,8 +381,19 @@ export function conversation(events: SessionEvent[]): Turn[] {
     close(last, ended.get(runId));
     last.outcome = outcome(runId);
   } else if (last && !last.endedAt && last.question?.terminal) {
-    const idle = stops.get(runId)?.findLast((at) => at >= last.startedAt);
-    if (idle) close(last, idle);
+    const questionSequence =
+      events.find(
+        (event) =>
+          event.payload.type === 'message.user' && event.payload.messageId === last.question!.id,
+      )?.sequence ?? 0;
+    const idle = terminalIdle
+      .get(runId)
+      ?.findLast(
+        (stop) =>
+          stop.sequence >= questionSequence ||
+          (terminalActivity.get(runId) === 'idle' && stop.at >= last.startedAt),
+      );
+    if (idle) close(last, idle.at);
     else if (/^\/compact(?:\s|$)/.test(last.question.text)) {
       // Local /compact can finish without another Stop hook; the boundary is its completion.
       const compact = last.steps.at(-1);
