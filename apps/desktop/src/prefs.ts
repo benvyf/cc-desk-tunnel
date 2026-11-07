@@ -71,6 +71,9 @@ export type Prefs = {
   mascot: boolean;
   // Optional local display prediction for the remote native terminal.
   terminalPredictiveEcho: boolean;
+  // How the official CLI draws new terminals: 'scroll' keeps its output in the local scrollback (its classic
+  // renderer), 'screen' lets it draw the whole area (its fullscreen renderer). Not about the window's size.
+  terminalDisplay: 'scroll' | 'screen';
   // How much of the work behind a reply is shown.
   view: TranscriptView;
   // The strip under the input box with the whole session's figures; chosen the same way.
@@ -111,6 +114,7 @@ const defaults: Prefs = {
   quotaReads: true,
   mascot: true,
   terminalPredictiveEcho: true,
+  terminalDisplay: 'scroll',
   view: defaultView,
   sessionBar: { enabled: false, summary: {} },
   theme: 'system',
@@ -177,6 +181,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
         saved.terminalPredictiveEcho === undefined
           ? defaults.terminalPredictiveEcho
           : saved.terminalPredictiveEcho === true,
+      terminalDisplay: saved.terminalDisplay === 'screen' ? 'screen' : 'scroll',
       view: {
         mode: viewModes.find((entry) => entry.mode === saved.view?.mode)?.mode ?? defaultView.mode,
       },

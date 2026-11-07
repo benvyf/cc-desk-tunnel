@@ -64,8 +64,9 @@ const hooks = registerHooks({
       source =
         shared +
         `
-      export function spawn(file, args) {
+      export function spawn(file, args, options) {
         state.args.push(args);
+        (state.envs ??= []).push(options.env);
         let exit;
         return {
           pid: 2147483647,
@@ -150,6 +151,7 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     const ready = await wait((message) => message.type === 'ready');
     assert.equal(ready.type, 'ready');
     assert.equal(ready.terminalWorkspace?.version, 1);
+    assert.equal(ready.terminalDisplay?.version, 1);
     async function request(command: object) {
       const requestId = randomUUID();
       send({ ...command, requestId });
@@ -178,7 +180,19 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   assert.equal(typeof failure.arguments[1].terminalId, 'string');
   assert.match(failure.arguments[2], /fixture: invalid review policy/);
   state.failPolicy = false;
-  assert.equal((await open()).ok, true);
+  // The desktop's display choice reaches the CLI through its own switches: the tui setting and its variable.
+  assert.equal(
+    (
+      await owner.request({
+        type: 'terminal.open',
+        sessionId,
+        cols: 80,
+        rows: 24,
+        display: 'scroll',
+      })
+    ).ok,
+    true,
+  );
   assert.equal(state.checks, 2);
   const opened = await owner.wait((message) => message.type === 'terminal.opened');
   assert.equal(opened.type, 'terminal.opened');
@@ -239,6 +253,11 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
   const settingsPath = settings[settings.indexOf('--settings') + 1];
   const runtimeSettings = JSON.parse(readFileSync(settingsPath, 'utf8'));
   assert.ok(runtimeSettings.hooks.UserPromptSubmit.length);
+  assert.equal(runtimeSettings.tui, 'default');
+  assert.equal(
+    (state as { envs?: Record<string, string>[] }).envs?.at(-1)?.CLAUDE_CODE_NO_FLICKER,
+    '0',
+  );
   const hooksPath = settingsPath.replace(/\.json$/, '.hooks');
   const statusPath = settingsPath.replace(/\.json$/, '.status');
   const binding = server.store.terminalHistory(sessionId)!;

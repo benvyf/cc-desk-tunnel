@@ -79,6 +79,9 @@ export default function NativeTerminal({
   const predictionRef = useRef<TerminalPrediction | null>(null);
   const readingLine = useRef<number | null>(null);
   const prefs = usePrefs();
+  // Read when a process starts; the effect that owns the terminal does not rerun on preference changes.
+  const displayRef = useRef(prefs.terminalDisplay);
+  displayRef.current = prefs.terminalDisplay;
   const executionReady = () => {
     const deviceId = client.state?.sessions.find((session) => session.id === sessionId)?.device?.id;
     return (
@@ -363,6 +366,10 @@ export default function NativeTerminal({
           ...(reconnectTerminalId ? { terminalId: reconnectTerminalId } : {}),
           cols: Math.max(20, Math.min(400, terminal.cols)),
           rows: Math.max(minimumRows, Math.min(160, terminal.rows)),
+          // A new process only; a service that does not announce the choice keeps the CLI's own setting.
+          ...(!reconnectTerminalId && client.state?.terminalDisplay
+            ? { display: displayRef.current }
+            : {}),
         });
         if (openingConnection !== connectionId) return;
         if (opening && !disposed) {

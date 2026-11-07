@@ -89,6 +89,28 @@ test('terminal prediction defaults on, persists locally and reports storage fail
   await expect(toggle).toHaveAttribute('aria-checked', 'false');
 });
 
+test('terminal display defaults to the scroll mode and explains it is not about the window', async ({
+  page,
+}) => {
+  await connect(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await section(page, '常规').click();
+  const group = page.getByRole('radiogroup', { name: '终端显示方式' });
+  await expect(group.getByRole('radio', { name: '滚动模式' })).toHaveAttribute(
+    'aria-checked',
+    'true',
+  );
+  const row = page.locator('.setting-row').filter({ has: group });
+  await expect(row).toContainText('与窗口是否最大化无关');
+  await expect(row).toContainText('没有网络等待');
+  await group.getByRole('radio', { name: '整屏模式' }).click();
+  await expect(row).toContainText('选中文字需按住 Shift');
+  expect(
+    await page.evaluate(() => JSON.parse(localStorage.getItem('proxy-prefs')!).terminalDisplay),
+  ).toBe('screen');
+});
+
 test('invalid terminal prediction preference stays off', async ({ page }) => {
   await page.addInitScript(() =>
     localStorage.setItem('proxy-prefs', JSON.stringify({ terminalPredictiveEcho: 'true' })),

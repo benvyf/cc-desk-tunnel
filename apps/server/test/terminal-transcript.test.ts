@@ -193,6 +193,12 @@ test('the terminal settings add the hooks to the provider settings, readable onl
     assert.equal(written.hooks[name].at(-1).hooks[0].command, command);
   if (process.platform !== 'win32') assert.equal(statSync(settings).mode & 0o777, 0o600);
   assert.equal(written.statusLine, undefined);
+  // Without a display choice the CLI keeps its own; with one, only the tui setting is added.
+  assert.equal(written.tui, undefined);
+  terminalSettings(settings, hooks, provider, undefined, undefined, 'fullscreen');
+  const chosen = JSON.parse(readFileSync(settings, 'utf8'));
+  assert.equal(chosen.tui, 'fullscreen');
+  assert.deepEqual({ ...chosen, tui: undefined }, { ...written, tui: undefined });
 });
 
 test('terminal activity hooks retain metadata without retaining tool outputs or prompts', (t) => {

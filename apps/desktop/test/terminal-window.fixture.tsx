@@ -60,6 +60,7 @@ let state: any = {
   status: 'connected',
   connectionId: 'fixture-connection',
   terminalWorkspace: { version: 1, minRows: 1, resumable: true },
+  ...(new URLSearchParams(location.search).has('display') && { terminalDisplay: { version: 1 } }),
   browser: null,
   ...(new URLSearchParams(location.search).has('waitExecution') && {
     devices: [{ ...session.device, ready: false }],

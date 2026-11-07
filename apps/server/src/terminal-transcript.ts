@@ -109,6 +109,7 @@ export function terminalSettings(
   settingsPath?: string,
   statusPath?: string,
   ownSettingsPath = userSettingsPath(),
+  tui?: 'default' | 'fullscreen',
 ) {
   const settings = settingsPath ? JSON.parse(readFileSync(settingsPath, 'utf8')) : {};
   const hooks = settings.hooks && typeof settings.hooks === 'object' ? settings.hooks : {};
@@ -135,7 +136,9 @@ export function terminalSettings(
       ? { ...own, command: `${keep}; printf '%s' "$s" | {\n${own.command}\n}` }
       : { type: 'command', command: keep };
   }
-  writeFileSync(path, JSON.stringify({ ...settings, hooks, statusLine }), { mode: 0o600 });
+  writeFileSync(path, JSON.stringify({ ...settings, hooks, statusLine, ...(tui ? { tui } : {}) }), {
+    mode: 0o600,
+  });
 }
 function userStatusLine(path: string) {
   try {

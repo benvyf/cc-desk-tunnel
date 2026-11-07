@@ -878,6 +878,9 @@ export function createProxyServer(options: ServerOptions) {
         executable = assertNativeTerminalReview(executable);
       }
       const env = terminalEnvironment(options.claude);
+      // The user's choice for this process, through the CLI's own documented switches: its `tui` setting
+      // (written to this terminal's --settings below) and the matching environment variable.
+      if (command.display) env.CLAUDE_CODE_NO_FLICKER = command.display === 'screen' ? '1' : '0';
       const context = terminalHistoryContext(
         options.claude,
         env,
@@ -950,6 +953,7 @@ export function createProxyServer(options: ServerOptions) {
         options.claude.settingsPath,
         current.continued.statusPath,
         join(context.config, 'settings.json'),
+        command.display && (command.display === 'screen' ? 'fullscreen' : 'default'),
       );
       if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
@@ -1991,6 +1995,7 @@ export function createProxyServer(options: ServerOptions) {
         connectionId: peer.id,
         adapter,
         terminalWorkspace: { version: 1, minRows: 1, resumable: true },
+        terminalDisplay: { version: 1 },
         terminalFiles: { version: 1 },
         terminalHistory: { version: 1 },
         sideConversations: true,
@@ -2064,6 +2069,7 @@ export function createProxyServer(options: ServerOptions) {
       connectionId: peer.id,
       adapter,
       terminalWorkspace: { version: 1, minRows: 1, resumable: true },
+      terminalDisplay: { version: 1 },
       terminalFiles: { version: 1 },
       terminalHistory: { version: 1 },
       sideConversations: true,

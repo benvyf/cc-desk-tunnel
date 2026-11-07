@@ -163,9 +163,26 @@ function moveChoice(
   event.currentTarget.querySelectorAll('button')[next].focus();
 }
 
+// Claude Code calls these its classic and fullscreen renderers; "fullscreen" is not about the window.
+const terminalDisplays = [
+  {
+    value: 'scroll',
+    label: '滚动模式',
+    detail:
+      'Claude 的输出留在终端里，滚动、选中复制和查找都在本机完成，没有网络等待；长输出时可能闪烁，不使用输入预测。',
+  },
+  {
+    value: 'screen',
+    label: '整屏模式',
+    detail:
+      'Claude 自己绘制整个终端区域，画面稳定，可点击定位光标、展开内容；滚动要等服务端重画，选中文字需按住 Shift。',
+  },
+] as const;
+
 // How much of the work behind a reply is shown is a choice of this computer's window too.
 function ThemeSettings() {
-  const { theme, replyFont, mascot, terminalPredictiveEcho } = usePrefs();
+  const { theme, replyFont, mascot, terminalPredictiveEcho, terminalDisplay } = usePrefs();
+  const display = terminalDisplays.find((entry) => entry.value === terminalDisplay)!;
   const [echoError, setEchoError] = useState('');
   const font = replyFonts.find((entry) => entry.font === replyFont) ?? replyFonts[0];
   return (
@@ -264,9 +281,22 @@ function ThemeSettings() {
             onChange={(value) => setPrefs((prefs) => ({ ...prefs, mascot: value }))}
           />
         </Row>
+        <div className="setting-row stat-picks">
+          <span>
+            <strong>终端显示方式</strong>
+            <small>{display.detail}新开的终端生效，与窗口是否最大化无关。</small>
+          </span>
+          <SegmentedControl
+            label="终端显示方式"
+            role="radiogroup"
+            value={terminalDisplay}
+            options={terminalDisplays.map(({ value, label }) => ({ value, label }))}
+            onChange={(value) => setPrefs((prefs) => ({ ...prefs, terminalDisplay: value }))}
+          />
+        </div>
         <Row
           title="终端输入预测（实验性）"
-          detail="在手动审批模式的普通单行输入区提前显示文字；菜单和复杂编辑仍等待远端，出现闪烁时可关闭"
+          detail="整屏模式下，在手动审批模式的普通单行输入区提前显示文字；菜单和复杂编辑仍等待远端，出现闪烁时可关闭"
         >
           <Switch
             label="终端输入预测（实验性）"

@@ -701,6 +701,9 @@ export const commandSchema = z.discriminatedUnion('type', [
       terminalId: id.optional(),
       cols: z.number().int().min(20).max(400),
       rows: z.number().int().min(1).max(160),
+      // How the official CLI draws a new process: 'scroll' is its classic renderer (output stays in the terminal's
+      // own scrollback), 'screen' its fullscreen one. Sent only to services that announce terminalDisplay.
+      display: z.enum(['scroll', 'screen']).optional(),
     })
     .strict(),
   z
@@ -847,6 +850,7 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
       })
       .optional(),
     terminalFiles: z.object({ version: z.literal(1) }).optional(),
+    terminalDisplay: z.object({ version: z.literal(1) }).optional(),
     terminalHistory: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),
     // The service's own release version, and where it stands against the published releases if it follows them.
