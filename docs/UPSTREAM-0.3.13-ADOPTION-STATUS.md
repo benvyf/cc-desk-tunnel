@@ -1,10 +1,11 @@
 # 上游 0.3.13 吸收实施记录
 
-2026-11-07，香港时间。三批源码实施完成，分支 `codex/upstream-013-adoption`，基线 `2550318`，功能提交 `5ac54c1`、`e36a491`、`5f6d157`。范围见[实施方案](UPSTREAM-0.3.13-ADOPTION-PLAN.md)。用户明确允许不使用真实模型调用验收，本轮仅用受控接口。未打包发行、部署或替换用户安装包。
+2026-11-07，香港时间。三批源码实施完成，分支 `codex/upstream-013-adoption`，基线 `2550318`，功能提交 `5ac54c1`、`e36a491`、`5f6d157`，UNC 提示边界补齐于 `45e72f7`。范围见[实施方案](UPSTREAM-0.3.13-ADOPTION-PLAN.md)。用户明确允许不使用真实模型调用验收，本轮仅用受控接口。未打包发行、部署或替换用户安装包。
 
 ## 第一批
 
 - Windows scp/sftp 路径增加盘符前导斜杠，原项目路径不改；旧聊天提示通过说明版本补充，新终端生成修正描述。
+- UNC/扩展路径不伪造盘符映射，明确传输写法尚未验证，继续使用设备 Shell 文件操作；普通盘符与 POSIX 路径不变。该提示与 SSH 配置相关检查 26 项通过。
 - 终端状态栏上下文与额度分别去重，空额度不阻止上下文刷新；重复测量时间不新增事件，上下文单独变化按会话订阅发送。
 - 当前 PTY 从选定配置目录、项目、local 和显式 settings 解析压缩窗口快照，保留原用户状态栏与配置隔离。
 - 核心回归 19 项通过，覆盖路径、旧说明、设置优先级、上下文独立更新和重复采样；类型检查通过。
@@ -74,6 +75,8 @@
 Linux 目标采用同一隔离 Ubuntu 容器中的独立 SSH 执行进程、独立 HOME 和项目目录，实际运行 Bash/SFTP；这不是两个独立物理 Ubuntu 节点的部署验收。模型请求进程仍在 Ubuntu，Windows 仅承担桥接/执行。真实 provider 的行为不属于本轮验收。
 
 原始证据位于本机 `.local/adoption-actual-cli-result.json`、`.local/adoption-actual-cli-run.log`、`.local/adoption-actual-service.log`、`.local/adoption-linux-tests.log`、`.local/adoption-final-linux-run.log` 与各组对应 TAP/Playwright 日志。跨设备共享摘要见 [结构化证据](evidence/upstream-013-adoption-2026-11-07.json)。
+
+实验清理已确认本轮容器与宿主机实验 CLI 进程为 0，仅删除本轮目录中的 CLI 下载、node_modules 和 npm 缓存；原始日志、录制、测试状态及源码保留。未清理其他容器、镜像、账号或生产会话。
 
 ## 发行边界
 

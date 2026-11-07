@@ -4,14 +4,15 @@
   "branch": "codex/upstream-013-adoption",
   "baseline": "2550318f11a9ec85b5f37cb93bf5bbc862f10f61",
   "upstream": "8a2358ccdb60d7ef3ad624244f4add172068bfd8",
-  "sourceCommit": "5f6d15794e14758784c7b4deee35f1bb24e34216",
+  "sourceCommit": "45e72f7eb4bc424e140b7daeff5e9f6666c06f32",
   "committedFileSha256": {
     "apps/server/src/tunnel.ts": "06e4ecab4f40a78fb3756ab9813bbeaaba0e5e04d47f9714358e16eec9b9fe46",
     "apps/server/src/terminal-history.ts": "e9ddf53113be24227e23b73816a80a8b6327af594ee06c4c3e84dc03b6625a53",
     "apps/server/src/terminal-transcript.ts": "026a4460d79b8a53dc45e04415c7cb17f05c2430d6131c14a70388f9cc6e0044",
     "apps/server/src/native-settings.ts": "fe2faff0b66c7a524873955616e55edf4073ba7716d02e6762f2e05c08bdd3b7",
     "apps/server/src/store.ts": "95fd2b9100b9009bb4b12c6d33e6e73f62e5c79af1f4a0a18fb8936fc00941c1",
-    "packages/protocol/src/index.ts": "65ba58ca32a19fde886591d4c9d776f2cce2aa6ff34e6220dece1858549f3eca"
+    "packages/protocol/src/index.ts": "65ba58ca32a19fde886591d4c9d776f2cce2aa6ff34e6220dece1858549f3eca",
+    "apps/server/src/device-terms.ts": "4f9b23949466336f4d0fe043a87eef29ff9131d569358f7f8e7a612f44ba7a25"
   },
   "scope": {
     "ccdt": false,
@@ -80,7 +81,11 @@
     "typecheck": true,
     "desktopBuild": true,
     "repositoryCheck": true,
-    "ssrBridgeImport": true
+    "ssrBridgeImport": true,
+    "transferAndSshFinal": {
+      "passed": 26,
+      "failed": 0
+    }
   },
   "officialCliExecution": {
     "run": "4a1891e9-b463-40f9-bba1-3213ded3f472",
@@ -115,5 +120,11 @@
     "published": false,
     "productionNodesChanged": false
   },
-  "providerLimit": "Official CLI/SDK used a synthetic localhost HTTP/SSE API, per user instruction. No real provider validation is claimed."
+  "providerLimit": "Official CLI/SDK used a synthetic localhost HTTP/SSE API, per user instruction. No real provider validation is claimed.",
+  "cleanup": {
+    "testContainersRemaining": 0,
+    "hostCliProcessesRemaining": 0,
+    "removedTemporaryResources": ["package", "source/node_modules", "npm-cache"],
+    "logsRecordingsAndTestStatePreserved": true
+  }
 }

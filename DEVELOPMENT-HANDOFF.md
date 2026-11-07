@@ -2,7 +2,7 @@
 
 ### 2026-11-07 上游 0.3.13 吸收：源码及隔离验收完成，未发行
 
-分支 `codex/upstream-013-adoption` 从 `2550318` 实施，功能提交 `5ac54c1`、`e36a491`、`5f6d157`。完成 Windows scp/sftp 路径与实际 CLI 设置口径、终端增量同步/迟到回答/本地命令及快速手动压缩记录、按设备协商的 PowerShell/Git Bash 与偏好、保留旧配置/别名的每会话 SSH 包装器。保留协议 24 与既有内嵌终端、SSH 目标、Ubuntu 模型边界；不引入 CCDT、缓存过期提醒或空闲自动压缩。
+分支 `codex/upstream-013-adoption` 从 `2550318` 实施，功能提交 `5ac54c1`、`e36a491`、`5f6d157`，UNC 提示边界补齐于 `45e72f7`。完成 Windows scp/sftp 路径与实际 CLI 设置口径、终端增量同步/迟到回答/本地命令及快速手动压缩记录、按设备协商的 PowerShell/Git Bash 与偏好、保留旧配置/别名的每会话 SSH 包装器。保留协议 24 与既有内嵌终端、SSH 目标、Ubuntu 模型边界；不引入 CCDT、缓存过期提醒或空闲自动压缩。
 
 用户明确允许不使用真实模型调用验收。官方 CLI/SDK 在隔离 Ubuntu 配合受控 HTTP/SSE 完成 Windows 和 Linux SSH 执行端的聊天/终端接续、读写及两种终端显示模式；目标各恰好写入 2 次。Linux 目标是同一容器内的独立执行进程/目录，不冒称独立物理节点。核心、更新、Linux/Windows 原生通道、界面及最终修订检查通过，详见[实施记录](docs/UPSTREAM-0.3.13-ADOPTION-STATUS.md)和[结构化证据](docs/evidence/upstream-013-adoption-2026-11-07.json)。源码完成不等于已安装客户端得到更新：公开索引仍为 Windows 31 / Linux 18，未分配新 Build、打包发行或部署。后续发行先遵守[强制规则](docs/UPDATE-RELEASE-RULES.md)，当前绑定 Build 18 的迁移脚本不能直接复用成新 Build。压缩上下文后只据此确认进度和下一项，不重新全面复查已通过的旧路径。
 
