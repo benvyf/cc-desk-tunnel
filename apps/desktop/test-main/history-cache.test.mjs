@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
+import { spawnSync } from 'node:child_process';
 
 const require = createRequire(import.meta.url);
 const hash = (owner) => createHash('sha256').update(owner).digest('hex');
@@ -207,4 +208,77 @@ test('a complete final JSON record without newline remains separated from a late
     (await cache.read(id))?.events.map((e) => e.sequence),
     [1, 2],
   );
+});
+
+test('append growth enforces the global byte cap without needing another rewrite', async (t) => {
+  const { cache, replace } = await fixture(t, { maxTotalBytes: 700 });
+  await replace([event(1)]);
+  await cache.idle();
+  await cache.append(id, [event(2), event(3), event(4)]);
+  await cache.idle();
+  assert.ok((await cache.usage()) <= 700);
+  assert.equal(await cache.read(id), null);
+});
+test('a fully trimmed active run cannot return as a partial run, including after reopen', async (t) => {
+  const { cache, replace } = await fixture(t, { maxEvents: 2 });
+  await replace([event(1, 'a'), event(2, 'a')]);
+  await cache.append(id, [event(3, 'a')]);
+  assert.deepEqual((await cache.read(id)).events, []);
+  await cache.open('email|user@example.org|one');
+  await cache.append(id, [event(4, 'a')]);
+  assert.deepEqual((await cache.read(id)).events, []);
+  await cache.append(id, [event(5, 'b'), event(6, 'b')]);
+  assert.deepEqual(
+    (await cache.read(id)).events.map((e) => e.sequence),
+    [5, 6],
+  );
+});
+test('startup reclaims a flushed atomic temporary file left by abrupt process exit', async (t) => {
+  const { cache, root, file } = await fixture(t);
+  await cache.idle();
+  const modulePath = require.resolve('../electron/history-cache.cjs');
+  const script = `(async()=>{const fs=require('node:fs/promises');const {createHistoryCache}=require(${JSON.stringify(modulePath)});const cache=createHistoryCache(${JSON.stringify(root)});await cache.open('email|user@example.org|one');await cache.idle();const rename=fs.rename;fs.rename=async(from,to)=>{if(to===${JSON.stringify(file)})process.exit(77);return rename(from,to);};await cache.replace(${JSON.stringify(id)},{firstSequence:1,hasEarlier:false,events:[${JSON.stringify(event(1))}]});})().catch(()=>process.exit(1));`;
+  const child = spawnSync(process.execPath, ['-e', script], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 10000,
+  });
+  assert.equal(child.status, 77, child.stderr);
+  assert.ok((await readdir(path.dirname(file))).some((name) => name.endsWith('.tmp')));
+  await cache.open('email|user@example.org|one');
+  await cache.idle();
+  assert.ok(!(await readdir(path.dirname(file))).some((name) => name.endsWith('.tmp')));
+});
+
+test('orphan cleanup never removes an atomic temporary file still being written', async (t) => {
+  const { cache, root, file, replace } = await fixture(t);
+  await cache.idle();
+  const fs = require('node:fs/promises'),
+    rename = fs.rename;
+  let release, arrive;
+  const waiting = new Promise((resolve) => {
+      release = resolve;
+    }),
+    arrived = new Promise((resolve) => {
+      arrive = resolve;
+    });
+  t.mock.method(fs, 'rename', async (from, to) => {
+    if (to === file) {
+      arrive(from);
+      await waiting;
+    }
+    return rename(from, to);
+  });
+  const writing = replace([event(1)]);
+  const temporary = await arrived;
+  try {
+    const other = require('../electron/history-cache.cjs').createHistoryCache(root);
+    await other.open('local|maintenance');
+    await other.idle();
+    assert.ok(await stat(temporary));
+  } finally {
+    release();
+    await writing;
+  }
+  assert.equal((await cache.read(id)).events.length, 1);
 });

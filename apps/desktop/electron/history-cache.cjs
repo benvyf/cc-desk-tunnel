@@ -6,6 +6,17 @@ const { setImmediate: pause } = require('node:timers/promises');
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const ownerHash = /^[0-9a-f]{64}$/;
 const inputLimit = 4 * 1024 * 1024;
+const activeTemporaryFiles = new Set();
+const runHash = (id) => createHash('sha256').update(id).digest('hex');
+function cacheTemporary(name) {
+  if (!name.endsWith('.tmp')) return false;
+  const stem = name.slice(0, -4),
+    target = stem.slice(0, -37);
+  return (
+    uuid.test(stem.slice(-36)) &&
+    (target === 'meta.json' || (target.endsWith('.jsonl') && uuid.test(target.slice(0, -6))))
+  );
+}
 function sessionId(id) {
   if (typeof id !== 'string' || !uuid.test(id)) throw new Error('Invalid history session ID');
   return id;
@@ -36,6 +47,7 @@ async function encode(events, id, limit = inputLimit) {
 }
 async function atomic(target, text) {
   const temporary = `${target}.${randomUUID()}.tmp`;
+  activeTemporaryFiles.add(temporary);
   try {
     const file = await fs.open(temporary, 'w', 0o600);
     try {
@@ -54,7 +66,11 @@ async function atomic(target, text) {
       }
     }
   } finally {
-    await fs.rm(temporary, { force: true });
+    try {
+      await fs.rm(temporary, { force: true });
+    } finally {
+      activeTemporaryFiles.delete(temporary);
+    }
   }
 }
 
@@ -68,6 +84,7 @@ function createHistoryCache(root, options = {}) {
   const chains = new Map();
   const protectedIds = new Map();
   let maintenance = Promise.resolve();
+  let maintenanceQueued = false;
   const fileFor = (owner, id) => path.join(owner, `${sessionId(id)}.jsonl`);
   const list = async (directory) => {
     try {
@@ -113,6 +130,11 @@ function createHistoryCache(root, options = {}) {
         typeof header.hasEarlier !== 'boolean'
       )
         throw new Error('Invalid history header');
+      if (
+        header.discardedRun !== undefined &&
+        (typeof header.discardedRun !== 'string' || !ownerHash.test(header.discardedRun))
+      )
+        throw new Error('Invalid discarded run');
       const events = [];
       // A crash may leave a complete JSON value but omit its record separator.
       // It is readable, but the next append must first restore the trailing newline.
@@ -133,7 +155,15 @@ function createHistoryCache(root, options = {}) {
       }
       if (header.firstSequence !== (events[0]?.sequence ?? 0))
         throw new Error('Invalid first sequence');
-      return { firstSequence: header.firstSequence, hasEarlier: header.hasEarlier, events, torn };
+      if (header.discardedRun && (events.length || !header.hasEarlier))
+        throw new Error('Invalid discarded run window');
+      return {
+        firstSequence: header.firstSequence,
+        hasEarlier: header.hasEarlier,
+        events,
+        torn,
+        ...(header.discardedRun ? { discardedRun: header.discardedRun } : {}),
+      };
     } catch (error) {
       if (error.code !== 'ENOENT') await fs.rm(file, { force: true });
       return null;
@@ -150,9 +180,11 @@ function createHistoryCache(root, options = {}) {
     }
     let bytes = lines.reduce((total, line) => total + Buffer.byteLength(line), 0);
     let start = 0;
+    let discardedRun;
     while (value.events.length - start > maxEvents || bytes > maxBytes) {
       const run = value.events[start]?.runId;
       if (run === undefined) break;
+      discardedRun = runHash(run);
       do {
         bytes -= Buffer.byteLength(lines[start++]);
       } while (start < value.events.length && value.events[start].runId === run);
@@ -162,6 +194,7 @@ function createHistoryCache(root, options = {}) {
       sessionId: id,
       firstSequence: value.events[start]?.sequence ?? 0,
       hasEarlier: value.hasEarlier || start > 0,
+      ...(start === value.events.length && discardedRun ? { discardedRun } : {}),
     };
     await atomic(file, JSON.stringify(header) + '\n' + lines.slice(start).join(''));
     scheduleMaintenance();
@@ -191,13 +224,22 @@ function createHistoryCache(root, options = {}) {
     return files;
   }
   function scheduleMaintenance() {
+    // At most one further scan waits behind the current scan, even with many live panes.
+    if (maintenanceQueued) return;
+    maintenanceQueued = true;
     maintenance = maintenance
       .catch(() => {})
       .then(async () => {
+        maintenanceQueued = false;
         await pause();
         for (const owner of await list(root)) {
           if (!owner.isDirectory() || !ownerHash.test(owner.name)) continue;
           const directory = path.join(root, owner.name);
+          for (const entry of await list(directory)) {
+            const file = path.join(directory, entry.name);
+            if (entry.isFile() && cacheTemporary(entry.name) && !activeTemporaryFiles.has(file))
+              await fs.rm(file, { force: true });
+          }
           if (Date.now() - (await fs.stat(directory)).mtimeMs > 90 * 86400000)
             await fs.rm(directory, { recursive: true, force: true });
         }
@@ -247,7 +289,7 @@ function createHistoryCache(root, options = {}) {
       return operation(id, async (_owner, file) => {
         const value = await readFile(file, id);
         if (!value) return null;
-        const { torn: _torn, ...result } = value;
+        const { torn: _torn, discardedRun: _discardedRun, ...result } = value;
         return result;
       });
     },
@@ -270,9 +312,18 @@ function createHistoryCache(root, options = {}) {
         const old = await readFile(file, id);
         if (!old) throw new Error('Missing history window');
         let last = old.events.at(-1)?.sequence ?? 0;
+        let discardedRun = old.discardedRun,
+          excludedId;
         const added = events.filter((event) => {
           if (event.sequence <= last) return false;
           last = event.sequence;
+          if (discardedRun) {
+            if (excludedId === event.runId || runHash(event.runId) === discardedRun) {
+              excludedId = event.runId;
+              return false;
+            }
+            discardedRun = undefined;
+          }
           return true;
         });
         if (!added.length) return;
@@ -286,7 +337,10 @@ function createHistoryCache(root, options = {}) {
           lines.reduce((n, line) => n + Buffer.byteLength(line), 0) > maxBytes
         )
           await rewrite(file, id, combined, lines);
-        else await fs.appendFile(file, lines.slice(old.events.length).join(''), { mode: 0o600 });
+        else {
+          await fs.appendFile(file, lines.slice(old.events.length).join(''), { mode: 0o600 });
+          scheduleMaintenance();
+        }
       });
     },
     remove(id) {
