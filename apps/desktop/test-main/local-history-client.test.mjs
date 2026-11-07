@@ -622,9 +622,12 @@ test('unconfirmed disk history stays pending after failure and cache disable unt
   await settle();
   assert.equal(f.client.state.history[id].loading, false);
   assert.equal(f.client.historyPending(id), true);
+  socket.message({ type: 'session.event', event: f.event(30) });
+  await new Promise((resolve) => setTimeout(resolve, 40));
   await f.client.setHistoryCacheEnabled(false);
   assert.equal(f.client.historyPending(id), true);
   f.client.select(id);
+  assert.equal(socket.sent.at(-1).afterSequence, 1);
   socket.message({
     type: 'response',
     requestId: socket.sent.at(-1).requestId,

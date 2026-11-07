@@ -1139,9 +1139,10 @@ export class ProxyClient {
     const previous = this.state.history[sessionId];
     // A timed-out subscription may still receive global stream frames. They cannot prove
     // a cursor until a snapshot fills the missed interval, even though they render in memory.
-    const afterSequence = this.historyCacheReady
-      ? (this.provenLast.get(sessionId) ?? this.persistedLast.get(sessionId) ?? 0)
-      : (previous?.lastSequence ?? 0);
+    const afterSequence =
+      this.historyCacheReady || this.unconfirmedDiskHistories.has(sessionId)
+        ? (this.provenLast.get(sessionId) ?? this.persistedLast.get(sessionId) ?? 0)
+        : (previous?.lastSequence ?? 0);
     if (this.historyCacheReady) this.synced.delete(sessionId);
     this.update({
       history: {
