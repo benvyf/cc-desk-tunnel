@@ -190,3 +190,22 @@ test('native settings edit only the listed keys of the CLI user settings file', 
   assert.throws(() => updateNativeSettings({ fastMode: true }, path));
   assert.equal(readFileSync(path, 'utf8'), '{ broken', 'An unreadable file is never overwritten');
 });
+
+test('a selected provider must exist before session settings can be generated', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-missing-provider-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = join(root, 'missing-provider.json'),
+    target = join(root, 'runtime.json');
+  assert.throws(
+    () =>
+      writeSessionSshSettings(target, {
+        source,
+        config: join(root, 'config'),
+        cwd: root,
+        bin: '/session/bin',
+        inheritedPath: '/usr/bin:/bin',
+      }),
+    (error) =>
+      error instanceof Error && error.message.includes('ENOENT') && error.message.includes(source),
+  );
+});

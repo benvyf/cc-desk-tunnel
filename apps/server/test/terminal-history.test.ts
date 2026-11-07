@@ -303,6 +303,49 @@ test('incremental completeness checks preserve a pre-existing historical root wi
   );
 });
 
+test('an appended SDK root with an empty parent is a reset rather than an incomplete child', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-empty-parent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id),
+    first = randomUUID(),
+    next = randomUUID();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      type: 'user',
+      uuid: first,
+      parentUuid: null,
+      sessionId: id,
+      timestamp: '2026-11-07T00:00:01Z',
+      message: { role: 'user', content: 'old root' },
+    }) + '\n',
+  );
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [first],
+  );
+  appendFileSync(
+    path,
+    JSON.stringify({
+      type: 'user',
+      uuid: next,
+      parentUuid: '',
+      sessionId: id,
+      timestamp: '2026-11-07T00:00:02Z',
+      message: { role: 'user', content: 'new root' },
+    }) + '\n',
+  );
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [next],
+  );
+});
+
 test('corrupt transcript rows are reported instead of being treated as an empty history', async (t) => {
   const root = mkdtempSync(join(tmpdir(), 'cc-transcript-corrupt-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));

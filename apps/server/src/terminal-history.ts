@@ -163,7 +163,7 @@ export class TerminalHistoryReader {
         let row = raw.get(message.uuid);
         while (row && !settled.has(String(row.uuid))) {
           settled.add(String(row.uuid));
-          if (typeof row.parentUuid !== 'string') break;
+          if (typeof row.parentUuid !== 'string' || !row.parentUuid) break;
           const parent = raw.get(row.parentUuid);
           if (!parent) {
             if (final)

@@ -19,12 +19,12 @@ const environment = (file: Record<string, unknown>) =>
     ? (file.env as Record<string, unknown>)
     : {};
 
-function readFile(path: string): Record<string, unknown> {
+function readFile(path: string, required = false): Record<string, unknown> {
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {};
+    if (!required && (error as NodeJS.ErrnoException).code === 'ENOENT') return {};
     throw error;
   }
   const value = JSON.parse(text);
@@ -100,7 +100,7 @@ export function writeSessionSshSettings(
 ) {
   let settings: Record<string, unknown>;
   try {
-    settings = options.source ? readFile(options.source) : {};
+    settings = options.source ? readFile(options.source, true) : {};
   } catch (error) {
     const code =
       error instanceof SyntaxError
