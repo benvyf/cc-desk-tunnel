@@ -74,8 +74,11 @@ class RetirementTests(unittest.TestCase):
             unhealthy[0]['State']['Health']['Status'] = 'unhealthy'
             with self.assertRaises(RuntimeError): m.preserved_rollback(unhealthy, root)
             (backup / 'data.tar.gz').write_bytes(b'damaged')
-            with self.assertRaisesRegex(RuntimeError, 'checksum'):
+            with self.assertRaisesRegex(RuntimeError, 'checksum') as caught:
                 m.preserved_rollback(containers, root)
+            self.assertIn(str(backup / 'data.tar.gz'), str(caught.exception))
+            self.assertIn('expected=' + hashlib.sha256(b'cold backup').hexdigest(), str(caught.exception))
+            self.assertIn('actual=' + hashlib.sha256(b'damaged').hexdigest(), str(caught.exception))
 
     def test_health_probe_timestamps_do_not_mask_actual_resource_changes(self):
         with tempfile.TemporaryDirectory() as directory:

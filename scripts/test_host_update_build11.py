@@ -205,9 +205,14 @@ class MigrationTests(unittest.TestCase):
             def offline(*args):
                 calls.append('preflight')
                 if failure=='preflight':raise RuntimeError('candidate rejected')
+            def download(path, *_):
+                if path.endswith('.json'):
+                    return b'index'
+                self.assertEqual(path, f'/cc-updates/server/v1/artifacts/{m.BUILD}/linux-x64/cc-desk-tunnel-server-0.3.10-build{m.BUILD}.tar.gz')
+                return bundle
             helper=SimpleNamespace(DATA=root/'data',KEYS=json.loads(contents['deploy/managed-server.json'])['keys'],ORIGIN='https://api.ghostapi.org',
                 Engine=lambda:SimpleNamespace(request=lambda *args:copy.deepcopy(source)),validate_runtime=lambda _:None,
-                download=lambda path,*_:b'index' if path.endswith('.json') else bundle,unpack=real_helper.unpack,
+                download=download,unpack=real_helper.unpack,
                 offline_preflight=offline,clone_config=lambda *_:dict(HostConfig={}))
             def clone_policy(old,new,program):new.mkdir();return None
             review=SimpleNamespace(NODES={n:n for n in ['ubuntu-cc','ubuntu-cc-02','ubuntu-cc-03']},protected=lambda *_:None,

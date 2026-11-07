@@ -101,8 +101,11 @@ def preserved_rollback(containers, root=UPGRADE, container_name=CONTAINER):
         path = directory / name
         physical(path)
         need(path.is_file(), 'Required rollback file missing: ' + str(path))
-    need(record.get('archiveSha256') == digest(directory / 'data.tar.gz'),
-         'Required cold-backup checksum does not match')
+    archive = directory / 'data.tar.gz'
+    actual = digest(archive)
+    need(record.get('archiveSha256') == actual,
+         f'Required cold-backup checksum does not match: path={archive}; '
+         f'expected={record.get("archiveSha256")}; actual={actual}')
     return current, directory
 
 
