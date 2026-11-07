@@ -1,5 +1,7 @@
 # Windows Build 32 / Linux Build 19
 
+2026-11-07 后续发现 Build 19 迁移脚本错下 Build 18，已由 [Linux Build 20](RELEASE-SERVER-BUILD20.md) 修复替代。请生成 Build 20 新指令，不再使用下文的 19 指令；Windows Build 32 保持。本页原验证只覆盖 agent 选路/签名准入，未验证脚本内部第二次下载，不能作为该链路正确的证据。
+
 2026-11-07，香港时间。两端均为 CC Space 0.3.10 / 协议 24，发行源码 `86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f`。已更新 VPS 管理中心的 pilot 安装包与服务端升级入口；用户明确要求自行执行 Ubuntu 升级，本轮没有创建或执行节点安装任务。
 
 ## 本版内容与使用

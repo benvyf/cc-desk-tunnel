@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-07 Linux Build 20 修复 Build 19 升级错版下载
+
+ubuntu-cc 升级 19 报 Archive hash/size mismatch：签名目标为 19，但迁移脚本仍硬编码下载 18。已用实际公开签名脚本下载/解包复现。新 Build 20（源码 `4d5d507410cb4dd4fd1896eed8ec2174a7017861`，协议 24）已发布，下载路径、镜像标签及临时目录绑定 BUILD；30 项 Linux 隔离回归通过，公开 20 的真实签名/HTTP/解包链通过（在 Docker 构建前主动停止）。agent 对 16/18/19 正确选择 20，精确续期及真实 systemd/timer 通过，Windows 32/stable/管理中心运行文件保持。用户应刷新管理中心生成 Build 20 新指令，勿重试 19；本轮未下发节点安装。
+
+历史必要冷备份与记录摘要不一致是另一个未定因问题；不改写摘要、不删除备份，20 增加具体路径及 expected/actual 诊断。此前“签名准入/agent 选路通过”不能代表脚本内部的第二次下载也正确，发布门槛已补齐。详见[Build 20](docs/RELEASE-SERVER-BUILD20.md)及[证据](docs/evidence/server20-download-fix-2026-11-07.json)。续期引用 `/root/.cc-update-admin/linux-build20-preparation/source` 不得清理，下方 19 发行记录为历史。
+
 ### 2026-11-07 Windows Build 32 / Linux Build 19 已发布，Ubuntu 由用户自行升级
 
 发行源码 `86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f`，均为 0.3.10 / 协议 24。管理中心 pilot 已提供客户端 Build 32、服务端 Build 19；旧制品不覆盖，stable 与线上管理中心运行文件保持。新签名服务端入口保留默认空间准备、空闲受控断开、冷备份/恢复及上一套必要回退，精确支持 Build 16 等旧基线和新增 Build 18。先在管理中心刷新并获取 Build 19 新任务/指令，由用户执行，再从客户端内更新到 32；本轮未下发节点安装任务，三台仍上报 16，03 既有 failed phase 未改写，04～06 未新增授权。

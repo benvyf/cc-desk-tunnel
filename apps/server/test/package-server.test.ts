@@ -18,6 +18,7 @@ import { test } from 'node:test';
 import { gunzipSync } from 'node:zlib';
 import { extractRelease, verifyReleaseDirectory } from '../src/managed-server-files.ts';
 import { PROTOCOL_VERSION } from '../../../packages/protocol/src/index.ts';
+import { RUNTIME_LEVEL } from '../../../packages/managed-server/src/index.ts';
 
 const { packageServer } = await import(
   new URL('../../../scripts/package-server.mjs', import.meta.url).href
@@ -50,7 +51,7 @@ test('server archives contain a fresh Web build without local data or desktop de
   };
   put('apps/server/src/main.ts', 'export {};');
   put('packages/managed-server/src/index.ts', 'export {};');
-  put('deploy/managed-server.json', '{"build":1}');
+  put('deploy/managed-server.json', JSON.stringify({ build: 1, runtimeLevel: RUNTIME_LEVEL }));
   put('.gitignore', 'node_modules/\n.local/\n.env\n*.local.json\n');
   put('apps/desktop/dist/index.html', 'desktop build stays unchanged');
   put('apps/desktop/src/private-test.ts', 'not runtime code');
