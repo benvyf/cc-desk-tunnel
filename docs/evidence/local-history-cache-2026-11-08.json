@@ -13,16 +13,16 @@
   "tests": {
     "full": {
       "command": "npm test",
-      "tests": 1021,
-      "pass": 958,
+      "tests": 1022,
+      "pass": 959,
       "fail": 0,
       "skipped": 63,
       "cancelled": 0
     },
     "focused": {
       "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
-      "tests": 39,
-      "pass": 39,
+      "tests": 40,
+      "pass": 40,
       "fail": 0,
       "skipped": 0
     },
@@ -73,8 +73,8 @@
     "iterations": 10,
     "fixtureBytes": 819794,
     "callbacks": 7719,
-    "maxSynchronousCallbackMs": 1.534,
-    "maxReplaceReadAppendWallMs": 30.362,
+    "maxSynchronousCallbackMs": 1.386,
+    "maxReplaceReadAppendWallMs": 30.346,
     "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
   },
   "review": {

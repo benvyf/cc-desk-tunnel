@@ -65,9 +65,9 @@ npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/te
 node scripts/benchmark-local-history.mjs
 ```
 
-`client.log` 的 `history-cache hydrate events=N selectToStateMs=X` 从 select() 入口起计，到 events 写入 state 为止，包含选择切换、IPC、读盘和 schema 抽查，不包含 React 完整绘制时间。最终真实 Electron 的 2000 条实测为 **18.4 ms**（门槛 50 ms）。主进程模块独立基准对 2000 条、约 819,794 字节窗口执行 10 轮重写/读取/追加，async_hooks 测量不含异步 IO 等待的同步回调壁钟时间；最终最长 **1.534 ms**（门槛 8 ms）。这些是本机受控负载的实测值，不是对所有硬件的延迟保证。
+`client.log` 的 `history-cache hydrate events=N selectToStateMs=X` 从 select() 入口起计，到 events 写入 state 为止，包含选择切换、IPC、读盘和 schema 抽查，不包含 React 完整绘制时间。最终真实 Electron 的 2000 条实测为 **18.4 ms**（门槛 50 ms）。主进程模块独立基准对 2000 条、约 819,794 字节窗口执行 10 轮重写/读取/追加，async_hooks 测量不含异步 IO 等待的同步回调壁钟时间；最终最长 **1.386 ms**（门槛 8 ms）。这些是本机受控负载的实测值，不是对所有硬件的延迟保证。
 
-最终验证：npm test 共 1021 项，958 通过、63 条条件跳过、0 失败；新增缓存专项 39/39 通过，无跳过。相关 UI 31/31 通过；计时起点校正到 select 入口后，2000 条专项再验 1/1 通过。check、typecheck、format:check 和 diff 检查通过。见 [结构化验收证据](evidence/local-history-cache-2026-11-08.json)。
+最终验证：npm test 共 1022 项，959 通过、63 条条件跳过、0 失败；新增缓存专项 40/40 通过，无跳过。相关 UI 31/31 通过；计时起点校正到 select 入口后，2000 条专项再验 1/1 通过。check、typecheck、format:check 和 diff 检查通过。见 [结构化验收证据](evidence/local-history-cache-2026-11-08.json)。
 
 ## 规格说明与边界
 

@@ -6,7 +6,7 @@
 
 先注水后订阅，await 后检查 socket/代次、当前选中或观察、权威 history；仅收到有效 snapshot 的 synced 会话可写盘。断线/重连、超时后流式帧、内存淘汰后的旧磁盘游标、注水期间主侧角色切换及 owner 对账均有针对性回归。fragment/live/progress 不持久化；invalid_cursor 静默删除并从 0 重试一次。关闭开关清空当前 profile 的所有 owner 目录；浏览器不调用缓存。实测发现同步中阅读位置会跳动，已补桌面滚动处理。
 
-真实 Electron/IPC、关闭重启与三秒延迟补拉、同步中阅读位置及连续清除后继续记录均已验证；最终 2000 条从 select 入口到 events 写入 state 实测 18.4 ms，独立主进程模块 10 轮基准最长同步回调 1.534 ms。全量 Node 测试 958 通过/63 条件跳过/0 失败，缓存专项 39/39、相关 UI 31/31、校正起点后的性能 UI 1/1；check/typecheck/format:check 通过。完整规则与证据见 [本机副本说明](docs/LOCAL-HISTORY-CACHE.md)及[验收数据](docs/evidence/local-history-cache-2026-11-08.json)。用户另行批准单独补齐 .dockerignore 漏列的 terminal-runtime.mjs 与 host-update/cleanup.py 两行；既有 evidence JSON 纯格式修正已验证解析内容不变；Windows launcher 清理偶发 EPERM 后完整重跑通过，未改该测试。不改服务端逻辑或协议（保持 24）。未 push、合并 main、打安装包或发布，不代表现有已安装客户端已包含此功能。
+真实 Electron/IPC、关闭重启与三秒延迟补拉、同步中阅读位置及连续清除后继续记录均已验证；最终 2000 条从 select 入口到 events 写入 state 实测 18.4 ms，独立主进程模块 10 轮基准最长同步回调 1.386 ms。全量 Node 测试 959 通过/63 条件跳过/0 失败，缓存专项 40/40、相关 UI 31/31、校正起点后的性能 UI 1/1；check/typecheck/format:check 通过。完整规则与证据见 [本机副本说明](docs/LOCAL-HISTORY-CACHE.md)及[验收数据](docs/evidence/local-history-cache-2026-11-08.json)。用户另行批准单独补齐 .dockerignore 漏列的 terminal-runtime.mjs 与 host-update/cleanup.py 两行；既有 evidence JSON 纯格式修正已验证解析内容不变；Windows launcher 清理偶发 EPERM 后完整重跑通过，未改该测试。不改服务端逻辑或协议（保持 24）。未 push、合并 main、打安装包或发布，不代表现有已安装客户端已包含此功能。
 
 ### 2026-11-07 启动历史读取被原生状态锁误拦截（源码修复，未发行）
 
