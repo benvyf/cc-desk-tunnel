@@ -597,3 +597,110 @@ test('the status tooltip tells how long a key waits for the screen to change', a
   const shown = Number((await chip.getAttribute('title'))?.match(/约 (\d+) ms/)?.[1]);
   expect(shown).toBeLessThan(300);
 });
+
+test('a window passing through several sizes sends the program only the one it settles on', async ({
+  page,
+}) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize').length,
+      ),
+    )
+    .toBeGreaterThan(0);
+  await page.waitForTimeout(200);
+  await page.evaluate(() => (window.terminalFixture.controls.length = 0));
+  await page.evaluate(async () => {
+    const terminal = document.querySelector<HTMLElement>('.native-terminal')!;
+    for (const width of [900, 1000, 1100, 1200, 1300]) {
+      terminal.style.width = `${width}px`;
+      for (let i = 0; i < 2; i++) await new Promise(requestAnimationFrame);
+    }
+  });
+  await page.waitForTimeout(400);
+  const sent = await page.evaluate(() =>
+    window.terminalFixture.controls.filter((r) => r.type === 'terminal.resize'),
+  );
+  expect(sent).toHaveLength(1);
+  // The program is told the size the local grid ended at.
+  const local = await page.evaluate(() => {
+    const screen = document.querySelector('.xterm-screen')!.getBoundingClientRect();
+    const host = document.querySelector('.terminal-host')!.getBoundingClientRect();
+    return { screen: screen.width, host: host.width };
+  });
+  expect(local.host).toBeGreaterThan(1200);
+  expect(local.screen).toBeGreaterThan(1100);
+  expect(sent[0].cols).toBeGreaterThan(100);
+});
+
+test('thousands of lines stay readable from the top of the history', async ({ page }) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.evaluate(() => {
+    let data = '';
+    for (let line = 1; line <= 8000; line++) data += `line ${line}\r\n`;
+    window.terminalFixture.receive({ type: 'terminal.data', data, bytes: data.length });
+  });
+  await expect(page.locator('.xterm-rows')).toContainText('line 8000');
+  // Only a line from the start of the history matches: later lines all have other numbers.
+  await page.getByRole('button', { name: '查找终端输出', exact: true }).click();
+  await page.getByRole('textbox', { name: '终端查找文字' }).fill('line 150');
+  await expect(page.getByRole('search')).toContainText('已定位');
+  await expect(page.locator('.xterm-rows')).toContainText(/line 150(?!\d)/);
+});
+
+test('in the scroll mode the toolbar and Ctrl+Shift+arrows move between sent prompts', async ({
+  page,
+}) => {
+  await mount(page);
+  await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
+  await page.evaluate(() => {
+    // As the classic renderer prints them: a sent prompt on a shaded line, answers, a menu pointer and the box.
+    const prompt = (text: string) =>
+      `\x1b[48;5;237m\x1b[38;5;246m❯ \x1b[38;5;231m${text}\x1b[39m\x1b[49m\r\n`;
+    let data = ' ▐▛███▜▌   Claude Code\r\n';
+    for (let turn = 1; turn <= 3; turn++) {
+      data += prompt(`question ${turn}`);
+      for (let line = 1; line <= 80; line++) data += `answer ${turn}.${line}\r\n`;
+    }
+    data += '  \x1b[38;5;153m❯\x1b[39m No, exit\r\n❯ \r\n';
+    window.terminalFixture.receive({ type: 'terminal.data', data, bytes: data.length });
+  });
+  await expect(page.locator('.xterm-rows')).toContainText('answer 3.80');
+  const second = () => page.locator('.xterm-rows > div').nth(1).textContent();
+  await page.keyboard.press('Control+Shift+ArrowUp');
+  await expect.poll(second).toContain('question 3');
+  await page.getByRole('button', { name: '上一条提问（Ctrl+Shift+↑）' }).click();
+  await expect.poll(second).toContain('question 2');
+  await page.keyboard.press('Control+Shift+ArrowUp');
+  await expect.poll(second).toContain('question 1');
+  await page.keyboard.press('Control+Shift+ArrowUp');
+  await expect.poll(second).toContain('question 1');
+  await page.getByRole('button', { name: '下一条提问（Ctrl+Shift+↓）' }).click();
+  await expect.poll(second).toContain('question 2');
+  await page.keyboard.press('Control+Shift+ArrowDown');
+  await expect.poll(second).toContain('question 3');
+  await page.keyboard.press('Control+Shift+ArrowDown');
+  await expect(page.locator('.xterm-rows')).toContainText('No, exit');
+  // The keys move the view only; nothing reaches the program.
+  expect(
+    await page.evaluate(() =>
+      window.terminalFixture.controls.filter((r) => r.type === 'terminal.input'),
+    ),
+  ).toEqual([]);
+  // The fullscreen renderer has no history here: the buttons go and the keys reach the program.
+  await page.evaluate(() =>
+    window.terminalFixture.receive({ type: 'terminal.data', data: '\x1b[?1049h', bytes: 8 }),
+  );
+  await expect(page.getByRole('button', { name: '上一条提问（Ctrl+Shift+↑）' })).toHaveCount(0);
+  await page.keyboard.press('Control+Shift+ArrowUp');
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => window.terminalFixture.controls.filter((r) => r.type === 'terminal.input').length,
+      ),
+    )
+    .toBe(1);
+});

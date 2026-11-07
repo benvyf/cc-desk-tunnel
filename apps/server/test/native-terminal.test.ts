@@ -259,6 +259,21 @@ test('official account status parses identity without exposing extra fields', ()
   });
 });
 
+test('a reconnecting client gets thousands of lines of classic-renderer history back', async () => {
+  const f = fixture({ detached: () => {} });
+  // The classic renderer prints the conversation into the normal screen's scrollback.
+  for (let line = 1; line <= 4500; line++) f.data(`第 ${line} 行\r\n`);
+  await delay(20);
+  f.terminal.detach();
+  f.output.length = 0;
+  await f.terminal.attach(80, 24);
+  const text = f.output.map((frame) => frame.text).join('');
+  assert.ok(text.includes('第 1 行\r\n'), 'the oldest line is restored');
+  assert.ok(text.includes('第 4500 行'));
+  f.terminal.acknowledge(f.terminal.outstanding);
+  await f.terminal.close();
+});
+
 test('a terminal that keeps running shows its current screen to a client that attaches, then the live output', async () => {
   let detached = 0;
   const f = fixture({ detached: () => detached++ });

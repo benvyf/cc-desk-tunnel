@@ -9,6 +9,8 @@ const terminalShortcuts = [
   { name: '打开或关闭终端菜单', keys: ['Ctrl', 'Shift', 'Space'] },
   { name: '下一个终端标签', keys: ['Ctrl', 'Tab'] },
   { name: '上一个终端标签', keys: ['Ctrl', 'Shift', 'Tab'] },
+  { name: '跳到上一条提问（滚动模式）', keys: ['Ctrl', 'Shift', 'ArrowUp'] },
+  { name: '跳到下一条提问（滚动模式）', keys: ['Ctrl', 'Shift', 'ArrowDown'] },
 ];
 
 export default function ShortcutSettings() {

@@ -88,6 +88,9 @@ const RESET =
 const KEYBOARD = /\x1b\[>(\d+)u|\x1b\[<\d*u|\x1b\[>4;(\d+)m/g;
 // Gather small CLI redraws once per interval; the length limit is UTF-16 code units, not bytes.
 const GATHER_MS = 5;
+// History a reconnecting client gets back. With the CLI's classic renderer the conversation lives in the scrollback;
+// the snapshot is sent in acknowledged chunks like any output.
+const SCREEN_SCROLLBACK = 5000;
 const GATHER_LIMIT = 16384;
 
 // Native control sessions have their own CLI history; no terminal transcript is persisted by the proxy.
@@ -148,7 +151,7 @@ export class NativeTerminal {
       this.screen = new headless.Terminal({
         cols: options.cols,
         rows: options.rows,
-        scrollback: 1000,
+        scrollback: SCREEN_SCROLLBACK,
         allowProposedApi: true,
       });
       this.serializer = new serialize.SerializeAddon();
@@ -256,7 +259,7 @@ export class NativeTerminal {
     )._core;
     const snapshot =
       RESET +
-      this.serializer!.serialize({ scrollback: 1000 }) +
+      this.serializer!.serialize({ scrollback: SCREEN_SCROLLBACK }) +
       (core?.coreMouseService?.activeEncoding === 'SGR' ? '\x1b[?1006h' : '') +
       (this.kitty ? `\x1b[>${this.kitty}u` : '') +
       (this.otherKeys ? `\x1b[>4;${this.otherKeys}m` : '') +

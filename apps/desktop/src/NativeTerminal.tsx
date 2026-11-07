@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Terminal } from '@xterm/xterm';
-import type { ITheme } from '@xterm/xterm';
+import type { IBufferCell, IBufferLine, ITheme } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { SearchAddon } from '@xterm/addon-search';
 import type { TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { RequestFailedError, type ProxyClient } from './client.ts';
-import { RefreshCw, Search, X } from './icons.tsx';
+import { ArrowDown, ArrowUp, RefreshCw, Search, X } from './icons.tsx';
 import { Button, IconButton } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
 import { terminalLinks } from './terminalLinks.ts';
@@ -27,6 +27,14 @@ export type TerminalHandle = {
   /** Measure again after the window changed; `redraw` also makes the remote program repaint. */
   refit: (redraw?: boolean) => void;
 };
+// Where Claude Code shows a prompt the user sent: `❯ ` at the start of a line on a shaded background (2.1.295). Its
+// input box starts with `❯` and a no-break space, and menus put `❯` further in without a background.
+export function sentPrompt(line: IBufferLine | undefined, cell?: IBufferCell) {
+  if (!line || line.isWrapped) return false;
+  const first = line.getCell(0, cell);
+  if (!first || first.getChars() !== '❯' || first.isBgDefault()) return false;
+  return line.getCell(1, cell)?.getChars() === ' ';
+}
 // The canvas takes its colours from the stylesheet's `--terminal-*` tokens (top of style.css): the same warm
 // night in either app theme. Each ANSI colour has a token of its name, its bright one `--terminal-bright-…`.
 const ansi = ['black', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'] as const;
@@ -110,6 +118,9 @@ export default function NativeTerminal({
   // user feels (network, service and the CLI redrawing). Shown in the status tooltip only.
   const [echo, setEcho] = useState<number | null>(null);
   const toBottom = useRef(() => {});
+  const jumpPrompt = useRef((_earlier: boolean) => {});
+  // Only the normal screen (the classic renderer) has a history to move through.
+  const [history, setHistory] = useState(true);
   const findInput = useRef<HTMLInputElement>(null);
   const composingFind = useRef(false);
   const find = useRef((_text: string, _previous = false, _incremental = false) => {});
@@ -149,7 +160,8 @@ export default function NativeTerminal({
       fontFamily: "'Cascadia Mono', Consolas, monospace",
       fontSize,
       cursorBlink: true,
-      scrollback: 2000,
+      // The classic renderer keeps the whole conversation here, so the history is long enough to read back.
+      scrollback: 10000,
       allowProposedApi: false,
       linkHandler: {
         allowNonHttpProtocols: true,
@@ -168,6 +180,29 @@ export default function NativeTerminal({
       if (!aboveBottom) setUnseenOutput(false);
     };
     const scroll = terminal.onScroll(updateReading);
+    const bufferChange = terminal.buffer.onBufferChange((buffer) =>
+      setHistory(buffer.type === 'normal'),
+    );
+    // The prompt goes to the second row, the line above it kept for context. From the bottom, the latest one.
+    jumpPrompt.current = (earlier) => {
+      const buffer = terminal.buffer.active;
+      if (buffer.type !== 'normal') return;
+      const anchor =
+        earlier && buffer.viewportY >= buffer.baseY ? buffer.length : buffer.viewportY + 1;
+      const cell = buffer.getNullCell();
+      let target = -1;
+      if (earlier) {
+        for (let y = anchor - 1; y >= 0 && target < 0; y--)
+          if (sentPrompt(buffer.getLine(y), cell)) target = y;
+      } else
+        for (let y = anchor + 1; y < buffer.length && target < 0; y++)
+          if (sentPrompt(buffer.getLine(y), cell)) target = y;
+      if (target < 0) {
+        if (!earlier) toBottom.current();
+        return;
+      }
+      terminal.scrollToLine(Math.max(0, target - 1));
+    };
     toBottom.current = () => {
       terminal.scrollToBottom();
       setReading(false);
@@ -185,6 +220,7 @@ export default function NativeTerminal({
     // When the oldest key not yet followed by output left; samples of that wait for the tooltip.
     let echoStart = 0,
       echoSamples: number[] = [];
+    let sizeTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingBytes = 0,
       bufferedBytes = 0,
       size = '',
@@ -288,9 +324,16 @@ export default function NativeTerminal({
       if (line !== null) terminal.scrollToLine(line);
       readingLine.current = null;
       const next = `${cols}:${rows}`;
+      // The screen follows the window at once; the program hears only the size the window settles on. Each size
+      // it hears makes it lay its screen out again (the classic renderer reprints its live part), so the sizes a
+      // drag or a maximize passes through would leave repeated pieces in the history and cost round trips.
+      clearTimeout(sizeTimer);
       if (!id || closeRequested || phaseNow() !== 'running' || size === next) return;
-      size = next;
-      client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
+      sizeTimer = setTimeout(() => {
+        if (disposed || !id || closeRequested || phaseNow() !== 'running' || size === next) return;
+        size = next;
+        client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
+      }, 120);
     }
     activate.current = (focus = false) => {
       focusRequested ||= focus;
@@ -615,6 +658,18 @@ export default function NativeTerminal({
     const unwatch = client.subscribe?.(disconnected);
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || event.isComposing) return true;
+      if (
+        event.ctrlKey &&
+        event.shiftKey &&
+        !event.altKey &&
+        !event.metaKey &&
+        (event.key === 'ArrowUp' || event.key === 'ArrowDown') &&
+        terminal.buffer.active.type === 'normal'
+      ) {
+        event.preventDefault();
+        jumpPrompt.current(event.key === 'ArrowUp');
+        return false;
+      }
       if (callbacks.current.onShortcut?.(event)) {
         event.preventDefault();
         return false;
@@ -867,6 +922,7 @@ export default function NativeTerminal({
       observer.disconnect();
       for (const timer of settleTimers) clearTimeout(timer);
       clearTimeout(redrawTimer);
+      clearTimeout(sizeTimer);
       view.removeEventListener('resize', onWindowResize);
       input.dispose();
       prediction?.dispose();
@@ -874,6 +930,8 @@ export default function NativeTerminal({
       links.dispose();
       scroll.dispose();
       toBottom.current = () => {};
+      jumpPrompt.current = () => {};
+      bufferChange.dispose();
       for (const link of loading) link.removeEventListener('load', repaint);
       unwatch?.();
       view.cancelAnimationFrame(resizeFrame);
@@ -985,6 +1043,28 @@ export default function NativeTerminal({
       >
         <Search scale="sm" />
       </IconButton>
+      {history && (
+        <>
+          <IconButton
+            title="上一条提问（Ctrl+Shift+↑）"
+            onClick={() => {
+              jumpPrompt.current(true);
+              terminalRef.current?.focus();
+            }}
+          >
+            <ArrowUp scale="sm" />
+          </IconButton>
+          <IconButton
+            title="下一条提问（Ctrl+Shift+↓）"
+            onClick={() => {
+              jumpPrompt.current(false);
+              terminalRef.current?.focus();
+            }}
+          >
+            <ArrowDown scale="sm" />
+          </IconButton>
+        </>
+      )}
       {phase === 'running' && (
         <IconButton
           title="重新适配窗口"
