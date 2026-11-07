@@ -67,6 +67,7 @@ export class LocalHistorySync implements HistorySink {
   ready(sessions: Session[], completeSync: boolean) {
     this.paused = false;
     this.supported = completeSync;
+    this.queue.clear();
     for (const session of [...sessions].sort(
       (a, b) =>
         Number(b.id === this.client.state.selectedId) -

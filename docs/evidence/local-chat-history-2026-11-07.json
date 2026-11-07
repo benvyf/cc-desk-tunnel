@@ -1,0 +1,48 @@
+{
+  "date": "2026-11-07",
+  "sourceCommit": "293f5dbe9f767cfd7c128612c329129abf3616ac",
+  "implementationCommit": "f22b591",
+  "protocol": 24,
+  "capability": "ready.localHistory.version=1",
+  "scope": "client display history and accessible attachments; not native Claude resume backup",
+  "verification": {
+    "nodeCoreAndProtocolTestsPassed": 113,
+    "browserCasesPassed": 32,
+    "browserBatchPassed": 31,
+    "browserTargetedExportPassed": 1,
+    "browserNote": "The native-save assertion initially matched an unrelated empty status node; corrected selector, targeted case passed. Product code did not change for that assertion fix.",
+    "typecheckPassed": true,
+    "productionUiBuildPassed": true,
+    "modelBoundaryPassed": true,
+    "privateUnpackedClientSmokePassed": true,
+    "realNativeLocalHistoryIpc": true,
+    "realPersistentStorageGranted": true,
+    "mainFrameOnlyPermissionTestPassed": true,
+    "currentProgramProfileNotUsed": true
+  },
+  "boundaries": {
+    "modelRequests": 0,
+    "nativeSessionRestoreImplemented": false,
+    "archiveImportIsLocalReadOnly": true,
+    "autoToolOrMessageReplay": false,
+    "productionAccountCredentialsRead": false,
+    "newModelNetworkEndpoints": false,
+    "networkShareAttachmentsExcluded": true
+  },
+  "publication": {
+    "newClientOrServerBuildAssigned": false,
+    "installerPublished": false,
+    "vpsChanged": false,
+    "ubuntuInstallTasksCreated": false
+  },
+  "logs": [
+    ".local/local-history-integration.log",
+    ".local/local-history-browser-final.log",
+    ".local/local-history-export-ui.log",
+    ".local/local-history-permissions-final.log",
+    ".local/local-history-typecheck.log",
+    ".local/local-history-build.log",
+    ".local/local-history-package-qa.log",
+    ".local/local-history-package-smoke.log"
+  ]
+}
