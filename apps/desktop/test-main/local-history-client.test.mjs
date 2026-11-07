@@ -231,7 +231,7 @@ test('ready reconciles and deleted sessions remove copies', async (t) => {
 });
 test('missing owner and browser connections never read or write cache', async (t) => {
   const f = fixture(t, null);
-  const socket = await f.connect(undefined);
+  const socket = await f.connect(null);
   f.client.select(f.sessions[0].id);
   await settle();
   // Explicitly reconnect without a reliable owner (the helper's default is deliberately bypassed).
@@ -397,4 +397,89 @@ test('a retry after a timed-out snapshot never advances past the known disk curs
   f.client.select(f.sessions[0].id);
   await settle();
   assert.equal(socket.sent.at(-1).afterSequence, 0);
+});
+
+test('eviction followed by a missing disk copy must subscribe from zero, never a stale persisted cursor', async (t) => {
+  const f = fixture(t);
+  f.api.read = async (id) => ({ firstSequence: 1, hasEarlier: false, events: [f.event(1, id)] });
+  const socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.snapshot(socket, [f.event(2)]);
+  await settle();
+  for (let i = 0; i < 4; i++) f.sessions.push({ ...f.sessions[0], id: randomUUID() });
+  f.client.update({ sessions: f.sessions });
+  for (const session of f.sessions.slice(1, 5)) {
+    f.client.select(session.id);
+    await settle();
+  }
+  assert.equal(f.client.state.history[f.sessions[0].id], undefined);
+  f.api.read = async () => null;
+  f.client.select(f.sessions[0].id);
+  await settle();
+  assert.equal(socket.sent.at(-1).afterSequence, 0);
+});
+test('disabling cache while open is pending still allows the network connection to start', async (t) => {
+  const f = fixture(t),
+    pending = deferred();
+  f.api.open = () => pending.promise;
+  f.client.connect(
+    'ws://127.0.0.1/ws',
+    'test-token-with-enough-characters',
+    { id: 'pc', name: 'pc' },
+    true,
+    undefined,
+    'local|one',
+  );
+  await f.client.setHistoryCacheEnabled(false);
+  pending.resolve();
+  await settle();
+  assert.ok(f.Socket.current);
+  assert.equal(f.client.historyCacheReady, false);
+});
+
+test('ready replaces an in-flight reconnecting hydration and always subscribes on the new socket', async (t) => {
+  const pending = deferred(),
+    f = fixture(t, () => pending.promise);
+  const old = await f.connect();
+  old.close();
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.client.retryNow();
+  f.ready();
+  pending.resolve({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
+  await settle();
+  assert.ok(f.Socket.current.sent.some((frame) => frame.type === 'session.subscribe'));
+});
+
+test('hydration derives retain from the current selected/observed role after awaiting disk', async (t) => {
+  const pending = deferred(),
+    f = fixture(t);
+  f.api.read = async (id) => (id === f.sessions[0].id ? pending.promise : null);
+  const socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  f.client.select(f.sessions[1].id);
+  f.client.observeSession(f.sessions[0].id);
+  await settle();
+  pending.resolve({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
+  await settle();
+  const subscription = socket.sent.findLast(
+    (frame) => frame.type === 'session.subscribe' && frame.sessionId === f.sessions[0].id,
+  );
+  assert.equal(subscription.retain, true);
+});
+
+test('a global stream frame during disk hydration cannot suppress the authoritative subscription', async (t) => {
+  const pending = deferred(),
+    f = fixture(t, () => pending.promise),
+    socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  socket.message({ type: 'session.event', event: f.event(7) });
+  await new Promise((r) => setTimeout(r, 40));
+  pending.resolve({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
+  await settle();
+  assert.equal(
+    socket.sent.findLast((frame) => frame.type === 'session.subscribe')?.afterSequence,
+    0,
+  );
 });

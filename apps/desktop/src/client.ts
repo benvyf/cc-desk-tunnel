@@ -443,9 +443,10 @@ export class ProxyClient {
     });
     this.historyOwner = historyOwner;
     const generation = this.cacheGeneration;
+    const credentials = this.credentials;
     if (historyOwner && this.historyCacheEnabled && this.cacheApi()) {
       void this.prepareHistoryCache(historyOwner, generation).then(() => {
-        if (generation === this.cacheGeneration) this.open();
+        if (this.credentials === credentials) this.open();
       });
     } else this.open();
   }
@@ -571,6 +572,7 @@ export class ProxyClient {
   private attach(credentials: NonNullable<ProxyClient['credentials']>) {
     const socket = new WebSocket(credentials.url);
     this.socket = socket;
+    this.diskReads.clear();
     const timeout = setTimeout(() => socket.close(), 50000);
     socket.onopen = () => {
       if (credentials.browser) {
@@ -814,6 +816,7 @@ export class ProxyClient {
       clearTimeout(timeout);
       if (this.socket !== socket) return;
       this.socket = null;
+      this.diskReads.clear();
       this.synced.clear();
       this.dirtyHistory.clear();
       clearTimeout(this.persistTimer);
@@ -863,6 +866,10 @@ export class ProxyClient {
   disconnect() {
     this.flushStream();
     this.flushHistoryCache(true);
+    if (this.historyCacheReady)
+      void this.cacheApi()
+        ?.protect([])
+        .catch(() => {});
     this.synced.clear();
     this.persistedLast.clear();
     this.provenLast.clear();
@@ -1021,14 +1028,22 @@ export class ProxyClient {
       this.diskReads.set(sessionId, reading);
       void reading.then(async (value) => {
         if (this.diskReads.get(sessionId) === reading) this.diskReads.delete(sessionId);
-        if (
-          generation !== this.cacheGeneration ||
-          socket !== this.socket ||
-          !this.historyCacheReady ||
-          (this.state.selectedId !== sessionId && !this.observers.has(sessionId)) ||
-          this.state.history[sessionId]
-        )
+        const current = () =>
+          generation === this.cacheGeneration &&
+          socket === this.socket &&
+          this.historyCacheReady &&
+          (this.state.selectedId === sessionId || this.observers.has(sessionId));
+        const resume = () => {
+          if (this.state.status === 'connected')
+            this.subscribeHistory(sessionId, this.state.selectedId !== sessionId);
+        };
+        if (!current()) return;
+        if (this.state.history[sessionId]) {
+          // A global frame can create an unproven in-memory history while disk is pending.
+          // Discard the copy, but still ask the authority to fill that history from zero.
+          if (!this.state.history[sessionId].loaded) resume();
           return;
+        }
         if (
           value &&
           ![...value.events.slice(0, 20), ...value.events.slice(-20)].every(
@@ -1039,14 +1054,11 @@ export class ProxyClient {
           value = null;
         }
         // A schema failure also crossed an await; repeat all race guards before applying anything.
-        if (
-          generation !== this.cacheGeneration ||
-          socket !== this.socket ||
-          !this.historyCacheReady ||
-          (this.state.selectedId !== sessionId && !this.observers.has(sessionId)) ||
-          this.state.history[sessionId]
-        )
+        if (!current()) return;
+        if (this.state.history[sessionId]) {
+          if (!this.state.history[sessionId].loaded) resume();
           return;
+        }
         if (value) {
           const lastSequence = value.events.at(-1)?.sequence ?? 0;
           this.persistedLast.set(sessionId, lastSequence);
@@ -1068,8 +1080,11 @@ export class ProxyClient {
           this.cacheLog(
             `history-cache hydrate events=${value.events.length} selectToStateMs=${(performance.now() - started).toFixed(3)}`,
           );
+        } else {
+          this.persistedLast.delete(sessionId);
+          this.provenLast.delete(sessionId);
         }
-        if (this.state.status === 'connected') this.subscribeHistory(sessionId, retain);
+        resume();
       });
       return;
     }
@@ -1194,6 +1209,7 @@ export class ProxyClient {
     for (const id of removed) {
       this.synced.delete(id);
       this.provenLast.delete(id);
+      this.persistedLast.delete(id);
       delete events[id];
       delete live[id];
       delete history[id];

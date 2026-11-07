@@ -78,8 +78,7 @@ function createHistoryCache(root, options = {}) {
     }
   };
   // Capture owner at invocation: work queued by the old renderer connection stays in its directory.
-  function operation(id, action) {
-    const owner = selected;
+  function operation(id, action, owner = selected) {
     const before = barrier;
     const task = (async () => {
       sessionId(id);
@@ -139,6 +138,14 @@ function createHistoryCache(root, options = {}) {
     }
   }
   async function rewrite(file, id, value, lines) {
+    const directory = path.dirname(file);
+    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
+    const metadata = path.join(directory, 'meta.json');
+    try {
+      await fs.access(metadata);
+    } catch {
+      await atomic(metadata, JSON.stringify(meta));
+    }
     let bytes = lines.reduce((total, line) => total + Buffer.byteLength(line), 0);
     let start = 0;
     while (value.events.length - start > maxEvents || bytes > maxBytes) {
@@ -206,6 +213,7 @@ function createHistoryCache(root, options = {}) {
   }
   const api = {
     open(owner) {
+      protectedIds.clear();
       const pending = (async () => {
         if (typeof owner !== 'string' || !owner || owner.length > 4096)
           throw new Error('Invalid history owner');
@@ -270,6 +278,7 @@ function createHistoryCache(root, options = {}) {
         const lines = await encode(combined.events, id);
         if (
           old.torn ||
+          !old.events.length ||
           combined.events.length > maxEvents ||
           lines.reduce((n, line) => n + Buffer.byteLength(line), 0) > maxBytes
         )
@@ -283,8 +292,9 @@ function createHistoryCache(root, options = {}) {
     async protect(ids) {
       if (!Array.isArray(ids)) throw new Error('Invalid protected sessions');
       ids.forEach(sessionId);
-      const owner = await selected;
-      if (owner) protectedIds.set(owner, new Set(ids));
+      const selection = selected;
+      const owner = await selection;
+      if (owner && selection === selected) protectedIds.set(owner, new Set(ids));
     },
     async retain(ids) {
       if (!Array.isArray(ids)) throw new Error('Invalid retained sessions');
@@ -296,7 +306,11 @@ function createHistoryCache(root, options = {}) {
         (await list(owner))
           .filter((e) => e.isFile() && e.name.endsWith('.jsonl') && !keep.has(e.name.slice(0, -6)))
           .map((e) =>
-            operation(e.name.slice(0, -6), (_owner, file) => fs.rm(file, { force: true })),
+            operation(
+              e.name.slice(0, -6),
+              (_owner, file) => fs.rm(file, { force: true }),
+              Promise.resolve(owner),
+            ),
           ),
       );
     },
@@ -314,11 +328,6 @@ function createHistoryCache(root, options = {}) {
         await maintenance.catch(() => {});
         const bytes = (await inventory()).reduce((n, e) => n + e.bytes, 0);
         await fs.rm(root, { recursive: true, force: true });
-        const directory = await owner.catch(() => null);
-        if (directory) {
-          await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-          await atomic(path.join(directory, 'meta.json'), JSON.stringify(meta));
-        }
         return bytes;
       })();
       barrier = task.catch(() => {});

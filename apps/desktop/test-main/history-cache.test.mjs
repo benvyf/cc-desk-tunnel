@@ -110,7 +110,6 @@ test('global LRU skips protected sessions across owners and expires unused owner
   const { cache, root, file, replace } = await fixture(t, { maxTotalBytes: 1300 });
   await cache.protect([id]);
   await replace([event(1)]);
-  await cache.open('local|other');
   const otherId = randomUUID();
   await cache.replace(otherId, {
     firstSequence: 1,
@@ -120,6 +119,8 @@ test('global LRU skips protected sessions across owners and expires unused owner
   await cache.idle();
   assert.ok(await stat(file));
   assert.equal(await cache.read(otherId), null);
+  await cache.open('local|other');
+  await cache.idle();
   const ownerDir = path.join(root, hash('local|other'));
   const old = new Date(Date.now() - 91 * 86400000);
   await utimes(ownerDir, old, old);
@@ -139,4 +140,52 @@ test('retain reconciles the active owner, clear and usage cover every owner', as
   assert.ok(freed > 0);
   await cache.open('email|user@example.org|one');
   assert.equal(await cache.read(id), null);
+});
+
+test('clear waits for submitted writes and concurrent reads do not resurrect deleted records', async (t) => {
+  const { cache, replace } = await fixture(t);
+  const writing = replace(Array.from({ length: 2000 }, (_, i) => event(i + 1)));
+  const clearing = cache.clear();
+  await Promise.all([writing, clearing]);
+  assert.equal(await cache.read(id), null);
+});
+test('owner switches bind pending reconciliation to the original directory', async (t) => {
+  const { cache, replace } = await fixture(t);
+  await replace([event(1)]);
+  const retaining = cache.retain([]);
+  await cache.open('local|other');
+  await replace([event(2)]);
+  await retaining;
+  assert.equal((await cache.read(id)).events[0].sequence, 2);
+  await cache.open('email|user@example.org|one');
+  assert.equal(await cache.read(id), null);
+});
+
+test('switching owner releases obsolete LRU protection', async (t) => {
+  const { cache, replace, file } = await fixture(t, { maxTotalBytes: 1300 });
+  await replace([{ ...event(1), payload: { text: 'x'.repeat(900) } }]);
+  await cache.protect([id]);
+  await cache.open('local|other');
+  await cache.protect([id]);
+  await replace([{ ...event(2), payload: { text: 'y'.repeat(900) } }]);
+  await cache.idle();
+  assert.equal((await cache.read(id)).events[0].sequence, 2);
+  await assert.rejects(stat(file), { code: 'ENOENT' });
+});
+
+test('clear removes the directory entirely and a later proven replacement recreates its metadata', async (t) => {
+  const { cache, root, replace } = await fixture(t);
+  await replace([event(1)]);
+  await cache.clear();
+  await assert.rejects(stat(root), { code: 'ENOENT' });
+  await replace([event(2)]);
+  assert.equal((await cache.read(id)).events[0].sequence, 2);
+});
+
+test('appending after an oversized run was entirely trimmed updates the empty window header', async (t) => {
+  const { cache, replace } = await fixture(t, { maxBytes: 1024 });
+  await replace([{ ...event(1, 'large'), payload: { text: 'x'.repeat(1200) } }]);
+  assert.deepEqual((await cache.read(id)).events, []);
+  await cache.append(id, [event(2, 'next')]);
+  assert.equal((await cache.read(id))?.firstSequence, 2);
 });
