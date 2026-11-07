@@ -234,6 +234,16 @@ test(
     await expect(page).toHaveURL(origin + '/cc-updates/admin/updates');
     await expect(page.locator('#monitor-panel')).toBeHidden();
     await expect(page.getByRole('heading', { name: '当前发布' })).toBeVisible();
+    const releasePrompt = await page.locator('#server-release-prompt').inputValue();
+    assert.match(releasePrompt, /Build 19/);
+    assert.match(releasePrompt, /HTTP 下载、验签和严格解包/);
+    assert.match(releasePrompt, /不要创建、重试或执行节点安装任务/);
+    assert.ok(!releasePrompt.includes(token));
+    await page.getByRole('button', { name: '复制升级指令更新提示词' }).click();
+    assert.equal(
+      await page.evaluate(() => (window as unknown as { copiedDownload: string }).copiedDownload),
+      releasePrompt,
+    );
     assert.equal(pageReads.at(-1), 'status');
     await expect(page.locator('body')).not.toHaveClass(/pending/);
     const updateReads = [...pageReads];
