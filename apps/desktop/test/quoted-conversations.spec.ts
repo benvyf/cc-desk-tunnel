@@ -62,6 +62,8 @@ async function fixture(
         loadDrafts: async () => ({}),
         loadSchedules: async () => ({ path: '', text: '' }),
         ssh: {
+          list: async () => [],
+          onChanged: () => () => {},
           forkSession: async () => {
             throw Error('offline SSH edit must not be called');
           },
