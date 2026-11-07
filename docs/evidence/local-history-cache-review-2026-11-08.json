@@ -1,0 +1,101 @@
+{
+  "date": "2026-11-08",
+  "timezone": "Asia/Hong_Kong",
+  "reviewBase": "c36dbe8",
+  "reviewedProductHead": "7474639881cb4d7c005412237ecdcffd0f1dbe18",
+  "branch": "feat/local-history-cache",
+  "fixes": [
+    {
+      "priority": "P1",
+      "issue": "prepend cannot validate an incomplete tail",
+      "status": "fixed"
+    },
+    {
+      "priority": "P1",
+      "issue": "invalid_cursor retry must use current main/retained role",
+      "status": "fixed"
+    },
+    {
+      "priority": "P1",
+      "issue": "unconfirmed disk history stays read-only and uses a proven retry cursor even after cache disable",
+      "status": "fixed"
+    },
+    {
+      "priority": "P2",
+      "issue": "re-enable must revalidate currently selected and observed histories",
+      "status": "fixed"
+    },
+    {
+      "priority": "P2",
+      "issue": "disable during hydration must resume uncached networking",
+      "status": "fixed"
+    },
+    {
+      "priority": "P2",
+      "issue": "complete final JSON value missing newline must be repaired before append",
+      "status": "fixed"
+    }
+  ],
+  "tests": {
+    "full": {
+      "command": "npm test",
+      "tests": 1028,
+      "pass": 965,
+      "fail": 0,
+      "skipped": 63,
+      "cancelled": 0
+    },
+    "focused": {
+      "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
+      "tests": 46,
+      "pass": 46,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "ui": {
+      "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/email-login.spec.ts apps/desktop/test/conversation-follow.spec.ts apps/desktop/test/quoted-conversations.spec.ts apps/desktop/test/terminal-status.spec.ts",
+      "pass": 78,
+      "fail": 0,
+      "browserChannel": "msedge",
+      "realElectronCacheCases": 7
+    }
+  },
+  "checks": {
+    "commands": ["npm run check", "npm run typecheck", "npm run format:check", "git diff --check"],
+    "failures": 0
+  },
+  "performance": {
+    "hydration": {
+      "utc": "2026-11-07T18:37:07.133Z",
+      "events": 2000,
+      "selectToStateMs": 15.5
+    },
+    "mainProcess": {
+      "node": "v24.21.0",
+      "platform": "win32",
+      "events": 2000,
+      "iterations": 10,
+      "fixtureBytes": 819794,
+      "callbacks": 7719,
+      "maxSynchronousCallbackMs": 1.402,
+      "maxReplaceReadAppendWallMs": 32.351,
+      "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
+    }
+  },
+  "independentReview": {
+    "originalClientFindingsReproduced": 3,
+    "clientRegressionsPassed": 28,
+    "remainingTargetedBlockers": 0
+  },
+  "testFixtureRepair": "quoted-conversations SSH mock now supplies existing list/onChanged methods; no product SSH behavior changed",
+  "boundaries": {
+    "protocolVersion": 24,
+    "serverOrProtocolChanged": false,
+    "originalUiMotionTouched": false,
+    "pushed": false,
+    "merged": false,
+    "published": false,
+    "modelCalls": 0
+  }
+}
