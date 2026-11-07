@@ -37,6 +37,7 @@
 !deploy/docker/entrypoint.sh
 !deploy/docker/healthcheck.mjs
 !deploy/docker/runtime-level
+!deploy/docker/terminal-runtime.mjs
 !deploy/docker/managed-settings.json
 !deploy/managed-server.json
 !deploy/server-bootstrap-profile.json
@@ -51,6 +52,7 @@
 !deploy/managed-protocol-history.json
 !deploy/host-update/
 !deploy/host-update/apply.py
+!deploy/host-update/cleanup.py
 !deploy/nginx.conf.example
 !deploy/nginx.md
 !deploy/test.sh
