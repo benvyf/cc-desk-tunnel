@@ -219,6 +219,36 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     for (let i = 0; i < 100 && state.statusReads.length === beforeReads; i++) await delay(5);
     assert.equal(state.statusReads.length, beforeReads + 1);
     assert.equal(
+      (await other.request({ type: 'session.subscribe', sessionId: separate.sessionId })).ok,
+      true,
+      'opening cached history must remain available during native status initialization',
+    );
+    assert.equal(
+      (
+        await other.request({
+          type: 'session.history',
+          sessionId: separate.sessionId,
+          beforeSequence: 1,
+        })
+      ).ok,
+      true,
+      'paging cached history must not start or interfere with a native CLI',
+    );
+    assert.equal(
+      (
+        await other.request({
+          type: 'session.rename',
+          sessionId: separate.sessionId,
+          title: 'must remain locked',
+        })
+      ).code,
+      'session_busy',
+    );
+    assert.equal(
+      (await other.request({ type: 'session.delete', sessionId: separate.sessionId })).code,
+      'session_busy',
+    );
+    assert.equal(
       (await other.request({ type: 'session.status', sessionId: separate.sessionId })).code,
       'session_busy',
     );

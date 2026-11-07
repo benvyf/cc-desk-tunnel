@@ -2096,7 +2096,12 @@ export function createProxyServer(options: ServerOptions) {
       ].includes(command.type)
     )
       throw new DomainError('session_busy', '内容正在审核，请稍后操作。');
-    if (mutations.has(command.sessionId))
+    // These reads use the proxy database, not the native CLI being initialized or changed.
+    if (
+      mutations.has(command.sessionId) &&
+      command.type !== 'session.subscribe' &&
+      command.type !== 'session.history'
+    )
       throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
     switch (command.type) {
       case 'session.status':
