@@ -244,6 +244,7 @@ export class ProxyClient {
   private diskWrites = new Map<string, Promise<void>>();
   private dirtyHistory = new Set<string>();
   private persistTimer?: ReturnType<typeof setTimeout>;
+  private clearingHistory?: Promise<number>;
   private cacheApi(): HistoryCache | undefined {
     const api =
       typeof window !== 'undefined' && !this.credentials?.browser
@@ -283,12 +284,36 @@ export class ProxyClient {
     }
   }
   async clearHistoryCache() {
+    if (this.clearingHistory) return this.clearingHistory;
+    const pending = this.clearHistoryCopies();
+    this.clearingHistory = pending;
+    try {
+      return await pending;
+    } finally {
+      if (this.clearingHistory === pending) this.clearingHistory = undefined;
+    }
+  }
+  private async clearHistoryCopies() {
+    const wasReady = this.historyCacheReady;
+    const generation = ++this.cacheGeneration;
+    const reading = [...this.diskReads.keys()];
+    this.historyCacheReady = false;
+    this.diskReads.clear();
     this.persistedLast.clear();
     this.dirtyHistory.clear();
     clearTimeout(this.persistTimer);
     this.persistTimer = undefined;
     await Promise.allSettled([...this.diskWrites.values()]);
-    return (await this.cacheApi()?.clear()) ?? 0;
+    const bytes = (await this.cacheApi()?.clear()) ?? 0;
+    this.persistedLast.clear();
+    if (generation === this.cacheGeneration && wasReady && this.historyCacheEnabled) {
+      this.historyCacheReady = true;
+      this.protectHistory();
+      for (const id of reading)
+        if (id === this.state.selectedId || this.observers.has(id))
+          this.load(id, id !== this.state.selectedId);
+    }
+    return bytes;
   }
   private protectHistory() {
     if (!this.historyCacheReady) return;
@@ -1016,11 +1041,11 @@ export class ProxyClient {
       ? [...recorded, { ...unfinished, sequence: (recorded.at(-1)?.sequence ?? 0) + 1 }]
       : recorded;
   }
-  private load(sessionId: string, retain = false) {
+  private load(sessionId: string, retain = false, selectedAt?: number) {
     if (this.historyCacheReady && !this.state.history[sessionId]) {
       const generation = this.cacheGeneration,
         socket = this.socket;
-      const started = performance.now();
+      const started = selectedAt ?? performance.now();
       let reading = this.diskReads.get(sessionId);
       if (reading) return;
       const api = this.cacheApi()!;
@@ -1055,8 +1080,9 @@ export class ProxyClient {
         }
         // A schema failure also crossed an await; repeat all race guards before applying anything.
         if (!current()) return;
-        if (this.state.history[sessionId]) {
-          if (!this.state.history[sessionId].loaded) resume();
+        const arrived = this.getSnapshot().history[sessionId];
+        if (arrived) {
+          if (!arrived.loaded) resume();
           return;
         }
         if (value) {
@@ -1242,11 +1268,13 @@ export class ProxyClient {
     }
   }
   select(sessionId: string) {
+    const started = this.historyCacheReady ? performance.now() : undefined;
     this.flushStream();
     this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
     this.update({ selectedId: sessionId, ...this.trimCache(sessionId) });
     this.protectHistory();
-    if (this.state.status === 'connected' || this.historyCacheReady) this.load(sessionId);
+    if (this.state.status === 'connected' || this.historyCacheReady)
+      this.load(sessionId, false, started);
   }
   // Terminal output bypasses the state store; xterm consumes it directly.
   onTerminal = (listener: (message: TerminalMessage) => void) => {

@@ -37,6 +37,7 @@ export const sidebarWidthRange = { min: 240, max: 420, default: 288 };
 // column away, and opening it then lays it over the page.
 export const pageMinWidth = 600;
 export type Prefs = {
+  localHistoryCache: boolean;
   sidebarWidth: number;
   busyEnter: 'queue' | 'steer';
   bookmarkedMessages: string[];
@@ -86,6 +87,7 @@ export type Prefs = {
 
 const storageKey = 'proxy-prefs';
 const defaults: Prefs = {
+  localHistoryCache: true,
   sidebarWidth: sidebarWidthRange.default,
   busyEnter: 'queue',
   bookmarkedMessages: [],
@@ -136,6 +138,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
     const strings = (value: unknown) =>
       Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
     return {
+      localHistoryCache: saved.localHistoryCache !== false,
       sidebarWidth:
         typeof saved.sidebarWidth === 'number' && Number.isFinite(saved.sidebarWidth)
           ? Math.max(

@@ -1076,6 +1076,7 @@ export default function Conversation({
   const scroll = useRef<HTMLDivElement>(null);
   // The view follows new output until the reader moves up from the end, and again once they come back down to it.
   const follow = useRef(true);
+  const scrollSession = useRef<string | undefined>(undefined);
   // Shown while not following, as the way back to the end — and only while the end is out of sight: a reader who
   // left a short conversation (opening the find box does) has nowhere to come back down from.
   const [away, setAway] = useState(false);
@@ -1129,6 +1130,12 @@ export default function Conversation({
   };
   useLayoutEffect(() => {
     prependAnchor.current = null;
+    const sameSession = scrollSession.current === session?.id;
+    scrollSession.current = session?.id;
+    if (sameSession && window.desktop?.historyCache && !follow.current) {
+      if (scroll.current) lastTop.current = scroll.current.scrollTop;
+      return;
+    }
     const saved = session && readingPositions?.get(session.id);
     follow.current = saved?.following ?? true;
     setAway(!follow.current);
@@ -1374,7 +1381,13 @@ export default function Conversation({
               // Reading on upwards past what is loaded brings the page before it; a failed load waits for the button.
               if (top < lastTop.current && top < 240 && !loadError) loadMore();
               lastTop.current = top;
-              if (session && history?.loaded && !history.loading)
+              // A reader can move through a desktop disk copy before its snapshot arrives.
+              // Remember that position too, so loading -> loaded does not restore following.
+              if (
+                session &&
+                ((history?.loaded && !history.loading) ||
+                  (!!window.desktop?.historyCache && events.length > 0))
+              )
                 readingPositions?.set(session.id, { top, following: follow.current });
             }}
             onClickCapture={(event) => {

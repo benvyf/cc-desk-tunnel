@@ -672,6 +672,21 @@ function General({
   chooseWorkspace: (reset: boolean) => void;
 }) {
   const [closeToTray, setCloseToTray] = useState<boolean | null>(null);
+  const [cacheBytes, setCacheBytes] = useState(0);
+  const [cacheError, setCacheError] = useState('');
+  const { localHistoryCache } = usePrefs();
+  useEffect(() => {
+    let active = true;
+    void window.desktop?.historyCache
+      ?.usage()
+      .then((bytes) => {
+        if (active) setCacheBytes(bytes);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [localHistoryCache]);
   const { connection, bypassPermissions, quota, quotaReads, busyEnter } = usePrefs();
   useEffect(() => {
     void window.desktop?.windowSettings().then((values) => setCloseToTray(values.closeToTray));
@@ -683,6 +698,43 @@ function General({
         <ThemeSettings />
         <FontSizeSettings />
         <SessionDefaultsSettings capabilities={capabilities} />
+        {window.desktop?.historyCache && !browser && (
+          <>
+            <h2 className="page-heading">本机聊天记录</h2>
+            <div className="card">
+              <Row
+                title="在本机保存聊天记录"
+                detail="保存打开过的对话副本，加快再次打开；同步完成前仍需等待。记录未加密，保存在当前用户目录。"
+              >
+                <Switch
+                  label="在本机保存聊天记录"
+                  checked={localHistoryCache}
+                  onChange={(enabled) => {
+                    setPrefs((prefs) => ({ ...prefs, localHistoryCache: enabled }));
+                    void client
+                      .setHistoryCacheEnabled(enabled)
+                      .catch(() => setCacheError('清除本机记录失败，请重试。'));
+                  }}
+                />
+              </Row>
+              <Row title="清除本机记录" detail="只删除本机副本，服务器上的聊天记录会保留。">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCacheError('');
+                    void client
+                      .clearHistoryCache()
+                      .then(() => setCacheBytes(0))
+                      .catch(() => setCacheError('清除本机记录失败，请重试。'));
+                  }}
+                >
+                  清除本机记录（占用 {(cacheBytes / 1024 / 1024).toFixed(1)} MB）
+                </button>
+              </Row>
+              {cacheError && <p role="alert">{cacheError}</p>}
+            </div>
+          </>
+        )}
         <h2 className="page-heading">额度</h2>
         <div className="card">
           <Row

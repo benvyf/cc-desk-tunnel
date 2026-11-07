@@ -41,6 +41,7 @@ import { CertificateWarning } from './WebGate.tsx';
 import { hostCapabilities } from './host-capabilities.ts';
 import AccountPanel from './AccountPanel.tsx';
 import { ProxyClient, RequestInterruptedError } from './client.ts';
+import { historyOwner } from './historyOwner.ts';
 import Composer, { NewSessionComposer } from './Composer.tsx';
 import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
@@ -181,6 +182,7 @@ export function App({
   const managedUpdate = useManagedUpdate();
   const [managedUpdateOpen, setManagedUpdateOpen] = useState(false);
   const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const authenticatedEmail = useRef<string | undefined>(undefined);
   const [form, setForm] = useState<ConnectionForm>(() => ({
     authMethod: emailOnly || emailLoginAvailable ? 'email' : 'manual',
     url: emailOnly ? '' : (localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws'),
@@ -291,6 +293,10 @@ export function App({
   const [, setTrailAt] = useState(0);
   const accountOpen = place.page === 'settings' && place.section === 'account';
   const prefs = usePrefs();
+  useEffect(() => {
+    if (window.desktop?.historyCache)
+      void client.setHistoryCacheEnabled(prefs.localHistoryCache).catch(() => {});
+  }, [client, prefs.localHistoryCache]);
   const sshTargets = useSshTargets();
   const projectScope = activeWorkspace ?? form.url;
   const [version, setVersion] = useState('');
@@ -712,6 +718,7 @@ export function App({
         // A delayed disk/IPC read must never replace a sign-in the user has already started.
         if (loginInteracted.current) return;
         if (account) {
+          authenticatedEmail.current = account.email;
           const restored: ConnectionForm = {
             ...form,
             ...account,
@@ -760,6 +767,7 @@ export function App({
   useEffect(
     () =>
       window.desktop?.access?.onExpired?.((message) => {
+        authenticatedEmail.current = undefined;
         loginInteracted.current = true;
         signedIn.current = false;
         client.disconnect();
@@ -890,6 +898,7 @@ export function App({
           remember: form.remember,
           autoLogin: form.autoLogin,
         });
+        authenticatedEmail.current = account.email;
         changeForm({ email: account.email, password: '', token: '' });
         if (account.workspaces.length !== 1) setLoginWorkspaces(account.workspaces);
         else await connectWorkspace(account.workspaces[0]!.id);
@@ -911,9 +920,17 @@ export function App({
                 waits: getPrefs().connection,
               })
             ).url,
+          historyOwner({ mode: 'remote', url: form.url, fingerprint: form.fingerprint }),
         );
       } else {
-        client.connect(form.url, form.token, await thisDevice());
+        client.connect(
+          form.url,
+          form.token,
+          await thisDevice(),
+          true,
+          undefined,
+          historyOwner({ mode: 'local', url: form.url }),
+        );
       }
       localStorage.setItem('proxy-url', form.url);
     } catch (error) {
@@ -930,21 +947,28 @@ export function App({
     setProxyConnecting(true);
     try {
       const device = await thisDevice();
-      client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
-        const connection = await window.desktop!.access.ticket(nodeId);
-        if ('error' in connection)
-          throw Object.assign(new Error(connection.error), {
-            retryable: connection.retryable,
-            clientUpgrade: connection.clientUpgrade,
+      client.connect(
+        'ws://127.0.0.1/ws',
+        'email-authorization-pending',
+        device,
+        true,
+        async () => {
+          const connection = await window.desktop!.access.ticket(nodeId);
+          if ('error' in connection)
+            throw Object.assign(new Error(connection.error), {
+              retryable: connection.retryable,
+              clientUpgrade: connection.clientUpgrade,
+            });
+          const bridge = await window.desktop!.connectProxy({
+            nodeId,
+            url: connection.url,
+            fingerprint: connection.fingerprint,
+            waits: getPrefs().connection,
           });
-        const bridge = await window.desktop!.connectProxy({
-          nodeId,
-          url: connection.url,
-          fingerprint: connection.fingerprint,
-          waits: getPrefs().connection,
-        });
-        return { url: bridge.url, token: connection.token };
-      });
+          return { url: bridge.url, token: connection.token };
+        },
+        historyOwner({ mode: 'email', email: authenticatedEmail.current, nodeId }),
+      );
     } catch (error) {
       setError(error instanceof Error ? error.message : '连接工作空间失败。');
     } finally {
@@ -988,6 +1012,7 @@ export function App({
     if (form.authMethod === 'email') {
       setLoginWorkspaces(null);
       if (reason === 'logout') {
+        authenticatedEmail.current = undefined;
         changeForm({ password: '', remember: false, autoLogin: false });
         void window.desktop?.access.logout().catch((error) => setError(error.message));
       } else changeForm({ password: '', token: '' });

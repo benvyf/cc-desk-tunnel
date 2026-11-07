@@ -483,3 +483,44 @@ test('a global stream frame during disk hydration cannot suppress the authoritat
     0,
   );
 });
+
+test('manual clear cannot restore a cursor from a completing write and the next stream replaces the missing file', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect(),
+    pending = deferred();
+  f.api.replace = async (...args) => {
+    f.calls.push(['replace', ...args]);
+    await pending.promise;
+  };
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.snapshot(socket, [f.event(1)], 'replace');
+  const clearing = f.client.clearHistoryCache();
+  pending.resolve();
+  await clearing;
+  f.calls.length = 0;
+  socket.message({ type: 'session.event', event: f.event(2) });
+  await new Promise((r) => setTimeout(r, 40));
+  f.client.flushHistoryCache();
+  await settle();
+  assert.equal(f.calls.filter((c) => c[0] === 'append').length, 0);
+  assert.equal(f.calls.filter((c) => c[0] === 'replace').length, 1);
+});
+
+test('overlapping clear actions coalesce and keep an enabled cache usable', async (t) => {
+  const f = fixture(t, null);
+  await f.connect();
+  const pending = deferred();
+  let clears = 0;
+  f.api.clear = async () => {
+    clears++;
+    await pending.promise;
+    return 10;
+  };
+  const one = f.client.clearHistoryCache(),
+    two = f.client.clearHistoryCache();
+  pending.resolve();
+  assert.deepEqual(await Promise.all([one, two]), [10, 10]);
+  assert.equal(clears, 1);
+  assert.equal(f.client.historyCacheReady, true);
+});

@@ -1,12 +1,72 @@
 import { expect, test } from '@playwright/test';
 import { resolve } from 'node:path';
 
+test('cache owner uses account-service email and nodeId, survives rotated tickets, and fails closed without email', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    const owners = ((window as any).cacheOwners = [] as string[]);
+    const api = window.desktop!;
+    (api as any).historyCache = {
+      open: async (owner: string) => {
+        owners.push(owner);
+      },
+      log: async () => {},
+      protect: async () => {},
+    };
+    api.access.login = async () => ({
+      email: 'Canonical@Example.org',
+      workspaces: [
+        { id: 'one', name: '我的 Ubuntu' },
+        { id: 'two', name: '备用 Ubuntu' },
+      ],
+    });
+  });
+  const attempt = async (name: string) => {
+    await page.getByLabel('邮箱', { exact: true }).fill('editable@example.com');
+    await page.getByLabel('密码', { exact: true }).fill('correct-password');
+    await page.getByRole('button', { name: '登录', exact: true }).click();
+    await page.getByRole('button', { name }).click();
+    await expect(page.getByRole('alert')).toContainText('测试连接已到达本机通道');
+    await page.getByRole('button', { name: '返回邮箱登录' }).click();
+  };
+  await attempt('我的 Ubuntu');
+  await attempt('备用 Ubuntu');
+  await page.evaluate(() => {
+    window.desktop!.access.ticket = async () => ({
+      url: 'wss://rotated.example/ws',
+      fingerprint: 'SHA256:rotated',
+      token: 'ccs_' + 'x'.repeat(43),
+    });
+  });
+  await attempt('我的 Ubuntu');
+  expect(await page.evaluate(() => (window as any).cacheOwners)).toEqual([
+    'email|canonical@example.org|one',
+    'email|canonical@example.org|two',
+    'email|canonical@example.org|one',
+  ]);
+  await page.evaluate(() => {
+    window.desktop!.access.login = async () => ({
+      email: undefined as unknown as string,
+      workspaces: [{ id: 'one', name: '我的 Ubuntu' }],
+    });
+    (window as any).cacheOwners.length = 0;
+  });
+  await page.getByLabel('邮箱', { exact: true }).fill('editable@example.com');
+  await page.getByLabel('密码', { exact: true }).fill('correct-password');
+  await page.getByRole('button', { name: '登录', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('测试连接已到达本机通道');
+  expect(await page.evaluate(() => (window as any).cacheOwners)).toEqual([]);
+});
+
 test.beforeEach(async ({ page }) => {
   await page.addInitScript(() => {
     const noOp = () => {};
     localStorage.setItem('proxy-url', 'wss://old-service.example/ws');
     (window as any).legacyLoginReads = 0;
     const api = {
+      ssh: undefined,
+      historyCache: undefined,
       dev: false,
       platform: 'win32',
       boot: { connection: '', shared: { connections: [], busy: [] } },
