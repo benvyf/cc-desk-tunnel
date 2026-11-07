@@ -581,6 +581,32 @@ test('the status tooltip tells how long a key waits for the screen to change', a
   await expect(page.locator('.xterm-helper-textarea')).toBeFocused();
   const chip = page.locator('.terminal-status-chip');
   expect(await chip.getAttribute('title')).not.toContain('按键到画面更新');
+  // Focus reports the CLI asked for leave without a key; the output after them is not an answer to a key.
+  await page.evaluate(() =>
+    window.terminalFixture.receive({ type: 'terminal.data', data: '\x1b[?1004h', bytes: 8 }),
+  );
+  await page.evaluate(() => {
+    const input = document.createElement('input');
+    document.body.append(input);
+    input.focus();
+    document.querySelector<HTMLElement>('.xterm-helper-textarea')!.focus();
+    input.remove();
+  });
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        window.terminalFixture.controls.some(
+          (r) => r.type === 'terminal.input' && r.data === '\x1b[I',
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.waitForTimeout(150);
+  await page.evaluate(() =>
+    window.terminalFixture.receive({ type: 'terminal.data', data: 'x', bytes: 1 }),
+  );
+  await page.waitForTimeout(50);
+  expect(await chip.getAttribute('title')).not.toContain('按键到画面更新');
   await page.keyboard.type('a');
   await page.waitForTimeout(120);
   await page.evaluate(() =>
@@ -678,6 +704,10 @@ test('in the scroll mode the toolbar and Ctrl+Shift+arrows move between sent pro
   await expect.poll(second).toContain('question 1');
   await page.keyboard.press('Control+Shift+ArrowUp');
   await expect.poll(second).toContain('question 1');
+  await expect(page.getByRole('status').filter({ hasText: '上面没有更早的提问' })).toBeVisible();
+  await expect(page.getByRole('status').filter({ hasText: '上面没有更早的提问' })).toHaveCount(0, {
+    timeout: 4000,
+  });
   await page.getByRole('button', { name: '下一条提问（Ctrl+Shift+↓）' }).click();
   await expect.poll(second).toContain('question 2');
   await page.keyboard.press('Control+Shift+ArrowDown');

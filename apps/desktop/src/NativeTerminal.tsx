@@ -121,6 +121,8 @@ export default function NativeTerminal({
   const jumpPrompt = useRef((_earlier: boolean) => {});
   // Only the normal screen (the classic renderer) has a history to move through.
   const [history, setHistory] = useState(true);
+  // Said for a moment when there is no prompt to move to, so the key does not seem to do nothing.
+  const [jumpNote, setJumpNote] = useState<string | null>(null);
   const findInput = useRef<HTMLInputElement>(null);
   const composingFind = useRef(false);
   const find = useRef((_text: string, _previous = false, _incremental = false) => {});
@@ -180,6 +182,7 @@ export default function NativeTerminal({
       if (!aboveBottom) setUnseenOutput(false);
     };
     const scroll = terminal.onScroll(updateReading);
+    let jumpTimer: ReturnType<typeof setTimeout> | undefined;
     const bufferChange = terminal.buffer.onBufferChange((buffer) =>
       setHistory(buffer.type === 'normal'),
     );
@@ -197,10 +200,16 @@ export default function NativeTerminal({
       } else
         for (let y = anchor + 1; y < buffer.length && target < 0; y++)
           if (sentPrompt(buffer.getLine(y), cell)) target = y;
+      clearTimeout(jumpTimer);
       if (target < 0) {
         if (!earlier) toBottom.current();
+        else {
+          setJumpNote('上面没有更早的提问');
+          jumpTimer = setTimeout(() => setJumpNote(null), 2000);
+        }
         return;
       }
+      setJumpNote(null);
       terminal.scrollToLine(Math.max(0, target - 1));
     };
     toBottom.current = () => {
@@ -218,7 +227,10 @@ export default function NativeTerminal({
     let closeTask: Promise<boolean> | null = null;
     let openTask: Promise<void> = Promise.resolve();
     // When the oldest key not yet followed by output left; samples of that wait for the tooltip.
+    // Only keys the user pressed start a sample: focus reports and the terminal's own replies to the CLI also
+    // leave through onData, and nothing on screen answers them.
     let echoStart = 0,
+      lastKey = 0,
       echoSamples: number[] = [];
     let sizeTimer: ReturnType<typeof setTimeout> | undefined;
     let pendingBytes = 0,
@@ -658,6 +670,7 @@ export default function NativeTerminal({
     const unwatch = client.subscribe?.(disconnected);
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== 'keydown' || event.isComposing) return true;
+      lastKey = performance.now();
       if (
         event.ctrlKey &&
         event.shiftKey &&
@@ -783,7 +796,7 @@ export default function NativeTerminal({
         return;
       }
       flushMouse();
-      echoStart ||= performance.now();
+      if (performance.now() - lastKey < 100) echoStart ||= performance.now();
       try {
         prediction?.beforeInput(data);
       } catch {
@@ -932,6 +945,7 @@ export default function NativeTerminal({
       toBottom.current = () => {};
       jumpPrompt.current = () => {};
       bufferChange.dispose();
+      clearTimeout(jumpTimer);
       for (const link of loading) link.removeEventListener('load', repaint);
       unwatch?.();
       view.cancelAnimationFrame(resizeFrame);
@@ -1120,6 +1134,11 @@ export default function NativeTerminal({
       )}
       <div className="terminal-display">
         <div className="terminal-host" ref={host} />
+        {jumpNote && (
+          <p className="terminal-jump-note" role="status">
+            {jumpNote}
+          </p>
+        )}
         {reading && (
           <Button className="terminal-to-bottom" size="sm" onClick={() => toBottom.current()}>
             {unseenOutput ? '有新输出 · 回到底部' : '回到底部'}

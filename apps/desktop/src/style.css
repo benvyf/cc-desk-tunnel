@@ -469,6 +469,21 @@
 .terminal-find button {
   flex-shrink: 0;
 }
+/* A moment's answer to a prompt jump with nowhere to go, in the corner the reading button does not use. */
+.terminal-jump-note {
+  position: absolute;
+  top: 10px;
+  right: 16px;
+  z-index: 1;
+  margin: 0;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--terminal-bg);
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  pointer-events: none;
+}
 .terminal-to-bottom {
   position: absolute;
   right: 16px;
@@ -3136,8 +3151,15 @@ a:hover,
 /* Two keys pressed one after the other, each in its keycap. */
 .key-combo {
   display: inline-flex;
+  align-items: center;
   gap: 6px;
   flex: none;
+}
+/* Between two alternative combinations. */
+.key-or {
+  margin: 0 2px;
+  color: var(--muted);
+  font-size: calc(12.5rem / 14);
 }
 /* A ghost button standing alone under a list (“恢复默认组合键”): its words in line with the rows' titles. */
 .page-body > .button.ghost.page-link-button {

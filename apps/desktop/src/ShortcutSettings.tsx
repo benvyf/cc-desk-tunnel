@@ -1,16 +1,41 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { setPrefs, usePrefs } from './prefs.ts';
 import { actions, comboOf, keyFor, show, usable } from './shortcuts.ts';
 import type { Action } from './shortcuts.ts';
 import { Button, Switch } from './ui.tsx';
 
-const terminalShortcuts = [
-  { name: '新建同项目终端', keys: ['Ctrl', 'Shift', 'KeyT'] },
-  { name: '打开或关闭终端菜单', keys: ['Ctrl', 'Shift', 'Space'] },
-  { name: '下一个终端标签', keys: ['Ctrl', 'Tab'] },
-  { name: '上一个终端标签', keys: ['Ctrl', 'Shift', 'Tab'] },
-  { name: '跳到上一条提问（滚动模式）', keys: ['Ctrl', 'Shift', 'ArrowUp'] },
-  { name: '跳到下一条提问（滚动模式）', keys: ['Ctrl', 'Shift', 'ArrowDown'] },
+// Fixed keys of the terminal window. Each entry lists alternatives; each alternative is shown key by key, in keycaps
+// like the fixed action above.
+const terminalShortcuts: { name: string; detail?: string; combos: string[][] }[] = [
+  { name: '新建同项目终端', combos: [['Ctrl', 'Shift', 'KeyT']] },
+  { name: '打开或关闭终端菜单', combos: [['Ctrl', 'Shift', 'Space']] },
+  { name: '下一个终端标签', combos: [['Ctrl', 'Tab']] },
+  { name: '上一个终端标签', combos: [['Ctrl', 'Shift', 'Tab']] },
+  {
+    name: '跳到上一条提问',
+    detail: '滚动模式下可用；整屏模式中这组按键交给 Claude',
+    combos: [['Ctrl', 'Shift', 'ArrowUp']],
+  },
+  {
+    name: '跳到下一条提问',
+    detail: '滚动模式下可用；没有更后的提问时回到底部',
+    combos: [['Ctrl', 'Shift', 'ArrowDown']],
+  },
+  {
+    name: '复制选中的文字',
+    detail: '没有选中文字时，Ctrl+C 仍发给 Claude 用来中断',
+    combos: [
+      ['Ctrl', 'KeyC'],
+      ['Ctrl', 'Shift', 'KeyC'],
+    ],
+  },
+  {
+    name: '粘贴',
+    combos: [
+      ['Ctrl', 'KeyV'],
+      ['Ctrl', 'Shift', 'KeyV'],
+    ],
+  },
 ];
 
 export default function ShortcutSettings() {
@@ -85,13 +110,30 @@ export default function ShortcutSettings() {
               aria-labelledby="terminal-shortcuts-heading"
               aria-describedby="terminal-shortcuts-description"
             >
-              {terminalShortcuts.map(({ name, keys }) => (
+              {terminalShortcuts.map(({ name, detail, combos }) => (
                 <div className="setting-row" key={name}>
                   <span>
                     <strong>{name}</strong>
+                    {detail && <small>{detail}</small>}
                   </span>
-                  <span className="key-combo" aria-label={show(keys.join('+'))}>
-                    <kbd className="keycap">{show(keys.join('+'))}</kbd>
+                  <span
+                    className="key-combo"
+                    aria-label={combos.map((keys) => show(keys.join('+'))).join(' 或 ')}
+                  >
+                    {combos.map((keys, index) => (
+                      <Fragment key={keys.join('+')}>
+                        {index > 0 && (
+                          <span className="key-or" aria-hidden="true">
+                            或
+                          </span>
+                        )}
+                        {keys.map((key) => (
+                          <kbd className="keycap" key={key} aria-hidden="true">
+                            {show(key)}
+                          </kbd>
+                        ))}
+                      </Fragment>
+                    ))}
                   </span>
                 </div>
               ))}
