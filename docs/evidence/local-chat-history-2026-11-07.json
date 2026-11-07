@@ -1,6 +1,6 @@
 {
   "date": "2026-11-07",
-  "sourceCommit": "293f5dbe9f767cfd7c128612c329129abf3616ac",
+  "sourceCommit": "d228187248dec38941458484332df77c1b244512",
   "implementationCommit": "f22b591",
   "protocol": 24,
   "capability": "ready.localHistory.version=1",
@@ -18,7 +18,10 @@
     "realNativeLocalHistoryIpc": true,
     "realPersistentStorageGranted": true,
     "mainFrameOnlyPermissionTestPassed": true,
-    "currentProgramProfileNotUsed": true
+    "currentProgramProfileNotUsed": true,
+    "syncQueueRefreshRetestPassed": 3,
+    "packagedModulesMatchFinalSource": true,
+    "modelSdkAbsentFromPackagedAsar": true
   },
   "boundaries": {
     "modelRequests": 0,
