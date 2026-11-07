@@ -1,0 +1,106 @@
+{
+  "clientDate": "2026-11-08",
+  "timezone": "Asia/Hong_Kong",
+  "base": "7a81962f231c014745ae102173f59095eba040d9",
+  "branch": "feat/local-history-cache",
+  "spec": "34 v2.1, P1 only",
+  "runtime": {
+    "node": "v24.21.0",
+    "platform": "win32",
+    "browserChannel": "msedge",
+    "desktop": "real Electron with isolated userData and actual IPC/JSONL"
+  },
+  "tests": {
+    "full": {
+      "command": "npm test",
+      "tests": 1021,
+      "pass": 958,
+      "fail": 0,
+      "skipped": 63,
+      "cancelled": 0
+    },
+    "focused": {
+      "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
+      "tests": 39,
+      "pass": 39,
+      "fail": 0,
+      "skipped": 0
+    },
+    "ui": {
+      "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/email-login.spec.ts apps/desktop/test/conversation-follow.spec.ts",
+      "pass": 31,
+      "fail": 0
+    },
+    "finalTiming": {
+      "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts -g '2000-event'",
+      "pass": 1,
+      "fail": 0
+    }
+  },
+  "checks": {
+    "commands": ["npm run check", "npm run typecheck", "npm run format:check", "git diff --check"],
+    "failures": 0
+  },
+  "hydration": {
+    "method": "performance.now at select() entry until cached events committed into client state; renderer/IPC/disk/schema sampling included, React paint excluded",
+    "latest": {
+      "utc": "2026-11-07T18:10:06.706Z",
+      "events": 2000,
+      "selectToStateMs": 18.4
+    },
+    "previousClientLogSamples": [
+      {
+        "utc": "2026-11-07T17:59:15.029Z",
+        "events": 2000,
+        "selectToStateMs": 18
+      },
+      {
+        "utc": "2026-11-07T18:02:37.623Z",
+        "events": 2000,
+        "selectToStateMs": 17.4
+      },
+      {
+        "utc": "2026-11-07T18:08:27.471Z",
+        "events": 2000,
+        "selectToStateMs": 15.4
+      }
+    ]
+  },
+  "mainProcess": {
+    "node": "v24.21.0",
+    "platform": "win32",
+    "events": 2000,
+    "iterations": 10,
+    "fixtureBytes": 819794,
+    "callbacks": 7719,
+    "maxSynchronousCallbackMs": 1.534,
+    "maxReplaceReadAppendWallMs": 30.362,
+    "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
+  },
+  "review": {
+    "materialFindingsResolved": [
+      "evicted disk cursor",
+      "reconnecting read suppressing subscription",
+      "async retained/main role",
+      "stale owner LRU protection",
+      "manual clear in-flight completion",
+      "overlapping clear"
+    ],
+    "remainingMaterialFindings": 0
+  },
+  "baselineIssues": {
+    "dockerAllowlist": "two explicitly approved entries added in separate commit",
+    "evidenceFormatting": "existing parallel-workspace-tickets JSON formatted; canonical parsed data unchanged",
+    "windowsTestCleanup": "one full run hit EPERM in existing launcher test cleanup; subsequent complete run passed"
+  },
+  "boundaries": {
+    "serverAndProtocolChanged": false,
+    "protocolVersion": 24,
+    "browserCacheCalls": 0,
+    "originalUiMotionWorktreeTouched": false,
+    "pushed": false,
+    "merged": false,
+    "published": false,
+    "modelCalls": 0
+  }
+}

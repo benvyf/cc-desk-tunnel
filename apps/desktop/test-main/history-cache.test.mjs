@@ -189,3 +189,10 @@ test('appending after an oversized run was entirely trimmed updates the empty wi
   await cache.append(id, [event(2, 'next')]);
   assert.equal((await cache.read(id))?.firstSequence, 2);
 });
+
+test('a valid append under 4 MB can exceed the cap together with the old window and is still trimmed', async (t) => {
+  const { cache, replace } = await fixture(t);
+  await replace([{ ...event(1, 'old'), payload: { text: 'a'.repeat(900000) } }]);
+  await cache.append(id, [{ ...event(2, 'large'), payload: { text: 'b'.repeat(3400000) } }]);
+  assert.deepEqual((await cache.read(id)).events, []);
+});

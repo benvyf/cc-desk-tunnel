@@ -20,7 +20,7 @@ function validEvent(event, id) {
     event.payload?.type !== 'native.progress'
   );
 }
-async function encode(events, id) {
+async function encode(events, id, limit = inputLimit) {
   if (!Array.isArray(events)) throw new Error('Invalid history events');
   const lines = [];
   let bytes = 0;
@@ -28,7 +28,7 @@ async function encode(events, id) {
     if (!validEvent(events[i], id)) throw new Error('Invalid history event');
     const line = JSON.stringify(events[i]) + '\n';
     bytes += Buffer.byteLength(line);
-    if (bytes > inputLimit) throw new Error('History input exceeds 4 MB');
+    if (bytes > limit) throw new Error('History input exceeds 4 MB');
     lines.push(line);
     if (i % 32 === 31) await pause();
   }
@@ -275,7 +275,8 @@ function createHistoryCache(root, options = {}) {
         });
         if (!added.length) return;
         const combined = { ...old, events: [...old.events, ...added] };
-        const lines = await encode(combined.events, id);
+        // The 4 MB bound applies to this IPC call, not the old validated window as well.
+        const lines = await encode(combined.events, id, inputLimit + maxBytes);
         if (
           old.torn ||
           !old.events.length ||
