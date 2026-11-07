@@ -3,8 +3,8 @@
     "date": "2026-11-08",
     "timezone": "Asia/Hong_Kong",
     "review": "34-review-4fe343a.md",
-    "reviewBase": "4fe343a",
-    "productHead": "88efb644963bc8ebd98dfd9a0c48a6292cd81797",
+    "reviewBase": "474e35e",
+    "productHead": "29b379817b7a9caddf1cccb5979bafdc2b748936",
     "validationStatus": "passed",
     "protocolVersion": 24,
     "requirements": {
@@ -13,48 +13,48 @@
       "3": "renderer sends bounded whole-run tail; main replaces oversized aggregate by trimming; 6MB replace/prepend remain cached",
       "4": "latest whole run retained above soft budgets, including1.5MB; only latest>4MiB skipped per session; discardedRun deleted; old queued writes cannot recreate skipped cache",
       "5": "memory append stats; zero normal whole-file reads/scans; rewrite-only maintenance with at least60s between starts",
-      "6": "open(owner,PROTOCOL_VERSION), positive safe integer, owner-scoped invalidation",
+      "6": "open(owner,PROTOCOL_VERSION), positive safe integer, owner-scoped invalidation; earlier operations finish before protocol invalidation",
       "7": "history diagnostics reuse main log() and client-log rotation",
-      "8": "IO read errors return null without deleting valid data; parse cleanup denial also returns null",
+      "8": "IO read errors return null without deleting valid data; parse cleanup denial also returns null; transient metadata reads reject opening without clearing owner data",
       "9": "clear local history button uses className button",
       "10": "terminal entry disabled during synchronization; first click on unseen session terminal still works"
     },
     "tests": {
       "full": {
         "command": "npm test",
-        "tests": 1050,
-        "pass": 987,
+        "tests": 1053,
+        "pass": 990,
         "fail": 0,
         "skipped": 63,
         "cancelled": 0
       },
       "focused": {
         "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-window.test.ts apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
-        "tests": 68,
-        "pass": 68,
+        "tests": 71,
+        "pass": 71,
         "fail": 0,
         "skipped": 0,
         "cancelled": 0
       },
-      "uiCore": {
+      "ui": {
         "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/side-history-stop.spec.ts apps/desktop/test/email-login.spec.ts apps/desktop/test/conversation-follow.spec.ts apps/desktop/test/quoted-conversations.spec.ts apps/desktop/test/terminal-status.spec.ts",
-        "pass": 83,
-        "fail": 0
-      },
-      "uiTerminal": {
-        "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts -g 'never-selected session terminal|native terminal entry'",
-        "pass": 2,
+        "pass": 84,
         "fail": 0,
-        "note": "one extra unique test and one repeated regression;84 unique UI cases across both runs"
+        "exitCode": 0
       },
-      "uniqueUiCases": 84,
+      "repeatedIsolation": {
+        "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/conversation-follow.spec.ts -g 'never-selected session terminal|complete preserves frame position · reading history' --repeat-each=2",
+        "pass": 4,
+        "fail": 0,
+        "exitCode": 0
+      },
       "browserChannel": "msedge"
     },
     "performance": {
       "hydration": {
-        "utc": "2026-11-07T19:32:01.473Z",
+        "utc": "2026-11-07T20:24:44.461Z",
         "events": 2000,
-        "selectToStateMs": 15.6
+        "selectToStateMs": 16.8
       },
       "mainProcess": {
         "node": "v24.21.0",
@@ -62,9 +62,9 @@
         "events": 2000,
         "iterations": 10,
         "fixtureBytes": 819794,
-        "callbacks": 6979,
-        "maxSynchronousCallbackMs": 1.44,
-        "maxReplaceReadAppendWallMs": 31.137,
+        "callbacks": 7009,
+        "maxSynchronousCallbackMs": 1.403,
+        "maxReplaceReadAppendWallMs": 28.52,
         "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
       }
     },
@@ -91,6 +91,27 @@
       "merged": false,
       "published": false,
       "modelCalls": 0
+    },
+    "additionalReview": {
+      "fixes": [
+        "transient metadata reads preserve the entire owner and reject cache opening",
+        "protocol invalidation drains earlier submitted operations before clearing"
+      ],
+      "newRegressionCases": [
+        "metadata EBUSY",
+        "metadata EPERM",
+        "old write paused during protocol invalidation"
+      ],
+      "independentRecheck": {
+        "storageTestsPassed": 28,
+        "clientBrowserSideTestsPassed": 87,
+        "overlappingLifecycleCasesSettled": 6,
+        "remainingReportedMaterialIssues": 0
+      },
+      "fixtureCorrections": [
+        "dedicated Windows Electron launcher process tree is terminated at final fixture cleanup; graceful restart close remains tested",
+        "reading anchor is centered before upward wheel; original position assertions unchanged"
+      ]
     }
   },
   "history": {
@@ -393,6 +414,100 @@
         "format": 1,
         "protocol": 24,
         "optionalHeaderField": "discardedRun: SHA256 of the fully discarded active run, only for an empty trimmed window; stripped from read IPC"
+      },
+      "boundaries": {
+        "serverOrProtocolChanged": false,
+        "originalUiMotionTouched": false,
+        "pushed": false,
+        "merged": false,
+        "published": false,
+        "modelCalls": 0
+      }
+    },
+    "reviewFixes4fe343a": {
+      "date": "2026-11-08",
+      "timezone": "Asia/Hong_Kong",
+      "review": "34-review-4fe343a.md",
+      "reviewBase": "4fe343a",
+      "productHead": "88efb644963bc8ebd98dfd9a0c48a6292cd81797",
+      "validationStatus": "passed",
+      "protocolVersion": 24,
+      "requirements": {
+        "1": "failed subscribe clears unconfirmed/pending, loading false, error visible, controls enabled; selecting same row retries",
+        "2": "stop button, shortcuts and side control ignore history state; authority is activeRun",
+        "3": "renderer sends bounded whole-run tail; main replaces oversized aggregate by trimming; 6MB replace/prepend remain cached",
+        "4": "latest whole run retained above soft budgets, including1.5MB; only latest>4MiB skipped per session; discardedRun deleted; old queued writes cannot recreate skipped cache",
+        "5": "memory append stats; zero normal whole-file reads/scans; rewrite-only maintenance with at least60s between starts",
+        "6": "open(owner,PROTOCOL_VERSION), positive safe integer, owner-scoped invalidation",
+        "7": "history diagnostics reuse main log() and client-log rotation",
+        "8": "IO read errors return null without deleting valid data; parse cleanup denial also returns null",
+        "9": "clear local history button uses className button",
+        "10": "terminal entry disabled during synchronization; first click on unseen session terminal still works"
+      },
+      "tests": {
+        "full": {
+          "command": "npm test",
+          "tests": 1050,
+          "pass": 987,
+          "fail": 0,
+          "skipped": 63,
+          "cancelled": 0
+        },
+        "focused": {
+          "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-window.test.ts apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
+          "tests": 68,
+          "pass": 68,
+          "fail": 0,
+          "skipped": 0,
+          "cancelled": 0
+        },
+        "uiCore": {
+          "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/side-history-stop.spec.ts apps/desktop/test/email-login.spec.ts apps/desktop/test/conversation-follow.spec.ts apps/desktop/test/quoted-conversations.spec.ts apps/desktop/test/terminal-status.spec.ts",
+          "pass": 83,
+          "fail": 0
+        },
+        "uiTerminal": {
+          "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts -g 'never-selected session terminal|native terminal entry'",
+          "pass": 2,
+          "fail": 0,
+          "note": "one extra unique test and one repeated regression;84 unique UI cases across both runs"
+        },
+        "uniqueUiCases": 84,
+        "browserChannel": "msedge"
+      },
+      "performance": {
+        "hydration": {
+          "utc": "2026-11-07T19:32:01.473Z",
+          "events": 2000,
+          "selectToStateMs": 15.6
+        },
+        "mainProcess": {
+          "node": "v24.21.0",
+          "platform": "win32",
+          "events": 2000,
+          "iterations": 10,
+          "fixtureBytes": 819794,
+          "callbacks": 6979,
+          "maxSynchronousCallbackMs": 1.44,
+          "maxReplaceReadAppendWallMs": 31.137,
+          "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
+        }
+      },
+      "checks": {
+        "commands": [
+          "npm run check",
+          "npm run typecheck",
+          "npm run format:check",
+          "git diff --check"
+        ],
+        "failures": 0
+      },
+      "cleanup": {
+        "processPlanRemoved": true,
+        "reviewDocumentsMergedIntoValidation": true,
+        "evidenceFiles": 1,
+        "allThreeHistoricalJsonObjectsPreserved": true,
+        "approvedBaselineFixesUnchanged": true
       },
       "boundaries": {
         "serverOrProtocolChanged": false,
