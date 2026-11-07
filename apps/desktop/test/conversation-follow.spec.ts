@@ -405,9 +405,11 @@ for (const action of ['complete', 'steer'] as const) {
           const anchor = page
             .locator('.conversation .message.user')
             .filter({ hasText: `第${turns - 2}问` });
-          await anchor.scrollIntoViewIfNeeded();
           await anchor.evaluate((node) => {
             node.setAttribute('data-follow-anchor', 'true');
+            // A merely visible row may sit at the bottom edge; the following upward
+            // wheel would move it out of view before the operation being tested.
+            node.scrollIntoView({ block: 'center' });
           });
           await anchor.hover();
           await page.mouse.wheel(0, -80);

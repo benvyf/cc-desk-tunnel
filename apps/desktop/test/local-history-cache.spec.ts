@@ -3,6 +3,7 @@ import { WebSocketServer } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
+import { execFileSync } from 'node:child_process';
 import {
   PROTOCOL_VERSION,
   type Command,
@@ -223,8 +224,26 @@ async function fixture(turns = 40) {
       timers.forEach(clearTimeout);
       // Final fixture cleanup is not a quit-flow test; close synthetic terminal windows
       // without letting an incomplete mock terminal lifecycle mask an assertion failure.
-      await app?.evaluate(({ app }) => app.exit(0)).catch(() => {});
-      await app?.close().catch(() => {});
+      const child = app?.process();
+      const stopped =
+        child && child.exitCode === null && child.signalCode === null
+          ? new Promise<void>((resolve) => child.once('exit', () => resolve()))
+          : Promise.resolve();
+      // Playwright launches through cmd.exe on Windows: terminating just that shell
+      // leaves Electron alive. Kill only this dedicated test's process tree.
+      if (child && child.exitCode === null && child.signalCode === null) {
+        if (process.platform === 'win32') {
+          try {
+            execFileSync('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+              windowsHide: true,
+              stdio: 'ignore',
+            });
+          } catch {
+            child.kill('SIGKILL');
+          }
+        } else child.kill('SIGKILL');
+      }
+      await stopped;
       for (const socket of server.clients) socket.terminate();
       await new Promise<void>((r) => server.close(() => r()));
     },
