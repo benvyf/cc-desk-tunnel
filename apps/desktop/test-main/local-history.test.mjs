@@ -59,6 +59,10 @@ test('history owner is stable across login tickets and isolated by email and ser
   assert.equal(historyOwner('https://center', null), null);
 });
 test('attachment copies are bounded and never archive credential paths, targets or private key content', async (t) => {
+  await assert.rejects(
+    readHistoryAttachment('\\\\no-network-access.invalid\\share\\file.png'),
+    /网络共享/,
+  );
   const root = mkdtempSync(join(tmpdir(), 'cc-local-history-'));
   t.after(() => rmSync(root, { recursive: true, force: true }));
   const file = join(root, 'notes.txt');

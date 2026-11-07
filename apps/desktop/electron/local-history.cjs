@@ -22,9 +22,12 @@ const privatePath = (value) =>
     value,
   );
 async function readHistoryAttachment(file) {
+  if (typeof file === 'string' && /^(?:\\\\|\/\/)/.test(file))
+    throw new Error('网络共享附件不自动归档。');
   if (typeof file !== 'string' || !path.isAbsolute(file) || privatePath(file))
     throw new Error('敏感配置或凭据文件不自动归档。');
   const resolved = await realpath(file);
+  if (/^(?:\\\\|\/\/)/.test(resolved)) throw new Error('网络共享附件不自动归档。');
   if (privatePath(resolved)) throw new Error('敏感配置或凭据文件不自动归档。');
   const handle = await open(resolved, 'r');
   try {
