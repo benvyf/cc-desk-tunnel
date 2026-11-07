@@ -392,6 +392,7 @@ export class ProxyClient {
       generation === this.cacheGeneration &&
       socket === this.socket &&
       this.synced.has(id) &&
+      !this.oversizedHistories.has(id) &&
       this.historyCacheReady;
     const write = async () => {
       if (!current()) return;
@@ -409,8 +410,7 @@ export class ProxyClient {
           }
         }
       } else await api.replace(id, value);
-      if (generation === this.cacheGeneration)
-        this.persistedLast.set(id, events.at(-1)?.sequence ?? 0);
+      if (current()) this.persistedLast.set(id, events.at(-1)?.sequence ?? 0);
     };
     // Unload cannot wait for renderer Promise callbacks. Submit a complete window now;
     // the main process serializes it behind already submitted writes for this owner/session.

@@ -839,3 +839,30 @@ test('a 1.5 MB newest run can hydrate, while an oversized latest run skips only 
   assert.equal(f.client.historyCacheReady, true);
   assert.ok(f.calls.some((call) => call[0] === 'remove' && call[1] === id));
 });
+
+test('an oversized newest run prevents queued older windows from recreating its cache file', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect(),
+    writing = deferred(),
+    id = f.sessions[0].id;
+  f.api.replace = async (...args) => {
+    f.calls.push(['replace', ...args]);
+    await writing.promise;
+  };
+  f.client.select(id);
+  await settle();
+  f.snapshot(socket, [f.event(1)], 'replace');
+  f.client.select(id);
+  f.snapshot(socket, [f.event(2)], 'replace');
+  f.client.select(id);
+  f.snapshot(
+    socket,
+    [{ ...f.event(3), payload: { ...f.event(3).payload, text: 'x'.repeat(4300000) } }],
+    'replace',
+  );
+  writing.resolve();
+  await settle();
+  assert.equal(f.calls.filter((call) => call[0] === 'replace').length, 1);
+  assert.ok(f.calls.some((call) => call[0] === 'remove' && call[1] === id));
+  assert.equal(f.client.historyCacheReady, true);
+});
