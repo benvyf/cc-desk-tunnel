@@ -979,7 +979,6 @@ export function App({
     stopScope,
     `${state.connectionId}:${selected?.id}:${selected?.activeRun?.id}`,
     place.page === 'chat' &&
-      !client.historyPending(selected?.id) &&
       connected &&
       !busy &&
       ownsRun &&
@@ -990,7 +989,7 @@ export function App({
     stopRun,
   );
   function stopRun() {
-    if (!selected?.activeRun || client.historyPending(selected.id)) return;
+    if (!selected?.activeRun) return;
     const { id: sessionId, activeRun } = selected;
     followUps.pause(sessionId);
     void act(async () => {
@@ -1049,7 +1048,13 @@ export function App({
   function visit(next: Place, record = true) {
     navigation.current++;
     setFocusDraftSession(null);
-    if (next.sessionId && next.sessionId !== client.state.selectedId) client.select(next.sessionId);
+    const history = next.sessionId ? client.state.history[next.sessionId] : undefined;
+    const retryHistory =
+      typeof window.desktop?.historyCache?.open === 'function' &&
+      history?.loaded === false &&
+      !history.loading;
+    if (next.sessionId && (next.sessionId !== client.state.selectedId || retryHistory))
+      client.select(next.sessionId);
     setPlace(next);
     closeSide();
     if (!record) return;
@@ -1094,7 +1099,7 @@ export function App({
   };
   async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id, quota = false) {
     if (!sessionId || statusReading.current) return;
-    if (client.state.history[sessionId] && client.historyPending(sessionId)) return;
+    if (client.historyPending(sessionId)) return;
     statusReading.current = true;
     setRefreshing(true);
     try {
@@ -1431,7 +1436,7 @@ export function App({
   // message back as a draft, which is how an earlier message is edited and sent again.
   async function fork(session: Session, before?: { id: string; text: string }) {
     if (terminalOwns(session.id) || session.activeRun) return;
-    if (client.state.history[session.id] && client.historyPending(session.id)) return;
+    if (client.historyPending(session.id)) return;
     const startedAt = navigation.current;
     await act(async () => {
       // The copy of a session that is on another computer needs a directory on this one.
@@ -1595,10 +1600,7 @@ export function App({
             {
               label: '分叉会话',
               icon: <GitFork />,
-              disabled:
-                !idle ||
-                !!session.activeRun ||
-                (!!client.state.history[session.id] && client.historyPending(session.id)),
+              disabled: !idle || !!session.activeRun || client.historyPending(session.id),
               run: () => {
                 void fork(session);
               },
@@ -1639,7 +1641,7 @@ export function App({
                 !connected ||
                 busy ||
                 refreshing ||
-                (!!client.state.history[session.id] && client.historyPending(session.id)) ||
+                client.historyPending(session.id) ||
                 (!!session.activeRun && !terminalOwns(session.id)),
               run: () => {
                 if (statusReading.current) return;
@@ -1952,7 +1954,7 @@ export function App({
   };
   const terminalAvailable =
     connected &&
-    !client.historyPending(selected?.id) &&
+    !historyPending &&
     nativeMode &&
     !busy &&
     !refreshing &&
@@ -2593,7 +2595,7 @@ export function App({
               ownsRun={ownsRun}
               clock={clock}
               progress={selected ? state.progress[selected.id] : undefined}
-              busy={busy || client.historyPending(selected?.id)}
+              busy={busy}
               fresh={fresh}
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={

@@ -720,6 +720,7 @@ function General({
               <Row title="清除本机记录" detail="只删除本机副本，服务器上的聊天记录会保留。">
                 <button
                   type="button"
+                  className="button"
                   onClick={() => {
                     setCacheError('');
                     void client

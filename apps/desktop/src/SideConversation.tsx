@@ -148,7 +148,6 @@ export default function SideConversation({
     stopScope,
     `${state.connectionId}:${sessionId}:${run?.id}`,
     connected &&
-      !client.historyPending(sessionId) &&
       !busy &&
       ownsRun &&
       !!run &&
@@ -157,7 +156,7 @@ export default function SideConversation({
     stop,
   );
   const control = (type: 'run.cancel' | 'run.task.stop' | 'run.task.background', id?: string) => {
-    if (!run || client.historyPending(sessionId)) return;
+    if (!run) return;
     void act(() =>
       client.request(
         type === 'run.cancel'
@@ -232,7 +231,7 @@ export default function SideConversation({
         ownsRun={ownsRun}
         clock={clock}
         progress={state.progress[sessionId]}
-        busy={busy || client.historyPending(sessionId)}
+        busy={busy}
         fresh={fresh}
         loadEarlier={() => client.loadEarlier(sessionId)}
         findRequest={0}

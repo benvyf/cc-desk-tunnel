@@ -3,7 +3,12 @@ import { WebSocketServer } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { mkdtemp, readdir, readFile } from 'node:fs/promises';
 import { resolve, join } from 'node:path';
-import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
+import {
+  PROTOCOL_VERSION,
+  type Command,
+  type Session,
+  type SessionEvent,
+} from '@cc-desk-tunnel/protocol';
 
 async function fixture(turns = 40) {
   const profile = await mkdtemp(resolve('.local/history-cache-ui-'));
@@ -54,27 +59,37 @@ async function fixture(turns = 40) {
     replace = false,
     hold = false,
     refuse = false;
+  let adapter: 'simulation' | 'claude-code' = 'simulation';
   const held: (() => void)[] = [];
+  const commands: Command[] = [];
   const requests: { afterSequence: number }[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
+  let finishTerminal = () => {};
   server.on('connection', (socket) =>
     socket.on('message', (raw) => {
       const command = JSON.parse(String(raw));
+      commands.push(command);
       const send = (value: unknown) => {
         if (socket.readyState === 1) socket.send(JSON.stringify(value));
       };
       if (command.type === 'auth') {
         send({
           type: 'ready',
-          protocolVersion: 24,
+          protocolVersion: PROTOCOL_VERSION,
           version: '0.3.10',
           connectionId,
-          adapter: 'simulation',
+          adapter,
           sessions: [session],
         });
         return;
       }
       if (command.type === 'device' || command.type === 'leave') return;
+      if (command.type === 'terminal.open') {
+        const terminalId = randomUUID();
+        send({ type: 'terminal.opened', sessionId: command.sessionId, terminalId });
+        finishTerminal = () =>
+          send({ type: 'terminal.closed', sessionId: command.sessionId, terminalId, exitCode: 0 });
+      }
       if (command.type === 'session.subscribe') {
         requests.push(command);
         const respond = () => {
@@ -111,7 +126,7 @@ async function fixture(turns = 40) {
     }),
   );
   let app: ElectronApplication;
-  async function launch() {
+  async function launch(select = true) {
     app = await _electron.launch({
       args: [resolve('apps/desktop'), '--smoke-test', `--user-data-dir=${profile}`],
       env: Object.fromEntries(
@@ -140,11 +155,12 @@ async function fixture(turns = 40) {
     await expect(page.locator('.connection-status')).toContainText('已连接');
     const expand = page.getByRole('button', { name: '展开会话列表', exact: true });
     if (await expand.isVisible()) await expand.click();
-    await page
-      .locator('.session-row')
-      .filter({ hasText: session.title })
-      .locator('.session-select')
-      .click();
+    if (select)
+      await page
+        .locator('.session-row')
+        .filter({ hasText: session.title })
+        .locator('.session-select')
+        .click();
     return page;
   }
   async function copies(): Promise<string[]> {
@@ -167,6 +183,8 @@ async function fixture(turns = 40) {
   return {
     profile,
     requests,
+    commands,
+    finishTerminal: () => finishTerminal(),
     events,
     session,
     launch,
@@ -174,8 +192,15 @@ async function fixture(turns = 40) {
     delay: () => {
       delay = 3000;
     },
-    refuse: () => {
-      refuse = true;
+    refuse: (value = true) => {
+      refuse = value;
+    },
+    native: () => {
+      adapter = 'claude-code';
+    },
+    startRun: () => {
+      session.activeRun = { id: randomUUID(), status: 'running', connectionId };
+      return session.activeRun.id;
     },
     replace: () => {
       replace = true;
@@ -196,6 +221,9 @@ async function fixture(turns = 40) {
     },
     cleanup: async () => {
       timers.forEach(clearTimeout);
+      // Final fixture cleanup is not a quit-flow test; close synthetic terminal windows
+      // without letting an incomplete mock terminal lifecycle mask an assertion failure.
+      await app?.evaluate(({ app }) => app.exit(0)).catch(() => {});
       await app?.close().catch(() => {});
       for (const socket of server.clients) socket.terminate();
       await new Promise<void>((r) => server.close(() => r()));
@@ -382,7 +410,7 @@ test('re-enabling caching immediately revalidates and records the already open c
     await f.cleanup();
   }
 });
-test('a failed initial synchronization never enables sending from an unconfirmed disk copy', async () => {
+test('failed cached synchronization restores input and reselecting the same session recovers', async () => {
   test.setTimeout(60000);
   const f = await fixture();
   try {
@@ -393,12 +421,115 @@ test('a failed initial synchronization never enables sending from an unconfirmed
     page = await f.launch();
     await expect(page.getByText('验收：历史同步暂时失败', { exact: true })).toBeVisible();
     await expect(page.getByText('缓存问题 39', { exact: true })).toBeVisible();
-    await expect(page.getByLabel('消息', { exact: true })).toBeDisabled();
-    await general(page);
-    await page.getByRole('switch', { name: '在本机保存聊天记录', exact: true }).click();
-    await expect.poll(async () => (await f.copies()).length).toBe(0);
-    await page.getByRole('button', { name: '返回会话', exact: true }).click();
-    await expect(page.getByLabel('消息', { exact: true })).toBeDisabled();
+    await expect(page.getByText('同步会话', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('消息', { exact: true })).toBeEnabled();
+    const requests = f.requests.length;
+    f.refuse(false);
+    f.events.push({
+      ...f.events.at(-1)!,
+      sequence: 121,
+      runId: randomUUID(),
+      payload: { type: 'text.delta', messageId: randomUUID(), text: '重选后恢复同步' },
+    });
+    await page
+      .locator('.session-row')
+      .filter({ hasText: f.session.title })
+      .locator('.session-select')
+      .click();
+    await expect.poll(() => f.requests.length).toBeGreaterThan(requests);
+    await expect(page.getByText('重选后恢复同步', { exact: true })).toBeVisible();
+    await expect(page.getByText('同步会话', { exact: true })).toHaveCount(0);
+    await expect(page.getByLabel('消息', { exact: true })).toBeEnabled();
+  } finally {
+    await f.cleanup();
+  }
+});
+
+for (const trigger of ['stop button', 'double Escape'] as const) {
+  test(`real Electron ${trigger} cancels the ready active run while cached history is pending`, async () => {
+    test.setTimeout(60000);
+    const f = await fixture();
+    try {
+      let page = await f.launch();
+      await expect.poll(async () => (await f.copies()).length).toBe(1);
+      await f.close();
+      f.native();
+      const runId = f.startRun();
+      f.hold();
+      page = await f.launch();
+      await expect(page.getByText('缓存问题 39', { exact: true })).toBeVisible();
+      await expect(page.getByText('同步会话', { exact: true })).toBeVisible();
+      await expect(page.getByLabel('消息', { exact: true })).toBeDisabled();
+      const stop = page.getByRole('button', { name: '停止运行', exact: true });
+      await expect(stop).toBeEnabled();
+      const cancellations = () => f.commands.filter((command) => command.type === 'run.cancel');
+      expect(cancellations()).toHaveLength(0);
+      if (trigger === 'stop button') await stop.click();
+      else {
+        // The pending composer is disabled, so focus the conversation's existing keyboard target.
+        const conversation = page.locator('.conversation');
+        await conversation.focus();
+        await expect(conversation).toBeFocused();
+        await conversation.press('Escape');
+        expect(cancellations()).toHaveLength(0);
+        await conversation.press('Escape');
+      }
+      await expect.poll(() => cancellations().length).toBe(1);
+      expect(cancellations()[0]).toMatchObject({
+        type: 'run.cancel',
+        sessionId: f.session.id,
+        runId,
+      });
+      // No snapshot has been released: cancellation must not wait for history synchronization.
+      await expect(page.getByText('同步会话', { exact: true })).toBeVisible();
+      expect(f.commands.filter((command) => command.type === 'message.send')).toHaveLength(0);
+      expect(f.commands.filter((command) => command.type === 'terminal.open')).toHaveLength(0);
+    } finally {
+      await f.cleanup();
+    }
+  });
+}
+
+test('real Electron native terminal entry is disabled while a cached snapshot is held', async () => {
+  test.setTimeout(60000);
+  const f = await fixture();
+  try {
+    let page = await f.launch();
+    await expect.poll(async () => (await f.copies()).length).toBe(1);
+    await f.close();
+    f.native();
+    f.hold();
+    page = await f.launch();
+    await expect(page.getByText('缓存问题 39', { exact: true })).toBeVisible();
+    await expect(page.getByText('同步会话', { exact: true })).toBeVisible();
+    const terminal = page.getByRole('button', { name: '终端', exact: true });
+    await expect(terminal).toBeVisible();
+    await expect(terminal).toBeDisabled();
+    expect(f.commands.filter((command) => command.type === 'terminal.open')).toHaveLength(0);
+    expect(f.commands.filter((command) => command.type === 'message.send')).toHaveLength(0);
+    f.release();
+    await expect(page.getByText('同步会话', { exact: true })).toHaveCount(0);
+    await expect(terminal).toBeEnabled();
+    expect(f.commands.filter((command) => command.type === 'terminal.open')).toHaveLength(0);
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('opening a never-selected session terminal does not silently lose the initial click', async () => {
+  test.setTimeout(60000);
+  const f = await fixture();
+  try {
+    f.native();
+    const page = await f.launch(false);
+    const row = page.locator('.session-row').filter({ hasText: f.session.title });
+    await row.hover();
+    await row.getByRole('button', { name: '会话操作', exact: true }).click();
+    await page.getByRole('menuitem', { name: '原生终端', exact: true }).click();
+    await expect
+      .poll(() => f.commands.filter((command) => command.type === 'terminal.open').length)
+      .toBe(1);
+    f.finishTerminal();
   } finally {
     await f.cleanup();
   }
