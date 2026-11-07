@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-07 Windows Build 32 / Linux Build 19 已发布，Ubuntu 由用户自行升级
+
+发行源码 `86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f`，均为 0.3.10 / 协议 24。管理中心 pilot 已提供客户端 Build 32、服务端 Build 19；旧制品不覆盖，stable 与线上管理中心运行文件保持。新签名服务端入口保留默认空间准备、空闲受控断开、冷备份/恢复及上一套必要回退，精确支持 Build 16 等旧基线和新增 Build 18。先在管理中心刷新并获取 Build 19 新任务/指令，由用户执行，再从客户端内更新到 32；本轮未下发节点安装任务，三台仍上报 16，03 既有 failed phase 未改写，04～06 未新增授权。
+
+真实 EXE/组件、公开签名及完整下载摘要、管理中心现行 agent 选路、新迁移实际签名准入、精确续期与真实 systemd/timer 均通过；客户端更新核心 49 项、UI 24 项，Linux 隔离迁移/清理/轮转 30 项、首次安装 7 项及冷备份/切换/恢复 32 项通过。额外旧 bootstrap 夹具只修正测试基线及原运行级别，不改产品准入和已签名制品。无真实模型调用。续期引用的 `/root/.cc-update-admin/source-build-32` 与 `/root/.cc-update-admin/linux-build19-preparation/source` 不得清理。详见[发行记录](docs/RELEASE-CLIENT32-SERVER19-2026-11-07.md)及[结构化证据](docs/evidence/release-client32-server19-2026-11-07.json)。下文“未发行”均为本次发布前的历史状态。
+
 ### 2026-11-07 上游吸收实施 review 完成
 
 在 `e3bf917` 后完成实施差异复查，修复提交 `9bf9480`：处理 SDK 暂缺父记录导致跨轮答案错配及旧 idle 提前结束新轮；在会话私有配置中绑定实际 PATH 并保留原配置，受管 PATH/noexec 走显式 `ssh -F`；状态采样写库错误不再逃逸监听器中断服务；旧 POSIX 未声明 Shell 时不按系统猜测别名。核心 79 项、Linux 通道 122 项及最终只读无网络修订 31 项通过；官方 CLI/SDK 在自定义 PATH 下的四条受控执行链、私有设置权限/清理和界面回归通过。无真实模型调用、发行或生产安装，实验资源已清理。详见[专项复查](docs/UPSTREAM-0.3.13-ADOPTION-REVIEW-2026-11-07.md)。

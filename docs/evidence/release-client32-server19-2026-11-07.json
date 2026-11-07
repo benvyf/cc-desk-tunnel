@@ -1,0 +1,136 @@
+{
+  "date": "2026-11-07",
+  "sourceCommit": "86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f",
+  "client": {
+    "release": {
+      "build": 32,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f",
+      "filename": "CC-Space-Setup-0.3.10-x64.exe",
+      "notes": "CC Space 0.3.10 / Build 32，协议 24，配套 Linux Build 19。新增 Windows Git Bash 检测和每设备 Shell 偏好；未安装 Git Bash 时使用随包 PowerShell 7。改进终端记录增量同步、本地命令与手动压缩显示。保留独立更新检测、签名校验及跨协议完整包获取入口。Claude、SDK、账号和模型出口始终留在 Ubuntu；本包不包含 CCDT、缓存过期提醒或空闲自动压缩。请先在管理中心获取 Linux Build 19 升级任务，再更新客户端。",
+      "size": 258611536,
+      "sha256": "dfe45ad06f27bc3930df4b1211c41ae9c00b3d5885a5095a7b998381ac511450"
+    },
+    "revision": 48,
+    "expiresAt": "2026-11-10T06:44:58.041Z",
+    "modulesMatched": 28,
+    "vendorFilesMatched": 691,
+    "realInstallerExtracted": true,
+    "packagedOfflineSmokePassed": true,
+    "livePublicControllerPassed": true,
+    "updateUiPassed": 24
+  },
+  "server": {
+    "release": {
+      "build": 19,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f",
+      "size": 8127118,
+      "sha256": "708e3e416324a87c5396235d7c88bd04fe1e5d9a4e552b0555deff05c55e24b1",
+      "descriptorSha256": "a8f103b38a5b270f5a301071780cc2ba0ad9394312b01da4dbc3c74a7a76d5c7",
+      "packageLockSha256": "71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c",
+      "runtimeLevel": "node24-cli2.1.295-v3",
+      "compatibility": {
+        "apps/server/src/store.ts": "95fd2b9100b9009bb4b12c6d33e6e73f62e5c79af1f4a0a18fb8936fc00941c1",
+        "apps/server/src/usage.ts": "4bde92f9f877e4c579eead3fe4994f863a501663417403f0c8b9c42aaa9990dc",
+        "apps/server/src/web-access.ts": "18e480b94c4c29569ad27a4bf57c7838ea584ae20b812f68030cf7676cb571f6",
+        "apps/server/src/native-settings.ts": "3cd46d46dfca8a4f66a70e0e2c57d95b6899c5f17e5647af6569f58a889f1c25",
+        "apps/server/src/native-onboarding.ts": "6777362622817745be87480d79aa443811f231dc2dc576e1950dec4658d313f7",
+        "apps/server/src/native-instructions.ts": "31b01bd3c65476408b1618dcb00a1e0bf59c9e2a058179f788c5ab1ef9d2a048",
+        "apps/server/src/native-moderation-hook.ts": "197640b3b3d1c0b2a5b3646e6065da035d87425eef7047fd2a2eb180290947fb",
+        "apps/server/src/moderation.ts": "b849be7a7f2fc994a7a316e8bddf500f1ff72738745ea34f1700f0edd9169f3a",
+        "apps/server/src/errors.ts": "2f39eeba21699f498d251507cc70110cb2455b161d2cb075679703fa8448c721",
+        "apps/server/src/native-deployment.ts": "a1793be4327430c599cf5477d579ff2fbd3367fa4c9bc2f8b43758ede9c3bf3e",
+        "apps/server/src/native-terminal-policy.ts": "fab3f14ae6a063b4539b615feae19ef72d4e12b25800f30b040ef6ccc395ca68",
+        "apps/server/src/web-certificate.ts": "56e372003ce90535250e1f7706f24e19b07497e68f678580bc04a5243de97162",
+        "apps/server/src/web-totp.ts": "a0eaf188fecc7970cdba3f54b568bdd04b34e52c69f2d5796c837d56448e25d0",
+        "apps/server/src/device-terms.ts": "bb65852f67e6742e4e63894a71f89092effb811b4501a693c7d070630833449e",
+        "apps/server/src/claude.ts": "e36a6fe5ebf0232cd7e92c316b33726d0a90747e41548b67ee1ffd7fc92150cf",
+        "apps/server/src/legacy.ts": "6849c4c27678c8308e1c2456c091047071d0a7502425b757cb2eda489b2addee",
+        "apps/server/src/native-account.ts": "f73433400fde0147491d6ca355ba1024e06a54dfe7bbec53c6b8f2474e13c17c",
+        "packages/protocol/src/index.ts": "0d328e8ba217ee05780be61f43f87e5680e85659f20665550a46a959792a0d81",
+        "packages/protocol/src/web.ts": "27011dd28fcaff36afed63bc3a6c75a274ce0ad9493479e314d494ad32cd628c",
+        "packages/protocol/src/web-certificate.ts": "e958aa1226b10101ca91da23e161afd2db7972ba5764245a8f25749dbebd55ff"
+      }
+    },
+    "revision": 32,
+    "expiresAt": "2026-11-21T06:42:23.115Z",
+    "signedArchiveFilesVerified": 236,
+    "liveAgentRoutesBuild16And18ToSigned19": true,
+    "publicSignedInstallationAdmissionPassed": true,
+    "linuxMigrationCleanupRetentionPassed": 30,
+    "linuxFreshInstallerPassed": 7,
+    "linuxBootstrapAndCutoverPassed": 32,
+    "bootstrapTestFixtureOnlyFix": true
+  },
+  "independentVerification": {
+    "windowsBuild": 32,
+    "windowsRevision": 48,
+    "linuxBuild": 19,
+    "linuxRevision": 32,
+    "independentPublicSignaturesVerified": true,
+    "localRealArtifactsMatch": true,
+    "modelRequests": 0
+  },
+  "realSystemdRenewalPassed": true,
+  "timers": {
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  },
+  "managementRuntimeUnchanged": true,
+  "stableUnchanged": true,
+  "nodes": {
+    "ubuntu-cc": {
+      "current": {
+        "build": 16,
+        "protocol": 24,
+        "phase": "idle"
+      },
+      "jobUnchanged": true,
+      "availableBuild": 19,
+      "liveAgentRoutes16And18ToSigned19": true
+    },
+    "ubuntu-cc-02": {
+      "current": {
+        "build": 16,
+        "protocol": 24,
+        "phase": "idle"
+      },
+      "jobUnchanged": true,
+      "availableBuild": 19,
+      "liveAgentRoutes16And18ToSigned19": true
+    },
+    "ubuntu-cc-03": {
+      "current": {
+        "build": 16,
+        "protocol": 24,
+        "phase": "failed"
+      },
+      "jobUnchanged": true,
+      "availableBuild": 19,
+      "liveAgentRoutes16And18ToSigned19": true
+    },
+    "ubuntu-cc-04": {
+      "current": null,
+      "jobUnchanged": true,
+      "availableBuild": 19
+    },
+    "ubuntu-cc-05": {
+      "current": null,
+      "jobUnchanged": true,
+      "availableBuild": 19
+    },
+    "ubuntu-cc-06": {
+      "current": null,
+      "jobUnchanged": true,
+      "availableBuild": 19
+    }
+  },
+  "nodeInstallJobsCreated": false,
+  "realModelRequests": 0,
+  "updateNodeCoreTestsPassed": 49,
+  "typecheckPassed": true,
+  "repositoryCheckPassed": true
+}

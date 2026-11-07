@@ -79,31 +79,40 @@ class BootstrapTests(unittest.TestCase):
             for path in closure + ['package-lock.json', 'deploy/managed-server.json', 'deploy/docker/runtime-level']:
                 target = program / path; target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(subprocess.check_output(['git', 'show', 'HEAD:' + path], cwd=root))
+            (program / 'deploy/docker/runtime-level').write_text('1\n')
             release = {'build': json.loads((program / 'deploy/managed-server.json').read_text())['build'],
                        'packageLockSha256': hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest(),
                        'compatibility': {path: compatibility((program / path).read_bytes(), path) for path in closure}}
-            b.validate_target(program, release)
-            identity = json.loads((program / 'deploy/managed-server.json').read_text())
-            identity['build'] = 2
-            (program / 'deploy/managed-server.json').write_text(json.dumps(identity))
-            release['build'] = 2
-            b.validate_target(program, release)
-            with self.assertRaises(b.InstallError):
-                b.validate_target(program, {**release, 'build': 3})
-            with patch.object(b, 'command') as docker:
-                for path in pinned:
-                    with self.subTest(path=path):
-                        original = (program / path).read_bytes()
-                        changed = original + b'\n// changed persisted schema fixture\n'
-                        (program / path).write_bytes(changed)
-                        altered = copy.deepcopy(release)
-                        altered['compatibility'][path] = compatibility(changed, path)
-                        try:
-                            with self.assertRaisesRegex(b.InstallError, 'Persistence compatibility changed'):
-                                b.validate_target(program, altered)
-                        finally:
-                            (program / path).write_bytes(original)
-                docker.assert_not_called()
+            # Pin this fixture's reviewed baseline independently of the production
+            # profile, which intentionally still describes the original image.
+            baseline = {path: hashlib.sha256((program / path).read_bytes()).hexdigest() for path in closure}
+            with patch.dict(b.PROFILE['files'], baseline):
+                b.validate_target(program, release)
+                (program / 'deploy/docker/runtime-level').write_text('3\n')
+                with self.assertRaisesRegex(b.InstallError, 'Unknown runtime level'):
+                    b.validate_target(program, release)
+                (program / 'deploy/docker/runtime-level').write_text('1\n')
+                identity = json.loads((program / 'deploy/managed-server.json').read_text())
+                identity['build'] = 2
+                (program / 'deploy/managed-server.json').write_text(json.dumps(identity))
+                release['build'] = 2
+                b.validate_target(program, release)
+                with self.assertRaises(b.InstallError):
+                    b.validate_target(program, {**release, 'build': 3})
+                with patch.object(b, 'command') as docker:
+                    for path in pinned:
+                        with self.subTest(path=path):
+                            original = (program / path).read_bytes()
+                            changed = original + b'\n// changed persisted schema fixture\n'
+                            (program / path).write_bytes(changed)
+                            altered = copy.deepcopy(release)
+                            altered['compatibility'][path] = compatibility(changed, path)
+                            try:
+                                with self.assertRaisesRegex(b.InstallError, 'Persistence compatibility changed'):
+                                    b.validate_target(program, altered)
+                            finally:
+                                (program / path).write_bytes(original)
+                    docker.assert_not_called()
 
     def test_strict_archive_inventory_rejects_links_pax_extras_and_missing_files(self):
         with tempfile.TemporaryDirectory() as d:
