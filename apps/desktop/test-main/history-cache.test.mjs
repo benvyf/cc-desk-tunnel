@@ -335,6 +335,22 @@ for (const code of ['EBUSY', 'EPERM'])
     assert.equal((await cache.read(id)).firstSequence, 1);
   });
 
+test('a parse failure still returns null if removing the damaged file is temporarily denied', async (t) => {
+  const { cache, file, replace } = await fixture(t);
+  await replace([event(1)]);
+  await cache.idle();
+  await writeFile(file, '{bad');
+  const fs = require('node:fs/promises'),
+    remove = fs.rm;
+  const mocked = t.mock.method(fs, 'rm', async (target, ...args) => {
+    if (target === file) throw Object.assign(Error('locked'), { code: 'EPERM' });
+    return remove(target, ...args);
+  });
+  assert.equal(await cache.read(id), null);
+  mocked.mock.restore();
+  assert.ok(await stat(file));
+});
+
 test('rewrite maintenance reclaims a flushed atomic temporary left by abrupt process exit', async (t) => {
   const { cache, root, file } = await fixture(t);
   await cache.idle();

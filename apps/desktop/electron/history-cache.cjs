@@ -199,7 +199,7 @@ function createHistoryCache(root, options = {}) {
       );
       return value;
     } catch {
-      await removeFile(file);
+      await removeFile(file).catch(() => {});
       return null;
     }
   }
