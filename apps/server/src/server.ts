@@ -64,12 +64,17 @@ import {
   terminalSettings,
   terminalHooks,
   terminalActivity,
+  statusLineContext,
 } from './terminal-transcript.ts';
 import { readTerminalFile } from './terminal-files.ts';
 import { DomainError } from './errors.ts';
 import { accountMessageForClient } from './account-presentation.ts';
 import { NativeInput } from './native-input.ts';
-import { readNativeSettings, updateNativeSettings } from './native-settings.ts';
+import {
+  readNativeSettings,
+  updateNativeSettings,
+  terminalCompactWindow,
+} from './native-settings.ts';
 import { readInstructions, writeInstructions } from './native-instructions.ts';
 import type { NativeTerminal } from './native-terminal.ts';
 import { inOrder } from './question.ts';
@@ -160,6 +165,8 @@ type Terminal = {
     hooksPath: string;
     statusPath: string;
     quota?: string;
+    contextKey?: string;
+    compactWindow?: number | null;
     offset: number;
     heard: Promise<void>;
     activity?: TerminalActivity;
@@ -955,6 +962,11 @@ export function createProxyServer(options: ServerOptions) {
         join(context.config, 'settings.json'),
         command.display && (command.display === 'screen' ? 'fullscreen' : 'default'),
       );
+      current.continued.compactWindow = terminalCompactWindow(
+        context.config,
+        cwd,
+        current.continued.settingsPath,
+      );
       if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
         throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
       current.process = new NativeTerminal(
@@ -1130,36 +1142,39 @@ export function createProxyServer(options: ServerOptions) {
   function terminalQuota(terminal: Terminal) {
     const continued = terminal.continued!;
     let windows;
+    let context;
     try {
-      windows = statusLineQuota(JSON.parse(readFileSync(continued.statusPath, 'utf8')));
+      const status: unknown = JSON.parse(readFileSync(continued.statusPath, 'utf8'));
+      windows = statusLineQuota(status);
+      context = continued.elsewhere ? null : statusLineContext(status, continued.compactWindow);
     } catch {
       return;
     }
     const heard = JSON.stringify(windows);
-    if (!windows.length || heard === continued.quota) return;
-    continued.quota = heard;
+    const quotaChanged = windows.length > 0 && heard !== continued.quota;
+    const contextKey =
+      context && JSON.stringify([context.model, context.usedTokens, context.windowTokens]);
+    const contextChanged = !!contextKey && contextKey !== continued.contextKey;
+    if (!quotaChanged && !contextChanged) return;
     const last = store.lastMetrics(terminal.sessionId);
-    const rateLimits = quotas.observeTerminal(windows);
-    // Nothing the status line showed still holds: the quota the clients have is left as it is.
-    if (!rateLimits?.available) return;
-    usage.observe(rateLimits);
-    accountMonitor?.observe(
-      {
-        type: 'native.metrics',
-        context: last?.context ?? null,
-        usage: last?.usage ?? null,
-        rateLimits,
-      },
-      terminal.sessionId,
-      terminal.id,
-    );
+    const observed = quotaChanged ? quotas.observeTerminal(windows) : null;
+    const rateLimits = observed?.available ? observed : (last?.rateLimits ?? null);
     const event = store.append(terminal.sessionId, terminal.id, {
       type: 'native.metrics',
-      context: last?.context ?? null,
+      context: contextChanged ? context! : (last?.context ?? null),
       usage: last?.usage ?? null,
       rateLimits,
     });
-    broadcast({ type: 'session.event', event });
+    if (quotaChanged) continued.quota = heard;
+    if (contextChanged) continued.contextKey = contextKey!;
+    if (observed?.available) {
+      usage.observe(observed);
+      accountMonitor?.observe(event.payload, terminal.sessionId, terminal.id);
+    }
+    broadcast(
+      { type: 'session.event', event },
+      observed?.available ? undefined : terminal.sessionId,
+    );
   }
   async function importTerminal(terminal: Terminal, ended = false) {
     const continued = terminal.continued!;

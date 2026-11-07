@@ -11,7 +11,7 @@ import {
   sessionSchema,
   terminalStatuses,
 } from '@cc-desk-tunnel/protocol';
-import { deviceTerms } from './device-terms.ts';
+import { deviceTerms, DEVICE_TERMS_REVISION } from './device-terms.ts';
 import { DomainError } from './errors.ts';
 import type {
   Device,
@@ -1009,19 +1009,29 @@ export class SessionStore {
     if (!said || said.compacted) return '';
     const known = said.told ?? said;
     const device = session.device?.id;
-    if (known.projectPath === session.projectPath && known.device === device) return '';
     const platform = platformOf(session.device);
-    said.told = { projectPath: session.projectPath, device, platform };
+    const revised = platform === 'win32' && (known.termsRevision ?? 0) < DEVICE_TERMS_REVISION;
+    if (known.projectPath === session.projectPath && known.device === device && !revised) return '';
+    said.told = {
+      projectPath: session.projectPath,
+      device,
+      platform,
+      termsRevision: DEVICE_TERMS_REVISION,
+    };
     this.save(session);
     const terms = deviceTerms(platform, session.projectPath, session.device?.viaSsh);
+    if (known.projectPath === session.projectPath && known.device === device)
+      return `[CC Desk Tunnel: updated device transfer instructions. ${terms.command}]\n\n`;
     // The prompt's account of scripts and command lines holds for one system only.
     const system =
       (known.platform ?? 'win32') === platform
-        ? ''
+        ? revised
+          ? ` ${terms.command}`
+          : ''
         : ` It runs another system than the one described so far, and this replaces what was said of scripts and command lines. For device-script: ${terms.script} ${terms.command}`;
     const paths = `The project directory is now ${JSON.stringify(session.projectPath)} (it was ${JSON.stringify(known.projectPath)}).`;
     return known.device === device
-      ? `[CC Desk Tunnel: the user moved this session to another project on the device. ${paths} From now on use the new directory as the project directory, in place of the one given earlier.]\n\n`
+      ? `[CC Desk Tunnel: the user moved this session to another project on the device. ${paths} From now on use the new directory as the project directory, in place of the one given earlier.${revised ? ` ${terms.command}` : ''}]\n\n`
       : `[CC Desk Tunnel: the user now continues this session from another of their computers, ${JSON.stringify(session.device!.name)}. From now on the device is that computer: ${terms.name}. ${paths} What the earlier computer had, its files, paths and running processes, is not on this one unless you find it there.${system}]\n\n`;
   }
   // What the system prompt of a run says. A prompt that changes costs the whole conversation's prompt cache,
@@ -1037,7 +1047,7 @@ export class SessionStore {
       device: session.device?.id,
       platform: platformOf(session.device),
     };
-    session.prompt = now;
+    session.prompt = { ...now, termsRevision: DEVICE_TERMS_REVISION };
     this.save(session);
     return now;
   }

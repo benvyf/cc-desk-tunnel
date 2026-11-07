@@ -451,11 +451,13 @@ export const sessionSchema = z.object({
       device: id.optional(),
       // The system the prompt describes; Windows where none is recorded.
       platform: devicePlatformSchema.optional(),
+      termsRevision: z.number().int().nonnegative().optional(),
       told: z
         .object({
           projectPath: z.string(),
           device: id.optional(),
           platform: devicePlatformSchema.optional(),
+          termsRevision: z.number().int().nonnegative().optional(),
         })
         .optional(),
       compacted: z.boolean().optional(),

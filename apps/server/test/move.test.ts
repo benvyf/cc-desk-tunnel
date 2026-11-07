@@ -37,6 +37,20 @@ function ran(store: SessionStore, sessionId: string) {
   return said.projectPath;
 }
 
+test('legacy Windows prompts receive the corrected transfer rule once without moving projects', (t) => {
+  const made = fixture(t);
+  ran(made.store, made.session.id);
+  made.store.database.exec(
+    "UPDATE sessions SET metadata = json_remove(metadata, '$.prompt.termsRevision')",
+  );
+  const store = made.reopen();
+  const notice = store.notice(made.session.id);
+  assert.ok(notice.includes('device:/D:/项目 甲'));
+  assert.doesNotMatch(notice, /moved this session/);
+  assert.equal(store.notice(made.session.id), '');
+  assert.equal(store.promptValues(made.session.id).projectPath, 'D:\\项目 甲');
+});
+
 test('a session that never ran simply changes its project', (t) => {
   const { store, session } = fixture(t);
   assert.equal(store.move(session.id, 'D:\\项目 乙', device).projectPath, 'D:\\项目 乙');

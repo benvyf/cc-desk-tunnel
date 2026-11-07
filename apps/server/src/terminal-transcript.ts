@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { EventPayload, TerminalActivity } from '@cc-desk-tunnel/protocol';
+import type { EventPayload, NativeMetrics, TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { ClaudeStream, printed } from './claude-stream.ts';
 import { settingsPath as userSettingsPath } from './native-settings.ts';
 
@@ -13,6 +13,47 @@ type Entry = SessionMessage & {
   origin?: { kind?: string };
 };
 type Block = { type?: unknown; text?: unknown };
+
+// Based on upstream 5b06ffc; the caller supplies only a verified effective CLI window.
+export function statusLineContext(
+  status: unknown,
+  compactWindow?: number | null,
+): NativeMetrics['context'] {
+  const { model, context_window: window } = (status ?? {}) as {
+    model?: { id?: unknown };
+    context_window?: {
+      context_window_size?: unknown;
+      current_usage?: Record<string, unknown> | null;
+    };
+  };
+  const full = window?.context_window_size;
+  const usage = window?.current_usage;
+  if (typeof full !== 'number' || !Number.isFinite(full) || full <= 0 || !usage) return null;
+  const parts = ['input_tokens', 'cache_creation_input_tokens', 'cache_read_input_tokens'].map(
+    (name) => usage[name],
+  );
+  if (
+    !parts.some((value) => typeof value === 'number') ||
+    parts.some(
+      (value) =>
+        value !== undefined && (typeof value !== 'number' || !Number.isFinite(value) || value < 0),
+    )
+  )
+    return null;
+  const used = parts.reduce<number>(
+    (sum, value) => sum + (typeof value === 'number' ? value : 0),
+    0,
+  );
+  const size = compactWindow && compactWindow > 0 ? Math.min(full, compactWindow) : full;
+  return {
+    model: typeof model?.id === 'string' ? model.id : '',
+    usedTokens: used,
+    windowTokens: size,
+    percentage: Math.round((used / size) * 100),
+    measuredAt: new Date().toISOString(),
+    categories: [],
+  };
+}
 
 const tag = (text: string, name: string) =>
   text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1];

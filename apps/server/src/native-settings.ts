@@ -49,6 +49,24 @@ export function readNativeSettings(path = settingsPath()): NativeSettings {
   ) as NativeSettings;
 }
 
+// CLI 2.1.295: explicit --settings wins over local, project and selected user settings.
+// The terminal's generated settings retain the provider's explicit values.
+export function terminalCompactWindow(config: string, cwd: string, explicit: string) {
+  let window: unknown;
+  for (const path of [
+    settingsPath(config),
+    join(cwd, '.claude', 'settings.json'),
+    join(cwd, '.claude', 'settings.local.json'),
+    explicit,
+    ...(process.platform === 'linux' ? ['/etc/claude-code/managed-settings.json'] : []),
+  ]) {
+    const values = readFile(path);
+    if (Object.hasOwn(values, 'autoCompactWindow')) window = values.autoCompactWindow;
+  }
+  const parsed = nativeSettingsSchema.shape.autoCompactWindow.safeParse(window ?? null);
+  return parsed.success ? parsed.data : null;
+}
+
 export function updateNativeSettings(values: Partial<NativeSettings>, path = settingsPath()) {
   const file = readFile(path);
   for (const [key, value] of Object.entries(values)) {

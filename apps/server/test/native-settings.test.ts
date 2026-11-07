@@ -1,9 +1,42 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readNativeSettings, updateNativeSettings } from '../src/native-settings.ts';
+import {
+  readNativeSettings,
+  updateNativeSettings,
+  terminalCompactWindow,
+} from '../src/native-settings.ts';
+
+test('a terminal resolves its selected settings without reading the global user configuration', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-terminal-settings-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  mkdirSync(config);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  const user = join(config, 'settings.json'),
+    project = join(cwd, '.claude', 'settings.json'),
+    local = join(cwd, '.claude', 'settings.local.json'),
+    explicit = join(root, 'runtime.json');
+  for (const [file, window] of [
+    [user, 100000],
+    [project, 120000],
+    [local, 140000],
+    [explicit, 160000],
+  ] as const)
+    writeFileSync(file, JSON.stringify({ autoCompactWindow: window }));
+  assert.equal(terminalCompactWindow(config, cwd, explicit), 160000);
+  for (const [file, expected] of [
+    [explicit, 140000],
+    [local, 120000],
+    [project, 100000],
+  ] as const) {
+    rmSync(file);
+    assert.equal(terminalCompactWindow(config, cwd, explicit), expected);
+  }
+});
 
 test('native settings edit only the listed keys of the CLI user settings file', (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'proxy-settings-'));

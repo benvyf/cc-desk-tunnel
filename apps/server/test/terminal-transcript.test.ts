@@ -19,7 +19,30 @@ import {
   terminalHooks,
   terminalSettings,
   terminalHookScript,
+  statusLineContext,
 } from '../src/terminal-transcript.ts';
+
+test('terminal context uses the CLI window and an optional smaller compaction window', () => {
+  const status = {
+    model: { id: 'test' },
+    context_window: {
+      context_window_size: 1_000_000,
+      current_usage: {
+        input_tokens: 2,
+        cache_creation_input_tokens: 232,
+        cache_read_input_tokens: 167041,
+      },
+    },
+  };
+  assert.equal(statusLineContext(status)?.percentage, 17);
+  assert.equal(statusLineContext(status, 500_000)?.percentage, 33);
+  assert.equal(statusLineContext(status, 2_000_000)?.windowTokens, 1_000_000);
+  assert.equal(statusLineContext({ context_window: { current_usage: null } }), null);
+  assert.equal(
+    statusLineContext({ context_window: { context_window_size: 100, current_usage: {} } }),
+    null,
+  );
+});
 
 const session = '11111111-2222-4333-8444-555555555555';
 const entry = (uuid: string, type: SessionMessage['type'], message: unknown, extra = {}) =>

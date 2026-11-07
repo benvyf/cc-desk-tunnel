@@ -341,6 +341,43 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
       message.event.payload.type === 'native.metrics' &&
       message.event.payload.rateLimits?.windows[0]?.utilization === 17,
   );
+  writeFileSync(
+    statusPath,
+    JSON.stringify({
+      model: { id: 'test' },
+      context_window: {
+        context_window_size: 200_000,
+        current_usage: { input_tokens: 50000 },
+      },
+    }),
+  );
+  await owner.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.payload.type === 'native.metrics' &&
+      message.event.payload.context?.percentage === 25 &&
+      message.event.payload.rateLimits?.windows[0]?.utilization === 17,
+  );
+  const readings = server.store
+    .get(sessionId)
+    .events.filter((event) => event.payload.type === 'native.metrics').length;
+  writeFileSync(
+    statusPath,
+    JSON.stringify({
+      model: { id: 'test' },
+      context_window: {
+        context_window_size: 200_000,
+        current_usage: { input_tokens: 50000 },
+      },
+    }),
+  );
+  await delay(1150);
+  assert.equal(
+    server.store.get(sessionId).events.filter((event) => event.payload.type === 'native.metrics')
+      .length,
+    readings,
+    'a new sampling timestamp does not create a duplicate context event',
+  );
   for (const data of ['\x1b[B', '\r', '中文🙂', '\x03'])
     owner.send({ type: 'terminal.input', sessionId, terminalId, data });
   // A response on the same socket is a processing barrier for earlier control frames.
