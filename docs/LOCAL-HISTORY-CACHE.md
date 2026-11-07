@@ -1,6 +1,6 @@
 # 本机聊天记录副本（P1，规格 v2.1）
 
-2026-11-08 细节复审已修复六项边界问题；最新验证为全量 965 通过/63 条件跳过/0 失败、缓存专项 46/46、相关 UI 78/78。2000 条 select 到 state 实测 15.5 ms，主进程最长同步回调 1.402 ms。详见 [复审记录](LOCAL-HISTORY-CACHE-REVIEW-2026-11-08.md)及[复审证据](evidence/local-history-cache-review-2026-11-08.json)。下方首轮计数与性能为首次交付时的快照。
+2026-11-08 再次故障/并发复审后，最新验证为全量 975 通过/63 条件跳过/0 失败、缓存专项 56/56、相关 UI 78/78。2000 条 select 到 state 实测 17.8 ms，主进程最长同步回调 1.396 ms。详见[故障复审](LOCAL-HISTORY-CACHE-FAULT-REVIEW-2026-11-08.md)及[证据](evidence/local-history-cache-fault-review-2026-11-08.json)；[上一轮细节复审](LOCAL-HISTORY-CACHE-REVIEW-2026-11-08.md)与下方首轮数据作为历史快照保留。
 
 本功能只在桌面客户端保存本机打开过的会话尾部副本。Ubuntu 仍是唯一权威；浏览器连接不调用缓存。同步完成前沿用“同步会话”和原有输入、控制禁用规则。没有实现离线会话列表、启动即浏览或后台预热；服务端与协议未改，协议版本仍为 24。
 
@@ -26,13 +26,15 @@ meta.json          {"format":1,"protocol":24}
 
 format/protocol 不匹配只清空当前 owner 目录。owner 原文和密钥不落入文件或日志。副本未加密，与草稿一样依赖当前用户目录权限；POSIX 目录为 0700，文件为 0600。
 
+若超长活动 run 被整体裁剪成空窗口，头部额外保存可选 `discardedRun`（该 runId 的 SHA-256）。后续追加仍属于这个 run 时继续丢弃，直到出现新 run，防止重启后保存半截 run。该字段是本机内部恢复信息，不进入 read IPC，format/protocol 不变。
+
 ## 主进程存储规则
 
 `electron/history-cache.cjs` 只使用异步 fs，同一个 owner/session 的读写删除按 Promise 链串行。调用进入时绑定 owner，异步完成后不会操作另一个工作空间。重写先写独立临时文件、sync、关闭，再 rename；Windows 临时拒绝 rename 最多尝试五次。追加只接受严格大于末条 sequence 的事件，不要求 sequence 连号。
 
 UUID 校验阻止会话文件路径穿越；事件须有正整数 sequence、字符串 runId 和匹配的 sessionId；单次事件输入最多 4 MiB。JSONL 末行 JSON 不完整时读取有效前缀，下一次追加先重写修复末行。中间损坏、非法结构、倒序等异常删除整份副本。渲染器另外用 eventSchema 校验首尾各 20 条。
 
-每个窗口最多 2000 条或 1 MiB，超出后从头按完整 run 丢弃，更新 firstSequence/hasEarlier。所有 owner 的 JSONL 总量最多 200 MiB，后台按文件 mtime 从旧到新淘汰，跳过当前选中及观察中的会话。`protect(ids)` 是为此新增的本机 IPC；`retain(ids)` 仍专用于 ready 会话列表对账，不兼作保护列表。换 owner 或断开连接释放旧保护。启动/重写后后台清理 90 天未使用的 owner 目录。
+每个窗口最多 2000 条或 1 MiB，超出后从头按完整 run 丢弃，更新 firstSequence/hasEarlier。所有 owner 的 JSONL 总量最多 200 MiB，后台按文件 mtime 从旧到新淘汰，跳过当前选中及观察中的会话。启动、重写及实际追加后均触发合并的维护任务，最多再排一轮；同时清理 90 天未使用的 owner 目录和本模块命名的崩溃临时文件，活动临时文件不会被删除。`protect(ids)` 是为此新增的本机 IPC；`retain(ids)` 仍专用于 ready 会话列表对账，不兼作保护列表。换 owner 或断开连接释放旧保护。
 
 `clear()` 删除整个 history-cache 目录，返回删除的 JSONL 字节数；`usage()` 统计所有 owner 的 JSONL 字节数。开启状态下后续权威写入可重新建立目录与 meta；关闭后不会重新写入。meta 和临时文件不计入用户看到的聊天副本占用。
 
@@ -44,6 +46,8 @@ UUID 校验阻止会话文件路径穿越；事件须有正整数 sequence、字
 4. 断线、connect、connectBrowser、disconnect 清空 synced。只有 synced 会话的持久化事件可以写盘；fragment、live 和 progress 永不写入。额外的 provenLast 记录完整内存窗口的可信末尾，避免订阅超时后全局流式事件错误推进重试游标。
 5. replace/prepend 重写完整窗口；append 仅在已持久化游标匹配该订阅请求的 afterSequence 时追加，否则重写。流式写盘按会话合并，最多每秒一次。beforeunload 通过 disconnect 立即提交剩余完整窗口到 IPC，不依赖卸载后仍能执行渲染器 Promise；主进程负责串行收尾。
 6. invalid_cursor 删除副本并清空该会话内存，静默从 0 重试一次；第二次失败显示正常错误。not_found、session.deleted 删除副本，ready 在当前 owner 内 retain 会话列表。内存淘汰时同时丢弃磁盘游标，读盘为空不能再用旧游标。
+
+磁盘故障、失败的清除或清除/开关交错，都按当前可见会话恢复网络订阅，不依赖已取消的读盘 Promise，并避免重复订阅。接收到 snapshot 的连续性证明独立于临时存储可用性；清除期间接收的权威数据也能证明后续流。追加因正常 LRU 淘汰或文件损坏失败时，先用已确认的完整内存窗口原子重建；异步拒绝后再次检查连接与 owner 代次，不能跨连接写入旧窗口。
 
 复审补强：prepend 不能证明尚未补齐的尾部；迟到的 invalid_cursor 重试按会话当前主聊/观察角色发送。关闭再开启缓存会立即重新同步已打开的主聊与侧聊；读盘期间关闭则恢复原有网络订阅。已注入的磁盘副本使用私有来源标记，只有有效 replace/append 才解除只读约束；同步失败或关闭缓存开关都不能解锁旧副本，也不能将未证明完整的流式末尾用作重试游标。同步失败后可重新选择会话重试。
 

@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-08",
+  "timezone": "Asia/Hong_Kong",
+  "reviewBase": "3567224",
+  "reviewedProductHead": "ed9bdb6ed90b4f1bdddbdde2c49340f40babdeea",
+  "fixes": [
+    "cache failures preserve visible network loads and proven fallback cursors",
+    "overlapping clear and disable do not lose subscriptions",
+    "accepted snapshots retain continuity while storage is temporarily unavailable",
+    "evicted disk file rebuild uses proven memory and repeats owner/socket guard",
+    "append growth triggers coalesced global quota maintenance",
+    "persisted discarded-run hash prevents partial run resurrection",
+    "crash temporaries reclaimed without deleting active writers"
+  ],
+  "tests": {
+    "full": {
+      "command": "npm test",
+      "tests": 1038,
+      "pass": 975,
+      "fail": 0,
+      "skipped": 63,
+      "cancelled": 0
+    },
+    "focused": {
+      "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
+      "tests": 56,
+      "pass": 56,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "ui": {
+      "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/email-login.spec.ts apps/desktop/test/conversation-follow.spec.ts apps/desktop/test/quoted-conversations.spec.ts apps/desktop/test/terminal-status.spec.ts",
+      "pass": 78,
+      "fail": 0,
+      "browserChannel": "msedge"
+    }
+  },
+  "faultEvidence": {
+    "childExitBeforeRename": 77,
+    "liveAtomicTemporaryProtected": true,
+    "wholeRunPreservedAcrossReopen": true,
+    "globalQuotaVerifiedAfterAppend": true,
+    "noSubscriptionsIntoReplacedConnection": true
+  },
+  "performance": {
+    "hydration": {
+      "utc": "2026-11-07T18:57:12.447Z",
+      "events": 2000,
+      "selectToStateMs": 17.8
+    },
+    "mainProcess": {
+      "node": "v24.21.0",
+      "platform": "win32",
+      "events": 2000,
+      "iterations": 10,
+      "fixtureBytes": 819794,
+      "callbacks": 7859,
+      "maxSynchronousCallbackMs": 1.396,
+      "maxReplaceReadAppendWallMs": 28.942,
+      "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
+    }
+  },
+  "independentReview": {
+    "storageTestsPassed": 20,
+    "clientTestsPassed": 34,
+    "remainingReportedMaterialDefects": 0
+  },
+  "checks": {
+    "commands": ["npm run check", "npm run typecheck", "npm run format:check", "git diff --check"],
+    "failures": 0
+  },
+  "localFormat": {
+    "format": 1,
+    "protocol": 24,
+    "optionalHeaderField": "discardedRun: SHA256 of the fully discarded active run, only for an empty trimmed window; stripped from read IPC"
+  },
+  "boundaries": {
+    "serverOrProtocolChanged": false,
+    "originalUiMotionTouched": false,
+    "pushed": false,
+    "merged": false,
+    "published": false,
+    "modelCalls": 0
+  }
+}
