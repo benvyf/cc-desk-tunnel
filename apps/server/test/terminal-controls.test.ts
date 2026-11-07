@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  rmSync,
+  readFileSync,
+  writeFileSync,
+  mkdirSync,
+  existsSync,
+} from 'node:fs';
 import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve, dirname } from 'node:path';
@@ -241,6 +249,18 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     resolve(directory, 'native', binding.root).replace(/[^a-zA-Z0-9]/g, '-'),
     `${binding.nativeId}.jsonl`,
   );
+  // The CLI's start is the first state a new terminal has: waiting for input.
+  writeFileSync(
+    hooksPath,
+    JSON.stringify({ hook_event_name: 'SessionStart', session_id: sessionId }) + '\n',
+  );
+  await owner.wait(
+    (message) =>
+      message.type === 'session.event' &&
+      message.event.payload.type === 'run.status' &&
+      message.event.payload.surface === 'terminal' &&
+      message.event.payload.activity === 'idle',
+  );
   const questionId = randomUUID();
   const terminalMessages = [
     {
@@ -266,7 +286,7 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     nativeFile,
     terminalMessages.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
   );
-  writeFileSync(
+  appendFileSync(
     hooksPath,
     JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId }) + '\n',
   );

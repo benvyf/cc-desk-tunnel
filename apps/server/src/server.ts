@@ -941,7 +941,8 @@ export function createProxyServer(options: ServerOptions) {
         statusPath: join(directory, `${current.id}.status`),
         offset: 0,
         heard: Promise.resolve(),
-        activity: 'idle',
+        // Unknown until the CLI's first hook: starting as 'idle' made its SessionStart (also 'idle') look
+        // unchanged, so a fresh terminal stayed without a state until the first prompt.
       };
       terminalSettings(
         current.continued.settingsPath,
