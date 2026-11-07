@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { readFileSync, writeFileSync } from 'node:fs';
 import type { SessionMessage } from '@anthropic-ai/claude-agent-sdk';
 import type { EventPayload, NativeMetrics, TerminalActivity } from '@cc-desk-tunnel/protocol';
-import { ClaudeStream, printed } from './claude-stream.ts';
+import { ClaudeStream } from './claude-stream.ts';
 import { settingsPath as userSettingsPath } from './native-settings.ts';
 
 // Fields the CLI's record keeps beside the message, which `getSessionMessages` passes through.
@@ -11,6 +11,7 @@ type Entry = SessionMessage & {
   is_meta?: boolean;
   timestamp?: string;
   origin?: { kind?: string };
+  compact?: { trigger?: unknown; preTokens?: unknown };
 };
 type Block = { type?: unknown; text?: unknown };
 
@@ -58,73 +59,145 @@ export function statusLineContext(
 const tag = (text: string, name: string) =>
   text.match(new RegExp(`<${name}>([\\s\\S]*?)</${name}>`))?.[1];
 
-// What a terminal that continues a session added to the CLI's record of it, as the events a chat run would have
-// recorded: prompts, answers, tool calls and their results, compactions and what local commands printed. The record
-// keeps no streaming, approvals or thinking left unwritten, so those do not come back. `known` is what the record
-// held when the terminal opened; a compaction keeps some of it after the summary, and that is not shown twice.
+// Stateful terminal import, adapted from upstream c9b94ca without its idle-cache subsystem.
+const plain = (text: string) => text.replace(/\u001b\[[\d;]*m/g, '').trim();
+const LEAVING = new Set(['/exit', '/quit']);
+
+export class TerminalTranscript {
+  private stream: ClaudeStream;
+  private answers = new Map<unknown, ReturnType<typeof randomUUID>>();
+  private at: string | undefined;
+  private emit: (event: EventPayload) => void;
+  // A command of the CLI's own, until what comes next says whether it printed something (a local command) or asked
+  // the model (a prompt of its own, a question as any other).
+  private command: string | undefined;
+  private commandAt: string | undefined;
+  // A compaction's summary was just read: the /compact the CLI records again after it, and what it printed, are left
+  // out, the question and the mark already said so.
+  private compacted = false;
+  private skipPrinted = false;
+  // Compactions read, and how many of them were asked about (see `compactedSince`).
+  private compactions = 0;
+  private told = 0;
+  constructor(record: (event: EventPayload, at?: string) => void) {
+    this.emit = (event) => record(event, this.at);
+    this.stream = new ClaudeStream(this.emit);
+  }
+  accept(messages: SessionMessage[], known: ReadonlySet<string>) {
+    for (const entry of messages as Entry[]) {
+      if (known.has(entry.uuid) || entry.parent_tool_use_id) continue;
+      this.at = entry.timestamp;
+      const message = entry.message as { id?: unknown; content?: unknown; usage?: unknown };
+      const content = entry.type === 'user' ? message.content : undefined;
+      const output = typeof content === 'string' ? tag(content, 'local-command-stdout') : undefined;
+      if (entry.isCompactSummary) {
+        this.flushQuestion();
+        this.compacted = true;
+        this.compactions++;
+        this.emit({
+          type: 'native.compact',
+          trigger: typeof entry.compact?.trigger === 'string' ? entry.compact.trigger : 'unknown',
+          previousTokens:
+            typeof entry.compact?.preTokens === 'number' ? entry.compact.preTokens : null,
+        });
+        continue;
+      }
+      // The CLI's own notes to the model, and messages it wrote on the user's behalf, such as a task's report.
+      if (entry.type === 'system' || entry.is_meta) continue;
+      if (entry.origin?.kind && entry.origin.kind !== 'human') continue;
+      if (this.command !== undefined && output === undefined) this.flushQuestion();
+      if (output !== undefined) {
+        // What a local command printed. The window has its own controls for what these do, and some are of the
+        // terminal alone: one line says what was done.
+        const command = this.command;
+        this.command = undefined;
+        if (this.skipPrinted) this.skipPrinted = false;
+        else if (command && !LEAVING.has(command.split(' ')[0]))
+          this.emit({
+            type: 'native.notice',
+            text: `在终端里执行了 ${command}${plain(output) ? `：${plain(output)}` : ''}`,
+          });
+        continue;
+      }
+      const wasCompacted = this.compacted;
+      this.compacted = false;
+      if (entry.type === 'assistant') {
+        // What the CLI writes in place of an answer to a turn the user interrupted.
+        const blocks = message.content as Block[] | undefined;
+        if (
+          (message as { model?: unknown }).model === '<synthetic>' &&
+          blocks?.length === 1 &&
+          blocks[0]?.text === 'No response requested.'
+        )
+          continue;
+        // One answer is recorded as a message per content block, all with the answer's ID.
+        let id = this.answers.get(message.id);
+        if (!id) this.answers.set(message.id, (id = randomUUID()));
+        this.stream.messageId = id;
+        this.stream.requested = true;
+        this.stream.accept({ type: 'assistant', message });
+        continue;
+      }
+      if (typeof content === 'string') {
+        const command = tag(content, 'command-name');
+        if (!command) {
+          this.question(content);
+          continue;
+        }
+        const text = [command, tag(content, 'command-args')?.trim()].filter(Boolean).join(' ');
+        if (wasCompacted && command === '/compact') this.skipPrinted = true;
+        else {
+          this.command = text;
+          this.commandAt = this.at;
+        }
+        continue;
+      }
+      if (!Array.isArray(content)) continue;
+      const text = (content as Block[])
+        .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+        .map((block) => block.text as string)
+        .filter((part) => !part.startsWith('<system-reminder>'))
+        .join('\n');
+      if (text) this.question(text);
+      if ((content as Block[]).some((block) => block?.type === 'tool_result'))
+        this.stream.accept({ type: 'user', message });
+    }
+  }
+  // A command that printed nothing was a question to the model after all; so is one the record holds nothing after.
+  settle() {
+    if (this.command !== undefined) {
+      if (LEAVING.has(this.command.split(' ')[0])) this.command = undefined;
+      else this.flushQuestion();
+    }
+  }
+  // Whether a compaction was read since this was last asked.
+  compactedSince() {
+    const since = this.compactions > this.told;
+    this.told = this.compactions;
+    return since;
+  }
+  private question(text: string) {
+    this.command = undefined;
+    this.emit({ type: 'message.user', messageId: randomUUID(), text, scenario: 'chat' });
+  }
+  private flushQuestion() {
+    if (this.command === undefined) return;
+    const at = this.at;
+    this.at = this.commandAt;
+    this.question(this.command);
+    this.at = at;
+  }
+}
+
+// The messages read in one go, as a chat run's events (see `TerminalTranscript`).
 export function terminalEvents(
   messages: SessionMessage[],
   known: ReadonlySet<string>,
   record: (event: EventPayload, at?: string) => void,
 ) {
-  let at: string | undefined;
-  const emit = (event: EventPayload) => record(event, at);
-  const stream = new ClaudeStream(emit);
-  let answer: unknown;
-  for (const entry of messages as Entry[]) {
-    if (known.has(entry.uuid) || entry.parent_tool_use_id) continue;
-    at = entry.timestamp;
-    if (entry.isCompactSummary) {
-      emit({ type: 'native.compact', trigger: 'unknown', previousTokens: null });
-      continue;
-    }
-    // The CLI's own notes to the model, and messages it wrote on the user's behalf, such as a task's report.
-    if (entry.type === 'system' || entry.is_meta) continue;
-    if (entry.origin?.kind && entry.origin.kind !== 'human') continue;
-    const message = entry.message as { id?: unknown; content?: unknown };
-    if (entry.type === 'assistant') {
-      // What the CLI writes in place of an answer to a turn the user interrupted.
-      const blocks = message.content as Block[] | undefined;
-      if (
-        (message as { model?: unknown }).model === '<synthetic>' &&
-        blocks?.length === 1 &&
-        blocks[0]?.text === 'No response requested.'
-      )
-        continue;
-      // One answer is recorded as a message per content block, all with the answer's ID.
-      if (message.id !== answer) {
-        answer = message.id;
-        stream.messageId = randomUUID();
-      }
-      stream.requested = true;
-      stream.accept({ type: 'assistant', message });
-      continue;
-    }
-    const content = message.content;
-    if (typeof content === 'string') {
-      const output = tag(content, 'local-command-stdout');
-      if (output !== undefined) {
-        if (output.trim())
-          emit({ type: 'text.delta', messageId: randomUUID(), text: printed(output) });
-        continue;
-      }
-      const command = tag(content, 'command-name');
-      const text = command
-        ? [command, tag(content, 'command-args')?.trim()].filter(Boolean).join(' ')
-        : content;
-      emit({ type: 'message.user', messageId: randomUUID(), text, scenario: 'chat' });
-      continue;
-    }
-    if (!Array.isArray(content)) continue;
-    const text = (content as Block[])
-      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text as string)
-      .filter((part) => !part.startsWith('<system-reminder>'))
-      .join('\n');
-    if (text) emit({ type: 'message.user', messageId: randomUUID(), text, scenario: 'chat' });
-    if ((content as Block[]).some((block) => block?.type === 'tool_result'))
-      stream.accept({ type: 'user', message });
-  }
+  const transcript = new TerminalTranscript(record);
+  transcript.accept(messages, known);
+  transcript.settle();
 }
 
 // A terminal that continues a session learns from the CLI's hooks what it is doing and which native session it is

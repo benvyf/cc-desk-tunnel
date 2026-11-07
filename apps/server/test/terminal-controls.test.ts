@@ -301,20 +301,21 @@ test('reviewed terminal synchronizes turns and quota, rejects foreign controls, 
     },
   ];
   mkdirSync(dirname(nativeFile), { recursive: true });
-  writeFileSync(
-    nativeFile,
-    terminalMessages.map((entry) => JSON.stringify(entry)).join('\n') + '\n',
-  );
-  appendFileSync(
-    hooksPath,
-    JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId }) + '\n',
-  );
+  writeFileSync(nativeFile, JSON.stringify(terminalMessages[0]) + '\n');
+  // The prompt is imported while the CLI is still working, before any Stop hook.
   await owner.wait(
     (message) =>
       message.type === 'session.event' &&
       message.event.payload.type === 'message.user' &&
       message.event.payload.text === 'terminal fixture prompt',
   );
+  appendFileSync(
+    hooksPath,
+    JSON.stringify({ hook_event_name: 'Stop', session_id: sessionId }) + '\n',
+  );
+  // The actual CLI can finish its hook before its answer is flushed to JSONL.
+  await delay(650);
+  appendFileSync(nativeFile, JSON.stringify(terminalMessages[1]) + '\n');
   await owner.wait(
     (message) =>
       message.type === 'session.event' &&

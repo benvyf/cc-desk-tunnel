@@ -57,10 +57,11 @@ import {
   readTerminalMessages,
   readTerminalContext,
   terminalHistoryPath,
+  TerminalHistoryReader,
 } from './terminal-history.ts';
 import { statusLineQuota } from './native-controls.ts';
 import {
-  terminalEvents,
+  TerminalTranscript,
   terminalSettings,
   terminalHooks,
   terminalActivity,
@@ -172,6 +173,13 @@ type Terminal = {
     activity?: TerminalActivity;
     elsewhere?: boolean;
     toldElsewhere?: boolean;
+    reader: TerminalHistoryReader;
+    transcript: TerminalTranscript;
+    imported: { payload: EventPayload; at?: string }[];
+    snapshot?: Awaited<ReturnType<TerminalHistoryReader['read']>>;
+    syncTimer?: ReturnType<typeof setInterval>;
+    syncQueued?: boolean;
+    syncFailed?: boolean;
   };
 };
 // One of the user's computers, while it is connected or expected back: its connections, the door its commands
@@ -928,7 +936,8 @@ export function createProxyServer(options: ServerOptions) {
       )
         throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
       const cwd = prepareNativeDirectory(options.claude, store.directory, nativeRoot(session.id));
-      const messages = await readTerminalMessages(context.config, cwd, history.nativeId);
+      const reader = new TerminalHistoryReader(context.config, cwd, history.nativeId);
+      const messages = await reader.read({ final: true });
       const saved =
         (await readTerminalHistory(context.config, cwd, history.nativeId)) ??
         (messages.length ? await readTerminalContext(context.config, cwd, history.nativeId) : null);
@@ -938,6 +947,7 @@ export function createProxyServer(options: ServerOptions) {
         throw new DomainError('history_exists', '此终端已有官方历史，请显式选择继续历史会话。');
       const directory = join(store.directory, 'terminal-runtime');
       mkdirSync(directory, { recursive: true, mode: 0o700 });
+      const imported: { payload: EventPayload; at?: string }[] = [];
       current.continued = {
         nativeId: history.nativeId,
         config: context.config,
@@ -951,6 +961,10 @@ export function createProxyServer(options: ServerOptions) {
         statusPath: join(directory, `${current.id}.status`),
         offset: 0,
         heard: Promise.resolve(),
+        reader,
+        imported,
+        snapshot: messages,
+        transcript: new TerminalTranscript((payload, at) => imported.push({ payload, at })),
         // Unknown until the CLI's first hook: starting as 'idle' made its SessionStart (also 'idle') look
         // unchanged, so a fresh terminal stayed without a state until the first prompt.
       };
@@ -1008,34 +1022,41 @@ export function createProxyServer(options: ServerOptions) {
         async (exitCode) => {
           if (terminals.get(current.sessionId) !== current) return;
           clearTimeout(current.idle);
+          clearInterval(current.continued!.syncTimer);
           unwatchFile(current.continued!.hooksPath);
           unwatchFile(current.continued!.statusPath);
-          await heardTerminal(current, true);
-          if (
-            current.continued!.empty === true &&
-            current.continued!.nativeId === session.id &&
-            !store.hasNativeContext(session.id)
-          )
-            rmSync(terminalHistoryPath(context.config, cwd, session.id), { force: true });
-          terminalQuota(current);
-          cleanupTerminal(current);
-          store.touchTerminalHistory(current.sessionId);
-          record(current.sessionId, current.id, {
-            type: 'run.status',
-            status: 'completed',
-            surface: 'terminal',
-            connectionId: peer.id,
-          });
-          updated(current.sessionId);
-          if (current.owner)
-            send(current.owner, {
-              type: 'terminal.closed',
-              sessionId: current.sessionId,
-              terminalId: current.id,
-              exitCode,
-              reason: current.process?.reason ?? 'process_exit',
+          try {
+            await heardTerminal(current, true);
+            if (
+              current.continued!.empty === true &&
+              current.continued!.nativeId === session.id &&
+              !store.hasNativeContext(session.id)
+            )
+              rmSync(terminalHistoryPath(context.config, cwd, session.id), { force: true });
+            terminalQuota(current);
+            store.touchTerminalHistory(current.sessionId);
+            record(current.sessionId, current.id, {
+              type: 'run.status',
+              status: 'completed',
+              surface: 'terminal',
+              connectionId: peer.id,
             });
-          terminals.delete(current.sessionId);
+            updated(current.sessionId);
+          } finally {
+            try {
+              cleanupTerminal(current);
+            } finally {
+              if (terminals.get(current.sessionId) === current) terminals.delete(current.sessionId);
+              if (current.owner)
+                send(current.owner, {
+                  type: 'terminal.closed',
+                  sessionId: current.sessionId,
+                  terminalId: current.id,
+                  exitCode,
+                  reason: current.process?.reason ?? 'process_exit',
+                });
+            }
+          }
         },
       );
       if (current.closing || peer.socket.readyState !== WebSocket.OPEN) {
@@ -1058,6 +1079,14 @@ export function createProxyServer(options: ServerOptions) {
       updated(command.sessionId);
       watchFile(current.continued.hooksPath, { interval: 500 }, () => void heardTerminal(current));
       watchFile(current.continued.statusPath, { interval: 1000 }, () => terminalQuota(current));
+      current.continued.syncTimer = setInterval(() => {
+        const continued = current.continued!;
+        if (continued.syncQueued || continued.syncFailed || current.process?.exited) return;
+        continued.syncQueued = true;
+        void heardTerminal(current, false, false, true).finally(() => {
+          continued.syncQueued = false;
+        });
+      }, 1000);
       send(peer, { type: 'terminal.opened', sessionId: command.sessionId, terminalId: current.id });
       store.touchTerminalHistory(command.sessionId);
     } catch (error) {
@@ -1085,6 +1114,7 @@ export function createProxyServer(options: ServerOptions) {
   }
   function cleanupTerminal(terminal: Terminal) {
     if (!terminal.continued) return;
+    clearInterval(terminal.continued.syncTimer);
     for (const path of [
       terminal.continued.settingsPath,
       terminal.continued.hooksPath,
@@ -1094,10 +1124,16 @@ export function createProxyServer(options: ServerOptions) {
       rmSync(path, { force: true });
     }
   }
-  function heardTerminal(terminal: Terminal, ended = false, interrupted = false) {
+  function heardTerminal(
+    terminal: Terminal,
+    ended = false,
+    interrupted = false,
+    incremental = false,
+  ) {
     const continued = terminal.continued!;
     const task = continued.heard
       .then(async () => {
+        if (terminals.get(terminal.sessionId) !== terminal) return;
         const { hooks, offset } = terminalHooks(continued.hooksPath, continued.offset);
         continued.offset = offset;
         let activity: TerminalActivity | undefined;
@@ -1108,8 +1144,14 @@ export function createProxyServer(options: ServerOptions) {
         }
         interrupted &&= !hooks.length && continued.activity === 'working';
         if (interrupted) activity = 'idle';
-        if (ended || interrupted || hooks.some((hook) => terminalActivity(hook) === 'idle'))
-          await importTerminal(terminal, ended);
+        if (
+          !continued.syncFailed &&
+          (incremental ||
+            ended ||
+            interrupted ||
+            hooks.some((hook) => terminalActivity(hook) === 'idle'))
+        )
+          await importTerminal(terminal, ended, !incremental);
         if (
           ended ||
           !activity ||
@@ -1127,13 +1169,36 @@ export function createProxyServer(options: ServerOptions) {
         });
         updated(terminal.sessionId);
       })
-      .catch((error) =>
+      .catch((error) => {
+        if (continued.syncFailed) return;
+        continued.syncFailed = true;
+        continued.empty = undefined;
+        clearInterval(continued.syncTimer);
         console.error(
           'Terminal conversation import failed',
-          { sessionId: terminal.sessionId, terminalId: terminal.id },
+          {
+            sessionId: terminal.sessionId,
+            terminalId: terminal.id,
+            nativeId: continued.nativeId,
+            path: continued.reader.path,
+          },
           error,
-        ),
-      );
+        );
+        const message = '终端记录同步失败，原始历史已保留；终端仍可继续使用。';
+        try {
+          record(terminal.sessionId, terminal.id, { type: 'native.notice', text: message });
+        } catch {}
+        broadcast(
+          {
+            type: 'connection.error',
+            code: 'terminal_sync_failed',
+            message,
+            sessionId: terminal.sessionId,
+            terminalId: terminal.id,
+          },
+          terminal.sessionId,
+        );
+      });
     continued.heard = task;
     return task;
   }
@@ -1176,7 +1241,7 @@ export function createProxyServer(options: ServerOptions) {
       observed?.available ? undefined : terminal.sessionId,
     );
   }
-  async function importTerminal(terminal: Terminal, ended = false) {
+  async function importTerminal(terminal: Terminal, ended = false, reconcile = false) {
     const continued = terminal.continued!;
     const { known } = continued;
     const { sessionId } = terminal;
@@ -1190,7 +1255,10 @@ export function createProxyServer(options: ServerOptions) {
     };
     const dir = nativeDirectory(store.directory, nativeRoot(sessionId));
     continued.empty = undefined;
-    const messages = await readTerminalMessages(continued.config, dir, continued.nativeId);
+    const messages = await continued.reader.read({ final: ended, reconcile });
+    if (terminals.get(sessionId) !== terminal) return;
+    if (!ended && !reconcile && messages === continued.snapshot) return;
+    continued.snapshot = messages;
     continued.empty = !messages.length;
     if (messages.length && continued.nativeId === sessionId && !store.hasNativeContext(sessionId)) {
       const answer = messages.findLast((message) => message.type === 'assistant')?.message as
@@ -1202,18 +1270,37 @@ export function createProxyServer(options: ServerOptions) {
         version: '',
       });
     }
-    const compacted = messages.some(
-      (message) =>
-        !known.has(message.uuid) && (message as { isCompactSummary?: boolean }).isCompactSummary,
-    );
+    const compacted =
+      continued.transcript.compactedSince() ||
+      messages.some(
+        (message) =>
+          !known.has(message.uuid) && (message as { isCompactSummary?: boolean }).isCompactSummary,
+      );
     if (
       continued.last &&
       !compacted &&
       !messages.some((message) => message.uuid === continued.last)
     )
       emit({ type: 'native.notice', text: '终端里回退了对话，上面有些内容已不在上下文中。' });
-    terminalEvents(messages, known, emit);
-    for (const message of messages) known.add(message.uuid);
+    const commit = () => {
+      const records = continued.imported.splice(0).map(({ payload, at }) => {
+        const time = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : now;
+        continued.at = time < continued.at ? continued.at : time > now ? now : time;
+        return { payload, createdAt: continued.at };
+      });
+      for (const event of store.appendMany(sessionId, terminal.id, records))
+        broadcast({ type: 'session.event', event }, sessionId);
+    };
+    for (const message of messages) {
+      if (known.has(message.uuid)) continue;
+      continued.transcript.accept([message], known);
+      commit();
+      known.add(message.uuid);
+    }
+    if (ended) {
+      continued.transcript.settle();
+      commit();
+    }
     continued.last = messages.at(-1)?.uuid ?? continued.last;
     if (continued.elsewhere && !continued.toldElsewhere) {
       continued.toldElsewhere = true;

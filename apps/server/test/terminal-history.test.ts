@@ -1,6 +1,14 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  renameSync,
+  readFileSync,
+} from 'node:fs';
 import { registerHooks } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -8,10 +16,13 @@ import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
 import { WebSocket } from 'ws';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import type { EventPayload } from '@cc-desk-tunnel/protocol';
+import { TerminalTranscript } from '../src/terminal-transcript.ts';
 import {
   terminalHistoryPath,
   terminalHistoryContext,
   readTerminalMessages,
+  TerminalHistoryReader,
 } from '../src/terminal-history.ts';
 
 test('transcript imports read only the selected CLI configuration and never fall back to another history', async (t) => {
@@ -55,6 +66,99 @@ test('transcript imports read only the selected CLI configuration and never fall
     [question, answer],
   );
   assert.deepEqual(await readTerminalMessages(join(root, 'another-config'), cwd, id), []);
+});
+
+test('real Linux CLI 2.1.295 main-chain and system local commands import through the SDK', async (t) => {
+  // Recorded with an isolated HOME and localhost API fixture; attachment bodies removed.
+  const rows = JSON.parse(
+    readFileSync(new URL('./fixtures/terminal-cli-2.1.295.json', import.meta.url), 'utf8'),
+  );
+  const root = mkdtempSync(join(tmpdir(), 'cc-real-transcript-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  const id = rows.find((row: { type: string }) => row.type === 'user').sessionId;
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  const events: EventPayload[] = [],
+    known = new Set<string>();
+  const transcript = new TerminalTranscript((event) => events.push(event));
+  // Replay writes in the actual file order, including local-command records split across reads.
+  for (const row of rows) {
+    appendFileSync(path, JSON.stringify(row) + '\n');
+    const messages = await reader.read();
+    transcript.accept(messages, known);
+    for (const message of messages) known.add(message.uuid);
+  }
+  assert.equal(events.filter((event) => event.type === 'message.user').length, 1);
+  assert.equal(events.filter((event) => event.type === 'text.delta').length, 1);
+  assert.ok(
+    events.some(
+      (event) =>
+        event.type === 'native.notice' && event.text.startsWith('在终端里执行了 /context：'),
+    ),
+  );
+});
+
+test('incremental history waits for complete UTF-8 rows, follows the SDK chain and handles replacement', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-history-incremental-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const q = randomUUID(),
+    system = randomUUID(),
+    a = randomUUID();
+  const question = {
+    type: 'user',
+    uuid: q,
+    parentUuid: null,
+    sessionId: id,
+    message: { role: 'user', content: '问' },
+  };
+  writeFileSync(path, JSON.stringify(question) + '\n');
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  assert.equal((await reader.read()).length, 1);
+  appendFileSync(
+    path,
+    JSON.stringify({
+      type: 'system',
+      subtype: 'informational',
+      uuid: system,
+      parentUuid: q,
+      sessionId: id,
+    }) + '\n',
+  );
+  const bytes = Buffer.from(
+    JSON.stringify({
+      type: 'assistant',
+      uuid: a,
+      parentUuid: system,
+      sessionId: id,
+      message: { role: 'assistant', id: 'msg-one', content: [{ type: 'text', text: '回答🙂' }] },
+    }) + '\n',
+  );
+  const split = bytes.indexOf(Buffer.from('🙂')) + 2;
+  appendFileSync(path, bytes.subarray(0, split));
+  assert.ok(!(await reader.read()).some((row) => row.uuid === a));
+  // Stop/full reconciliation is also a live prefix read, not a strict parse of the half row.
+  assert.ok(!(await reader.read({ reconcile: true })).some((row) => row.uuid === a));
+  appendFileSync(path, bytes.subarray(split));
+  assert.ok((await reader.read()).some((row) => row.uuid === a));
+  const unchanged = await reader.read();
+  assert.equal(await reader.read(), unchanged);
+  const next = { ...question, uuid: randomUUID(), message: { role: 'user', content: 'new file' } };
+  writeFileSync(path + '.next', JSON.stringify(next));
+  renameSync(path + '.next', path);
+  assert.deepEqual(
+    (await reader.read({ final: true })).map((row) => row.uuid),
+    [next.uuid],
+  );
+  appendFileSync(path, '\n{broken}\n');
+  await assert.rejects(reader.read(), /Invalid terminal transcript at line 2/);
 });
 
 test('corrupt transcript rows are reported instead of being treated as an empty history', async (t) => {

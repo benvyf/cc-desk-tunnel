@@ -877,31 +877,39 @@ export class SessionStore {
     payload: EventPayload,
     createdAt = new Date().toISOString(),
   ): SessionEvent {
+    return this.appendMany(sessionId, runId, [{ payload, createdAt }])[0];
+  }
+
+  // A terminal source record may emit several events. Commit those together before publishing any.
+  appendMany(
+    sessionId: string,
+    runId: string,
+    records: { payload: EventPayload; createdAt: string }[],
+  ): SessionEvent[] {
+    if (!records.length) return [];
     const { session } = this.get(sessionId);
-    const event: SessionEvent = {
-      sessionId,
-      runId,
-      sequence: this.lastSequence(sessionId) + 1,
-      createdAt,
-      payload,
-    };
-    if (!stateReadings.has(payload.type)) session.updatedAt = event.createdAt;
-    if (payload.type === 'run.status')
-      session.activeRun = terminalStatuses.has(payload.status)
-        ? null
-        : {
-            id: runId,
-            status: payload.status,
-            connectionId: payload.connectionId,
-            ...(payload.surface ? { surface: payload.surface } : {}),
-            ...(payload.waiting ? { waiting: payload.waiting } : {}),
-            ...(payload.activity ? { activity: payload.activity } : {}),
-          };
+    const events: SessionEvent[] = [];
     this.database.exec('BEGIN');
     try {
-      this.database
-        .prepare('INSERT INTO events VALUES (?, ?, ?, ?)')
-        .run(sessionId, event.sequence, runId, JSON.stringify(event));
+      let sequence = this.lastSequence(sessionId);
+      const insert = this.database.prepare('INSERT INTO events VALUES (?, ?, ?, ?)');
+      for (const { payload, createdAt } of records) {
+        const event: SessionEvent = { sessionId, runId, sequence: ++sequence, createdAt, payload };
+        if (!stateReadings.has(payload.type)) session.updatedAt = event.createdAt;
+        if (payload.type === 'run.status')
+          session.activeRun = terminalStatuses.has(payload.status)
+            ? null
+            : {
+                id: runId,
+                status: payload.status,
+                connectionId: payload.connectionId,
+                ...(payload.surface ? { surface: payload.surface } : {}),
+                ...(payload.waiting ? { waiting: payload.waiting } : {}),
+                ...(payload.activity ? { activity: payload.activity } : {}),
+              };
+        insert.run(sessionId, event.sequence, runId, JSON.stringify(event));
+        events.push(event);
+      }
       this.save(session);
       this.database.exec('COMMIT');
     } catch (error) {
@@ -909,7 +917,7 @@ export class SessionStore {
       this.known.delete(sessionId);
       throw error;
     }
-    return event;
+    return events;
   }
 
   delete(sessionId: string): void {

@@ -25,6 +25,7 @@ function session(title: string, run: Partial<NonNullable<Session['activeRun']>> 
 const waiting = session('等待审批的会话', { status: 'awaiting_approval', waiting: 'approval' });
 const finished = session('做完的会话', null);
 const failed = session('失败的会话', null);
+const terminal = session('终端同步的会话', { surface: 'terminal', activity: 'idle' });
 const histories = new Map<string, object[]>();
 function history(target: Session, runId: string, payloads: object[]) {
   histories.set(
@@ -96,7 +97,14 @@ history(failed, failedRun, [
   { type: 'run.error', code: 'native_exit', message: 'Claude Code 意外退出（退出码 1）。' },
   { type: 'run.status', status: 'failed', connectionId },
 ]);
-const sessions = [waiting, finished, failed];
+history(terminal, terminal.activeRun!.id, [
+  { type: 'run.status', status: 'running', surface: 'terminal', activity: 'working', connectionId },
+  ask('终端里的问题'),
+  { type: 'run.status', status: 'running', surface: 'terminal', activity: 'idle', connectionId },
+  { type: 'text.delta', messageId: randomUUID(), text: 'Stop 后补齐的最终回答。' },
+  { type: 'native.notice', text: '在终端里执行了 /model：**原样显示** <b>model</b>' },
+]);
+const sessions = [waiting, finished, failed, terminal];
 
 async function connect(page: Page) {
   const commands: { type: string; sessionId?: string }[] = [];
@@ -140,6 +148,20 @@ async function connect(page: Page) {
   await expect(page.locator('.connection-status')).toContainText('已连接');
   return commands;
 }
+
+test('a terminal final answer and local command note remain separate and the note renders as text', async ({
+  page,
+}) => {
+  await connect(page);
+  await open(page, '终端同步的会话');
+  const answer = page.getByText('Stop 后补齐的最终回答。', { exact: true });
+  await expect(answer).toBeVisible();
+  const note = page.locator('.run-notice-text').filter({ hasText: '在终端里执行了 /model' });
+  await expect(note).toHaveText('在终端里执行了 /model：**原样显示** <b>model</b>');
+  await expect(note.locator('b,strong')).toHaveCount(0);
+  expect((await note.boundingBox())!.y).toBeGreaterThan((await answer.boundingBox())!.y);
+  await page.screenshot({ path: '.local/adoption-terminal-notes.png' });
+});
 const open = (page: Page, title: string) =>
   page.locator('.session-row').filter({ hasText: title }).locator('.session-select').click();
 

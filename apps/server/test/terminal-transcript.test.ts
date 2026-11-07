@@ -20,6 +20,7 @@ import {
   terminalSettings,
   terminalHookScript,
   statusLineContext,
+  TerminalTranscript,
 } from '../src/terminal-transcript.ts';
 
 test('terminal context uses the CLI window and an optional smaller compaction window', () => {
@@ -42,6 +43,42 @@ test('terminal context uses the CLI window and an optional smaller compaction wi
     statusLineContext({ context_window: { context_window_size: 100, current_usage: {} } }),
     null,
   );
+});
+
+test('terminal answers retain their identity across batches and local command output stays a note', () => {
+  const events: EventPayload[] = [];
+  const transcript = new TerminalTranscript((event) => events.push(event));
+  const known = new Set<string>();
+  const read = (messages: SessionMessage[]) => {
+    transcript.accept(messages, known);
+    for (const message of messages) known.add(message.uuid);
+  };
+  read([
+    entry('q1', 'user', { role: 'user', content: 'first' }),
+    answer('a1', 'msg1', [{ type: 'text', text: 'part 1' }]),
+  ]);
+  read([answer('a2', 'msg1', [{ type: 'text', text: 'part 2' }])]);
+  const texts = events.filter((event) => event.type === 'text.delta');
+  assert.equal(texts[0].messageId, texts[1].messageId);
+  read([entry('cmd', 'user', { role: 'user', content: '<command-name>/model</command-name>' })]);
+  read([entry('sys', 'system', undefined)]);
+  read([
+    entry('out', 'user', {
+      role: 'user',
+      content: '<local-command-stdout>model set</local-command-stdout>',
+    }),
+  ]);
+  assert.equal(events.filter((event) => event.type === 'message.user').length, 1);
+  assert.ok(
+    events.some(
+      (event) => event.type === 'native.notice' && event.text.includes('/model：model set'),
+    ),
+  );
+  read([
+    entry('custom', 'user', { role: 'user', content: '<command-name>/custom-task</command-name>' }),
+  ]);
+  transcript.settle();
+  assert.ok(events.some((event) => event.type === 'message.user' && event.text === '/custom-task'));
 });
 
 const session = '11111111-2222-4333-8444-555555555555';
@@ -168,17 +205,6 @@ test('a compaction is one mark: the summary, notes and kept messages are not sho
     {
       type: 'message.user',
       messageId: (events[1] as { messageId: string }).messageId,
-      text: '/compact 保留要点',
-      scenario: 'chat',
-    },
-    {
-      type: 'text.delta',
-      messageId: (events[2] as { messageId: string }).messageId,
-      text: '```text\nCompacted\n```',
-    },
-    {
-      type: 'message.user',
-      messageId: (events[3] as { messageId: string }).messageId,
       text: '压缩之后',
       scenario: 'chat',
     },

@@ -63,6 +63,48 @@ test('a finished terminal turn becomes an answer while the terminal remains open
   assert.equal(conversation(running).at(-1).endedAt, undefined);
 });
 
+test('terminal notes follow the completed answer without changing its duration or joining its next question', () => {
+  const events = [
+    event('terminal', 0, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'working',
+      connectionId: 'c',
+    }),
+    event('terminal', 1, {
+      type: 'message.user',
+      messageId: 'q1',
+      text: 'first',
+      scenario: 'chat',
+    }),
+    event('terminal', 3, {
+      type: 'run.status',
+      status: 'running',
+      surface: 'terminal',
+      activity: 'idle',
+      connectionId: 'c',
+    }),
+    said('terminal', 4, 'answer', 'late final answer'),
+    event('terminal', 8, { type: 'native.notice', text: '在终端里执行了 /model' }),
+  ];
+  const first = conversation(events)[0];
+  assert.equal(first.answer?.text, 'late final answer');
+  assert.equal(first.endedAt, at(4));
+  assert.equal(first.notices[0].text, '在终端里执行了 /model');
+  const turns = conversation([
+    ...events,
+    event('terminal', 10, {
+      type: 'message.user',
+      messageId: 'q2',
+      text: 'second',
+      scenario: 'chat',
+    }),
+  ]);
+  assert.equal(turns[1].joined, false);
+  assert.equal(turns[1].endedAt, undefined);
+});
+
 test('an automatic compaction is one mark among the steps, with what came after it under it', () => {
   const turns = conversation([
     event('run', 0, { type: 'message.user', messageId: 'question', text: '做事' }),

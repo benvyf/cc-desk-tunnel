@@ -37,6 +37,34 @@ function ran(store: SessionStore, sessionId: string) {
   return said.projectPath;
 }
 
+test('terminal source events roll back together when a later event fails to persist', (t) => {
+  const { store, session } = fixture(t);
+  const before = store.get(session.id).events.length;
+  store.database.exec(`CREATE TEMP TRIGGER fail_terminal_text BEFORE INSERT ON events
+    WHEN json_extract(NEW.data, '$.payload.type') = 'text.delta'
+    BEGIN SELECT RAISE(ABORT, 'fixture write failure'); END;`);
+  assert.throws(
+    () =>
+      store.appendMany(session.id, randomUUID(), [
+        {
+          createdAt: new Date().toISOString(),
+          payload: {
+            type: 'message.user',
+            messageId: randomUUID(),
+            text: 'question',
+            scenario: 'chat',
+          },
+        },
+        {
+          createdAt: new Date().toISOString(),
+          payload: { type: 'text.delta', messageId: randomUUID(), text: 'answer' },
+        },
+      ]),
+    /fixture write failure/,
+  );
+  assert.equal(store.get(session.id).events.length, before);
+});
+
 test('legacy Windows prompts receive the corrected transfer rule once without moving projects', (t) => {
   const made = fixture(t);
   ran(made.store, made.session.id);

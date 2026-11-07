@@ -56,39 +56,145 @@ async function openTerminalHistory(config: string, cwd: string, nativeId: string
   }
 }
 export async function readTerminalMessages(config: string, cwd: string, nativeId: string) {
-  const file = await openTerminalHistory(config, cwd, nativeId);
-  if (!file) return [];
-  let entries: SessionStoreEntry[];
-  try {
-    if (!(await file.stat()).isFile()) throw new Error('Terminal transcript is not a regular file');
-    const text = await file.readFile('utf8');
-    entries = text.split('\n').flatMap((line, index): SessionStoreEntry[] => {
-      if (!line.trim()) return [];
-      let value;
-      try {
-        value = JSON.parse(line);
-      } catch {
-        throw new Error(
-          `Invalid terminal transcript at line ${index + 1}: ${terminalHistoryPath(config, cwd, nativeId)}`,
-        );
-      }
-      return value && typeof value === 'object' && typeof value.type === 'string' ? [value] : [];
-    });
-  } finally {
-    await file.close();
+  return new TerminalHistoryReader(config, cwd, nativeId).read({ final: true });
+}
+
+// Cache raw records, not a second implementation of the CLI's parent/compaction chain.
+// Reads are bounded chunks; the SDK selects the effective main chain from the cached snapshot.
+export class TerminalHistoryReader {
+  readonly path: string;
+  private entries: SessionStoreEntry[] = [];
+  private offset = 0;
+  private tail = Buffer.alloc(0);
+  private line = 0;
+  private eofLine = false;
+  private identity?: string;
+  private modified?: number;
+  private result?: Awaited<ReturnType<typeof getSessionMessages>>;
+  private config: string;
+  private cwd: string;
+  private nativeId: string;
+  constructor(config: string, cwd: string, nativeId: string) {
+    this.config = config;
+    this.cwd = cwd;
+    this.nativeId = nativeId;
+    this.path = terminalHistoryPath(config, cwd, nativeId);
   }
-  return getSessionMessages(nativeId, {
-    dir: cwd,
-    includeSystemMessages: true,
-    sessionStore: {
-      async append() {
-        throw new Error('Terminal history reader is read-only');
+  async read({ final = false, reconcile = false } = {}) {
+    const file = await openTerminalHistory(this.config, this.cwd, this.nativeId);
+    if (!file) {
+      // A replaced or removed file must not masquerade as the old cached chain.
+      this.reset();
+      return [];
+    }
+    try {
+      const stat = await file.stat();
+      if (!stat.isFile())
+        throw new Error(`Terminal transcript is not a regular file: ${this.path}`);
+      const identity = `${stat.dev}:${stat.ino}`;
+      if (
+        !final &&
+        !reconcile &&
+        identity === this.identity &&
+        stat.size === this.offset &&
+        stat.mtimeMs === this.modified &&
+        this.result
+      )
+        return this.result;
+      if (
+        reconcile ||
+        (this.identity !== undefined &&
+          (identity !== this.identity ||
+            stat.size < this.offset ||
+            (stat.size === this.offset && stat.mtimeMs !== this.modified)))
+      )
+        this.reset();
+      this.identity = identity;
+      // Capture the limit on the same descriptor used to read the initial snapshot.
+      const limit = final || reconcile ? stat.size : Math.min(stat.size, this.offset + 1024 * 1024);
+      while (this.offset < limit) {
+        const chunk = Buffer.alloc(Math.min(256 * 1024, limit - this.offset));
+        const { bytesRead } = await file.read(chunk, 0, chunk.length, this.offset);
+        if (!bytesRead) throw new Error(`Terminal transcript changed while reading: ${this.path}`);
+        this.offset += bytesRead;
+        let bytes = chunk.subarray(0, bytesRead);
+        if (this.eofLine) {
+          if (bytes[0] !== 10)
+            throw new Error(`Invalid terminal transcript after line ${this.line}: ${this.path}`);
+          bytes = bytes.subarray(1);
+          this.eofLine = false;
+        }
+        const buffer = Buffer.concat([this.tail, bytes]);
+        const end = buffer.lastIndexOf(10) + 1;
+        this.tail = Buffer.from(buffer.subarray(end));
+        if (end)
+          for (const line of buffer.subarray(0, end).toString('utf8').split('\n').slice(0, -1))
+            this.accept(line);
+      }
+      this.modified = stat.mtimeMs;
+      if (final && this.tail.length) {
+        this.accept(this.tail.toString('utf8'));
+        this.tail = Buffer.alloc(0);
+        this.eofLine = true;
+      }
+    } finally {
+      await file.close();
+    }
+    const messages = await getSessionMessages(this.nativeId, {
+      dir: this.cwd,
+      includeSystemMessages: true,
+      sessionStore: {
+        async append() {
+          throw new Error('Terminal history reader is read-only');
+        },
+        load: async () => this.entries,
       },
-      async load() {
-        return entries;
-      },
-    },
-  });
+    });
+    // The SDK preserves summaries, but their raw parent boundary carries the compression metadata.
+    const raw = new Map(
+      this.entries.map((entry) => [String(entry.uuid), entry as Record<string, unknown>]),
+    );
+    for (const message of messages) {
+      const entry = raw.get(message.uuid);
+      // SDK 0.3.286 selects these system records but drops their content. Normalize only
+      // the selected local commands, keeping the SDK's chain selection and UUIDs.
+      if (
+        entry?.type === 'system' &&
+        entry.subtype === 'local_command' &&
+        typeof entry.content === 'string'
+      ) {
+        Object.assign(message, { type: 'user', message: { role: 'user', content: entry.content } });
+      }
+      if (entry?.isCompactSummary) {
+        const boundary = raw.get(String(entry.parentUuid));
+        Object.assign(message, { compact: boundary?.compactMetadata });
+      }
+    }
+    this.result = messages;
+    return messages;
+  }
+  private reset() {
+    this.entries = [];
+    this.offset = 0;
+    this.tail = Buffer.alloc(0);
+    this.line = 0;
+    this.eofLine = false;
+    this.identity = undefined;
+    this.modified = undefined;
+    this.result = undefined;
+  }
+  private accept(line: string) {
+    this.line++;
+    if (!line.trim()) return;
+    let value;
+    try {
+      value = JSON.parse(line);
+    } catch {
+      throw new Error(`Invalid terminal transcript at line ${this.line}: ${this.path}`);
+    }
+    if (value && typeof value === 'object' && typeof value.type === 'string')
+      this.entries.push(value);
+  }
 }
 // Read persistence metadata independently of the bounded title preview. Callers must first validate messages.
 export async function readTerminalContext(config: string, cwd: string, nativeId: string) {

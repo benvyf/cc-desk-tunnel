@@ -263,7 +263,7 @@ export type Turn = {
   joined?: boolean;
   steps: Step[];
   answer?: Text;
-  notices: Extract<TranscriptItem, { kind: 'notice' }>[];
+  notices: Notice[];
   startedAt: string;
   endedAt?: string;
   // The "continue" button takes a stopped turn up again: the messages it sent, and how long the turn stood stopped.
@@ -286,11 +286,12 @@ export function conversation(events: SessionEvent[]): Turn[] {
     if (payload.type !== 'run.status') continue;
     else if (
       ['completed', 'cancelled', 'failed'].includes(payload.status) ||
-      payload.waiting === 'background' ||
-      (payload.surface === 'terminal' && payload.activity === 'idle')
+      payload.waiting === 'background'
     ) {
       ended.set(runId, createdAt);
       endedHow.set(runId, payload.status);
+      stops.set(runId, [...(stops.get(runId) ?? []), createdAt]);
+    } else if (payload.surface === 'terminal' && payload.activity === 'idle') {
       stops.set(runId, [...(stops.get(runId) ?? []), createdAt]);
     } else if (payload.status === 'running' && payload.surface !== 'terminal') {
       ended.delete(runId);
@@ -322,7 +323,7 @@ export function conversation(events: SessionEvent[]): Turn[] {
       continue;
     }
     if (!turn || item.kind === 'user') {
-      const joined = !!turn && item.runId === runId;
+      const joined = !!turn && item.runId === runId && !(item.kind === 'user' && item.terminal);
       // The next question closes the turn before it. One put in while the same run goes on closes it where the run
       // last stopped working, or else at the question; how the run ends later belongs to the turn it ends in.
       if (turn && !turn.endedAt && joined) {
@@ -352,7 +353,7 @@ export function conversation(events: SessionEvent[]): Turn[] {
     ]
       .filter((value): value is string => !!value)
       .reduce((a, b) => (a > b ? a : b));
-    if (!seen.has(turn) || seen.get(turn)! < at) seen.set(turn, at);
+    if (item.kind !== 'note' && (!seen.has(turn) || seen.get(turn)! < at)) seen.set(turn, at);
     if (item.kind === 'user') turn.question = item;
     else if (item.kind === 'notice') turn.notices.push(item);
     else if (item.kind === 'assistant' || item.kind === 'note' || item.kind === 'compact')
@@ -373,6 +374,9 @@ export function conversation(events: SessionEvent[]): Turn[] {
   ) {
     close(last, ended.get(runId));
     last.outcome = outcome(runId);
+  } else if (last && !last.endedAt && last.question?.terminal) {
+    const idle = stops.get(runId)?.findLast((at) => at >= last.startedAt);
+    if (idle) close(last, idle);
   }
   // A page of history may start after the question a report belongs to. A turn taken up again is reported once
   // for each of its messages, and each report may come several times: the last one counts.
@@ -388,8 +392,11 @@ export function conversation(events: SessionEvent[]): Turn[] {
   }
   for (const turn of turns) {
     if (!turn.endedAt) continue;
-    const final = turn.steps.at(-1);
-    if (final?.kind === 'assistant') turn.answer = turn.steps.pop() as Text;
+    let end = turn.steps.length;
+    while (turn.steps[end - 1]?.kind === 'note') end--;
+    if (turn.steps[end - 1]?.kind !== 'assistant') continue;
+    turn.notices.unshift(...(turn.steps.splice(end) as Notice[]));
+    turn.answer = turn.steps.pop() as Text;
   }
   return turns;
 }
