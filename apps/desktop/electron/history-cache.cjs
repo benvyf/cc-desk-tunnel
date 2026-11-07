@@ -114,7 +114,9 @@ function createHistoryCache(root, options = {}) {
       )
         throw new Error('Invalid history header');
       const events = [];
-      let torn = false;
+      // A crash may leave a complete JSON value but omit its record separator.
+      // It is readable, but the next append must first restore the trailing newline.
+      let torn = !text.endsWith('\n');
       for (let i = 0; i < lines.length; i++) {
         let event;
         try {

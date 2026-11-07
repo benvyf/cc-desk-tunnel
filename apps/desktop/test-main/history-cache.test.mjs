@@ -196,3 +196,15 @@ test('a valid append under 4 MB can exceed the cap together with the old window 
   await cache.append(id, [{ ...event(2, 'large'), payload: { text: 'b'.repeat(3400000) } }]);
   assert.deepEqual((await cache.read(id)).events, []);
 });
+
+test('a complete final JSON record without newline remains separated from a later append', async (t) => {
+  const { cache, file, replace } = await fixture(t);
+  await replace([event(1)]);
+  await writeFile(file, (await readFile(file, 'utf8')).trimEnd());
+  assert.equal((await cache.read(id)).events.length, 1);
+  await cache.append(id, [event(2)]);
+  assert.deepEqual(
+    (await cache.read(id))?.events.map((e) => e.sequence),
+    [1, 2],
+  );
+});
