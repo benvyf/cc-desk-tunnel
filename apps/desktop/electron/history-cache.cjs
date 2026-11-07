@@ -84,6 +84,7 @@ function createHistoryCache(root, options = {}) {
   let selected = Promise.resolve(null);
   let barrier = Promise.resolve();
   const chains = new Map();
+  const operations = new Set();
   const protectedIds = new Map();
   let maintenance = Promise.resolve();
   let maintenanceQueued = false;
@@ -114,6 +115,11 @@ function createHistoryCache(root, options = {}) {
         if (chains.get(key) === next) chains.delete(key);
       }
     })();
+    operations.add(task);
+    void task.then(
+      () => operations.delete(task),
+      () => operations.delete(task),
+    );
     return task;
   }
   function remember(file, value, lines) {
@@ -307,6 +313,8 @@ function createHistoryCache(root, options = {}) {
   const api = {
     open(owner, protocol) {
       protectedIds.clear();
+      const previousOwner = selected;
+      const earlierOperations = [...operations];
       const pending = (async () => {
         if (typeof owner !== 'string' || !owner || owner.length > 4096)
           throw new Error('Invalid history owner');
@@ -314,23 +322,35 @@ function createHistoryCache(root, options = {}) {
           throw new Error('Invalid history protocol');
         const meta = { format: 1, protocol };
         await barrier;
+        await previousOwner.catch(() => null);
+        // Operations capture the old owner when submitted. Drain them before changing
+        // its protocol, including operations not yet registered in a session chain.
+        await Promise.allSettled(earlierOperations);
         const directory = path.join(root, createHash('sha256').update(owner).digest('hex'));
-        protocols.set(directory, protocol);
         await fs.mkdir(directory, { recursive: true, mode: 0o700 });
         if (process.platform !== 'win32') {
           await fs.chmod(root, 0o700);
           await fs.chmod(directory, 0o700);
         }
-        let saved;
+        let metadataText;
         try {
-          saved = JSON.parse(await fs.readFile(path.join(directory, 'meta.json'), 'utf8'));
-        } catch {}
+          metadataText = await fs.readFile(path.join(directory, 'meta.json'), 'utf8');
+        } catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+        }
+        let saved;
+        if (metadataText !== undefined) {
+          try {
+            saved = JSON.parse(metadataText);
+          } catch {}
+        }
         if (saved?.format !== meta.format || saved?.protocol !== meta.protocol) {
           forgetOwner(directory);
           await fs.rm(directory, { recursive: true, force: true });
           await fs.mkdir(directory, { recursive: true, mode: 0o700 });
           await atomic(path.join(directory, 'meta.json'), JSON.stringify(meta));
         }
+        protocols.set(directory, protocol);
         const touched = new Date(now());
         await fs.utimes(directory, touched, touched);
         return directory;

@@ -351,6 +351,87 @@ test('a parse failure still returns null if removing the damaged file is tempora
   assert.ok(await stat(file));
 });
 
+for (const code of ['EBUSY', 'EPERM'])
+  test(`transient ${code} metadata reads cannot erase an owner`, async (t) => {
+    const { cache, file, replace } = await fixture(t);
+    await replace([event(1)]);
+    await cache.idle();
+    const fs = require('node:fs/promises'),
+      read = fs.readFile,
+      meta = path.join(path.dirname(file), 'meta.json');
+    const mocked = t.mock.method(fs, 'readFile', async (target, ...args) => {
+      if (target === meta) throw Object.assign(Error('locked'), { code });
+      return read(target, ...args);
+    });
+    await assert.rejects(cache.open('email|user@example.org|one', 24), { code });
+    mocked.mock.restore();
+    assert.ok(await stat(file));
+    await cache.open('email|user@example.org|one', 24);
+    assert.deepEqual((await cache.read(id)).events, [event(1)]);
+  });
+
+test('protocol invalidation waits for earlier owner writes and cannot resurrect old events', async (t) => {
+  const { cache, root, file, replace } = await fixture(t),
+    directory = path.dirname(file),
+    meta = path.join(directory, 'meta.json');
+  const fs = require('node:fs/promises'),
+    access = fs.access,
+    mkdir = fs.mkdir,
+    read = fs.readFile,
+    remove = fs.rm,
+    chmod = fs.chmod;
+  let release,
+    arrive,
+    held = true,
+    firstDirectory = true,
+    invalidatedWhileWriting = false;
+  const waiting = new Promise((resolve) => {
+      release = resolve;
+    }),
+    arrived = new Promise((resolve) => {
+      arrive = resolve;
+    });
+  t.mock.method(fs, 'access', async (target, ...args) => {
+    if (target === meta && held) {
+      arrive();
+      await waiting;
+    }
+    return access(target, ...args);
+  });
+  const writing = replace([event(1)]);
+  await arrived;
+  // Resolve harmless metadata reads immediately so the old implementation reaches
+  // invalidation before the next turn, without a timing-dependent sleep.
+  t.mock.method(fs, 'mkdir', async (target, ...args) => {
+    if (held && target === directory && firstDirectory) {
+      firstDirectory = false;
+      return;
+    }
+    return mkdir(target, ...args);
+  });
+  t.mock.method(fs, 'chmod', async (target, ...args) => {
+    if (held && (target === directory || target === root)) return;
+    return chmod(target, ...args);
+  });
+  t.mock.method(fs, 'readFile', async (target, ...args) => {
+    if (held && target === meta) return JSON.stringify({ format: 1, protocol: 24 });
+    return read(target, ...args);
+  });
+  t.mock.method(fs, 'rm', async (target, ...args) => {
+    if (target === directory && held) invalidatedWhileWriting = true;
+    return remove(target, ...args);
+  });
+  const opening = cache.open('email|user@example.org|one', 25);
+  await new Promise((resolve) => setImmediate(resolve));
+  held = false;
+  release();
+  const results = await Promise.allSettled([writing, opening]);
+  assert.equal(invalidatedWhileWriting, false);
+  for (const result of results) assert.equal(result.status, 'fulfilled');
+  assert.equal(await cache.read(id), null);
+  assert.equal(JSON.parse(await read(meta, 'utf8')).protocol, 25);
+});
+
 test('rewrite maintenance reclaims a flushed atomic temporary left by abrupt process exit', async (t) => {
   const { cache, root, file } = await fixture(t);
   await cache.idle();
