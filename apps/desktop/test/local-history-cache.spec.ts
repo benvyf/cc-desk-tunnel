@@ -52,7 +52,8 @@ async function fixture(turns = 40) {
   }
   let delay = 0,
     replace = false,
-    hold = false;
+    hold = false,
+    refuse = false;
   const held: (() => void)[] = [];
   const requests: { afterSequence: number }[] = [];
   const timers: ReturnType<typeof setTimeout>[] = [];
@@ -77,6 +78,16 @@ async function fixture(turns = 40) {
       if (command.type === 'session.subscribe') {
         requests.push(command);
         const respond = () => {
+          if (refuse) {
+            send({
+              type: 'response',
+              requestId: command.requestId,
+              ok: false,
+              code: 'session_busy',
+              message: '验收：历史同步暂时失败',
+            });
+            return;
+          }
           const append = command.afterSequence > 0 && !replace;
           const list = append ? events.filter((e) => e.sequence > command.afterSequence) : events;
           send({
@@ -162,6 +173,9 @@ async function fixture(turns = 40) {
     copies,
     delay: () => {
       delay = 3000;
+    },
+    refuse: () => {
+      refuse = true;
     },
     replace: () => {
       replace = true;
@@ -345,6 +359,46 @@ test('double clearing real disk copies keeps caching enabled for the next proven
     await expect.poll(async () => (await f.copies()).length).toBe(1);
     const copy = await readFile((await f.copies())[0], 'utf8');
     expect(copy).toContain('清除后继续记录');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('re-enabling caching immediately revalidates and records the already open conversation', async () => {
+  test.setTimeout(60000);
+  const f = await fixture();
+  try {
+    const page = await f.launch();
+    await expect.poll(async () => (await f.copies()).length).toBe(1);
+    await general(page);
+    const toggle = page.getByRole('switch', { name: '在本机保存聊天记录', exact: true });
+    await toggle.click();
+    await expect.poll(async () => (await f.copies()).length).toBe(0);
+    const requests = f.requests.length;
+    await toggle.click();
+    await expect.poll(() => f.requests.length).toBeGreaterThan(requests);
+    await expect.poll(async () => (await f.copies()).length).toBe(1);
+  } finally {
+    await f.cleanup();
+  }
+});
+test('a failed initial synchronization never enables sending from an unconfirmed disk copy', async () => {
+  test.setTimeout(60000);
+  const f = await fixture();
+  try {
+    let page = await f.launch();
+    await expect.poll(async () => (await f.copies()).length).toBe(1);
+    await f.close();
+    f.refuse();
+    page = await f.launch();
+    await expect(page.getByText('验收：历史同步暂时失败', { exact: true })).toBeVisible();
+    await expect(page.getByText('缓存问题 39', { exact: true })).toBeVisible();
+    await expect(page.getByLabel('消息', { exact: true })).toBeDisabled();
+    await general(page);
+    await page.getByRole('switch', { name: '在本机保存聊天记录', exact: true }).click();
+    await expect.poll(async () => (await f.copies()).length).toBe(0);
+    await page.getByRole('button', { name: '返回会话', exact: true }).click();
+    await expect(page.getByLabel('消息', { exact: true })).toBeDisabled();
   } finally {
     await f.cleanup();
   }

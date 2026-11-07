@@ -524,3 +524,130 @@ test('overlapping clear actions coalesce and keep an enabled cache usable', asyn
   assert.equal(clears, 1);
   assert.equal(f.client.historyCacheReady, true);
 });
+
+test('enabling caching revalidates the currently open history before recording resumes', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  await settle();
+  f.snapshot(socket, [f.event(1)], 'replace');
+  await settle();
+  await f.client.setHistoryCacheEnabled(false);
+  const before = socket.sent.length;
+  await f.client.setHistoryCacheEnabled(true);
+  await settle();
+  assert.ok(socket.sent.slice(before).some((frame) => frame.type === 'session.subscribe'));
+  f.snapshot(socket, [f.event(2)]);
+  await settle();
+  assert.ok(f.calls.some((c) => c[0] === 'replace' && c[2].events.some((e) => e.sequence === 2)));
+});
+test('prepend cannot promote an incomplete tail after the latest subscription timed out', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect(),
+    id = f.sessions[0].id;
+  f.client.select(id);
+  await settle();
+  f.snapshot(socket, [f.event(10)], 'replace');
+  await settle();
+  f.client.update({ history: { [id]: { ...f.client.state.history[id], hasEarlier: true } } });
+  f.client.select(id);
+  const request = socket.sent.at(-1),
+    pending = f.client.pending.get(request.requestId);
+  clearTimeout(pending.timer);
+  f.client.pending.delete(request.requestId);
+  pending.reject(Error('timeout'));
+  await settle();
+  socket.message({ type: 'session.event', event: f.event(30) });
+  await new Promise((r) => setTimeout(r, 40));
+  const earlier = f.client.loadEarlier(id),
+    page = socket.sent.at(-1);
+  socket.message({
+    type: 'session.snapshot',
+    requestId: page.requestId,
+    session: f.sessions[0],
+    mode: 'prepend',
+    firstSequence: 1,
+    lastSequence: 1,
+    hasEarlier: false,
+    events: [f.event(1)],
+  });
+  socket.message({ type: 'response', requestId: page.requestId, ok: true });
+  await earlier;
+  f.client.select(id);
+  assert.equal(socket.sent.at(-1).afterSequence, 10);
+});
+test('a delayed invalid_cursor retry uses the current observed role and never steals the selected subscription', async (t) => {
+  const f = fixture(t, null),
+    socket = await f.connect(),
+    a = f.sessions[0].id,
+    b = f.sessions[1].id;
+  f.client.select(a);
+  await settle();
+  const first = socket.sent.findLast((frame) => frame.type === 'session.subscribe');
+  f.client.observeSession(a);
+  f.client.select(b);
+  await settle();
+  const before = socket.sent.length;
+  socket.message({
+    type: 'response',
+    requestId: first.requestId,
+    ok: false,
+    code: 'invalid_cursor',
+    message: 'bad cursor',
+  });
+  await settle();
+  const retry = socket.sent
+    .slice(before)
+    .find((frame) => frame.type === 'session.subscribe' && frame.sessionId === a);
+  assert.equal(retry?.retain, true);
+  assert.equal(f.client.state.selectedId, b);
+});
+
+test('unconfirmed disk history stays pending after failure and cache disable until a real snapshot arrives', async (t) => {
+  const f = fixture(t),
+    id = f.sessions[0].id;
+  f.api.read = async () => ({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
+  const socket = await f.connect();
+  assert.equal(f.client.historyPending(id), true);
+  f.client.select(id);
+  await settle();
+  const request = socket.sent.at(-1);
+  socket.message({
+    type: 'response',
+    requestId: request.requestId,
+    ok: false,
+    code: 'session_busy',
+    message: 'busy',
+  });
+  await settle();
+  assert.equal(f.client.state.history[id].loading, false);
+  assert.equal(f.client.historyPending(id), true);
+  await f.client.setHistoryCacheEnabled(false);
+  assert.equal(f.client.historyPending(id), true);
+  f.client.select(id);
+  socket.message({
+    type: 'response',
+    requestId: socket.sent.at(-1).requestId,
+    ok: false,
+    code: 'not_found',
+    message: 'missing',
+  });
+  await settle();
+  assert.equal(f.client.historyPending(id), true);
+  f.client.select(id);
+  f.snapshot(socket, [f.event(2)]);
+  assert.equal(f.client.historyPending(id), false);
+});
+test('disabling during hydration falls back to an uncached network subscription instead of hanging', async (t) => {
+  const pending = deferred(),
+    f = fixture(t, () => pending.promise),
+    socket = await f.connect();
+  f.client.select(f.sessions[0].id);
+  await f.client.setHistoryCacheEnabled(false);
+  await settle();
+  assert.equal(
+    socket.sent.findLast((frame) => frame.type === 'session.subscribe')?.afterSequence,
+    0,
+  );
+  pending.resolve(null);
+});

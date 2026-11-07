@@ -329,6 +329,7 @@ export function App({
     trackTerminalSessions([]);
   }, [trackTerminalSessions]);
   const showTerminal = (id: string) => {
+    if (client.state.history[id] && client.historyPending(id)) return;
     const session = client.state.sessions.find((item) => item.id === id);
     if (!session || (session.activeRun && session.activeRun.surface !== 'terminal')) {
       setError('此会话正在图形界面中运行，结束后再打开终端。');
@@ -466,6 +467,7 @@ export function App({
     [selected?.id, recorded, unfinished],
   );
   const history = selected ? state.history[selected.id] : undefined;
+  const historyPending = !!history?.loading || client.historyPending(selected?.id);
   const queuedInputs = selected ? queued.items[selected.id] : undefined;
   const recalledInputs = useMemo(() => inputHistory(events, queuedInputs), [events, queuedInputs]);
   // A session nothing has been said in yet, and the home page with none open, show the new-session layout: the
@@ -577,12 +579,7 @@ export function App({
     return () => clearInterval(timer);
   }, [updateBlocked]);
   const controlsDisabled =
-    !connected ||
-    busy ||
-    refreshing ||
-    !!selected?.activeRun ||
-    !!history?.loading ||
-    selectedTerminal;
+    !connected || busy || refreshing || !!selected?.activeRun || historyPending || selectedTerminal;
   // A run is that of the computer its session is on, whichever window of whichever computer started it; any
   // of them answers and stops it while that computer can be reached.
   const ownsRun = !!selected?.activeRun && (!away || remote);
@@ -591,7 +588,7 @@ export function App({
     !connected ||
     selectedTerminal ||
     busy ||
-    !!history?.loading ||
+    historyPending ||
     (!!selected?.activeRun && (!nativeMode || !ownsRun)) ||
     refreshing;
   const draft = selected ? (drafts[selected.id] ?? '') : '';
@@ -825,7 +822,7 @@ export function App({
       !nativeMode ||
       !selected ||
       !connected ||
-      history?.loading ||
+      historyPending ||
       selected.activeRun ||
       refreshing ||
       anyTerminal ||
@@ -839,7 +836,7 @@ export function App({
     nativeMode,
     selected?.id,
     connected,
-    history?.loading,
+    historyPending,
     selected?.activeRun,
     refreshing,
     anyChat,
@@ -982,6 +979,7 @@ export function App({
     stopScope,
     `${state.connectionId}:${selected?.id}:${selected?.activeRun?.id}`,
     place.page === 'chat' &&
+      !client.historyPending(selected?.id) &&
       connected &&
       !busy &&
       ownsRun &&
@@ -992,7 +990,7 @@ export function App({
     stopRun,
   );
   function stopRun() {
-    if (!selected?.activeRun) return;
+    if (!selected?.activeRun || client.historyPending(selected.id)) return;
     const { id: sessionId, activeRun } = selected;
     followUps.pause(sessionId);
     void act(async () => {
@@ -1096,6 +1094,7 @@ export function App({
   };
   async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id, quota = false) {
     if (!sessionId || statusReading.current) return;
+    if (client.state.history[sessionId] && client.historyPending(sessionId)) return;
     statusReading.current = true;
     setRefreshing(true);
     try {
@@ -1432,6 +1431,7 @@ export function App({
   // message back as a draft, which is how an earlier message is edited and sent again.
   async function fork(session: Session, before?: { id: string; text: string }) {
     if (terminalOwns(session.id) || session.activeRun) return;
+    if (client.state.history[session.id] && client.historyPending(session.id)) return;
     const startedAt = navigation.current;
     await act(async () => {
       // The copy of a session that is on another computer needs a directory on this one.
@@ -1595,7 +1595,10 @@ export function App({
             {
               label: '分叉会话',
               icon: <GitFork />,
-              disabled: !idle || !!session.activeRun,
+              disabled:
+                !idle ||
+                !!session.activeRun ||
+                (!!client.state.history[session.id] && client.historyPending(session.id)),
               run: () => {
                 void fork(session);
               },
@@ -1636,6 +1639,7 @@ export function App({
                 !connected ||
                 busy ||
                 refreshing ||
+                (!!client.state.history[session.id] && client.historyPending(session.id)) ||
                 (!!session.activeRun && !terminalOwns(session.id)),
               run: () => {
                 if (statusReading.current) return;
@@ -1646,7 +1650,7 @@ export function App({
             {
               label: '刷新状态',
               icon: <RefreshCw />,
-              disabled: !idle || anyChat || anyTerminal || refreshing || !!history?.loading,
+              disabled: !idle || anyChat || anyTerminal || refreshing || historyPending,
               run: () => {
                 void refreshStatus(session.id);
               },
@@ -1948,6 +1952,7 @@ export function App({
   };
   const terminalAvailable =
     connected &&
+    !client.historyPending(selected?.id) &&
     nativeMode &&
     !busy &&
     !refreshing &&
@@ -2588,7 +2593,7 @@ export function App({
               ownsRun={ownsRun}
               clock={clock}
               progress={selected ? state.progress[selected.id] : undefined}
-              busy={busy}
+              busy={busy || client.historyPending(selected?.id)}
               fresh={fresh}
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={

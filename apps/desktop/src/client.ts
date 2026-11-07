@@ -238,6 +238,7 @@ export class ProxyClient {
   private historyOwner?: string;
   private cacheGeneration = 0;
   private synced = new Set<string>();
+  private unconfirmedDiskHistories = new Set<string>();
   private persistedLast = new Map<string, number>();
   private provenLast = new Map<string, number>();
   private diskReads = new Map<string, Promise<CachedHistory | null>>();
@@ -269,6 +270,8 @@ export class ProxyClient {
   async setHistoryCacheEnabled(enabled: boolean) {
     if (enabled === this.historyCacheEnabled) return;
     this.historyCacheEnabled = enabled;
+    const credentials = this.credentials;
+    const reading = [...this.diskReads.keys()];
     const generation = ++this.cacheGeneration;
     this.historyCacheReady = false;
     this.synced.clear();
@@ -279,8 +282,17 @@ export class ProxyClient {
     this.dirtyHistory.clear();
     if (!enabled) {
       await this.clearHistoryCache();
+      if (this.credentials === credentials && !this.historyCacheEnabled)
+        for (const id of reading)
+          if (id === this.state.selectedId || this.observers.has(id))
+            this.load(id, id !== this.state.selectedId);
     } else if (this.historyOwner && this.cacheApi()) {
       await this.prepareHistoryCache(this.historyOwner, generation);
+      if (generation === this.cacheGeneration && this.historyCacheReady) {
+        this.protectHistory();
+        if (this.state.selectedId) this.load(this.state.selectedId);
+        else this.restoreObserved();
+      }
     }
   }
   async clearHistoryCache() {
@@ -756,6 +768,7 @@ export class ProxyClient {
         }
         for (const listener of this.terminalListeners) listener(message);
       } else if (message.type === 'session.deleted') {
+        this.unconfirmedDiskHistories.delete(message.sessionId);
         this.removeHistoryCopy(message.sessionId);
         this.observers.delete(message.sessionId);
         this.activity.delete(message.sessionId);
@@ -785,14 +798,16 @@ export class ProxyClient {
           return;
         this.upsert(message.session);
         const id = message.session.id;
+        if (message.mode !== 'prepend') this.unconfirmedDiskHistories.delete(id);
         // History up to now ends where unfinished output begins; the service sends that again, whole.
         if (message.mode !== 'prepend' && this.state.live[id]) {
           const { [id]: _stale, ...live } = this.state.live;
           this.update({ live });
         }
         const previous = this.state.history[id];
+        const provesTail = message.mode !== 'prepend' || this.synced.has(id);
         const history = {
-          loaded: true,
+          loaded: this.historyCacheReady && !provesTail ? previous?.loaded === true : true,
           firstSequence:
             message.mode === 'append'
               ? (previous?.firstSequence ?? message.firstSequence)
@@ -809,7 +824,7 @@ export class ProxyClient {
         this.merge(id, message.events, history, message.mode === 'replace');
         if (this.historyCacheReady) {
           if (message.mode !== 'prepend') this.synced.add(id);
-          this.provenLast.set(id, this.state.history[id].lastSequence);
+          if (provesTail) this.provenLast.set(id, this.state.history[id].lastSequence);
           const afterSequence = this.pending.get(message.requestId)?.afterSequence;
           this.persistHistory(id, message.mode === 'append' ? afterSequence : undefined);
         }
@@ -896,6 +911,7 @@ export class ProxyClient {
         ?.protect([])
         .catch(() => {});
     this.synced.clear();
+    this.unconfirmedDiskHistories.clear();
     this.persistedLast.clear();
     this.provenLast.clear();
     this.diskReads.clear();
@@ -1086,6 +1102,7 @@ export class ProxyClient {
           return;
         }
         if (value) {
+          this.unconfirmedDiskHistories.add(sessionId);
           const lastSequence = value.events.at(-1)?.sequence ?? 0;
           this.persistedLast.set(sessionId, lastSequence);
           this.provenLast.set(sessionId, lastSequence);
@@ -1153,15 +1170,20 @@ export class ProxyClient {
         (retain && this.observers.get(sessionId) !== observer)
       )
         return;
-      if (this.historyCacheReady && error instanceof RequestFailedError) {
+      if (
+        (this.historyCacheReady || this.unconfirmedDiskHistories.has(sessionId)) &&
+        error instanceof RequestFailedError
+      ) {
         if (error.code === 'invalid_cursor' && !retried) {
           this.removeHistoryCopy(sessionId);
+          this.unconfirmedDiskHistories.delete(sessionId);
           const events = { ...this.state.events },
             history = { ...this.state.history };
           delete events[sessionId];
           delete history[sessionId];
           this.update({ events, history });
-          this.subscribeHistory(sessionId, retain, true);
+          if (this.state.selectedId === sessionId || this.observers.has(sessionId))
+            this.subscribeHistory(sessionId, this.state.selectedId !== sessionId, true);
           return;
         }
         if (error.code === 'not_found') this.removeHistoryCopy(sessionId);
@@ -1233,6 +1255,7 @@ export class ProxyClient {
     const history = { ...this.state.history };
     const progress = { ...this.state.progress };
     for (const id of removed) {
+      this.unconfirmedDiskHistories.delete(id);
       this.synced.delete(id);
       this.provenLast.delete(id);
       this.persistedLast.delete(id);
@@ -1275,6 +1298,13 @@ export class ProxyClient {
     this.protectHistory();
     if (this.state.status === 'connected' || this.historyCacheReady)
       this.load(sessionId, false, started);
+  }
+  historyPending(sessionId?: string | null) {
+    const history = sessionId ? this.state.history[sessionId] : undefined;
+    return !!(
+      sessionId &&
+      (this.unconfirmedDiskHistories.has(sessionId) || (this.historyCacheReady && !history?.loaded))
+    );
   }
   // Terminal output bypasses the state store; xterm consumes it directly.
   onTerminal = (listener: (message: TerminalMessage) => void) => {
