@@ -10,31 +10,31 @@
 
 Files: new electron/managed-differential-contract.cjs; new scripts/publish-managed-differential.mjs; focused contract/publication tests.
 
-- [ ] Write failing signature/binding/map-bounds tests and run them.
-- [ ] Implement signDescriptor, verifyDescriptor(full release), verifyBaselineDescriptor(embedded identity), decodeBlockmap and safe artifact coordinate paths. Scope current v1 unchanged; no arbitrary URL supplied by renderer.
-- [ ] Publisher verifies clean source, signed v1 installer tuple, public artifact bytes, key ownership and map shape; emits immutable blockmap then descriptor with exclusive/idempotent writes. Test wrong source/key, map/installer corruption, conflicts and secrecy.
+- [x] Write failing signature/binding/map-bounds tests and run them.
+- [x] Implement signDescriptor, verifyDescriptor(full release), verifyBaselineDescriptor(embedded identity), decodeBlockmap and safe artifact coordinate paths. Scope current v1 unchanged; no arbitrary URL supplied by renderer.
+- [x] Publisher verifies clean source, signed v1 installer tuple, public artifact bytes, key ownership and map shape; emits immutable blockmap then descriptor with exclusive/idempotent writes. Test wrong source/key, map/installer corruption, conflicts and secrecy.
 
 ## 2. Mature engine adapter
 
 Files: new managed-differential.cjs and development engine shim; engine tests; pin desktop electron-updater6.8.10.
 
-- [ ] RED tests normal reconstruction, ignored Range, bad content ranges/bodies, stalled cancellation and no redirects.
-- [ ] Implement runDifferential({oldFile,newFile,newUrl,oldBlockMap,newBlockMap,size,sha512,signal,onProgress,createRequest}) and estimateDifferential using the actual library, never own copy algorithm. Track active requests and explicitly reject failures after headers. No partial can be executable/ready before validation.
-- [ ] Bundle only required engine into packaged CJS; verify packaged module can load without development dependencies and has pinned version.
+- [x] RED tests normal reconstruction, ignored Range, bad content ranges/bodies, stalled cancellation and no redirects.
+- [x] Implement runDifferential({oldFile,newFile,newUrl,oldBlockMap,newBlockMap,size,sha512,signal,onProgress,createRequest}) and estimateDifferential using the actual library, never own copy algorithm. Track active requests and explicitly reject failures after headers. No partial can be executable/ready before validation.
+- [x] Bundle only required engine into packaged CJS; verify packaged module can load without development dependencies and has pinned version.
 
 ## 3. Cache/network/controller integration
 
 Files: new managed-differential-cache.cjs; modify managed-network.cjs, managed-controller.cjs, managed-updates.cjs; controller/cache/network tests.
 
-- [ ] RED tests first full bootstrap, confirmed cache adoption, same-appVersion/higher-Build differential, bad/missing cache fallback, cancellation no fallback, partial isolation and cleanup protection.
-- [ ] Add bounded descriptor/blockmap fetches, same-origin public artifact paths. Adopt ready.exe or stock NSIS installer cache only when matching signed current identity descriptor and complete hash. Pointer atomically switches to complete immutable triple; do not overwrite old files while download/install is unconfirmed.
-- [ ] Download prefers valid cache+descriptor. Fallback removes only differential partial then uses existing full download. Check assembled size/SHA256 before ready.exe; retain current withdrawal/protocol/activity checks and original launchInstaller.
-- [ ] Lazy baseline adoption before next download avoids startup network blocking. Keep last confirmed cache; replace cache only after startup identity confirmation. Unknown or unavailable metadata leaves original full updater usable.
+- [x] RED tests first full bootstrap, confirmed cache adoption, same-appVersion/higher-Build differential, bad/missing cache fallback, cancellation no fallback, partial isolation and cleanup protection.
+- [x] Add bounded descriptor/blockmap fetches, same-origin public artifact paths. Adopt ready.exe or stock NSIS installer cache only when matching signed current identity descriptor and complete hash. Pointer atomically switches to complete immutable triple; do not overwrite old files while download/install is unconfirmed.
+- [x] Download prefers valid cache+descriptor. Fallback removes only differential partial then uses existing full download. Check assembled size/SHA256 before ready.exe; retain current withdrawal/protocol/activity checks and original launchInstaller.
+- [x] Lazy baseline adoption before next download avoids startup network blocking. Keep last confirmed cache; replace cache only after startup identity confirmation. Unknown or unavailable metadata leaves original full updater usable.
 
 ## 4. Packaging, proof and delivery
 
 Files: package-desktop.mjs, engine build entry, managed-update UI state only if necessary; docs and evidence; managed build34 metadata.
 
-- [ ] Run focused tests, all test-main, managed update UI, tsc, prettier and repository checks. Spec/security review and fix findings.
-- [ ] Build real delta-capable candidate installer; actual EXE smoke and packaged engine differential with local HTTPS. Verify complete installer target bytes and original profile isolation; no daily installation/model calls.
-- [ ] Record measured byte/timing limits and bootstrap behavior; commit code/docs. Existing self-written file-update candidate stays unmerged. Production publish is separate from this integration request.
+- [x] Run focused tests, all test-main, managed update UI, tsc, prettier and repository checks. Spec/security review and fix findings.
+- [x] Build real delta-capable candidate installer; actual EXE smoke and packaged engine differential with local HTTPS. Verify complete installer target bytes and original profile isolation; no daily installation/model calls.
+- [x] Record measured byte/timing limits and bootstrap behavior; commit code/docs. Existing self-written file-update candidate stays unmerged. Production publish is separate from this integration request.

@@ -1,0 +1,50 @@
+{
+  "date": "2026-11-08",
+  "branch": "codex/managed-nsis-delta",
+  "candidateSourceCommit": "c5a2c637c047d1f2d1e428109def9bbb44d117b0",
+  "engine": "electron-updater@6.8.10 GenericDifferentialDownloader",
+  "candidate": {
+    "build": 34,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "size": 258667120,
+    "sha256": "53742e467804637513583ae2764afffc4b124e9373279b3acf630f98c65ffb06",
+    "blockmapSize": 270065,
+    "blockmapSha256": "90c9d408e48729b9551a57c76fea99365b994d03c02bed2e8f963636c4b6da2b"
+  },
+  "validation": {
+    "differentialFocused": { "pass": 106, "fail": 0 },
+    "desktopMain": { "pass": 685, "fail": 0, "conditionalSkip": 38 },
+    "managedAndTerminalUI": { "pass": 50, "fail": 0 },
+    "realPackagedElectron": {
+      "pass": 3,
+      "fail": 0,
+      "cases": [
+        "Native Electron HTTPS Range differential reconstruction",
+        "Ignored Range falls back to complete download",
+        "Original packaged executable smoke and component cleanup"
+      ]
+    },
+    "tsc": "pass",
+    "repositoryPrettier": "pass",
+    "repositoryCheck": { "result": "pass", "indexedFiles": 1014 },
+    "requestCloseRegression": "RED reproduced then GREEN; request close no longer substitutes for body completion",
+    "independentLifecycleReview": {
+      "findings": 0,
+      "headerlessTimeoutMs": 20025,
+      "cancelAfterCloseMs": 22,
+      "incompleteResponseRejectMs": 3
+    }
+  },
+  "limits": [
+    "No installation into daily client directory",
+    "No power-loss recovery claim",
+    "Packaged transport cases use isolated signed fixture payloads and local HTTPS",
+    "Large real installer savings are recorded separately in research evidence",
+    "Build33 first needs complete upgrade; future differential requires valid cached baseline and signed sidecars"
+  ],
+  "mainPushed": false,
+  "vpsPublished": false,
+  "productionBuildUnchanged": 33
+}
