@@ -6,6 +6,7 @@ import { CopyButton } from './copy.tsx';
 import { codeLineStarts, codePosition, requestedLine } from './previewCode.ts';
 import type { PreviewTab } from './preview.ts';
 import './PreviewCode.css';
+import { useSyntaxColors } from './useSyntaxColors.ts';
 
 type Mark = { line: number; top: number; height: number };
 
@@ -32,6 +33,7 @@ export default function PreviewCode({
 }) {
   const pre = useRef<HTMLPreElement>(null);
   const source = useRef<HTMLElement>(null);
+  useSyntaxColors(source, text, language);
   const starts = useMemo(() => codeLineStarts(text), [text]);
   const endsInLineBreak = /[\r\n]$/.test(text);
   const [marks, setMarks] = useState<Mark[]>([]);

@@ -69,6 +69,96 @@ test('code shows accessible hidden line numbers and starts without wrapping', as
     .toBeGreaterThan(400);
 });
 
+test('syntax colors preserve the original text node, copying and line positioning', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto(fixture);
+  const text = 'const alpha = "<img src=x onerror=alert(1)>";\n// 第二行\nconst beta = 2;\n';
+  await page.evaluate(
+    (codeText) => (window as any).fixturePreview.configure('长代码.ts', { codeText }),
+    text,
+  );
+  await button(page, '长代码').click();
+  await expect
+    .poll(() => page.evaluate(() => CSS.highlights.get('cc-syntax-keyword')?.size ?? 0))
+    .toBeGreaterThan(0);
+  await expect(code(page)).toHaveText(text);
+  expect(await code(page).evaluate((node) => node.childNodes.length)).toBe(1);
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    const colors = await code(page).evaluate((node) => ({
+      ink: getComputedStyle(node, '::highlight(cc-syntax-keyword)').color,
+      background: getComputedStyle(node.closest('pre')!).backgroundColor,
+    }));
+    expect(contrast(colors.ink, colors.background)).toBeGreaterThanOrEqual(4.5);
+  }
+  await expect(code(page).locator('img')).toHaveCount(0);
+  await button(page, '复制代码').click();
+  expect(await page.evaluate(() => (window as any).fixtureCopied)).toEqual([text]);
+  await page.getByLabel('跳转到行').fill('3');
+  await page.getByLabel('跳转到行').press('Enter');
+  await targetVisible(page, 3);
+});
+
+test('Windows CRLF sources retain syntax colors and exact clipboard bytes', async ({ page }) => {
+  await page.goto(fixture);
+  const text = 'const alpha = 1;\r\n// 中文\r\nconst beta = "value";\r\n';
+  await page.evaluate(
+    (codeText) => (window as any).fixturePreview.configure('长代码.ts', { codeText }),
+    text,
+  );
+  await button(page, '长代码').click();
+  await expect
+    .poll(() => page.evaluate(() => CSS.highlights.get('cc-syntax-keyword')?.size ?? 0))
+    .toBeGreaterThan(0);
+  expect(await code(page).textContent()).toBe(text);
+  await button(page, '复制代码').click();
+  expect(await page.evaluate(() => (window as any).fixtureCopied)).toEqual([text]);
+  await page.getByLabel('跳转到行').fill('3');
+  await page.getByLabel('跳转到行').press('Enter');
+  await targetVisible(page, 3);
+});
+
+test('syntax ranges are owned by each pane and released when its source closes', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await page.evaluate(() =>
+    (window as any).fixturePreview.configure('长代码.ts', {
+      codeText: 'function greet() { return 1; }',
+    }),
+  );
+  await button(page, '长代码').click();
+  await expect
+    .poll(() => page.evaluate(() => CSS.highlights.get('cc-syntax-title')?.size ?? 0))
+    .toBeGreaterThan(0);
+  await button(page, '定位 HTML 文件源码').click();
+  await button(page, '分栏预览').click();
+  await expect(page.locator('.preview-code pre code')).toHaveCount(2);
+  await expect
+    .poll(() => page.evaluate(() => CSS.highlights.get('cc-syntax-title')?.size ?? 0))
+    .toBeGreaterThanOrEqual(3);
+  await button(page, '关闭预览 长代码.ts').click();
+  await expect
+    .poll(() => page.evaluate(() => CSS.highlights.get('cc-syntax-keyword')?.size ?? 0))
+    .toBe(0);
+  await expect
+    .poll(() => page.evaluate(() => CSS.highlights.get('cc-syntax-title')?.size ?? 0))
+    .toBeGreaterThan(0);
+  await button(page, '关闭预览 index.html').click();
+  await expect
+    .poll(() =>
+      page.evaluate(
+        () => [...CSS.highlights.keys()].filter((name) => name.startsWith('cc-syntax-')).length,
+      ),
+    )
+    .toBe(0);
+});
+
 test('copy preserves LF and trailing newline, and mouse selection excludes the gutter', async ({
   page,
   context,

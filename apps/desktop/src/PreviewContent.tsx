@@ -32,6 +32,7 @@ const parentOf = (path: string) =>
   path.slice(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')) + 1);
 const languageOf = (path: string) => /\.([a-z0-9]+)$/i.exec(path)?.[1].toLowerCase() ?? 'text';
 const PreviewPdf = lazy(() => import('./PreviewPdf.tsx'));
+const PreviewSpreadsheet = lazy(() => import('./PreviewSpreadsheet.tsx'));
 const previewOverlays =
   'dialog[open], .menu, .terminal-list, .sidebar-shade, .preview-full, .preview-pane-floating, .quote-selection-toolbar, [role="dialog"], [role="alertdialog"], [role="menu"]';
 
@@ -506,6 +507,16 @@ export default function PreviewContent({
           <p>已恢复 HTML 标签。点击后加载页面。</p>
           <Button onClick={() => workspace.activate(tab.id)}>加载此预览</Button>
         </div>
+      ) : file?.kind === 'spreadsheet' ? (
+        <Suspense
+          fallback={
+            <p role="status" className="preview-loading">
+              正在打开表格…
+            </p>
+          }
+        >
+          <PreviewSpreadsheet data={file.data!} format={file.format!} />
+        </Suspense>
       ) : file?.kind === 'pdf' ? (
         <Suspense
           fallback={

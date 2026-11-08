@@ -164,3 +164,22 @@ test('PDF bytes stay local and are bounded, with malformed PDFs rejected', async
   await writeFile(pdf, 'not a PDF');
   await assert.rejects(f.files.read({ path: pdf }), /PDF/);
 });
+
+test('spreadsheet formats use bounded bytes without Office conversion or text coercion', async (t) => {
+  const { files, project } = await fixture(t);
+  for (const extension of ['xlsx', 'xls', 'csv', 'tsv']) {
+    const data =
+      extension === 'xls' || extension === 'xlsx'
+        ? Buffer.from([0, 1, 2])
+        : Buffer.from('编号,值\n001,2');
+    const path = join(project, `表格.${extension}`);
+    await writeFile(path, data);
+    const result = await files.read({ path, root: project });
+    assert.equal(result.kind, 'spreadsheet');
+    assert.equal(result.format, extension);
+    assert.deepEqual(Buffer.from(result.data, 'base64'), data);
+  }
+  const oversized = join(project, '过大.xlsx');
+  await writeFile(oversized, Buffer.alloc(20 * 1024 * 1024 + 1));
+  await assert.rejects(files.read({ path: oversized }), /大小限制/);
+});

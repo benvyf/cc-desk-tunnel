@@ -96,3 +96,19 @@
   border-left: 2px solid var(--accent);
   pointer-events: none;
 }
+
+::highlight(cc-syntax-keyword) {
+  color: #d2a8ff;
+}
+::highlight(cc-syntax-string) {
+  color: #a5d6ff;
+}
+::highlight(cc-syntax-comment) {
+  color: #9da7b3;
+}
+::highlight(cc-syntax-number) {
+  color: #ffa657;
+}
+::highlight(cc-syntax-title) {
+  color: #7ee787;
+}

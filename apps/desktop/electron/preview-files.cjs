@@ -160,11 +160,16 @@ function createPreviewFiles() {
         throw new Error('文件位于预览工作区的私有目录。');
       const extension = path.extname(file).toLowerCase();
       const mime = types[extension];
-      if (
-        ['.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.odt', '.ods', '.odp'].includes(
-          extension,
-        )
-      ) {
+      if (['.xls', '.xlsx', '.csv', '.tsv'].includes(extension)) {
+        const data = await bytes(file, 20 * 1024 * 1024);
+        return {
+          path: file,
+          kind: 'spreadsheet',
+          format: extension.slice(1),
+          data: data.toString('base64'),
+        };
+      }
+      if (['.doc', '.docx', '.ppt', '.pptx', '.odt', '.ods', '.odp'].includes(extension)) {
         office ??= require('./preview-office.cjs').createPreviewOffice();
         const result = await office.render(file, (candidate) => {
           if (

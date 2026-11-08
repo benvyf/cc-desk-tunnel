@@ -34,7 +34,8 @@ export type PreviewBrowserState = PreviewView & {
 };
 export type PreviewFile = {
   path: string;
-  kind: 'text' | 'markdown' | 'image' | 'html' | 'pdf';
+  kind: 'text' | 'markdown' | 'image' | 'html' | 'pdf' | 'spreadsheet';
+  format?: string;
   data?: string;
   missingFonts?: string[];
   text?: string;

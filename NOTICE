@@ -23,6 +23,11 @@ third-party components, each under its own license:
   dependencies under their respective licenses.
 
 npm dependencies are listed in package-lock.json and keep their own licenses.
+Spreadsheet preview uses SheetJS CE 0.20.3 (Apache-2.0), Papa Parse 5.7.0
+(MIT), and fflate 0.8.3 (MIT). Code syntax colors use highlight.js 11.11.1
+(BSD-3-Clause). Full licenses are distributed in dist/third-party/sheetjs.txt,
+papaparse.txt, fflate.txt, and highlight-js.txt. Spreadsheet and syntax UI
+integration is implemented in this repository.
 Optional terminal display prediction uses xterm-zerolag-input 0.4.2,
 Copyright (c) 2026 Codeman Contributors, under the MIT License.
 The complete license is distributed in dist/third-party/xterm-zerolag-input.txt.

@@ -13,6 +13,7 @@ export default defineConfig({
   // React's compiler keeps what a component drew when nothing it reads has changed, so that a key pressed or a
   // second ticking does not redraw the whole page.
   plugins: [react(), babel({ presets: [reactCompilerPreset()] })],
+  optimizeDeps: { include: ['highlight.js/lib/common', 'highlight.js/lib/languages/powershell'] },
   server: { host: '127.0.0.1', strictPort: true, watch: { ignored: ['**/vendor/**'] } },
   build: { outDir: 'dist' },
 });
