@@ -96,6 +96,7 @@ const client = {
     };
   },
   async fetch(command: { type: string; sessionId: string }) {
+    if (new URLSearchParams(location.search).has('failState')) throw new Error('测试：状态不明');
     if (command.type === 'terminal.history.list') {
       requests.push(command);
       if (state.historyError) throw new Error('模拟历史读取失败');
@@ -147,6 +148,22 @@ const client = {
       return { sessionId: id, ok: true, requestId };
     }
     if (command.type === 'terminal.open') {
+      if (
+        new URLSearchParams(location.search).has('disconnectSecondOpen') &&
+        requests.filter((request: any) => request.type === 'terminal.open').length === 2
+      ) {
+        if (new URLSearchParams(location.search).get('disconnectSecondOpen') === 'accepted') {
+          running.set(command.sessionId, 'reopened');
+          emit({ type: 'terminal.opened', sessionId: command.sessionId, terminalId: 'reopened' });
+        }
+        update({ status: 'disconnected' });
+        throw new Error('测试：打开时断网');
+      }
+      if (
+        new URLSearchParams(location.search).has('failSecondOpen') &&
+        requests.filter((request: any) => request.type === 'terminal.open').length === 2
+      )
+        throw new RequestFailedError('测试：重新打开失败', 'native_busy');
       if (openMode === 'expired' && command.terminalId)
         throw new RequestFailedError('原终端已结束，未新建进程。', 'terminal_inactive');
       const terminalId = command.sessionId === 'fixture' ? 'pty' : `pty-${command.sessionId}`;
@@ -301,6 +318,8 @@ Object.assign(window, {
     },
     setPrediction: (value: boolean) =>
       setPrefs((prefs) => ({ ...prefs, terminalPredictiveEcho: value })),
+    setDisplay: (value: 'scroll' | 'screen') =>
+      setPrefs((prefs) => ({ ...prefs, terminalDisplay: value })),
     failPrediction: () => {
       PredictiveEchoAddon.prototype.predictChar = () => {
         throw new Error('fixture prediction failure');

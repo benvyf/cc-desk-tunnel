@@ -7,7 +7,7 @@ import { SearchAddon } from '@xterm/addon-search';
 import type { TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { RequestFailedError, type ProxyClient } from './client.ts';
 import { ArrowDown, ArrowUp, RefreshCw, Search, X } from './icons.tsx';
-import { Button, IconButton } from './ui.tsx';
+import { Button, IconButton, Modal } from './ui.tsx';
 import { usePrefs } from './prefs.ts';
 import { terminalLinks } from './terminalLinks.ts';
 import {
@@ -121,6 +121,12 @@ export default function NativeTerminal({
   const jumpPrompt = useRef((_earlier: boolean) => {});
   // Only the normal screen (the classic renderer) has a history to move through.
   const [history, setHistory] = useState(true);
+  const [widthStale, setWidthStale] = useState(false);
+  const [reloadOpen, setReloadOpen] = useState(false);
+  const reloadAction = useRef(() => {});
+  useEffect(() => {
+    if (phase !== 'running' || !widthStale) setReloadOpen(false);
+  }, [phase, widthStale]);
   // Said for a moment when there is no prompt to move to, so the key does not seem to do nothing.
   const [jumpNote, setJumpNote] = useState<string | null>(null);
   const findInput = useRef<HTMLInputElement>(null);
@@ -242,6 +248,12 @@ export default function NativeTerminal({
     let reconnecting = false;
     let reconnectTerminalId: string | null = null;
     let renderGeneration = 0;
+    let printedCols: number | null = null;
+    let openCols = 0;
+    let startedDisplay: 'scroll' | 'screen' | undefined;
+    let pendingReload: { display: 'scroll' | 'screen' | undefined } | undefined;
+    let reloading = false;
+    let reloadTask: Promise<void> | null = null;
     let ackTimer: ReturnType<typeof setTimeout> | undefined;
     const early: { terminalId: string; data: string; bytes: number }[] = [];
     let connectionId = client.state?.connectionId;
@@ -317,6 +329,15 @@ export default function NativeTerminal({
         else ackTimer ??= setTimeout(acknowledge, 20);
       });
     }
+    function judgeWidth(cols: number) {
+      if (printedCols === null) return;
+      if (cols === printedCols) return void setWidthStale(false);
+      if (terminal.buffer.normal.baseY === 0) {
+        printedCols = cols;
+        return void setWidthStale(false);
+      }
+      setWidthStale(true);
+    }
     // false: nothing measurable yet (a window still maximizing, restoring or changing DPI); try again.
     function resize() {
       if (!visible.current || disposed) return;
@@ -345,6 +366,7 @@ export default function NativeTerminal({
         if (disposed || !id || closeRequested || phaseNow() !== 'running' || size === next) return;
         size = next;
         client.terminalControl({ type: 'terminal.resize', sessionId, terminalId: id, cols, rows });
+        judgeWidth(cols);
       }, 120);
     }
     activate.current = (focus = false) => {
@@ -381,6 +403,8 @@ export default function NativeTerminal({
         status('unknown', '输出未完整接收');
         return;
       }
+      printedCols = openCols;
+      setWidthStale(false);
       status(
         closeRequested ? 'closing' : 'running',
         closeRequested ? '正在关闭' : 'Linux · Claude Code',
@@ -404,7 +428,7 @@ export default function NativeTerminal({
       }
       return null;
     }
-    async function start() {
+    async function start(reload = pendingReload) {
       if (
         opening ||
         id ||
@@ -413,6 +437,7 @@ export default function NativeTerminal({
         (phaseNow() !== 'failed' && phaseNow() !== 'opening')
       )
         return;
+      pendingReload = reload;
       if ((client.state && client.state.status !== 'connected') || !executionReady()) return;
       opening = true;
       const openingConnection = connectionId;
@@ -421,16 +446,24 @@ export default function NativeTerminal({
       status('opening', reconnectTerminalId ? '正在接回原终端' : '正在启动');
       try {
         resize();
+        openCols = Math.max(20, Math.min(400, terminal.cols));
+        const openDisplay = reconnectTerminalId
+          ? undefined
+          : reload
+            ? reload.display
+            : client.state?.terminalDisplay
+              ? displayRef.current
+              : undefined;
+        if (!reconnectTerminalId) startedDisplay = openDisplay;
+        pendingReload = undefined;
         await client.request({
           type: 'terminal.open',
           sessionId,
           ...(reconnectTerminalId ? { terminalId: reconnectTerminalId } : {}),
-          cols: Math.max(20, Math.min(400, terminal.cols)),
+          cols: openCols,
           rows: Math.max(minimumRows, Math.min(160, terminal.rows)),
           // A new process only; a service that does not announce the choice keeps the CLI's own setting.
-          ...(!reconnectTerminalId && client.state?.terminalDisplay
-            ? { display: displayRef.current }
-            : {}),
+          ...(openDisplay === undefined ? {} : { display: openDisplay }),
         });
         if (openingConnection !== connectionId) return;
         if (opening && !disposed) {
@@ -469,7 +502,98 @@ export default function NativeTerminal({
         setError(failure instanceof Error ? failure.message : '启动失败');
       }
     }
+    reloadAction.current = () => {
+      const run = client.state?.sessions.find((session) => session.id === sessionId)?.activeRun;
+      if (
+        disposed ||
+        reloading ||
+        reloadTask ||
+        closeTask ||
+        opening ||
+        !id ||
+        phaseNow() !== 'running' ||
+        terminal.buffer.active.type !== 'normal' ||
+        client.state?.status !== 'connected' ||
+        !executionReady() ||
+        run?.surface !== 'terminal' ||
+        run.id !== id ||
+        run.activity !== 'idle'
+      )
+        return;
+      reloading = true;
+      closeRequested = true;
+      clearTimeout(ackTimer);
+      clearTimeout(sizeTimer);
+      clearTimeout(redrawTimer);
+      view.cancelAnimationFrame(resizeFrame);
+      setWidthStale(false);
+      setError(null);
+      status('closing', '正在重新载入');
+      const closingId = id;
+      const reloadConnection = connectionId;
+      const interrupted = () =>
+        client.state.status !== 'connected' || client.state.connectionId !== reloadConnection;
+      let closed = false;
+      reloadTask = (async () => {
+        try {
+          await client.request({ type: 'terminal.close', sessionId, terminalId: closingId });
+          closed = true;
+          id = null;
+        } catch (failure) {
+          if (interrupted()) return;
+          const result = await observe().catch(() => null);
+          if (interrupted()) return;
+          if (result?.state === 'running' && result.terminalId) {
+            id = result.terminalId;
+            closeRequested = false;
+            reloading = false;
+            status('running', 'Linux · Claude Code');
+            acknowledge();
+            activate.current(true);
+            setError('未能重新载入，原终端仍在运行。');
+            return;
+          }
+          if (result?.state !== 'absent') {
+            reloading = false;
+            status('unknown', '重新载入结果尚未确认');
+            setError(failure instanceof Error ? failure.message : '重新载入失败');
+            return;
+          }
+          closed = true;
+          id = null;
+        }
+        if (disposed || interrupted()) return;
+        id = null;
+        renderGeneration++;
+        terminal.reset();
+        search?.clearDecorations();
+        setFound(null);
+        prediction?.clear();
+        echoStart = 0;
+        pendingBytes = 0;
+        bufferedBytes = 0;
+        early.length = 0;
+        size = '';
+        outputLost = false;
+        reconnectTerminalId = null;
+        setReading(false);
+        setUnseenOutput(false);
+        closeRequested = false;
+        reloading = false;
+        status('opening', '正在重新载入');
+        openTask = start({ display: startedDisplay });
+        await openTask;
+      })().finally(() => {
+        reloading = false;
+        reloadTask = null;
+        if (!disposed && interrupted()) {
+          reconnectTerminalId = closed ? id : closingId;
+          disconnected(true);
+        }
+      });
+    };
     async function close(): Promise<boolean> {
+      if (reloadTask) await reloadTask;
       if (closeTask) return closeTask;
       if (phaseNow() === 'ended' || phaseNow() === 'failed') return true;
       if (phaseNow() === 'disconnected') {
@@ -571,6 +695,12 @@ export default function NativeTerminal({
         message.type === 'terminal.closed' &&
         (message.terminalId === id || (!id && opening))
       ) {
+        if (reloading) {
+          id = null;
+          pendingBytes = 0;
+          clearTimeout(ackTimer);
+          return;
+        }
         id = null;
         opening = false;
         pendingBytes = 0;
@@ -616,9 +746,17 @@ export default function NativeTerminal({
           : next,
       );
     }
-    const disconnected = () => {
+    const disconnected = (reloadInterrupted = false) => {
       refreshConnection();
-      if (phaseNow() === 'opening' && !id && !opening && !reconnectTerminalId && !closeRequested) {
+      if (reloadTask) return;
+      if (
+        !reloadInterrupted &&
+        phaseNow() === 'opening' &&
+        !id &&
+        !opening &&
+        !reconnectTerminalId &&
+        !closeRequested
+      ) {
         if (client.state.status === 'connected' && executionReady()) {
           connectionId = client.state.connectionId;
           openTask = start();
@@ -659,7 +797,7 @@ export default function NativeTerminal({
         opening = false;
         closeRequested = true;
         clearTimeout(ackTimer);
-        if (phaseNow() !== 'ended' && phaseNow() !== 'failed') {
+        if (reloadInterrupted || (phaseNow() !== 'ended' && phaseNow() !== 'failed')) {
           status('disconnected', '连接中断 · 正在等待恢复终端');
           setRecovery('原终端状态尚未确认；恢复时不会重发输入。');
         }
@@ -860,6 +998,7 @@ export default function NativeTerminal({
                 cols,
                 rows,
               });
+              judgeWidth(cols);
             }, 300);
           }, 150);
           return;
@@ -964,6 +1103,20 @@ export default function NativeTerminal({
       if (terminalRef.current === terminal) terminalRef.current = null;
     };
   }, [client, sessionId]);
+  const reloadVisible = widthStale && history && phase === 'running';
+  const reloadReason =
+    connection.status !== 'connected' || !connection.ready
+      ? '连接恢复后才能重新载入'
+      : connection.activity === 'working'
+        ? 'Claude 正在运行，结束后才能重新载入'
+        : connection.activity === 'waiting'
+          ? 'Claude 正在等待确认或回答，处理后才能重新载入'
+          : connection.activity === null
+            ? '正在同步 Claude 状态，稍后再试'
+            : null;
+  const reloadTitle =
+    reloadReason ??
+    '窗口宽度变了，上面的旧内容还是原来的宽度。重新载入后，Claude Code 会按当前宽度重新显示整段对话。';
   const connectionText =
     connection.status === 'reconnecting'
       ? '正在重连服务端'
@@ -1079,6 +1232,19 @@ export default function NativeTerminal({
           </IconButton>
         </>
       )}
+      {reloadVisible && (
+        <Button
+          size="xs"
+          variant="ghost"
+          title={reloadTitle}
+          aria-disabled={!!reloadReason}
+          onClick={() => {
+            if (!reloadReason) setReloadOpen(true);
+          }}
+        >
+          按新宽度重排
+        </Button>
+      )}
       {phase === 'running' && (
         <IconButton
           title="重新适配窗口"
@@ -1113,6 +1279,40 @@ export default function NativeTerminal({
         <span className="sr-only">Linux · Claude Code</span>
       )}
       {register && active && toolbar && createPortal(indicators, toolbar)}
+      {reloadOpen && reloadVisible && (
+        <Modal
+          title="按当前宽度重新载入"
+          onClose={() => setReloadOpen(false)}
+          initialFocus="[data-reload-cancel]"
+        >
+          <p>
+            会结束当前的 Claude Code 进程，再接着同一段对话重新打开，相当于在本地终端里退出后执行{' '}
+            <code>claude --resume</code>。对话内容不会丢，但下面这些会丢失：
+          </p>
+          <ul>
+            <li>输入框里还没发送的文字</li>
+            <li>用 Ctrl+B 放到后台、仍在运行的命令</li>
+            <li>本次运行中“本会话内允许”的授权</li>
+            <li>在 Claude Code 里临时切换的模型、思考强度或权限模式（会恢复为这个会话的设置）</li>
+          </ul>
+          <p>重新打开需要几秒，MCP 服务器会重新连接。</p>
+          {reloadReason && <p role="status">{reloadReason}</p>}
+          <div className="dialog-actions">
+            <Button data-reload-cancel onClick={() => setReloadOpen(false)}>
+              取消
+            </Button>
+            <Button
+              variant="primary"
+              aria-disabled={!!reloadReason}
+              onClick={() => {
+                if (reloadVisible && !reloadReason) reloadAction.current();
+              }}
+            >
+              重新载入
+            </Button>
+          </div>
+        </Modal>
+      )}
       {error && <p role="alert">{error}</p>}
       {recovery && <div className="terminal-recovery-note">{recovery}</div>}
       {(phase === 'failed' || phase === 'unknown' || phase === 'disconnected') && (
