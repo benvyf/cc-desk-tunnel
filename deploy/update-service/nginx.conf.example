@@ -45,7 +45,8 @@ location ~ ^/cc-updates/v1/channels/(pilot|stable)/win32-x64\.json$ {
     proxy_buffering off;
 }
 
-location ~ ^/cc-updates/v1/artifacts/([1-9][0-9]*)/win32-x64/(CC-Desk-Tunnel-Setup-[0-9]+\.[0-9]+\.[0-9]+-x64\.exe)$ {
+# Complete installers and signed differential sidecars share immutable coordinates.
+location ~ ^/cc-updates/v1/artifacts/([1-9][0-9]*)/win32-x64/(CC-(?:Space|Desk-Tunnel)-Setup-[0-9]+\.[0-9]+\.[0-9]+-x64\.exe(?:\.(?:blockmap|differential\.json))?)$ {
     limit_except GET HEAD { deny all; }
     alias /srv/cc-update-service/public/artifacts/$1/win32-x64/$2;
     disable_symlinks on;

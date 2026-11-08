@@ -1,7 +1,17 @@
 import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash, generateKeyPairSync } from 'node:crypto';
-import { mkdtemp, mkdir, writeFile, readFile, rm, link, symlink } from 'node:fs/promises';
+import {
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  rm,
+  link,
+  symlink,
+  chown,
+  stat,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { gzipSync } from 'node:zlib';
@@ -118,6 +128,31 @@ async function fixture(t) {
     },
   };
 }
+
+test('root publication inherits service ownership and public permissions', async (t) => {
+  if (process.platform === 'win32' || process.getuid() !== 0)
+    return t.skip('Requires Unix root to reproduce service ownership boundary');
+  const f = await fixture(t);
+  await chown(f.publicRoot, 65534, 65534);
+  const previous = process.umask(0o077);
+  try {
+    await publishDifferential(f.args);
+    for (const [file, mode] of [
+      [join(f.publicRoot, 'artifacts/34'), 0o755],
+      [join(f.publicRoot, 'artifacts/34/win32-x64'), 0o755],
+      [f.artifact, 0o644],
+      [f.artifact + '.blockmap', 0o644],
+      [f.artifact + '.differential.json', 0o644],
+    ]) {
+      const info = await stat(file);
+      assert.equal(info.uid, 65534);
+      assert.equal(info.gid, 65534);
+      assert.equal(info.mode & 0o777, mode);
+    }
+  } finally {
+    process.umask(previous);
+  }
+});
 
 test('publishes immutable signed metadata and reruns without changing bytes', async (t) => {
   const f = await fixture(t);

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { createHash, createPrivateKey, createPublicKey, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
-import { link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
+import { chmod, chown, link, lstat, mkdir, open, realpath, unlink } from 'node:fs/promises';
 import { dirname, isAbsolute, join, parse, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -315,6 +315,24 @@ export async function publishDifferential(args) {
   if (!installerExists) await publishInstaller(installer, args.artifact, release, sha512);
   await publishImmutable(mapFile, mapBytes);
   await publishImmutable(descriptorFile, signed);
+  // The original service must chmod/fsync its artifact during activation.
+  // A root signer inherits the established public-root service owner, while
+  // explicit public modes also survive a protected administrator umask.
+  if (process.platform !== 'win32') {
+    const owner = await lstat(publicRoot);
+    for (const path of [
+      dirname(dirname(installer)),
+      dirname(installer),
+      installer,
+      mapFile,
+      descriptorFile,
+    ]) {
+      const directory = path === dirname(installer) || path === dirname(dirname(installer));
+      await safePath(path, directory ? 'directory' : 'file');
+      if (process.getuid() === 0) await chown(path, owner.uid, owner.gid);
+      await chmod(path, directory ? 0o755 : 0o644);
+    }
+  }
   return {
     build: release.build,
     channel: payload.channel,
