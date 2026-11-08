@@ -1,0 +1,63 @@
+{
+  "date": "2026-11-08",
+  "sourceCommit": "109b255e4eed3ffe68b4fa149e563673c0440ebe",
+  "featureBase": "7b1c3b1f47a096fc104295a1270f7cfa5cc0c5b8",
+  "release": {
+    "build": 33,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "109b255e4eed3ffe68b4fa149e563673c0440ebe",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "notes": "CC Space 0.3.10 / Build 33，协议 24。包含最新主分支的本地历史缓存及连续记录修复；经典布局窗口宽度变化后，可在空闲时手动点击「按新宽度重排」，确认后结束并续接同一对话，让 Claude Code 按当前宽度重印历史。保留现有受管更新验签、账号和安装身份。此次仅更新 Windows 客户端，宽度重排功能无需配套升级服务端。",
+    "size": 258618440,
+    "sha256": "3e2e59d0b328cbcc55d91da3bd05d13b474f8534feb6bdc532d782bc19786db8"
+  },
+  "revision": 50,
+  "signatureVerified": true,
+  "publicArtifactVerifiedOnVps": true,
+  "publicHttpsRangesVerified": 3,
+  "installerPayloadIntegrity": true,
+  "installerAsarMatched": true,
+  "modulesMatched": 28,
+  "vendorFilesMatched": 691,
+  "packagedOfflineSmoke": {
+    "passed": 1,
+    "failed": 0
+  },
+  "updateInstallerWindowCore": {
+    "passed": 57,
+    "failed": 0,
+    "conditionalSkips": 2
+  },
+  "baseTerminalRegression": {
+    "passed": 158,
+    "failed": 0
+  },
+  "baseTestMain": {
+    "passed": 559,
+    "failed": 0,
+    "conditionalSkips": 58
+  },
+  "typecheckPassed": true,
+  "renewal": {
+    "source": "/root/.cc-update-admin/source-build-33",
+    "forcedRenewalPassed": true,
+    "systemdResult": "not-due",
+    "windowsTimerActive": true,
+    "linuxTimerActive": true
+  },
+  "backup": "/var/backups/cc-update-service/client33-publication-20261108T061206Z",
+  "preserved": {
+    "oldWindows32Artifact": true,
+    "windowsStableIndex": true,
+    "linuxPilotIndex": true,
+    "managementRuntimeInventory": true
+  },
+  "installedOnUserMachine": false,
+  "productionServerInstallJobsCreated": false,
+  "modelCalls": false,
+  "limitations": [
+    "Windows EXE has no new Authenticode signature; managed update index retains the existing Ed25519 trust.",
+    "Disabled-state visual polish identified in UI review is not implemented in this source."
+  ]
+}

@@ -1,5 +1,12 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-08 Windows Build 33 已发布
+
+按用户要求打包最新 main 并切换 VPS 管理中心 Windows pilot 下载入口。CC Space 0.3.10 / Build 33 / 协议 24，发行源码 `109b255e4eed3ffe68b4fa149e563673c0440ebe`，包含 `7b1c3b1` 的经典终端手动宽度重排及此前本地历史缓存修复。旧 Build 32 包保留，Linux 发布、Windows stable 和管理中心运行文件保持；未部署服务端或创建节点安装任务。
+
+真实 EXE 离线启动、实际安装包解包及 28 主进程模块/691 组件、公开签名/完整下载摘要与 HTTPS 三段字节、精确续期和真实 systemd 均通过；Windows/Linux timer active。源码固定 `/root/.cc-update-admin/source-build-33` 为续期运行引用，不得清理。受管更新继续沿用原信任和安装身份；禁用态视觉补齐尚未实现。详见[发布记录](docs/CLIENT-BUILD33-PUBLICATION.md)与[证据](docs/evidence/windows-build33-production-2026-11-08.json)。
+
+
 ### 2026-11-08 b2768de 尾部追加缺口修复（源码，未发行）
 
 按审查新增“复审 b2768de”处理：persistHistory 的追加分支现在比较完整内存与 historyWindow 尾部中 sequence > 当前 persistedLast 的事件数量；数量不同说明裁剪排除了尚未持久化的上一轮事件，改用 replace(value)。判断在排队写入实际执行时进行，共用于 snapshot append 与 flushHistoryCache，不改变原有 owner/连接代次和 synced 保护。
