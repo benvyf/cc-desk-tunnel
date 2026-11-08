@@ -13,6 +13,7 @@ import { build as viteBuild } from 'vite';
 import brand from '../apps/desktop/brand.json' with { type: 'json' };
 import { stagePreviewOffice } from './package-preview-office.mjs';
 import { assertDesktopModelBoundary } from './model-boundary.mjs';
+import { bundleDifferentialEngine } from './bundle-differential-engine.mjs';
 
 // A package the program loads by name while it runs, copied with what it depends on. Compiled add-ons are
 // left out: they are optional speed-ups built for the Node of the machine that installed them, not for the
@@ -122,6 +123,7 @@ export async function stageDesktop(
     cpSync(join(root, 'apps/desktop/electron', file), join(app, 'electron', file));
   cpSync(join(root, 'apps/desktop/brand.json'), join(app, 'brand.json'));
   if (managedIdentity) {
+    await bundleDifferentialEngine(root, app);
     await viteBuild({
       configFile: false,
       root,

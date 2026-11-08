@@ -54,6 +54,8 @@ class ManagedController {
     notify = () => {},
     quit = () => {},
     launchInstaller,
+    createDifferentialRequest,
+    seedPaths = [],
     processes,
     now = Date.now,
     lockName,
@@ -64,6 +66,8 @@ class ManagedController {
     this.notify = notify;
     this.quit = quit;
     this.launchInstaller = launchInstaller;
+    this.createDifferentialRequest = createDifferentialRequest;
+    this.seedPaths = seedPaths;
     this.processes = processes;
     this.now = now;
     this.directory = path.join(
@@ -287,40 +291,91 @@ class ManagedController {
       const release = selected.release;
       this.startedDownload = this.now();
       let progressAt = 0;
-      const file = this.file(`download-${release.build}-${release.sha256}.part`);
+      const fullFile = this.file(`download-${release.build}-${release.sha256}.part`);
+      let file = fullFile,
+        temporary = null,
+        metrics = {};
       await this.safePath(file, false);
       this.publish({ phase: 'downloading', release, received: 0 });
-      await this.network.download(
-        this.identity.origin + this.contract.artifactPath(release),
-        file,
-        release,
-        signal,
-        (received) => {
-          const cancellation = read(this.file('cancel.json'));
-          if (cancellation?.owner === process.pid && cancellation.at >= this.startedDownload)
-            this.abort.abort();
-          if (this.now() - progressAt >= 250 || received === release.size) {
-            progressAt = this.now();
-            this.publish({ phase: 'downloading', release, received });
+      try {
+        if (this.createDifferentialRequest) {
+          try {
+            const prepared =
+              await require('./managed-differential-cache.cjs').tryDownloadDifferential({
+                release,
+                identity: this.identity,
+                directory: this.directory,
+                network: this.network,
+                signal,
+                createRequest: this.createDifferentialRequest,
+                seedPaths: [this.file('ready.exe'), ...this.seedPaths],
+                onProgress: (p) => {
+                  if (this.now() - progressAt >= 250) {
+                    progressAt = this.now();
+                    const percent = Number.isFinite(p.percent)
+                      ? Math.min(100, Math.max(0, p.percent))
+                      : 0;
+                    this.publish({
+                      phase: 'downloading',
+                      release,
+                      received: Math.round((release.size * percent) / 100),
+                      downloadMode: 'differential',
+                      downloadedBytes: p.downloadedBytes,
+                      reusedBytes: p.reusedBytes,
+                    });
+                  }
+                },
+              });
+            if (prepared) {
+              file = temporary = prepared.file;
+              metrics = {
+                downloadMode: 'differential',
+                downloadedBytes: prepared.downloadedBytes,
+                reusedBytes: prepared.reusedBytes,
+              };
+            }
+          } catch (error) {
+            if (signal.aborted) throw error;
           }
-        },
-      );
-      signal.throwIfAborted();
-      const digest = await hashFile(file);
-      if (digest.size !== release.size || digest.sha256 !== release.sha256) {
-        await fsp.rm(file);
-        throw new Error('安装包完整性校验失败');
+        }
+        if (!temporary)
+          await this.network.download(
+            this.identity.origin + this.contract.artifactPath(release),
+            file,
+            release,
+            signal,
+            (received) => {
+              const cancellation = read(this.file('cancel.json'));
+              if (cancellation?.owner === process.pid && cancellation.at >= this.startedDownload)
+                this.abort.abort();
+              if (this.now() - progressAt >= 250 || received === release.size) {
+                progressAt = this.now();
+                this.publish({ phase: 'downloading', release, received });
+              }
+            },
+          );
+        signal.throwIfAborted();
+        const digest = await hashFile(file);
+        signal.throwIfAborted();
+        if (digest.size !== release.size || digest.sha256 !== release.sha256) {
+          await fsp.rm(file);
+          throw new Error('安装包完整性校验失败');
+        }
+        await this.safePath(this.file('ready.exe'), false);
+        await fsp.rename(file, this.file('ready.exe'));
+        if (temporary) await fsp.rm(fullFile, { force: true });
+        atomic(this.file('ready.json'), release);
+        this.publish({
+          phase: 'ready',
+          release,
+          received: release.size,
+          ...metrics,
+          message: '下载完成，断开所有远端连接后可以安装。',
+        });
+        return this.state();
+      } finally {
+        if (temporary) await fsp.rm(temporary, { force: true });
       }
-      await this.safePath(this.file('ready.exe'), false);
-      await fsp.rename(file, this.file('ready.exe'));
-      atomic(this.file('ready.json'), release);
-      this.publish({
-        phase: 'ready',
-        release,
-        received: release.size,
-        message: '下载完成，断开所有远端连接后可以安装。',
-      });
-      return this.state();
     });
   }
   async safePath(file, required = true) {

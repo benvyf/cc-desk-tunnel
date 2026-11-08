@@ -6,10 +6,11 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { artifactPath, verifyIndex } from '../packages/managed-updates/src/index.ts';
+import { prepareDifferential } from './prepare-managed-differential.mjs';
 
 // Run over SSH on the publication VPS. Credentials stay outside the source checkout.
 const usage =
-  'node scripts/publish-managed-update.mjs --input TEMPLATE --out NEW_INDEX [--source CLEAN_CHECKOUT --artifact SETUP_EXE] [--admin-root /root/.cc-update-admin]';
+  'node scripts/publish-managed-update.mjs --input TEMPLATE --out NEW_INDEX [--source CLEAN_CHECKOUT --artifact SETUP_EXE] [--blockmap LOCAL_GZIP --public-root /srv/cc-update-service/public] [--admin-root /root/.cc-update-admin]';
 let stage = 'arguments';
 let candidateId;
 async function main() {
@@ -18,7 +19,15 @@ async function main() {
     return;
   }
   const args = {};
-  const allowed = new Set(['input', 'out', 'source', 'artifact', 'admin-root']);
+  const allowed = new Set([
+    'input',
+    'out',
+    'source',
+    'artifact',
+    'admin-root',
+    'blockmap',
+    'public-root',
+  ]);
   for (let i = 2; i < process.argv.length; i += 2) {
     const name = process.argv[i].slice(2);
     assert(process.argv[i].startsWith('--') && allowed.has(name) && !Object.hasOwn(args, name));
@@ -131,6 +140,20 @@ async function main() {
       body: createReadStream(args.artifact),
       duplex: 'half',
     });
+    stage = 'prepare-differential';
+    const differential = await prepareDifferential({
+      source: args.source,
+      index: output,
+      artifact: args.artifact,
+      blockmap: args.blockmap,
+      'private-key': keyPath,
+      'key-id': keyId,
+      'public-root': args['public-root'],
+    });
+    if (differential) {
+      evidence.differentialPrepared = differential;
+      await saveEvidence();
+    }
   }
   stage = 'activate';
   evidence.activation = await (

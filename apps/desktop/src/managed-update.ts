@@ -20,6 +20,9 @@ export type ManagedUpdateState = {
     size: number;
   } | null;
   received?: number;
+  downloadMode?: 'differential';
+  downloadedBytes?: number;
+  reusedBytes?: number;
   message?: string;
   pending?: { targetBuild: number; status: string } | null;
 };

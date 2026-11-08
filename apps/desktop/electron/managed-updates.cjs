@@ -1,4 +1,15 @@
 // Custom builds are distributed by the administrator, never by a renderer request.
+exports.createDifferentialRequest = (net, { url, headers }) => {
+  const request = net.request({
+    url,
+    method: 'GET',
+    redirect: 'manual',
+    credentials: 'omit',
+    useSessionCookies: false,
+  });
+  for (const [name, value] of Object.entries(headers)) request.setHeader(name, value);
+  return request;
+};
 exports.registerManagedUpdates = (handle) => {
   for (const channel of ['service:upgrade', 'update:install', 'release:notes'])
     handle(channel, () => {
@@ -82,6 +93,10 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
           localAppData: process.env.LOCALAPPDATA,
           contract: require('./managed-contract.cjs'),
           network: createNetwork(net.fetch.bind(net), identity.origin),
+          seedPaths: [
+            path.join(process.env.LOCALAPPDATA, 'cc-desk-tunnel-updater', 'installer.exe'),
+          ],
+          createDifferentialRequest: (options) => exports.createDifferentialRequest(net, options),
           notify,
           quit,
           processes,

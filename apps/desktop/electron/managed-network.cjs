@@ -1,5 +1,11 @@
 const { open, stat, rm } = require('node:fs/promises');
 const { setTimeout: delay } = require('node:timers/promises');
+const {
+  descriptorPath,
+  blockmapPath,
+  MAX_DESCRIPTOR_BYTES,
+  MAX_BLOCKMAP_BYTES,
+} = require('./managed-differential-contract.cjs');
 
 // net.fetch is supplied by Electron's main process: Chromium honours the system proxy.
 function createNetwork(fetch, origin) {
@@ -52,6 +58,111 @@ function createNetwork(fetch, origin) {
       chunks.push(Buffer.from(chunk));
     }
     return Buffer.concat(chunks);
+  }
+
+  async function differentialMetadata(path, limit, optional, signal) {
+    const timeout = new AbortController();
+    const combined = signal ? AbortSignal.any([signal, timeout.signal]) : timeout.signal;
+    let response;
+    let reader;
+    const cancel = () => {
+      // Never wait for an uncooperative stream's cancellation promise.
+      try {
+        Promise.resolve(reader ? reader.cancel() : response?.body?.cancel()).catch(() => {});
+      } catch {}
+    };
+    // Each pending operation owns one listener; completed reads retain no abort reactions.
+    const wait = (operation) =>
+      new Promise((resolve, reject) => {
+        const onAbort = () => {
+          combined.removeEventListener('abort', onAbort);
+          reject(combined.reason);
+        };
+        combined.addEventListener('abort', onAbort, { once: true });
+        Promise.resolve(operation).then(
+          (value) => {
+            combined.removeEventListener('abort', onAbort);
+            resolve(value);
+          },
+          (error) => {
+            combined.removeEventListener('abort', onAbort);
+            reject(error);
+          },
+        );
+        if (combined.aborted) onAbort();
+      });
+    const onAbort = () => {
+      cancel();
+    };
+    combined.addEventListener('abort', onAbort, { once: true });
+    const timer = setTimeout(
+      () => timeout.abort(new DOMException('Metadata deadline exceeded', 'TimeoutError')),
+      20000,
+    );
+    timer.unref?.();
+    try {
+      combined.throwIfAborted();
+      const pending = request(`${origin}${path}`, {
+        signal: combined,
+        metadata: true,
+        headers: { 'Accept-Encoding': 'identity' },
+      }).then((result) => {
+        if (combined.aborted) {
+          try {
+            Promise.resolve(result.body?.cancel()).catch(() => {});
+          } catch {}
+        }
+        return result;
+      });
+      response = await wait(pending);
+      combined.throwIfAborted();
+      if (optional && response.status === 404) {
+        cancel();
+        return null;
+      }
+      if (response.status !== 200) throw new Error('差分元数据 HTTP 状态无效');
+      const encoding = response.headers.get('content-encoding');
+      if (encoding && encoding !== 'identity') throw new Error('差分元数据不可压缩传输');
+      const length = response.headers.get('content-length');
+      if (
+        length !== null &&
+        (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length)) || Number(length) > limit)
+      )
+        throw new Error('差分元数据 Content-Length 无效');
+      if (!response.body) throw new Error('差分元数据缺少响应体');
+      reader = response.body.getReader();
+      const bytes = Buffer.alloc(limit);
+      let size = 0;
+      while (true) {
+        const { done, value } = await wait(reader.read());
+        combined.throwIfAborted();
+        if (done) break;
+        const nextSize = size + value.byteLength;
+        if (nextSize > limit || (length !== null && nextSize > Number(length)))
+          throw new Error('差分元数据超过大小限制');
+        bytes.set(value, size);
+        size = nextSize;
+      }
+      if (length !== null && size !== Number(length)) throw new Error('差分元数据长度不匹配');
+      return bytes.subarray(0, size);
+    } catch (error) {
+      cancel();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      combined.removeEventListener('abort', onAbort);
+      try {
+        reader?.releaseLock();
+      } catch {}
+    }
+  }
+
+  async function descriptor(coords, signal) {
+    return differentialMetadata(descriptorPath(coords), MAX_DESCRIPTOR_BYTES, true, signal);
+  }
+
+  async function blockmap(coords, signal) {
+    return differentialMetadata(blockmapPath(coords), MAX_BLOCKMAP_BYTES, false, signal);
   }
 
   async function download(url, file, release, signal, progress) {
@@ -152,6 +263,6 @@ function createNetwork(fetch, origin) {
       await delay(250, undefined, { signal: deadline });
     }
   }
-  return { index, download };
+  return { index, download, descriptor, blockmap };
 }
 module.exports = { createNetwork };

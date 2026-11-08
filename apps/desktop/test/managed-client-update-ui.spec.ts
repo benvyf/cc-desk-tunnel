@@ -62,6 +62,7 @@ test.beforeEach(async ({ page }) => {
       loadSchedules: async (text: string) => ({ path: '', text }),
       device: async () => ({ id: 'e04aef32-195f-48c0-a45a-34ebd8b0aa94', name: 'fixture' }),
       connectProxy: async () => ({ url: 'ws://127.0.0.1:18889/ws' }),
+      ssh: { list: async () => [], onChanged: () => noOp },
       access: undefined,
       managedServer: undefined,
       managedUpdate: {
@@ -734,6 +735,27 @@ test('download errors remain visible and can be retried', async ({ page }) => {
   expect(await page.evaluate(() => window.updateFixture.calls.includes('cancel'))).toBe(true);
   await page.getByRole('button', { name: '关闭', exact: true }).last().click();
   await expect(page.getByRole('button', { name: '更新', exact: true })).toBeVisible();
+});
+
+test('mature differential updates show actual downloaded and reused bytes', async ({ page }) => {
+  await page.evaluate(() => window.updateFixture.offer());
+  await page.getByRole('button', { name: '更新', exact: true }).click();
+  await page.evaluate(() =>
+    window.updateFixture.publish({
+      phase: 'downloading',
+      received: 512,
+      downloadMode: 'differential',
+      downloadedBytes: 1048576,
+      reusedBytes: 2097152,
+    }),
+  );
+  const dialog = page.getByRole('dialog', { name: '更新', exact: true });
+  await expect(dialog.getByRole('progressbar', { name: '更新下载进度' })).toHaveAttribute(
+    'value',
+    '50',
+  );
+  await expect(dialog).toContainText('已下载 1.0 MB');
+  await expect(dialog).toContainText('复用 2.0 MB');
 });
 
 test('late initial state cannot erase a newer update notification', async ({ page }) => {

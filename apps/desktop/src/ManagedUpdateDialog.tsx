@@ -69,7 +69,9 @@ export default function ManagedUpdateDialog({
             {phase === 'ready'
               ? '下载完成。请先断开所有 CC 连接并结束任务，再安装并重启。'
               : phase === 'downloading'
-                ? `正在下载更新：${progress}%`
+                ? state.downloadMode === 'differential'
+                  ? `正在下载增量更新：${progress}% · 已下载 ${((state.downloadedBytes ?? 0) / 1048576).toFixed(1)} MB · 复用 ${((state.reusedBytes ?? 0) / 1048576).toFixed(1)} MB`
+                  : `正在下载更新：${progress}%`
                 : phase === 'checking'
                   ? '正在检查更新…'
                   : phase === 'available'
