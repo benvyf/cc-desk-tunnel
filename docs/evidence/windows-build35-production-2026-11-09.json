@@ -1,0 +1,69 @@
+{
+  "date": "2026-11-09",
+  "release": {
+    "build": 35,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "cd485b8086ba0fecd6b4ce0372b7c1c0773a077b",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "notes": "CC Space 0.3.10 / Build 35，协议 24。修复回答中新生成文件无法点击打开，支持中文、特殊字符及项目相对路径；新增 XLS/XLSX/CSV/TSV 只读表格预览、工作表切换、行列标题和大表滚动；新增常见语言与 PowerShell 源码语法着色，保留复制及行列定位。表格不重新计算公式，不还原图表或完整 Excel 排版。保留成熟 NSIS 分块差分更新、完整下载回退、固定签名校验、安装身份、账号配置和历史记录。现有协议 24 服务端无需升级。",
+    "size": 258907291,
+    "sha256": "5da10a8017027a6362d73d469ef7f80eea7f449623520f4d8a87e0e2a4a37905"
+  },
+  "publishedChannel": "pilot",
+  "revision": 54,
+  "expiresAt": "2026-11-11T18:46:16.722Z",
+  "mainPushed": true,
+  "vpsPublished": true,
+  "vpsAddress": "212.50.248.138",
+  "signatureVerified": true,
+  "descriptorVerified": true,
+  "blockmapVerified": true,
+  "publicHttpsRangesVerified": 3,
+  "completePublicInstallerVerifiedOnVps": true,
+  "installerAsarMatched": true,
+  "asarSha256": "05296716f07a9f26082f0104a26d8c4ca2ab0747ef4c23afeed90d2eedade908",
+  "packageChecks": {
+    "passed": 3,
+    "failed": 0
+  },
+  "controllerChecks": {
+    "compatibleOlderBuildAvailable": true,
+    "currentBuildIdle": true,
+    "crossProtocolMetadataRetained": true
+  },
+  "verifiedStateUi": {
+    "olderCompatible": {
+      "visible": true,
+      "actions": ["download"]
+    },
+    "current": {
+      "visible": true,
+      "actions": []
+    },
+    "olderProtocol": {
+      "visible": true,
+      "actions": ["manual:24"]
+    }
+  },
+  "renewal": {
+    "forced": true,
+    "revision": 54,
+    "releaseUnchanged": true,
+    "normalCheck": "not-due",
+    "candidates": 0
+  },
+  "infrastructure": {
+    "runtimeInventoryUnchanged": true,
+    "managementServiceNotRestarted": true,
+    "nginxUnchangedAndValid": true,
+    "windowsStableUnchanged": true,
+    "linuxPilotUnchanged": true,
+    "windowsTimerActive": true,
+    "linuxTimerActive": true,
+    "forceOverrideRemoved": true
+  },
+  "backup": "/var/backups/cc-update-service/client35-publication-20261108T184345Z",
+  "previousBuild34RetainedForDifferential": true,
+  "userInstallationChanged": false
+}

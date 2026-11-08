@@ -1,5 +1,7 @@
 # VPS 统一发布与跨电脑凭据
 
+> 2026-11-09 当前发布 VPS 已迁移至 `212.50.248.138`，沿用既有 SSH 主机校验和授权密钥。本文下方 `74.82.201.214` 为历史地址，不应优先于当前域名与已知主机核对。Windows 最新发布为 [Build 35](CLIENT-BUILD35-PUBLICATION.md)，精确续期登记指向 `/root/.cc-update-admin/source-build-35` 与公开 Build 35 安装包；签名身份仍为 `managed-vps-2026-10-23`。
+
 > 当前已发布 Windows Build 5／Linux Build 2，两套自动续期均已登记并启用。本文包含历史身份迁移记录；当前源码恢复、管理入口、运行路径和发布边界见[开发交接](../DEVELOPMENT-HANDOFF.md)，不要从普通 GitHub clone 假定已取得当前工作分支。
 
 2026-10-23 起，生产发布身份由 VPS 集中保管。旧电脑身份 `managed-2026-10-23` 退役，新身份为 `managed-vps-2026-10-23`；旧 build 1 没有发布，保留作历史制品，新公钥从 build 2 开始固定。
