@@ -136,10 +136,8 @@ class StrictExecutor extends HttpExecutor {
       if (!state.ended && !this.failure) fail(new Error('Differential request aborted'));
     });
     request.on('close', () => {
-      // Node can close the request after the incoming body ends but before the
-      // validation transform drains. Let that transform finish validating.
-      if (!state.ended && !state.response?.readableEnded && !this.failure)
-        fail(new Error('Differential request closed early'));
+      // Electron request close is not a response-body completion signal.
+      // Keep tracking until validated end, explicit failure, or inactivity timeout.
       if (state.ended || this.failure) {
         clearTimeout(state.timer);
         this.active.delete(request);

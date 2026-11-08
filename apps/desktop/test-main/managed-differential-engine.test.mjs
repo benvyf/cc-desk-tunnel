@@ -50,6 +50,7 @@ async function fixture(t, mode = 'normal') {
           req.emit('redirect', 302, 'GET', 'https://evil.test/file');
           return;
         }
+        if (mode === 'request-close') req.emit('close');
         const [, s, e] = /^bytes=(\d+)-(\d+)$/.exec(headers.range);
         const start = +s,
           end = +e;
@@ -116,6 +117,12 @@ test(
     assert.equal(f.active.size, 0);
   },
 );
+test('request close before response does not terminate a valid Electron body', async (t) => {
+  const f = await fixture(t, 'request-close');
+  await load().runDifferential(f.opts);
+  assert.deepEqual(await readFile(f.opts.newFile), newBytes);
+  assert.equal(f.active.size, 0);
+});
 for (const mode of [
   '200',
   'range',
