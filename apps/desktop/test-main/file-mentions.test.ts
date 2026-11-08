@@ -176,3 +176,27 @@ test('a possible directory keeps the unique recorded fallback until its filesyst
   assert.equal(code.data?.hProperties?.['data-file-directory'], 'C:\\docs\\guide.pdf');
   assert.equal(code.data?.hProperties?.['data-file-fallback'], path);
 });
+
+test('POSIX names preserve literal backslashes without creating false basename matches', () => {
+  const unix = { projectPath: '/project', here: true, browser: false };
+  const path = '/out/archive\\report.pdf';
+  assert.deepEqual(fileMentionCandidates('report.pdf', [path], undefined, unix), []);
+  assert.deepEqual(
+    fileMentionCandidates('report.pdf', [path, '/out/report.pdf'], undefined, unix),
+    ['/out/report.pdf'],
+  );
+  assert.deepEqual(fileMentionCandidates('archive\\report.pdf', [path], undefined, unix), [path]);
+  assert.deepEqual(
+    fileMentionCandidates('archive\\report.pdf', ['archive\\report.pdf'], undefined, unix),
+    ['/project/archive\\report.pdf'],
+  );
+  assert.deepEqual(fileMentionCandidates('./archive\\report.pdf', [], undefined, unix), [
+    '/project/archive\\report.pdf',
+  ]);
+  assert.deepEqual(fileMentionCandidates('archive\\report.pdf', [], '/out', unix), [path]);
+  assert.deepEqual(
+    fileMentionCandidates('src/report.pdf', ['/project/src/report.pdf'], undefined, unix),
+    ['/project/src/report.pdf'],
+  );
+  assert.deepEqual(fileMentionCandidates('REPORT.PDF', ['/out/report.pdf'], undefined, unix), []);
+});

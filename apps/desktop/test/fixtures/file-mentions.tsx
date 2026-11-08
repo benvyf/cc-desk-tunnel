@@ -204,6 +204,43 @@ if (params.has('edge') || params.has('race') || params.has('inspection-error')) 
   emit('edge', { type: 'run.status', status: 'completed', connectionId: 'fixture' });
 }
 
+if (params.has('posix')) {
+  session.projectPath = '/project';
+  events.length = 0;
+  const outputs = ['archive\\report.pdf', '/out/report.pdf'];
+  ['/project/archive\\report.pdf', '/project/archive/report.pdf', '/out/report.pdf'].forEach(
+    (path) => files.add(path),
+  );
+  emit('posix', {
+    type: 'message.user',
+    messageId: 'posix-question',
+    text: '检查 POSIX 路径',
+    scenario: 'chat',
+  });
+  for (const [index, path] of outputs.entries()) {
+    emit('posix', {
+      type: 'tool.requested',
+      toolId: `posix-${index}`,
+      name: 'Write',
+      input: JSON.stringify({ file_path: path, content: 'text' }),
+      target: 'Linux',
+    });
+    emit('posix', {
+      type: 'tool.result',
+      toolId: `posix-${index}`,
+      status: 'completed',
+      output: '',
+      exitCode: 0,
+    });
+  }
+  emit('posix', {
+    type: 'text.delta',
+    messageId: 'posix-answer',
+    text: '`archive\\report.pdf` 和 `report.pdf`，`REPORT.PDF` 不存在。',
+  });
+  emit('posix', { type: 'run.status', status: 'completed', connectionId: 'fixture' });
+}
+
 function Fixture() {
   const [messages, setMessages] = useState(events);
   useEffect(() => {

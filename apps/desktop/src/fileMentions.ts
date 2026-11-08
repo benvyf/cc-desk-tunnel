@@ -9,9 +9,27 @@ export const FileMentionPaths = createContext<string[]>([]);
 const explicitPath = /^(?:[a-z]:[\\/]|\/|\.{1,2}[\\/])/i;
 const location = /(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)$/;
 const fileExtension = /\.[\p{L}\d]{1,12}$/u;
+const basename = (path: string, place: Place | null) =>
+  path.split(place && isWindowsPath(place.projectPath) ? /[\\/]/ : '/').at(-1)!;
 
 // Tool arguments and inline code are filesystem spelling, not URL destinations.
 function rawPath(value: string, place: Place | null) {
+  if (
+    place &&
+    !isWindowsPath(place.projectPath) &&
+    !value.startsWith('/') &&
+    !isWindowsPath(value) &&
+    !/^[a-z][a-z\d+.-]*:/i.test(value)
+  ) {
+    // A backslash is part of a POSIX filename. Resolve here before the Markdown URL resolver,
+    // whose cross-platform relative-path grammar accepts both separators.
+    const parts = place.projectPath.split('/').filter(Boolean);
+    for (const part of value.split('/')) {
+      if (part === '..') parts.pop();
+      else if (part && part !== '.') parts.push(part);
+    }
+    value = '/' + parts.join('/');
+  }
   const target = linkTarget(encodeURIComponent(value), place);
   return target?.kind === 'path' ? target : null;
 }
@@ -53,12 +71,15 @@ export function fileMentionCandidates(
     // A directory explicitly named in this answer disambiguates bare filenames, including command outputs.
     if (
       directory &&
-      !/[\\/:]/.test(written) &&
+      !(windows ? /[\\/:]/ : /\//).test(written) &&
       (fileExtension.test(written) ||
-        paths.some((path) => key(path.split(/[\\/]/).at(-1)!) === key(written)))
+        paths.some((path) => key(basename(path, place)) === key(written)))
     ) {
       const separator = windows ? '\\' : '/';
-      const target = rawPath(`${directory.replace(/[\\/]$/, '')}${separator}${written}`, place);
+      const target = rawPath(
+        `${directory.replace(windows ? /[\\/]$/ : /\/$/, '')}${separator}${written}`,
+        place,
+      );
       return target ? [target.path] : [];
     }
     const authored = rawPath(written, place);
@@ -68,7 +89,7 @@ export function fileMentionCandidates(
       if (!target) continue;
       if (
         key(target.path) === key(authored?.path ?? '') ||
-        key(path.split(/[\\/]/).at(-1)!) === key(written)
+        key(basename(path, place)) === key(written)
       )
         matches.set(key(target.path), target.path);
     }
@@ -106,7 +127,7 @@ export function remarkFileMentions({ paths, place }: { paths: string[]; place: P
           const path = candidates[0];
           const literal =
             rawPath(value, place)?.path === path ||
-            paths.some((recorded) => recorded.split(/[\\/]/).at(-1) === value);
+            paths.some((recorded) => basename(recorded, place) === value);
           const suffix = literal ? '' : (location.exec(value)?.[0] ?? '');
           const fallback = fileMentionCandidates(value, paths, undefined, place)[0];
           const checkDirectory =

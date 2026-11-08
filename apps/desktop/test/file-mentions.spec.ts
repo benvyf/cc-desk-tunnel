@@ -163,3 +163,24 @@ test('an existing reference file is not used as a directory, and missing directo
     .toContain('C:\\不存在的目录');
   await expect(answer.getByRole('link', { name: 'README', exact: true })).toHaveCount(0);
 });
+
+test('POSIX backslashes and case sensitivity survive inspection and sidebar navigation', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/file-mentions.html?posix');
+  const answer = page.locator('.message.assistant');
+  for (const [label, path] of [
+    ['archive\\report.pdf', '/project/archive\\report.pdf'],
+    ['report.pdf', '/out/report.pdf'],
+  ]) {
+    const link = answer.getByRole('link', { name: label, exact: true });
+    await link.click();
+    await expect
+      .poll(() => page.evaluate(() => (window as any).fileMentionFixture.followed.at(-1)?.path))
+      .toBe(path);
+    await expect(page.getByRole('complementary', { name: '文件与网站预览' })).toContainText(
+      `预览内容：${path}`,
+    );
+  }
+  await expect(answer.getByRole('link', { name: 'REPORT.PDF', exact: true })).toHaveCount(0);
+});
