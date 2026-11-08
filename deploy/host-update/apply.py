@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare/cut over signed Build 20 on the three reviewed Ubuntu nodes; keep offline rollback."""
+"""Prepare/cut over signed Build 21 on the three reviewed Ubuntu nodes; keep offline rollback."""
 import argparse
 import hashlib
 import importlib.util
@@ -18,7 +18,7 @@ import urllib.error
 import http.client
 
 ROOT = Path('/var/lib/cc-runtime-upgrade')
-BUILD, PROTOCOL = 20, 24
+BUILD, PROTOCOL = 21, 24
 RUNTIME = 'node24-cli2.1.295-v3'
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
@@ -28,6 +28,7 @@ CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'c2b0ab967a219cde7d250b1a39a5793ba57177ddfc0c0f43e021d362181dfed3': (20, 24),
     'a8f103b38a5b270f5a301071780cc2ba0ad9394312b01da4dbc3c74a7a76d5c7': (19, 24),
     '6201439cf95e495eb0741296cf7fe0d286a9c9c738cde335813a6794e3f31b33': (18, 24),
     'bb97e49caf492f82abfe898b6c32bd0b017977d4b29f95e1aed015be5f722682': (16, 24),
@@ -118,7 +119,7 @@ def verify_release(fresh, data, expected):
     need((release['build'], release['protocol'], release['appVersion'], release['runtimeLevel'],
           release['packageLockSha256'], release['sha256']) ==
          (BUILD, PROTOCOL, '0.3.10', RUNTIME, LOCK, expected),
-         'Signed target changed or is not the reviewed Build 20; obtain a new command')
+         'Signed target changed or is not the reviewed Build 21; obtain a new command')
     return release
 
 
@@ -149,7 +150,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -227,7 +228,7 @@ def main():
         need(release == confirmed, 'Published release changed; refresh and confirm again')
         if check_baseline(baseline, release):
             b.live_status(b.CONTAINER, release)
-            print('ALREADY_INSTALLED: Build 20 / protocol 24 / Node 24.22.2; no change.')
+            print('ALREADY_INSTALLED: Build 21 / protocol 24 / Node 24.22.2; no change.')
             return
         legacy = load('runtime_cutover', PROGRAM / 'scripts/install-cc-space-037.py')
         legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
@@ -244,7 +245,7 @@ def main():
         b.runtime_and_policy = lambda container: verify_runtime(container, node)
         work = Path(tempfile.mkdtemp(prefix=f'build{BUILD}-', dir=ROOT)); work.chmod(0o755)
         program = work / 'program'
-        print('1/4 Verifying signed Build 20; current service remains running.', flush=True)
+        print('1/4 Verifying signed Build 21; current service remains running.', flush=True)
         archive = b.download(f"/cc-updates/server/v1/artifacts/{BUILD}/linux-x64/cc-desk-tunnel-server-{release['appVersion']}-build{BUILD}.tar.gz", 64 * 1024**2)
         b.unpack(archive, program, release)
         need(hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() == LOCK and
@@ -293,7 +294,7 @@ def main():
         print('3/4 Checking idle state, disconnecting clients, cold backup and image/policy cutover.', flush=True)
         legacy.install(b, disconnect_clients=True)
         retain_previous_backup(b.CONTAINER)
-        print('4/4 SUCCESS: ' + node + ' / Build 20 / protocol 24 / Node 24.22.2.', flush=True)
+        print('4/4 SUCCESS: ' + node + ' / Build 21 / protocol 24 / Node 24.22.2.', flush=True)
 
 
 if __name__ == '__main__':
