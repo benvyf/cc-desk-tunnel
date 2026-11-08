@@ -1,0 +1,152 @@
+{
+  "date": "2026-11-08",
+  "release": {
+    "build": 34,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "c5a2c637c047d1f2d1e428109def9bbb44d117b0",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "notes": "CC Space 0.3.10 / Build 34，协议 24。客户端更新接入成熟 NSIS 分块差分引擎：自动复用验签的旧安装包缓存，下载变化块并校验重构完整安装包；不适用或失败时回退完整下载，取消不回退。网页仍下载完整 EXE。Build 33 及更早客户端需先完整升级一次；之后无需手动保留下载文件。保留原签名校验、独立 Build 判断、账号与安装身份、会话和多窗口安装前检查及原 NSIS 安装流程。无需升级 Claude 服务端。",
+    "size": 258667120,
+    "sha256": "53742e467804637513583ae2764afffc4b124e9373279b3acf630f98c65ffb06"
+  },
+  "publishedChannel": "pilot",
+  "revision": 52,
+  "expiresAt": "2026-11-11T11:21:56.572Z",
+  "clientSourceCommit": "c5a2c637c047d1f2d1e428109def9bbb44d117b0",
+  "publicationFixCommit": "23d932a4ccf0c0f0a8b8977fd28066d9f1ffad1b",
+  "mainPushed": true,
+  "vpsPublished": true,
+  "signatureVerified": true,
+  "descriptorVerified": true,
+  "blockmapVerified": true,
+  "publicHttpsRangesVerified": 3,
+  "completePublicInstallerVerifiedOnVps": true,
+  "installerAsarMatched": true,
+  "asarSha256": "8ffaa07e2433bad7ae32114f2da667890393ee22f5608581025419b1a0a36ae0",
+  "candidateValidation": {
+    "differentialFocused": {
+      "passed": 106,
+      "failed": 0
+    },
+    "desktopMain": {
+      "passed": 685,
+      "failed": 0,
+      "conditionalSkips": 38
+    },
+    "ui": {
+      "passed": 50,
+      "failed": 0
+    },
+    "packagedExecutable": {
+      "passed": 3,
+      "failed": 0
+    }
+  },
+  "publicationFixValidation": {
+    "rootOwnershipRedReproduced": true,
+    "vpsPublication": {
+      "passed": 28,
+      "failed": 0
+    },
+    "windowsPublicationAndPipeline": {
+      "passed": 35,
+      "failed": 0,
+      "unixRootConditionalSkip": 1
+    },
+    "finalDifferential": {
+      "passed": 106,
+      "failed": 0,
+      "unixRootConditionalSkip": 1
+    },
+    "readOnlySystemdPreparationPassed": true
+  },
+  "activationRecovery": {
+    "initialStage": "activate",
+    "cause": "Root-created artifact directory prevented original service chmod; no channel change occurred",
+    "fix": "Inherit established public-root service owner; directory755/file644",
+    "originalActivationChecksRetained": true
+  },
+  "renewal": {
+    "source": "/root/.cc-update-admin/source-build-34",
+    "artifact": "/srv/cc-update-service/public/artifacts/34/win32-x64/CC-Space-Setup-0.3.10-x64.exe",
+    "at": "2026-11-08T11:22:06.946Z",
+    "status": "renewed",
+    "channel": "pilot",
+    "build": 34,
+    "previousRevision": 51,
+    "revision": 52,
+    "expiresAt": "2026-11-11T11:21:56.572Z",
+    "releaseUnchanged": true,
+    "stableUnchanged": true,
+    "candidates": 0,
+    "publicArtifactVerified": true,
+    "signedIndex": "/root/.cc-update-admin/automation/runs/2026-11-08T11-21-56.235Z/pilot.json",
+    "publicationEvidence": "/root/.cc-update-admin/automation/runs/2026-11-08T11-21-56.235Z/pilot.json.evidence.json"
+  },
+  "infrastructure": {
+    "runtimeInventoryUnchanged": true,
+    "nginxChangeLimitedToSidecars": true,
+    "nginxValid": true,
+    "windowsRenewTimerActive": true,
+    "linuxRenewTimerActive": true,
+    "temporaryForceOverrideRemoved": true,
+    "currentInstallerVerifiedAfterCleanup": true,
+    "removedLogicalBytes": 1034515536
+  },
+  "cleanup": {
+    "at": "2026-11-08T11:24:02.677Z",
+    "removed": [
+      {
+        "path": "/srv/cc-update-service/public/artifacts/32/win32-x64/CC-Space-Setup-0.3.10-x64.exe",
+        "size": 258611536,
+        "sha256": "dfe45ad06f27bc3930df4b1211c41ae9c00b3d5885a5095a7b998381ac511450",
+        "links": 1
+      },
+      {
+        "path": "/srv/cc-update-service/public/artifacts/33/win32-x64/CC-Space-Setup-0.3.10-x64.exe",
+        "size": 258618440,
+        "sha256": "3e2e59d0b328cbcc55d91da3bd05d13b474f8534feb6bdc532d782bc19786db8",
+        "links": 1
+      },
+      {
+        "path": "/root/.cc-update-admin/release-build33/CC-Space-Setup-0.3.10-x64.exe",
+        "size": 258618440,
+        "sha256": "3e2e59d0b328cbcc55d91da3bd05d13b474f8534feb6bdc532d782bc19786db8",
+        "links": 1
+      },
+      {
+        "path": "/root/.cc-update-admin/release-build34/CC-Space-Setup-0.3.10-x64.exe",
+        "size": 258667120,
+        "sha256": "53742e467804637513583ae2764afffc4b124e9373279b3acf630f98c65ffb06",
+        "links": 1
+      }
+    ],
+    "logicalBytesRemoved": 1034515536,
+    "publicCurrentBuild": 34,
+    "retained": [
+      "Current Build34 installer, blockmap and signed descriptor",
+      "Source checkouts and bundles",
+      "Signing identity, channel history and databases",
+      "Linux packages and unrelated system/application backups"
+    ]
+  },
+  "backup": "/var/backups/cc-update-service/client34-publication-20261108T111710Z",
+  "preserved": {
+    "windowsStableIndex": true,
+    "linuxPilotIndex": true,
+    "managementRuntimeInventory": true,
+    "currentBuild34InstallerAndSignedSidecars": true,
+    "keysAndAuditAndDatabaseBackups": true
+  },
+  "installedOnDailyClient": false,
+  "productionServerInstallJobsCreated": false,
+  "modelCalls": false,
+  "limitations": [
+    "Build33 and earlier require a complete bootstrap upgrade",
+    "Missing or invalid installer baseline falls back to complete download",
+    "Old Build32/33 installer URLs have been intentionally removed",
+    "No new Authenticode signature or power-loss recovery claim"
+  ],
+  "renewalIdempotenceFixCommit": "6b9a4e0c70c31b55e26e4d449b4fe877063e2aa0"
+}

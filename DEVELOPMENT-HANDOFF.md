@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-08 Windows Build34 已发布，旧安装包已清理
+
+按用户授权已将成熟NSIS差分方案推送main并发布Windows pilot 0.3.10/Build34/协议24，客户端发行源码 `c5a2c637c047d1f2d1e428109def9bbb44d117b0`。首次激活被root/服务所有者权限拦住后，新增真实Unix回归并修复发布器，未跳过原发布校验；Nginx仅补差分sidecar路由。公开完整包、签名描述、块表、三段HTTPS字节、真实systemd续期全部通过，pilot现revision52。固定干净续期源码 `/root/.cc-update-admin/source-build-34`，制品引用当前公开Build34；Windows/Linux timer active，stable/Linux通道和管理中心runtime保持。
+
+无当前引用的公开Build32/33完整包、Build33上传备份、Build34重复上传副本已删除，合计1034515536字节（约1.03GB）；当前Build34完整包/块表/签名描述、源码、签名和审计/数据备份保留，旧32/33下载URL已失效。见[发布记录](docs/CLIENT-BUILD34-PUBLICATION.md)及[证据](docs/evidence/windows-build34-production-2026-11-08.json)。以下“候选未发布”是发布前历史状态，已由本条取代。
+
 ### 2026-11-08 成熟NSIS差分方案已接入，Build34候选未发布
 
 `codex/managed-nsis-delta` 已接入固定electron-updater6.8.10的窄差分引擎，保留原Ed25519/Build/协议/安装器。客户端优先差分，异常完整回退，取消不回退；自动维护验签基线，网页仍是完整EXE。未合入自研逐文件替换器。Build33首次需完整升级；后续差分仍取决于有效基线与发布sidecar。
