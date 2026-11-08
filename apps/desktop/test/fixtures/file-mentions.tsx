@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 import Conversation from '../../src/Conversation.tsx';
 import PreviewSidebar from '../../src/PreviewSidebar.tsx';
 import { usePreviewWorkspace } from '../../src/preview.ts';
+import type { Link } from '../../src/links.ts';
 import '../../src/style.css';
 
 const folder = 'C:\\Users\\benben\\Documents\\CC SPACE\\2026-10-29\\001601';
@@ -12,13 +14,21 @@ const written = 'C:\\其他目录\\记录.txt';
 const files = new Set([docx, pdf, written, 'C:\\a\\style.css', 'C:\\b\\style.css']);
 const reads: string[] = [];
 const inspected: string[] = [];
+const followed: Link[] = [];
+const pending = new Map<string, () => void>();
 const params = new URLSearchParams(location.search);
 if (!params.has('browser'))
   window.desktop = {
     inspectPath: async (path: string) => {
       inspected.push(path);
+      if (params.has('inspection-error')) throw new Error('模拟检查失败');
+      if (params.has('race')) await new Promise<void>((resolve) => pending.set(path, resolve));
       return {
-        kind: files.has(path) ? 'file' : 'missing',
+        kind: files.has(path)
+          ? 'file'
+          : [folder, 'C:\\成果.v2'].includes(path.replace(/[\\/]$/, ''))
+            ? 'directory'
+            : 'missing',
         runs: false,
         editors: [],
         openWith: false,
@@ -34,7 +44,8 @@ if (!params.has('browser'))
       hide: async () => {},
     },
   } as unknown as NonNullable<Window['desktop']>;
-Object.assign(window, { fileMentionFixture: { reads, inspected } });
+const fixture = { reads, inspected, followed, resolve: (path: string) => pending.get(path)?.() };
+Object.assign(window, { fileMentionFixture: fixture });
 
 const now = new Date().toISOString();
 const session: Session = {
@@ -129,13 +140,90 @@ emit('two', {
 });
 emit('two', { type: 'run.status', status: 'completed', connectionId: 'fixture' });
 
+if (params.has('edge') || params.has('race') || params.has('inspection-error')) {
+  const outputs = [
+    'C:\\项目\\out\\report.pdf',
+    'C:\\其他目录\\report.pdf',
+    'C:\\成果.v2\\100%2520完成.ts',
+    'C:\\成果.v2\\100%20完成.ts',
+    'C:\\成果.v2\\100 完成.ts',
+    'C:\\成果.v2\\report.pdf',
+    'C:\\成果.v2\\README',
+    'C:\\成果.v2\\first.pdf',
+    'C:\\成果.v2\\second.pdf',
+    'C:\\docs\\guide.pdf',
+    'C:\\项目\\src\\app.ts',
+    'C:\\成果.v2\\app.ts',
+  ];
+  outputs.forEach((path) => files.add(path));
+  events.length = 0;
+  emit('edge', {
+    type: 'message.user',
+    messageId: 'edge-question',
+    text: '检查文件路径',
+    scenario: 'chat',
+  });
+  for (const [index, path] of outputs
+    .slice(0, 3)
+    .concat('C:\\成果.v2\\README', 'C:\\项目\\src\\app.ts')
+    .entries()) {
+    emit('edge', {
+      type: 'tool.requested',
+      toolId: `edge-${index}`,
+      name: 'Write',
+      input: JSON.stringify({ file_path: path, content: 'text' }),
+      target: 'Windows',
+    });
+    emit('edge', {
+      type: 'tool.result',
+      toolId: `edge-${index}`,
+      status: 'completed',
+      output: '',
+      exitCode: 0,
+    });
+  }
+  emit('edge', {
+    type: 'text.delta',
+    messageId: 'edge-answer',
+    text: params.has('edge')
+      ? [
+          '`out/report.pdf`',
+          '',
+          '文件在 `C:\\成果.v2`：',
+          '',
+          '`report.pdf`',
+          '',
+          '`100%2520完成.ts`',
+          '',
+          '`README`',
+          '',
+          '`C:\\成果.v2\\100%2520完成.ts:12:3`',
+        ].join('\n')
+      : '`C:\\成果.v2\\first.pdf`',
+  });
+  emit('edge', { type: 'run.status', status: 'completed', connectionId: 'fixture' });
+}
+
 function Fixture() {
+  const [messages, setMessages] = useState(events);
+  useEffect(() => {
+    Object.assign(fixture, {
+      reply: (text: string) =>
+        setMessages(
+          events.map((event) =>
+            event.payload.type === 'text.delta'
+              ? { ...event, payload: { ...event.payload, text } }
+              : event,
+          ),
+        ),
+    });
+  }, []);
   const board = usePreviewWorkspace('file-mentions', session.id, 'main', session.id);
   return (
     <div className="terminal-preview-layout" style={{ display: 'flex', height: '100vh' }}>
       <Conversation
         session={session}
-        events={events}
+        events={messages}
         history={undefined}
         here={!params.has('remote')}
         connected
@@ -151,7 +239,10 @@ function Fixture() {
         backgroundTask={() => {}}
         stop={() => {}}
         replyApproval={async () => true}
-        preview={(link) => board.follow(link, session.projectPath)}
+        preview={(link) => {
+          followed.push(link);
+          return board.follow(link, session.projectPath);
+        }}
       />
       {board.expanded && <PreviewSidebar workspace={board} root={session.projectPath} />}
     </div>

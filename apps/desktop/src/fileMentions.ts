@@ -1,11 +1,20 @@
 import type { Root } from 'mdast';
 import { createContext } from 'react';
-import { isWindowsPath } from '@cc-desk-tunnel/protocol';
+import { isWindowsPath, pathKey } from '@cc-desk-tunnel/protocol';
 import { linkTarget } from './links.ts';
 import type { Place } from './links.ts';
 import type { Turn } from './transcript.ts';
 
 export const FileMentionPaths = createContext<string[]>([]);
+const explicitPath = /^(?:[a-z]:[\\/]|\/|\.{1,2}[\\/])/i;
+const location = /(?::\d+(?::\d+)?|#L\d+(?:C\d+)?)$/;
+const fileExtension = /\.[\p{L}\d]{1,12}$/u;
+
+// Tool arguments and inline code are filesystem spelling, not URL destinations.
+function rawPath(value: string, place: Place | null) {
+  const target = linkTarget(encodeURIComponent(value), place);
+  return target?.kind === 'path' ? target : null;
+}
 
 // Targets belong to this turn, even when a later turn writes a file with the same name.
 export function producedFiles(turn: Turn): string[] {
@@ -37,32 +46,39 @@ export function fileMentionCandidates(
   directory: string | undefined,
   place: Place | null,
 ): string[] {
-  if (
-    !place?.here ||
-    !/\.[\p{L}\d]{1,12}(?::\d+(?::\d+)?)?$/u.test(value) ||
-    /[\r\n\0]/.test(value)
-  )
-    return [];
-  const key = (path: string) =>
-    isWindowsPath(place.projectPath) ? path.replaceAll('/', '\\').toLowerCase() : path;
-  const matches = new Map<string, string>();
-  for (const path of paths) {
-    const target = linkTarget(path, place);
-    if (target?.kind !== 'path') continue;
-    if (key(path) === key(value) || key(path.split(/[\\/]/).at(-1)!) === key(value))
-      matches.set(key(target.path), target.path);
+  if (!place?.here || !value || /[\r\n\0]/.test(value)) return [];
+  const windows = isWindowsPath(place.projectPath);
+  const key = (path: string) => (windows ? path.replaceAll('/', '\\').toLowerCase() : path);
+  function resolve(written: string): string[] {
+    // A directory explicitly named in this answer disambiguates bare filenames, including command outputs.
+    if (
+      directory &&
+      !/[\\/:]/.test(written) &&
+      (fileExtension.test(written) ||
+        paths.some((path) => key(path.split(/[\\/]/).at(-1)!) === key(written)))
+    ) {
+      const separator = windows ? '\\' : '/';
+      const target = rawPath(`${directory.replace(/[\\/]$/, '')}${separator}${written}`, place);
+      return target ? [target.path] : [];
+    }
+    const authored = rawPath(written, place);
+    const matches = new Map<string, string>();
+    for (const path of paths) {
+      const target = rawPath(path, place);
+      if (!target) continue;
+      if (
+        key(target.path) === key(authored?.path ?? '') ||
+        key(path.split(/[\\/]/).at(-1)!) === key(written)
+      )
+        matches.set(key(target.path), target.path);
+    }
+    if (matches.size) return matches.size === 1 ? [...matches.values()] : [];
+    return explicitPath.test(written) && fileExtension.test(written) && authored
+      ? [authored.path]
+      : [];
   }
-  if (matches.size) return matches.size === 1 ? [...matches.values()] : [];
-  // Command-generated documents may have no Write event. An explicit path, or a filename following
-  // an explicit directory in this answer, is a candidate only; the renderer checks that it exists.
-  const explicit = /^(?:[a-z]:[\\/]|\/|\.{1,2}[\\/])/i.test(value);
-  const candidate = explicit
-    ? value
-    : directory && !/[\\/:]/.test(value)
-      ? `${directory}${value}`
-      : null;
-  const target = candidate && linkTarget(candidate, place);
-  return target && target.kind === 'path' ? [target.path] : [];
+  const literal = resolve(value);
+  return literal.length || !location.test(value) ? literal : resolve(value.replace(location, ''));
 }
 
 type MarkdownNode = {
@@ -76,22 +92,67 @@ type MarkdownNode = {
 export function remarkFileMentions({ paths, place }: { paths: string[]; place: Place | null }) {
   return (tree: Root) => {
     let directory: string | undefined;
-    function visit(node: MarkdownNode) {
+    let directoryUsed = false;
+    function visit(node: MarkdownNode, inList = false) {
       if (node.type === 'link' || node.type === 'linkReference') return;
+      const boundary = ['heading', 'blockquote', 'thematicBreak', 'code'].includes(node.type);
+      if (boundary) directory = undefined;
+      const inheritedDirectory = directory;
       if (node.type === 'inlineCode' && node.value) {
         const value = node.value;
-        if (/^(?:[a-z]:[\\/]|\/|\.{1,2}[\\/]).*[\\/]$/i.test(value)) directory = value;
         const candidates = fileMentionCandidates(value, paths, directory, place);
-        if (candidates.length)
+        if (directory && candidates.length && !explicitPath.test(value)) directoryUsed = true;
+        if (candidates.length) {
+          const path = candidates[0];
+          const literal =
+            rawPath(value, place)?.path === path ||
+            paths.some((recorded) => recorded.split(/[\\/]/).at(-1) === value);
+          const suffix = literal ? '' : (location.exec(value)?.[0] ?? '');
+          const fallback = fileMentionCandidates(value, paths, undefined, place)[0];
+          const checkDirectory =
+            directory && !/[\\/]$/.test(directory) && fallback && fallback !== path
+              ? rawPath(directory, place)?.path
+              : undefined;
           node.data = {
             ...node.data,
             hProperties: {
               ...node.data?.hProperties,
-              'data-file-path': candidates[0],
+              'data-file-path': path,
+              'data-file-href': encodeURIComponent(path) + suffix,
+              ...(checkDirectory
+                ? {
+                    'data-file-directory': checkDirectory,
+                    'data-file-fallback': fallback,
+                    'data-file-fallback-href': encodeURIComponent(fallback!) + suffix,
+                  }
+                : {}),
             },
           };
+        }
+        // A missing final separator is valid directory spelling too. Its child must exist before
+        // becoming clickable; an actual file used here cannot have such a child.
+        const recorded = paths.some((path) => {
+          const target = rawPath(path, place);
+          return (
+            target && candidates.some((candidate) => pathKey(candidate) === pathKey(target.path))
+          );
+        });
+        if (explicitPath.test(value) && !location.test(value) && !recorded) {
+          directory = value;
+          directoryUsed = false;
+        }
       }
-      node.children?.forEach(visit);
+      node.children?.forEach((child) => visit(child, inList || node.type === 'list'));
+      if (
+        boundary ||
+        (node.type === 'list' && !inList) ||
+        (node.type === 'paragraph' &&
+          !inList &&
+          (directory === inheritedDirectory || directoryUsed))
+      ) {
+        directory = undefined;
+        directoryUsed = false;
+      }
     }
     visit(tree);
   };

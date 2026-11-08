@@ -133,10 +133,18 @@ function Anchor({ href, children }: { href?: string; children?: ReactNode }) {
 
 function FileCodeReference({
   path,
+  href,
+  directory,
+  fallback,
+  fallbackHref,
   children,
   className,
 }: {
   path: string;
+  href: string;
+  directory?: string;
+  fallback?: string;
+  fallbackHref?: string;
   children?: ReactNode;
   className?: string;
 }) {
@@ -144,9 +152,19 @@ function FileCodeReference({
   useEffect(() => {
     if (!window.desktop?.inspectPath) return;
     let disposed = false;
-    void window.desktop.inspectPath(path).then(
-      (info) => {
-        if (!disposed) setChecked(info.kind === 'file' ? path : null);
+    const desktop = window.desktop;
+    const inspect = async () => {
+      let target = path;
+      if (directory && fallback) {
+        const folder = await desktop.inspectPath(directory);
+        if (folder.kind === 'file') target = fallback;
+        else if (folder.kind !== 'directory') return null;
+      }
+      return (await desktop.inspectPath(target)).kind === 'file' ? target : null;
+    };
+    void inspect().then(
+      (target) => {
+        if (!disposed) setChecked(target);
       },
       () => {
         if (!disposed) setChecked(null);
@@ -155,10 +173,11 @@ function FileCodeReference({
     return () => {
       disposed = true;
     };
-  }, [path]);
+  }, [path, directory, fallback]);
+  const target = checked === path ? href : checked === fallback ? fallbackHref : undefined;
   return (
     <code className={className}>
-      {checked === path ? <Anchor href={path}>{children}</Anchor> : children}
+      {target ? <Anchor href={target}>{children}</Anchor> : children}
     </code>
   );
 }
@@ -167,8 +186,20 @@ const components: Components = {
   pre: CodeBlock,
   code: ({ node, children, className }) => {
     const path = node?.properties['data-file-path'];
-    return typeof path === 'string' ? (
-      <FileCodeReference path={path} className={className}>
+    const href = node?.properties['data-file-href'];
+    const directory = node?.properties['data-file-directory'] as string | undefined;
+    const fallback = node?.properties['data-file-fallback'] as string | undefined;
+    const fallbackHref = node?.properties['data-file-fallback-href'] as string | undefined;
+    return typeof path === 'string' && typeof href === 'string' ? (
+      <FileCodeReference
+        key={JSON.stringify([path, directory, fallback])}
+        path={path}
+        href={href}
+        directory={directory}
+        fallback={fallback}
+        fallbackHref={fallbackHref}
+        className={className}
+      >
         {children}
       </FileCodeReference>
     ) : (
