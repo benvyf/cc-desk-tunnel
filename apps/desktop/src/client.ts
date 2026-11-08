@@ -377,7 +377,8 @@ export class ProxyClient {
       socket = this.socket;
     const history = this.state.history[id];
     if (!history) return;
-    const value = historyWindow(this.state.events[id] ?? [], history.hasEarlier);
+    const memoryEvents = this.state.events[id] ?? [];
+    const value = historyWindow(memoryEvents, history.hasEarlier);
     if (!value) {
       if (!this.oversizedHistories.has(id)) {
         this.oversizedHistories.add(id);
@@ -397,8 +398,13 @@ export class ProxyClient {
     const write = async () => {
       if (!current()) return;
       const last = this.persistedLast.get(id);
-      if (afterSequence !== undefined && last === afterSequence) {
-        const added = events.filter((event) => event.sequence > last);
+      const added = last === undefined ? [] : events.filter((event) => event.sequence > last);
+      // A whole run may have been trimmed out of the tail while still containing new
+      // events. Appending that tail would leave a permanent gap after the disk cursor.
+      const completeDelta =
+        last !== undefined &&
+        memoryEvents.filter((event) => event.sequence > last).length === added.length;
+      if (afterSequence !== undefined && last === afterSequence && completeDelta) {
         if (added.length) {
           try {
             await api.append(id, added);

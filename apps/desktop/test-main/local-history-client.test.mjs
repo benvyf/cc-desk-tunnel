@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createRequire } from 'node:module';
 import { ProxyClient } from '../src/client.ts';
 const settle = () => new Promise((r) => setTimeout(r, 15));
 const deferred = () => {
@@ -110,6 +114,70 @@ function fixture(t, read) {
   });
   return { client, sessions, calls, api, event, connect, snapshot, ready, Socket };
 }
+for (const path of ['snapshot append', 'stream flush'])
+  test(`${path} replaces the tail when trimming excludes events after the persisted cursor`, async (t) => {
+    const f = fixture(t, null);
+    const id = f.sessions[0].id,
+      runX = randomUUID(),
+      runY = randomUUID();
+    const initial = Array.from({ length: 100 }, (_, i) => ({
+      ...f.event(i + 1),
+      runId: runX,
+      payload: { ...f.event(i + 1).payload, text: 'x'.repeat(9000) },
+    }));
+    const continuation = Array.from({ length: 15 }, (_, i) => ({
+      ...f.event(i + 101),
+      runId: runX,
+      payload: { ...f.event(i + 101).payload, text: 'x'.repeat(12000) },
+    }));
+    const newest = Array.from({ length: 3 }, (_, i) => ({ ...f.event(i + 116), runId: runY }));
+    const root = await mkdtemp(join(tmpdir(), 'cc-history-tail-gap-'));
+    const { createHistoryCache } = createRequire(import.meta.url)('../electron/history-cache.cjs');
+    const cache = createHistoryCache(root);
+    await cache.open('local|tail-gap-test', 24);
+    t.after(async () => {
+      await cache.idle();
+      await rm(root, { recursive: true, force: true });
+    });
+    for (const method of ['append', 'replace'])
+      f.api[method] = async (...args) => {
+        f.calls.push([method, ...args]);
+        await cache[method](...args);
+      };
+    const socket = await f.connect();
+    f.client.select(id);
+    await settle();
+    f.snapshot(socket, initial, 'replace');
+    await f.client.diskWrites.get(id);
+    await cache.idle();
+    assert.deepEqual((await cache.read(id)).events, initial);
+    f.calls.length = 0;
+    if (path === 'snapshot append') {
+      f.client.select(id);
+      assert.equal(socket.sent.at(-1).afterSequence, 100);
+      f.snapshot(socket, [...continuation, ...newest], 'append');
+    } else {
+      for (const event of [...continuation, ...newest])
+        socket.message({ type: 'session.event', event });
+      f.client.flushStream();
+      f.client.flushHistoryCache();
+    }
+    await f.client.diskWrites.get(id);
+    await cache.idle();
+    assert.equal(f.calls.filter((call) => call[0] === 'append').length, 0);
+    const writes = f.calls.filter((call) => call[0] === 'replace');
+    assert.equal(writes.length, 1);
+    assert.deepEqual(writes[0][2], { firstSequence: 116, hasEarlier: true, events: newest });
+    const saved = await cache.read(id);
+    assert.deepEqual(saved, { firstSequence: 116, hasEarlier: true, events: newest });
+    assert.deepEqual(
+      saved.events.map((event) => event.sequence),
+      [116, 117, 118],
+    );
+    assert.equal(f.client.state.events[id].length, 118);
+    assert.equal(f.client.historyCacheReady, true);
+  });
+
 test('hydrates before subscribing with cached cursor; delta equals uncached authoritative history', async (t) => {
   const f = fixture(t);
   f.api.read = async () => ({ firstSequence: 1, hasEarlier: false, events: [f.event(1)] });
