@@ -56,6 +56,7 @@ import Presence from './Presence.tsx';
 import { MessageAttachments } from './AttachmentTiles.tsx';
 import { attachmentMessage, splitAttachmentMessage } from './attachments.ts';
 import { LinkPlace, linkTarget } from './links.ts';
+import { FileMentionPaths, producedFiles } from './fileMentions.ts';
 import type { Link } from './links.ts';
 import { followLink, linkMenu } from './linkActions.ts';
 import { previewWebsite } from './preview.ts';
@@ -692,6 +693,7 @@ function TurnView({
   // Given to the latest turn while it stands stopped or failed: its last notice offers to go on.
   resume?: () => void;
 }) {
+  const files = useMemo(() => producedFiles(turn), [turn]);
   const active = !turn.endedAt;
   const expanded = usePrefs().view.mode === 'expanded';
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
@@ -754,13 +756,15 @@ function TurnView({
             </Fold>
           )}
       {turn.answer ? (
-        <Message
-          item={turn.answer}
-          native={native}
-          closing
-          latest={latest}
-          footer={turn.stats && <TurnStats stats={turn.stats} />}
-        />
+        <FileMentionPaths.Provider value={files}>
+          <Message
+            item={turn.answer}
+            native={native}
+            closing
+            latest={latest}
+            footer={turn.stats && <TurnStats stats={turn.stats} />}
+          />
+        </FileMentionPaths.Provider>
       ) : (
         turn.stats &&
         turn.endedAt && (

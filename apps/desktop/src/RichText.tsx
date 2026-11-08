@@ -4,13 +4,24 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import rehypeKatex from 'rehype-katex';
 import 'katex/dist/katex.min.css';
-import { isValidElement, memo, useContext, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  isValidElement,
+  memo,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
 import type { ReactNode } from 'react';
+import type { PluggableList } from 'unified';
 import { FileCode, Eye, Image } from './icons.tsx';
 import { CopyButton } from './copy.tsx';
 import { revealStreaming } from './streaming.ts';
 import { isPicture, LinkPlace, linkTarget, localPicture } from './links.ts';
 import { Picture } from './Picture.tsx';
+import { FileMentionPaths, remarkFileMentions } from './fileMentions.ts';
 
 // A finished drawing in a block of `svg` is shown as the picture it is, its source one click away. As an image
 // it runs no script and loads nothing from elsewhere.
@@ -120,8 +131,50 @@ function Anchor({ href, children }: { href?: string; children?: ReactNode }) {
   );
 }
 
+function FileCodeReference({
+  path,
+  children,
+  className,
+}: {
+  path: string;
+  children?: ReactNode;
+  className?: string;
+}) {
+  const [checked, setChecked] = useState<string | null>(null);
+  useEffect(() => {
+    if (!window.desktop?.inspectPath) return;
+    let disposed = false;
+    void window.desktop.inspectPath(path).then(
+      (info) => {
+        if (!disposed) setChecked(info.kind === 'file' ? path : null);
+      },
+      () => {
+        if (!disposed) setChecked(null);
+      },
+    );
+    return () => {
+      disposed = true;
+    };
+  }, [path]);
+  return (
+    <code className={className}>
+      {checked === path ? <Anchor href={path}>{children}</Anchor> : children}
+    </code>
+  );
+}
+
 const components: Components = {
   pre: CodeBlock,
+  code: ({ node, children, className }) => {
+    const path = node?.properties['data-file-path'];
+    return typeof path === 'string' ? (
+      <FileCodeReference path={path} className={className}>
+        {children}
+      </FileCodeReference>
+    ) : (
+      <code className={className}>{children}</code>
+    );
+  },
   span: ({ node, ...props }) => (
     <span key={String(node?.properties['data-reveal-key'] ?? '')} {...props} />
   ),
@@ -132,6 +185,7 @@ const components: Components = {
 // block of code is code, never a drawing.
 const questionComponents: Components = {
   ...components,
+  code: ({ children, className }) => <code className={className}>{children}</code>,
   pre: ({ children }) => <CodeBlock plain>{children}</CodeBlock>,
 };
 const questionPlugins = [remarkGfm];
@@ -218,6 +272,14 @@ export default memo(function RichText({
   streaming?: boolean;
   question?: boolean;
 }) {
+  const paths = useContext(FileMentionPaths);
+  const place = useContext(LinkPlace);
+  const plugins = useMemo<PluggableList>(() => {
+    if (question) return questionPlugins;
+    const result: PluggableList = [...remarkPlugins];
+    if (!streaming) result.push([remarkFileMentions, { paths, place }]);
+    return result;
+  }, [question, streaming, paths, place]);
   // Static history adds no media listeners. Live preference changes discard old reveal spans,
   // so re-enabling motion cannot replay already displayed text.
   const reduced = useSyncExternalStore(
@@ -243,7 +305,7 @@ export default memo(function RichText({
   }
   return (
     <Markdown
-      remarkPlugins={question ? questionPlugins : remarkPlugins}
+      remarkPlugins={plugins}
       rehypePlugins={
         question ? [] : reveal ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins
       }
