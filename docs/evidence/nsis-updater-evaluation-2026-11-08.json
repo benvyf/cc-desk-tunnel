@@ -1,0 +1,127 @@
+{
+  "date": "2026-11-08",
+  "decision": "Keep managed Ed25519/build selection and NSIS installation; adapt a pinned mature installer differential downloader",
+  "scope": "Research and isolated feasibility only; no production integration or deployment",
+  "baselineSourceCommit": "9f52c92337a29c7f577c1ba8297d80dc8553ad22",
+  "branch": "codex/nsis-updater-evaluation",
+  "chosenEngine": {
+    "package": "electron-updater",
+    "version": "6.8.10",
+    "entry": "out/differentialDownloader/GenericDifferentialDownloader",
+    "publicStableAPI": false,
+    "distIntegrity": "sha512-6ZSwTUoBNtI1f9Pp8y6zCigD8LKV18Rb1+1A7sZzvKvA17o2sqSqKmm0t6uvKeF+HZqA4vsmw4qq0JSS241USQ==",
+    "productionAdapterRequired": true
+  },
+  "prototype": {
+    "date": "2026-11-08",
+    "prototypeOnly": true,
+    "electronUpdater": "6.8.10",
+    "builder": "26.15.3",
+    "oldInstallerSha256": "4362b0a4285cdd0d048c3b9373b53ed8e57646678df0ee173d10e9540de8e865",
+    "oldBuild": 33,
+    "oldSourceCommit": "8c763f4f0fe38dbcbc5f5588644cd2aac5ab831c",
+    "targetInstallerSha256": "b05267058eb7863a9b7678c69f038caabab10e06c070950d7d8f071d369bc802",
+    "targetBuild": 34,
+    "fullInstallerBytes": 258643238,
+    "plannedCopyBytes": 256215446,
+    "plannedDownloadBytes": 2427792,
+    "blockmapBytes": 269826,
+    "totalDifferentialBodyBytes": 2697618,
+    "savedVsFullPercent": 98.96,
+    "reconstructionMs": 1804,
+    "checks": [
+      {
+        "name": "real-NSIS-differential-reconstruction",
+        "passed": true,
+        "elapsedMs": 1804,
+        "rangeRequests": 7,
+        "rangeBytes": 2427792,
+        "mapBytes": 269826,
+        "fullRequests": 0,
+        "fullBytes": 0
+      },
+      {
+        "name": "corrupt-cached-installer-full-fallback",
+        "passed": true,
+        "rangeRequests": 0,
+        "rangeBytes": 0,
+        "mapBytes": 0,
+        "fullRequests": 1,
+        "fullBytes": 258643238
+      },
+      {
+        "name": "ignored-Range-rejected-then-full-fallback",
+        "passed": true,
+        "rangeRequests": 1,
+        "rangeBytes": 0,
+        "mapBytes": 269826,
+        "fullRequests": 1,
+        "fullBytes": 258643238
+      },
+      {
+        "name": "stalled-range-cancellation-without-full-fallback",
+        "passed": true,
+        "elapsedMs": 289,
+        "rangeRequests": 1,
+        "rangeBytes": 0,
+        "mapBytes": 269826,
+        "fullRequests": 0,
+        "fullBytes": 0
+      },
+      {
+        "name": "missing-cache-automatic-full-fallback",
+        "passed": true,
+        "rangeRequests": 0,
+        "rangeBytes": 0,
+        "mapBytes": 0,
+        "fullRequests": 1,
+        "fullBytes": 258643238
+      },
+      {
+        "name": "signed-descriptor-tamper-rejected",
+        "passed": true
+      }
+    ],
+    "existingBuildSelectionPreserved": true,
+    "cacheBaselineUnmodified": true,
+    "installedFilesTouched": false,
+    "NSISInstallerExecuted": false,
+    "productionChanged": false,
+    "usesPinnedInternalDownloaderAPI": true,
+    "strictRangeAndCancellationAdapterRequired": true,
+    "equalAppVersions": true,
+    "semverBuildMetadataIgnored": true
+  },
+  "passedScenarios": 6,
+  "failedScenarios": 0,
+  "experimentLimits": {
+    "sourceAndTargetAreUnpublishedCandidateFixtures": true,
+    "targetExeStillContainsDeferredCustomUpdater": true,
+    "doesNotValidateNSISInstallationOrPowerLossRecovery": true,
+    "doesNotReplaceExistingInstalledClient": true,
+    "doesNotPublishToVps": true,
+    "downloadAndReconstructionTimingIsLocalHttpsOnly": true
+  },
+  "requiredProductionWork": [
+    "Authenticate bounded installer/blockmap descriptors with existing Ed25519 trust.",
+    "Preserve independent Build ordering; do not use default semver-only update availability.",
+    "Retain immutable baseline installer, matching blockmap and identity keyed by build and SHA256.",
+    "Seed baseline automatically after one full bootstrap; protect it from original-installer cleanup.",
+    "Use isolated differential partials and discard them before full-download fallback.",
+    "Wrap the internal engine with exact Range/size, scoped redirect and active-request cancellation controls.",
+    "Recheck the current signed release and assembled SHA256 before existing NSIS installation.",
+    "Promote cache pairs only after target-build startup confirmation."
+  ],
+  "review": {
+    "independentArchitecture": "agrees with pinned lower-level adapter; default whole updater would skip equal appVersions",
+    "runtimeCodeChanged": false
+  },
+  "sources": [
+    "https://www.electron.build/v26/docs/features/auto-update/",
+    "https://www.electron.build/v26/docs/nsis/",
+    "https://github.com/electron-userland/electron-builder/blob/electron-updater@6.8.10/packages/electron-updater/src/differentialDownloader/GenericDifferentialDownloader.ts",
+    "https://docs.velopack.io/packaging/operating-systems/windows",
+    "https://docs.velopack.io/getting-started/javascript",
+    "https://learn.microsoft.com/en-us/windows/msix/desktop/managing-your-msix-deployment-update"
+  ]
+}
