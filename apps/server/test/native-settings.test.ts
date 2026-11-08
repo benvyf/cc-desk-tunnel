@@ -1,0 +1,211 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  readNativeSettings,
+  updateNativeSettings,
+  terminalCompactWindow,
+  writeSessionSshSettings,
+} from '../src/native-settings.ts';
+
+test('a terminal resolves its selected settings without reading the global user configuration', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-terminal-settings-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  mkdirSync(config);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  const user = join(config, 'settings.json'),
+    project = join(cwd, '.claude', 'settings.json'),
+    local = join(cwd, '.claude', 'settings.local.json'),
+    explicit = join(root, 'runtime.json');
+  for (const [file, window] of [
+    [user, 100000],
+    [project, 120000],
+    [local, 140000],
+    [explicit, 160000],
+  ] as const)
+    writeFileSync(file, JSON.stringify({ autoCompactWindow: window }));
+  assert.equal(terminalCompactWindow(config, cwd, explicit), 160000);
+  for (const [file, expected] of [
+    [explicit, 140000],
+    [local, 120000],
+    [project, 100000],
+  ] as const) {
+    rmSync(file);
+    assert.equal(terminalCompactWindow(config, cwd, explicit), expected);
+  }
+  writeFileSync(explicit, JSON.stringify({ autoCompactWindow: 50000 }));
+  assert.equal(
+    terminalCompactWindow(config, cwd, explicit),
+    100000,
+    'CLI 2.1.295 ignores an invalid explicit key and keeps the valid user window',
+  );
+  rmSync(user);
+  assert.equal(terminalCompactWindow(config, cwd, explicit), null);
+});
+
+test('session settings retain provider values while binding PATH after all user setting layers', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-session-path-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  mkdirSync(config);
+  mkdirSync(join(cwd, '.claude'), { recursive: true });
+  writeFileSync(join(config, 'settings.json'), JSON.stringify({ env: { PATH: '/user/bin' } }));
+  writeFileSync(
+    join(cwd, '.claude', 'settings.local.json'),
+    JSON.stringify({ env: { PATH: '/local/bin:/usr/bin' } }),
+  );
+  const source = join(root, 'provider.json'),
+    target = join(root, 'runtime.json');
+  const provider = {
+    env: { PATH: '/provider/bin:/usr/bin', KEEP: 'test-only-value' },
+    hooks: { UserPromptSubmit: [] },
+    autoCompactWindow: 160000,
+  };
+  writeFileSync(source, JSON.stringify(provider));
+  const path = writeSessionSshSettings(target, {
+    source,
+    config,
+    cwd,
+    bin: '/session/bin',
+    inheritedPath: '/inherited',
+  });
+  assert.equal(path, '/session/bin:/provider/bin:/usr/bin');
+  assert.deepEqual(
+    JSON.parse(readFileSync(source, 'utf8')),
+    provider,
+    'the original provider file stays untouched',
+  );
+  const scoped = JSON.parse(readFileSync(target, 'utf8'));
+  assert.equal(scoped.env.KEEP, provider.env.KEEP);
+  assert.deepEqual(scoped.hooks, provider.hooks);
+  assert.equal(scoped.autoCompactWindow, 160000);
+  writeFileSync(source, JSON.stringify({ env: { KEEP: 'test-only-value' } }));
+  assert.equal(
+    writeSessionSshSettings(target, {
+      source,
+      config,
+      cwd,
+      bin: '/session/bin',
+      inheritedPath: '/inherited',
+    }),
+    '/session/bin:/local/bin:/usr/bin',
+  );
+  writeFileSync(source, JSON.stringify({ env: { INVALID: 1 } }));
+  assert.throws(
+    () =>
+      writeSessionSshSettings(target, {
+        source,
+        config,
+        cwd,
+        bin: '/session/bin',
+        inheritedPath: '/inherited',
+      }),
+    /env values must be strings/,
+  );
+  writeFileSync(source, '{"private-field":"test-only-sensitive-value",broken');
+  assert.throws(
+    () =>
+      writeSessionSshSettings(target, {
+        source,
+        config,
+        cwd,
+        bin: '/session/bin',
+        inheritedPath: '/inherited',
+      }),
+    (error) =>
+      error instanceof Error &&
+      error.message.includes('invalid_json') &&
+      !error.message.includes('test-only-sensitive-value'),
+  );
+});
+
+test('native settings edit only the listed keys of the CLI user settings file', (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'proxy-settings-'));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const path = join(directory, 'nested', 'settings.json');
+  assert.equal(
+    readNativeSettings(path).autoCompactWindow,
+    null,
+    'A missing file reads as all defaults',
+  );
+  updateNativeSettings({ fastMode: true }, path);
+  writeFileSync(
+    path,
+    JSON.stringify({ env: { KEEP: '1' }, hooks: {}, fastMode: true, autoCompactWindow: 'big' }),
+  );
+  assert.deepEqual(
+    (({ fastMode, autoCompactWindow }) => ({ fastMode, autoCompactWindow }))(
+      readNativeSettings(path),
+    ),
+    { fastMode: true, autoCompactWindow: null },
+    'A hand-written value outside the accepted range shows as unset',
+  );
+  const saved = updateNativeSettings(
+    { fastMode: null, autoCompactWindow: 500_000, language: 'chinese' },
+    path,
+  );
+  assert.equal(saved.autoCompactWindow, 500_000);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    env: { KEEP: '1' },
+    hooks: {},
+    autoCompactWindow: 500_000,
+    language: 'chinese',
+  });
+  // The CLI's own richer forms of a value are left as they are and shown as unset.
+  writeFileSync(path, JSON.stringify({ attribution: { commit: '自定义' }, fallbackModel: [] }));
+  assert.equal(readNativeSettings(path).attribution, null);
+  assert.equal(readNativeSettings(path).fallbackModel, null);
+  updateNativeSettings({ fallbackModel: ['sonnet'], bashOutputMaxChars: 60_000 }, path);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    attribution: { commit: '自定义' },
+    fallbackModel: ['sonnet'],
+    bashOutputMaxChars: 60_000,
+  });
+  // A setting the CLI takes as an environment variable lives under `env`, beside whatever else is there.
+  writeFileSync(path, JSON.stringify({ env: { KEEP: '1' }, showThinkingSummaries: false }));
+  assert.equal(readNativeSettings(path).toolSearch, null);
+  assert.equal(readNativeSettings(path).showThinkingSummaries, false);
+  assert.equal(updateNativeSettings({ toolSearch: true }, path).toolSearch, true);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    env: { KEEP: '1', ENABLE_TOOL_SEARCH: 'true' },
+    showThinkingSummaries: false,
+  });
+  assert.equal(updateNativeSettings({ toolSearch: false }, path).toolSearch, false);
+  updateNativeSettings({ toolSearch: null, showThinkingSummaries: null }, path);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), { env: { KEEP: '1' } });
+  writeFileSync(path, JSON.stringify({ env: { ENABLE_TOOL_SEARCH: 'auto:20' } }));
+  assert.equal(
+    readNativeSettings(path).toolSearch,
+    null,
+    'Another form of the value shows as unset',
+  );
+  updateNativeSettings({ toolSearch: null }, path);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {});
+  writeFileSync(path, '{ broken');
+  assert.throws(() => updateNativeSettings({ fastMode: true }, path));
+  assert.equal(readFileSync(path, 'utf8'), '{ broken', 'An unreadable file is never overwritten');
+});
+
+test('a selected provider must exist before session settings can be generated', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-missing-provider-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const source = join(root, 'missing-provider.json'),
+    target = join(root, 'runtime.json');
+  assert.throws(
+    () =>
+      writeSessionSshSettings(target, {
+        source,
+        config: join(root, 'config'),
+        cwd: root,
+        bin: '/session/bin',
+        inheritedPath: '/usr/bin:/bin',
+      }),
+    (error) =>
+      error instanceof Error && error.message.includes('ENOENT') && error.message.includes(source),
+  );
+});

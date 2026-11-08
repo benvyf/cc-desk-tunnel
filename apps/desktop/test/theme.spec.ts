@@ -1,0 +1,488 @@
+import { expect, test } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { resolve } from 'node:path';
+import { contrast, createSession, login, screenshots, sessionAction } from './helpers.ts';
+
+async function interfaceSize(page: Page, size: number) {
+  await page.evaluate(async (size) => {
+    const path = '/src/prefs.ts';
+    const { setPrefs } = await import(path);
+    setPrefs((prefs: import('../src/prefs.ts').Prefs) => ({
+      ...prefs,
+      fontSizes: { ...prefs.fontSizes, interface: size },
+    }));
+  }, size);
+  await expect(page.locator('html')).toHaveCSS('font-size', `${size}px`);
+}
+
+test('theme previews fit narrow windows and preserve radio keyboard navigation', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.keyboard.press('Control+Comma');
+  const choices = page.getByRole('radiogroup', { name: '主题', exact: true });
+  for (const theme of ['浅色', '深色', '跟随系统']) {
+    await choices.getByRole('radio', { name: theme, exact: true }).click();
+    for (const width of [320, 390, 640, 1280]) {
+      await page.setViewportSize({ width, height: 844 });
+      const overflow = await choices
+        .locator('button')
+        .evaluateAll((buttons) =>
+          buttons
+            .filter((button) => button.scrollWidth > button.clientWidth)
+            .map((button) => button.textContent),
+        );
+      expect.soft(overflow, `${theme} at ${width}px`).toEqual([]);
+      expect
+        .soft(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+        .toBe(true);
+      await expect(choices.getByRole('radio', { name: theme, exact: true })).toBeInViewport();
+      if (width === 320)
+        await page.screenshot({ path: resolve(screenshots, `theme-review-${theme}-mobile.png`) });
+    }
+  }
+  const system = choices.getByRole('radio', { name: '跟随系统', exact: true });
+  const dark = choices.getByRole('radio', { name: '深色', exact: true });
+  await system.press('End');
+  await expect(dark).toBeFocused();
+  await dark.press('ArrowDown');
+  await expect(system).toBeFocused();
+  await system.press('ArrowUp');
+  await expect(dark).toBeFocused();
+  await dark.press('Home');
+  await expect(system).toBeFocused();
+  await system.press('Control+End');
+  await expect(system).toHaveAttribute('aria-checked', 'true');
+  await system.press('Tab');
+  await expect(choices.locator(':focus')).toHaveCount(0);
+});
+
+test('terminal close and update icons remain readable in both themes without a real terminal', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const reactPath = '/node_modules/.vite/deps/react.js';
+    const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+    const terminalPath = '/src/NativeTerminal.tsx';
+    const railPath = '/src/Rail.tsx';
+    const React = (await import(reactPath)).default;
+    const { createRoot } = (await import(domPath)).default;
+    const { default: Terminal } = await import(terminalPath);
+    const { default: Rail } = await import(railPath);
+    let receive: (message: unknown) => void = () => {};
+    const requests: string[] = [];
+    const client = {
+      onTerminal(callback: typeof receive) {
+        receive = callback;
+        return () => {};
+      },
+      async request(command: { type: string }) {
+        requests.push(command.type);
+        if (command.type === 'terminal.open')
+          receive({ type: 'terminal.opened', sessionId: 'theme-fixture', terminalId: 'fixture' });
+      },
+      terminalControl() {},
+    };
+    const root = document.createElement('div');
+    document.body.replaceChildren(root);
+    createRoot(root).render(
+      React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(Terminal, { client, sessionId: 'theme-fixture', onClose() {} }),
+        React.createElement(Rail, {
+          page: 'chat',
+          update: '有更新',
+          go() {},
+          openUpdate() {},
+          openSettings() {},
+        }),
+      ),
+    );
+    Object.assign(window, { themeTerminalRequests: requests });
+  });
+  const close = page.getByRole('button', { name: '关闭原生终端', exact: true });
+  const update = page.getByRole('button', { name: '更新', exact: true });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    await close.hover();
+    expect
+      .soft(await contrast(close), `terminal close hover in ${theme}`)
+      .toBeGreaterThanOrEqual(3);
+    await expect.soft(close).toHaveCSS('color', 'rgb(250, 249, 245)');
+    await expect.soft(close).toHaveCSS('background-color', 'rgba(250, 249, 245, 0.07)');
+    await update.hover();
+    expect.soft(await contrast(update), `update hover in ${theme}`).toBeGreaterThanOrEqual(3);
+  }
+  await close.click();
+  expect(
+    await page.evaluate(
+      () => (window as unknown as { themeTerminalRequests: string[] }).themeTerminalRequests,
+    ),
+  ).toEqual(['terminal.open', 'terminal.close']);
+});
+
+test('destructive action labels retain contrast in both themes', async ({ page }) => {
+  await page.goto('/');
+  await login(page);
+  await createSession(page, '主题对比度');
+  await sessionAction(page, '删除');
+  const remove = page.getByRole('dialog').getByRole('button', { name: '删除', exact: true });
+  for (const theme of ['light', 'dark']) {
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    await page.mouse.move(0, 0);
+    expect(await contrast(remove), `${theme} default`).toBeGreaterThanOrEqual(4.5);
+    await remove.hover();
+    expect(await contrast(remove), `${theme} hover`).toBeGreaterThanOrEqual(4.5);
+  }
+  await page.getByRole('button', { name: '取消', exact: true }).click();
+});
+
+test('workbench surfaces and hover feedback remain consistent across pages and sidebar states', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  await createSession(page, '三栏复查');
+  const colors = () =>
+    page.evaluate(() =>
+      ['.rail', '.sidebar', '.workspace'].map(
+        (selector) => getComputedStyle(document.querySelector(selector)!).backgroundColor,
+      ),
+    );
+  for (const name of ['浅色', '深色']) {
+    await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+    await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+    await page
+      .getByRole('navigation', { name: '设置分类' })
+      .getByRole('button', { name: '常规', exact: true })
+      .click();
+    await page.getByRole('radio', { name, exact: true }).click();
+    await page.locator('.shell').evaluate(async (shell) => {
+      await Promise.allSettled(
+        shell
+          .getAnimations({ subtree: true })
+          .filter((animation) => animation.effect?.getTiming().iterations !== Infinity)
+          .map((animation) => animation.finished),
+      );
+    });
+    // The rail and side column are one frame; the page is a sheet of a different tone resting on it.
+    const palette = await colors();
+    expect(palette[1]).toBe(palette[0]);
+    expect(palette[2]).not.toBe(palette[0]);
+    for (const button of [
+      page.getByRole('button', { name: '收起侧栏', exact: true }),
+      page.getByRole('button', { name: '返回会话', exact: true }),
+    ]) {
+      await button.hover();
+      expect
+        .soft(await button.evaluate((element) => getComputedStyle(element).backgroundColor), name)
+        .not.toBe(palette[0]);
+    }
+    await expect.soft(page.locator('.sidebar')).toHaveCSS('border-top-left-radius', '0px');
+    await expect.soft(page.locator('.workspace')).toHaveCSS('border-top-left-radius', '12px');
+    // Back to the conversations from the settings' column, then on to the schedules from theirs.
+    for (const destination of ['返回会话', '定时任务']) {
+      await page.getByRole('button', { name: destination, exact: true }).click();
+      expect(await colors()).toEqual(palette);
+      await page.getByRole('button', { name: '收起侧栏', exact: true }).click();
+      await expect(page.locator('.sidebar')).toBeHidden();
+      await expect(page.locator('.workspace')).toHaveCSS('border-top-left-radius', '12px');
+      await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
+    }
+    await page.setViewportSize({ width: 390, height: 600 });
+    await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
+    await expect(page.locator('.sidebar')).toBeVisible();
+    // Open on a narrow window, the column is laid over the page from the edge, over the rail.
+    await expect.poll(async () => (await page.locator('.sidebar').boundingBox())?.x).toBe(0);
+    await expect(page.locator('.rail')).toBeHidden();
+    const panel = (await page.locator('.sidebar').boundingBox())!;
+    expect(panel.x).toBe(0);
+    expect(panel.y).toBe(40);
+    expect(panel.x + panel.width).toBeLessThanOrEqual(390);
+    await page.screenshot({ path: resolve(screenshots, `theme-drawer-${name}.png`) });
+    await page.locator('.sidebar-shade').click({ position: { x: 330, y: 300 } });
+    await expect(page.locator('.sidebar')).toBeHidden();
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await expect(page.locator('.sidebar')).toBeVisible();
+  }
+});
+
+test('notification popup stays inside narrow windows and dismisses with Escape', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await login(page);
+  for (const width of [1280, 390, 320]) {
+    await page.setViewportSize({ width, height: 600 });
+    if (width < 700) {
+      await expect(page.locator('.sidebar')).toBeHidden();
+      await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
+    }
+    await page.getByRole('button', { name: /^通知/ }).click();
+    const popup = page.getByRole('dialog', { name: '通知', exact: true });
+    const bounds = (await popup.boundingBox())!;
+    expect.soft(bounds.x, `${width}px left`).toBeGreaterThanOrEqual(0);
+    expect.soft(bounds.x + bounds.width, `${width}px right`).toBeLessThanOrEqual(width);
+    if (width === 320)
+      await page.screenshot({ path: resolve(screenshots, 'theme-notifications-mobile.png') });
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+    if (width < 700) await page.mouse.click(width - 8, 350);
+  }
+});
+
+test('composer popups stay reachable with long drafts and while resizing', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 480 });
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const reactPath = '/node_modules/.vite/deps/react.js';
+    const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+    const controlsPath = '/src/ComposerControls.tsx';
+    const permissionPath = '/src/PermissionMenu.tsx';
+    const React = (await import(reactPath)).default;
+    const { createRoot } = (await import(domPath)).default;
+    const { default: Controls } = await import(controlsPath);
+    const { default: Permission } = await import(permissionPath);
+    const h = React.createElement;
+    const root = document.createElement('div');
+    document.body.replaceChildren(root);
+    createRoot(root).render(
+      h(
+        'div',
+        { className: 'shell side-closed' },
+        h('header', { className: 'titlebar' }),
+        h('nav', { className: 'rail' }),
+        h(
+          'main',
+          { className: 'workspace' },
+          h(
+            'div',
+            { className: 'composer-area', style: { marginTop: 'auto' } },
+            h(
+              'div',
+              { className: 'composer' },
+              h('textarea'),
+              h(
+                'div',
+                { className: 'composer-toolbar' },
+                h(Permission, { mode: 'default', disabled: false, change() {} }),
+                h(Controls, {
+                  model: 'sonnet',
+                  effort: 'high',
+                  nativeSession: null,
+                  metrics: null,
+                  capabilities: {
+                    models: Array.from({ length: 20 }, (_, index) => ({
+                      value: index ? `model-${index}` : 'sonnet',
+                      displayName: `模型 ${index}`,
+                      supportedEffortLevels: ['low', 'medium', 'high'],
+                    })),
+                  },
+                  disabled: false,
+                  async configure() {},
+                  openAccount() {},
+                  refresh() {},
+                  refreshing: false,
+                  canRefreshModels: false,
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  });
+  for (const { label, selector, fontSize } of [
+    ['审批模式', '.permission-menu'],
+    ['模型与推理强度', '.model-menu'],
+    ['上下文窗口', '.context-tooltip'],
+  ].flatMap(([label, selector]) => [14, 20].map((fontSize) => ({ label, selector, fontSize })))) {
+    await page.setViewportSize({ width: 390, height: 480 });
+    await interfaceSize(page, fontSize);
+    await page.getByRole('button', { name: label, exact: true }).click();
+    const popup = page.locator(selector);
+    if (label === '模型与推理强度') await page.locator('.model-current').click();
+    await page.locator('.composer textarea').evaluate((input) => {
+      (input as HTMLTextAreaElement).value = '长草稿\n'.repeat(40);
+      input.style.height = '999px';
+    });
+    for (const viewport of [
+      { width: 390, height: 480 },
+      { width: 320, height: 260 },
+    ]) {
+      await page.setViewportSize(viewport);
+      await expect
+        .poll(
+          async () => {
+            const box = await popup.boundingBox();
+            return (
+              !!box &&
+              box.x >= 8 &&
+              box.y >= 48 &&
+              box.x + box.width <= viewport.width - 8 &&
+              box.y + box.height <= viewport.height - 8
+            );
+          },
+          {
+            message: `${label} at ${fontSize}px remains inside ${viewport.width}×${viewport.height}`,
+          },
+        )
+        .toBe(true);
+    }
+    if (label !== '上下文窗口') {
+      const last = popup.getByRole(label === '审批模式' ? 'menuitemradio' : 'option').last();
+      await last.focus();
+      await expect(last).toBeInViewport();
+    }
+    await page.keyboard.press('Escape');
+    await expect(popup).toBeHidden();
+  }
+});
+
+test('a long draft keeps native send and stop actions reachable in a short window', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 320, height: 280 });
+  await page.goto('/');
+  await page.evaluate(async () => {
+    const reactPath = '/node_modules/.vite/deps/react.js';
+    const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+    const composerPath = '/src/Composer.tsx';
+    const React = (await import(reactPath)).default;
+    const { createRoot } = (await import(domPath)).default;
+    const { default: Composer } = await import(composerPath);
+    const h = React.createElement;
+    const root = document.createElement('div');
+    document.body.replaceChildren(root);
+    const actions: string[] = [];
+    Object.assign(window, { sizingActions: actions });
+    createRoot(root).render(
+      h(
+        'div',
+        { className: 'shell side-closed' },
+        h('header', { className: 'titlebar' }),
+        h('nav', { className: 'rail' }),
+        h(
+          'main',
+          { className: 'workspace' },
+          h(
+            'div',
+            { className: 'conversation-tools' },
+            h('button', { className: 'icon-button', 'aria-label': '打开对话查找' }, '⌕'),
+          ),
+          h('div', { className: 'conversation' }),
+          h(Composer, {
+            session: {
+              id: 'sizing-fixture',
+              projectPath: '/fixture',
+              model: 'sonnet',
+              effort: 'high',
+              permissionMode: 'default',
+              activeRun: { waiting: null },
+            },
+            projectName: '用于检查窄窗口布局的长项目名称',
+            draft: '保留输入内容并让草稿区内部滚动\n'.repeat(30),
+            attachments: [
+              {
+                id: 'sizing-image',
+                name: '用于检查完整可见性的附件.png',
+                path: '/fixture/image.png',
+                status: 'ready',
+              },
+            ],
+            setDraft() {},
+            native: true,
+            connected: true,
+            busy: false,
+            refreshing: false,
+            canRefreshModels: false,
+            ownsRun: true,
+            inputDisabled: false,
+            controlsDisabled: false,
+            slashOpen: false,
+            setSlashOpen() {},
+            canCompact: true,
+            scenario: 'chat',
+            setScenario() {},
+            capabilities: {
+              models: [
+                {
+                  value: 'sonnet',
+                  displayName: 'Sonnet-用于核对尺寸的较长模型名称',
+                  supportedEffortLevels: ['low', 'medium', 'high'],
+                },
+              ],
+            },
+            nativeSession: null,
+            metrics: null,
+            openAccount() {},
+            send() {
+              actions.push('send');
+            },
+            stop() {
+              actions.push('stop');
+            },
+            compact() {},
+            refresh() {},
+            async configure() {},
+          }),
+        ),
+      ),
+    );
+  });
+  const stop = page.getByRole('button', { name: '停止运行', exact: true });
+  const send = page.getByRole('button', { name: '排队发送', exact: true });
+  for (const { fontSize, ...viewport } of [
+    { width: 320, height: 280 },
+    { width: 390, height: 400 },
+  ].flatMap((viewport) => [14, 20].map((fontSize) => ({ ...viewport, fontSize })))) {
+    await page.setViewportSize(viewport);
+    await interfaceSize(page, fontSize);
+    for (const button of [stop, send]) {
+      await expect(button).toBeVisible();
+      const box = (await button.boundingBox())!;
+      expect(box.y).toBeGreaterThanOrEqual(40);
+      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
+      await button.click();
+    }
+    expect(
+      await page
+        .locator('.composer textarea')
+        .evaluate((input) => input.scrollHeight > input.clientHeight),
+    ).toBe(true);
+    const geometry = await page.locator('.attachment-tiles').evaluate((row) => {
+      const tile = row.querySelector('.attachment-tile')!.getBoundingClientRect();
+      const bounds = row.getBoundingClientRect();
+      return {
+        tileTop: tile.top,
+        tileBottom: tile.bottom,
+        rowTop: bounds.top,
+        rowBottom: bounds.bottom,
+      };
+    });
+    expect(geometry.tileTop).toBeGreaterThanOrEqual(geometry.rowTop);
+    expect(geometry.tileBottom).toBeLessThanOrEqual(geometry.rowBottom);
+    const remove = page.getByRole('button', {
+      name: '移除 用于检查完整可见性的附件.png',
+      exact: true,
+    });
+    await remove.focus();
+    await expect(remove).toBeInViewport();
+    const input = page.getByRole('textbox', { name: '消息', exact: true });
+    await input.focus();
+    await expect(input).toBeInViewport();
+    await page.screenshot({
+      path: resolve(screenshots, `attachments-short-${viewport.width}-font-${fontSize}.png`),
+      animations: 'disabled',
+    });
+  }
+  expect(
+    await page.evaluate(() => (window as unknown as { sizingActions: string[] }).sizingActions),
+  ).toEqual(['stop', 'send', 'stop', 'send', 'stop', 'send', 'stop', 'send']);
+});

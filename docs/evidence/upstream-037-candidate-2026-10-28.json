@@ -1,0 +1,82 @@
+{
+  "phase": "pilot-server-and-client-working-user-reported",
+  "checkedAt": "2026-10-28T01:16:07.673003+00:00",
+  "sourceCommit": "0c2caa8f235d1d5f85d7245fcee898177204dbff",
+  "customBase": "05918cdd920470628df2cbcc5cde52365e5b38f2",
+  "upstream": "f2e3ef32a39ea83b14a7a46dd0ee6b83986048bc",
+  "pullRequest": "https://github.com/benvyf/cc-desk-tunnel/pull/1",
+  "version": "0.3.7",
+  "protocol": 21,
+  "windowsBuild": 10,
+  "serverBuild": 4,
+  "artifacts": {
+    "windows": {
+      "filename": "CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+      "size": 201160353,
+      "sha256": "71628796d514cbcca8ff3d6f8355490f2f862a72a01ecec449a5c84c2444cfa3"
+    },
+    "server": {
+      "filename": "cc-desk-tunnel-server-0.3.7-build4.tar.gz",
+      "size": 1598807,
+      "sha256": "9c5d6210ac8d3fe9b546abe0c71acae53bb4b7580dcb515388103d1409debb27"
+    },
+    "source": {
+      "filename": "cc-space-0.3.7-build10.bundle",
+      "size": 5222248,
+      "sha256": "23e16ce9ffc7256a2285c4d30bdc0f0d25a350a3a799d2cdbca7cd3e6f363fe8"
+    },
+    "preflight": {
+      "filename": "prepare-cc-space-037.py",
+      "size": 7360,
+      "sha256": "326d69622885bc684cefabe0eb03f6921eb0c3f2efd0df962ad459ce409a7233"
+    },
+    "cutover": {
+      "filename": "install-cc-space-037.py",
+      "size": 12115,
+      "sha256": "ef67028f547a89b3cf6ec791162fe06e857fae51e2a1f5cb228feef949a22c93"
+    }
+  },
+  "checks": {
+    "node": "24.22.1",
+    "typecheck": "passed",
+    "productionFrontendBuild": "passed",
+    "coreTests": 108,
+    "managedAndModerationTests": 67,
+    "browserScenarios": 43,
+    "packagedApplicationSmoke": "passed",
+    "packagedLocalFileAndImageSmoke": "passed",
+    "serverArchiveInventory": "passed",
+    "preflightScriptSyntaxAndArchiveChecks": "passed",
+    "remoteDockerPreflight": "passed; user-reported OFFLINE_PREFLIGHT_OK",
+    "cutoverScript": "syntax, pinned helper, process discrimination, container config cloning, temporary cold-backup restoration, new-data preservation, repeated rollback and corrupt-backup refusal passed; no production cutover yet"
+  },
+  "production": {
+    "windowsBuild": 9,
+    "linuxBuild": 3,
+    "protocol": 20,
+    "channelsChanged": false,
+    "containersChanged": true,
+    "signedCandidates": false,
+    "providerTestRequests": 0
+  },
+  "pilotReadOnlyUserOutput": {
+    "container": "cc-desk-tunnel-ba938975-proxy-1",
+    "image": "sha256:365918cb8abf4f4b784502a6bbabeda5704dc928e5c899438199776001b1adb2",
+    "node": "24.21.0",
+    "sdk": "0.3.286",
+    "app": "0.3.6",
+    "dataBind": "/srv/cc-desk-tunnel:/data:rw",
+    "policyBind": "/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed:/etc/claude-code:ro",
+    "preparedImage": "cc-space-preview:0.3.7-build4",
+    "preparationDirectory": "/var/tmp/cc-space-037-mb0x0m3t"
+  },
+  "pilotCutover": {
+    "source": "user-reported terminal output",
+    "result": "UPGRADE_OK: Linux Build 4 / protocol 21; original image, container and cold backup retained.",
+    "backupDirectory": "/var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676",
+    "rollbackCommand": "sudo python3 /var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676/rollback.py --rollback /var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676",
+    "clientAcceptance": "User installed the candidate on their local Windows computer and reported normal use with no issues noticed so far; individual new features and moderation were not separately confirmed.",
+    "diskSpace": "Initial space check stopped before backup or downtime; user cleaned Docker build and apt caches, then reported 4.7G free before successful retry."
+  },
+  "next": "Retain rollback assets and observe normal pilot use. Detailed feature acceptance, PR merge and public channel publishing remain pending."
+}

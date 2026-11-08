@@ -1,0 +1,77 @@
+{
+  "date": "2026-11-07",
+  "timezone": "Asia/Hong_Kong",
+  "reviewBaseline": "e3bf917",
+  "implementationBase": "2550318",
+  "fixCommit": "9bf9480abb7fe6a4a689359d496ef07b3884e743",
+  "branch": "codex/upstream-013-adoption",
+  "findings": [
+    {
+      "priority": "P1",
+      "area": "terminal history and turn lifecycle",
+      "fixed": true
+    },
+    {
+      "priority": "P1",
+      "area": "settings PATH and session SSH binding",
+      "fixed": true
+    },
+    {
+      "priority": "P1",
+      "area": "status watcher persistence exceptions",
+      "fixed": true
+    },
+    {
+      "priority": "P2",
+      "area": "legacy POSIX shell declarations",
+      "fixed": true
+    }
+  ],
+  "checks": {
+    "relatedCorePassed": 79,
+    "linuxChannelPassed": 122,
+    "finalReadOnlyOfflineLinuxPassed": 31,
+    "failures": 0,
+    "skipped": 0,
+    "conversationOriginalAndCompactScenariosPassed": 6,
+    "newLiveTurnUiTargetedPassed": 1,
+    "typecheck": true,
+    "desktopBuild": true,
+    "repositoryCheck": true,
+    "noexecAndManagedPathExplicitBinding": true
+  },
+  "officialCli": {
+    "run": "741f9552-6abf-4013-99df-c9e4a3357024",
+    "windowsSdk": true,
+    "windowsTerminal": true,
+    "linuxSdk": true,
+    "linuxTerminal": true,
+    "windowsWrites": 2,
+    "linuxWrites": 2,
+    "provider": "synthetic localhost API",
+    "cli": "2.1.295",
+    "boundary": "Linux Docker CLI/SDK → existing WSS/SSH → Windows or Windows SSH adapter → Linux target"
+  },
+  "sdkPrivateSettings": {
+    "stage": "acceptance-result",
+    "calls": 8,
+    "tools": 4,
+    "failed": 0,
+    "sdkPrivateSettingsSeen": 2,
+    "sdkPrivateSettingsRemaining": 0,
+    "linuxWrites": 2
+  },
+  "cleanup": {
+    "testContainersRemaining": 0,
+    "hostCliProcessesRemaining": 0,
+    "removedTemporaryResources": ["package", "source/node_modules", "npm-cache"],
+    "logsRecordingsAndTestStatePreserved": true
+  },
+  "limits": {
+    "realModelCalls": false,
+    "linuxTarget": "separate SSH executor/home/project in the same isolated Ubuntu container",
+    "installerCreated": false,
+    "published": false,
+    "productionInstallPerformed": false
+  }
+}

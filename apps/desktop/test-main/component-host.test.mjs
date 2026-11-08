@@ -1,0 +1,448 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { execFile, spawn } from 'node:child_process';
+import { access, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { connect, createServer } from 'node:net';
+import { setTimeout as delay } from 'node:timers/promises';
+import { Client } from 'ssh2';
+
+const vendor = resolve('apps/desktop/vendor');
+const available =
+  process.platform === 'win32' &&
+  (await access(join(vendor, 'openssh/sshd.exe')).then(
+    () => true,
+    () => false,
+  ));
+function execute(file, args) {
+  return new Promise((resolve, reject) =>
+    execFile(
+      file,
+      args,
+      { windowsHide: true, encoding: 'utf8', timeout: 20000 },
+      (error, stdout, stderr) =>
+        error ? reject(new Error(stderr || error.message)) : resolve(stdout),
+    ),
+  );
+}
+async function prepare(powershell = 'pwsh.exe', legacyEncoding = false, made = undefined) {
+  const directory = made ?? (await mkdtemp(join(tmpdir(), 'cc-desk-tunnel-ssh-')));
+  const server = createServer();
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const port = server.address().port;
+  await new Promise((resolve) => server.close(resolve));
+  try {
+    const scriptPath = resolve('apps/desktop/electron/prepare-ssh.ps1');
+    const quote = (value) => `'${value.replaceAll("'", "''")}'`;
+    const args = legacyEncoding
+      ? [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-EncodedCommand',
+          Buffer.from(
+            `[Console]::OutputEncoding=[Text.Encoding]::GetEncoding(936); & ${quote(scriptPath)} -Runtime ${quote(directory)} -OpenSshDirectory ${quote(join(vendor, 'openssh'))} -Port ${port}`,
+            'utf16le',
+          ).toString('base64'),
+        ]
+      : [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-File',
+          scriptPath,
+          '-Runtime',
+          directory,
+          '-OpenSshDirectory',
+          join(vendor, 'openssh'),
+          '-Port',
+          String(port),
+        ];
+    const metadata = JSON.parse(await execute(powershell, args));
+    const config = await readFile(join(directory, 'sshd_config'), 'utf8');
+    assert.match(config, /ListenAddress 127\.0\.0\.1/);
+    assert.match(config, /PasswordAuthentication no/);
+    return { directory, port, metadata };
+  } catch (error) {
+    await rm(directory, { recursive: true, force: true });
+    throw error;
+  }
+}
+function listening(port) {
+  return new Promise((resolve) => {
+    const socket = connect(port, '127.0.0.1');
+    socket.setTimeout(200);
+    socket.once('connect', () => {
+      socket.destroy();
+      resolve(true);
+    });
+    socket.once('error', () => {
+      socket.destroy();
+      resolve(false);
+    });
+    socket.once('timeout', () => {
+      socket.destroy();
+      resolve(false);
+    });
+  });
+}
+async function until(check) {
+  for (let attempt = 0; attempt < 150; attempt++) {
+    if (await check()) return;
+    await delay(100);
+  }
+  assert.fail('Component lifecycle timed out');
+}
+function hostArgs(directory, owner = process.pid) {
+  return [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-File',
+    resolve('apps/desktop/electron/component-host.ps1'),
+    '-Runtime',
+    directory,
+    '-OpenSshDirectory',
+    join(vendor, 'openssh'),
+    '-OwnerProcessId',
+    String(owner),
+  ];
+}
+
+test(
+  'a command finds the PowerShell the host runs in by its variable, in a path with Chinese and spaces',
+  {
+    skip:
+      !available ||
+      !(await access(join(vendor, 'pwsh/pwsh.exe')).then(
+        () => true,
+        () => false,
+      )),
+    timeout: 30000,
+  },
+  async () => {
+    const fixture = await mkdtemp(join(tmpdir(), 'cc-desk-tunnel-test-'));
+    const alias = join(fixture, '\u5b89\u88c5 \u8def\u5f84');
+    let directory;
+    try {
+      await symlink(join(vendor, 'pwsh'), alias, 'junction');
+      const powershell = join(alias, 'pwsh.exe');
+      const prepared = await prepare(powershell, true);
+      directory = prepared.directory;
+      const host = spawn(powershell, hostArgs(directory), { windowsHide: true, stdio: 'ignore' });
+      const stopped = new Promise((resolve) => host.once('close', resolve));
+      try {
+        await until(() => listening(prepared.port));
+        const output = await new Promise((resolve, reject) => {
+          const client = new Client();
+          client
+            .once('error', reject)
+            .once('ready', () =>
+              client.exec(
+                `"%CC_DESK_TUNNEL_PWSH%" -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from('[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);[Environment]::ProcessPath', 'utf16le').toString('base64')}`,
+                (error, stream) => {
+                  if (error) return reject(error);
+                  let text = '';
+                  stream
+                    .on('data', (data) => (text += data.toString('utf8')))
+                    .on('close', () => {
+                      client.end();
+                      resolve(text.trim());
+                    });
+                  stream.end();
+                },
+              ),
+            )
+            .connect({
+              host: '127.0.0.1',
+              port: prepared.port,
+              username: prepared.metadata.username,
+              privateKey: prepared.metadata.privateKey,
+            });
+        });
+        assert.equal(output, powershell);
+      } finally {
+        await writeFile(join(directory, 'stop'), '');
+        await stopped;
+      }
+    } finally {
+      if (directory) await rm(directory, { recursive: true, force: true });
+      await rm(fixture, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'application-owned OpenSSH closes its loopback listener and removes keys on client shutdown',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const { directory, port } = await prepare();
+    const host = spawn('pwsh.exe', hostArgs(directory), {
+      windowsHide: true,
+      stdio: ['pipe', 'ignore', 'pipe'],
+    });
+    let error = '';
+    host.stderr.on('data', (data) => (error += data.toString('utf8')));
+    const stopped = new Promise((resolve) => host.once('close', resolve));
+    try {
+      await until(() => listening(port));
+      await writeFile(join(directory, 'stop'), '');
+      assert.equal(await stopped, 0, error);
+      assert.equal(await listening(port), false);
+      assert.equal(
+        await access(directory).then(
+          () => true,
+          () => false,
+        ),
+        false,
+      );
+    } finally {
+      if (host.exitCode === null) {
+        await execute('taskkill.exe', ['/PID', String(host.pid), '/T', '/F']);
+        await stopped;
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'commands from the application-owned OpenSSH run without a visible console window',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const { directory, port, metadata } = await prepare();
+    const host = spawn('pwsh.exe', hostArgs(directory), { windowsHide: true, stdio: 'ignore' });
+    const stopped = new Promise((resolve) => host.once('close', resolve));
+    const script = `Add-Type -Namespace Probe -Name Console -MemberDefinition '[DllImport("kernel32.dll")] public static extern IntPtr GetConsoleWindow(); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);'
+    [Probe.Console]::IsWindowVisible([Probe.Console]::GetConsoleWindow())`;
+    try {
+      await until(() => listening(port));
+      const output = await new Promise((resolve, reject) => {
+        const client = new Client();
+        client
+          .once('error', reject)
+          .once('ready', () =>
+            client.exec(
+              `"%CC_DESK_TUNNEL_PWSH%" -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`,
+              (error, stream) => {
+                if (error) return reject(error);
+                let text = '';
+                stream
+                  .on('data', (data) => (text += data.toString('utf8')))
+                  .on('close', () => {
+                    client.end();
+                    resolve(text.trim());
+                  });
+                stream.end();
+              },
+            ),
+          )
+          .connect({
+            host: '127.0.0.1',
+            port,
+            username: metadata.username,
+            privateKey: metadata.privateKey,
+          });
+      });
+      assert.equal(output, 'False');
+    } finally {
+      await writeFile(join(directory, 'stop'), '');
+      await stopped;
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'abrupt client exit is detected by the component host and reclaims OpenSSH',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const { directory, port } = await prepare();
+    const source = `
+    const { spawn } = require('node:child_process');
+    const args = ${JSON.stringify(hostArgs(directory))};
+    args[args.length - 1] = String(process.pid);
+    const child = spawn('pwsh.exe', args, { windowsHide: true, stdio: 'ignore' });
+    child.on('error', () => process.exit(1));
+    child.on('exit', (code) => console.error('Host exited:', code));
+    console.log(child.pid);
+    setInterval(() => {}, 1000);
+  `;
+    const owner = spawn(process.execPath, ['-e', source], {
+      windowsHide: true,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let diagnostics = '';
+    owner.stdout.on('data', (data) => (diagnostics += data.toString('utf8')));
+    owner.stderr.on('data', (data) => (diagnostics += data.toString('utf8')));
+    owner.once('exit', (code) => (diagnostics += ` Owner exited: ${code}`));
+    const exited = new Promise((resolve) => owner.once('close', resolve));
+    try {
+      await until(() => listening(port)).catch((error) => {
+        throw new Error(`${error.message}: ${diagnostics}`);
+      });
+      // Deliberately kill only the client, not its tree: the host must observe the owner process.
+      await execute('taskkill.exe', ['/PID', String(owner.pid), '/F']);
+      await exited;
+      await until(async () => !(await listening(port)));
+      // A hard console/process-tree termination can bypass the PowerShell finally block.
+      // The job must still remove the executable listener; the fixture removes inert files.
+    } finally {
+      if (owner.exitCode === null) {
+        await execute('taskkill.exe', ['/PID', String(owner.pid), '/T', '/F']);
+        await exited;
+      }
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'closing the application component job terminates an in-flight SSH command',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const { directory, port, metadata } = await prepare();
+    const fixture = await mkdtemp(join(tmpdir(), 'cc-desk-tunnel-test-'));
+    const host = spawn('pwsh.exe', hostArgs(directory), { windowsHide: true, stdio: 'ignore' });
+    const stopped = new Promise((resolve) => host.once('close', resolve));
+    const marker = join(fixture, 'command-side-effect');
+    let ssh;
+    let sshStopped;
+    try {
+      await until(() => listening(port));
+      const script = `Write-Output 'command-started'; Start-Sleep -Seconds 8; Set-Content -LiteralPath '${marker.replaceAll("'", "''")}' -Value 'should-not-complete'`;
+      ssh = spawn(
+        join(vendor, 'openssh/ssh.exe'),
+        [
+          '-T',
+          '-p',
+          String(port),
+          '-i',
+          join(directory, 'identity'),
+          '-o',
+          'BatchMode=yes',
+          '-o',
+          'StrictHostKeyChecking=accept-new',
+          '-o',
+          `UserKnownHostsFile=${join(directory, 'known_hosts')}`,
+          `${metadata.username}@127.0.0.1`,
+          `"%CC_DESK_TUNNEL_PWSH%" -NoLogo -NoProfile -NonInteractive -EncodedCommand ${Buffer.from(script, 'utf16le').toString('base64')}`,
+        ],
+        { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] },
+      );
+      sshStopped = new Promise((resolve) => ssh.once('close', resolve));
+      let output = '';
+      ssh.stdout.on('data', (data) => (output += data.toString('utf8')));
+      await until(() => output.includes('command-started'));
+      await writeFile(join(directory, 'stop'), '');
+      assert.equal(await stopped, 0);
+      await sshStopped;
+      await delay(8500);
+      assert.equal(
+        await access(marker).then(
+          () => true,
+          () => false,
+        ),
+        false,
+      );
+      assert.equal(await listening(port), false);
+    } finally {
+      if (host.exitCode === null) {
+        await execute('taskkill.exe', ['/PID', String(host.pid), '/T', '/F']);
+        await stopped;
+      }
+      if (ssh?.exitCode === null) {
+        await execute('taskkill.exe', ['/PID', String(ssh.pid), '/T', '/F']);
+        await sshStopped;
+      }
+      await rm(directory, { recursive: true, force: true });
+      await rm(fixture, { recursive: true, force: true });
+    }
+  },
+);
+
+// What the runtime directory allows, as SDDL, and the SID of this user.
+async function permissions(path) {
+  return JSON.parse(
+    await execute('pwsh.exe', [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      `@{ sddl = (Get-Acl -LiteralPath '${path.replaceAll("'", "''")}').Sddl; sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value } | ConvertTo-Json -Compress`,
+    ]),
+  );
+}
+
+test(
+  'the SSH runtime directory and its keys are reachable by this user alone',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const { directory } = await prepare();
+    try {
+      const folder = await permissions(directory);
+      // Protected from inheritance, with one entry: full control for this user, passed on to what is inside.
+      assert.match(folder.sddl, new RegExp(`D:PAI\\(A;OICI;FA;;;${folder.sid}\\)$`));
+      const key = await permissions(join(directory, 'authorized_keys'));
+      assert.match(key.sddl, new RegExp(`D:AI\\(A;ID;FA;;;${key.sid}\\)$`));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'a runtime directory that already keeps its own entries ends reachable by this user alone',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const made = await mkdtemp(join(tmpdir(), 'cc-desk-tunnel-ssh-'));
+    // Inherited entries become entries of its own, those of SYSTEM and Administrators among them.
+    await execute('icacls.exe', [made, '/inheritance:d']);
+    const { directory } = await prepare('pwsh.exe', false, made);
+    try {
+      const folder = await permissions(directory);
+      assert.match(folder.sddl, new RegExp(`D:PAI\\(A;OICI;FA;;;${folder.sid}\\)$`));
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);
+
+test(
+  'preparing fails at once where this user may write but not change permissions',
+  { skip: !available, timeout: 30000 },
+  async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'cc-desk-tunnel-ssh-'));
+    try {
+      // OWNER RIGHTS takes the place of what the owner may implicitly do, here everything but changing permissions.
+      await execute('icacls.exe', [
+        directory,
+        '/inheritance:r',
+        '/grant:r',
+        '*S-1-3-4:(OI)(CI)M',
+        '*S-1-5-32-545:(OI)(CI)RX',
+      ]);
+      const started = Date.now();
+      await assert.rejects(
+        execute('pwsh.exe', [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-File',
+          resolve('apps/desktop/electron/prepare-ssh.ps1'),
+          '-Runtime',
+          directory,
+          '-OpenSshDirectory',
+          join(vendor, 'openssh'),
+          '-Port',
+          '1',
+        ]),
+      );
+      // Not the timeout of a key generator left waiting in a directory it cannot secure.
+      assert.ok(Date.now() - started < 10000);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
+);

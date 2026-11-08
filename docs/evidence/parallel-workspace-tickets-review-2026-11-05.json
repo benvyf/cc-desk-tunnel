@@ -1,0 +1,18 @@
+{
+  "runtimeSource": "1efc04daefde66e6cb79090cf9e6174273049cab",
+  "runtimeManifestVerified": true,
+  "linuxAuthorizationTestsPassed": 14,
+  "testsUseTemporaryDatabases": true,
+  "productionAccountsCreated": false,
+  "serviceRestarted": false,
+  "units": {
+    "cc-update-service.service": "active",
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  },
+  "realModelRequests": 0,
+  "windowsReleaseMatchesRenewal": true,
+  "windowsBuild": 29,
+  "linuxReleaseMatchesRenewal": true,
+  "linuxBuild": 14
+}

@@ -1,0 +1,118 @@
+import { useEffect, useState, useSyncExternalStore } from 'react';
+import type { ServerMessage, Session } from '@cc-desk-tunnel/protocol';
+import type { ProxyClient } from './client.ts';
+import { Button, Modal } from './ui.tsx';
+
+export default function TerminalHistory({
+  client,
+  source,
+  onClose,
+  onContinue,
+}: {
+  client: ProxyClient;
+  source: Session;
+  onClose: () => void;
+  onContinue: (sessionId: string) => void;
+}) {
+  const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const [listedConnection, setListedConnection] = useState<string | null>(null);
+  const [items, setItems] = useState<
+    Extract<ServerMessage, { type: 'terminal.histories' }>['items']
+  >([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [confirmed, setConfirmed] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  useEffect(() => {
+    let disposed = false;
+    const generation = client.state.connectionId;
+    setLoading(true);
+    setError('');
+    setItems([]);
+    setConfirmed(false);
+    setListedConnection(null);
+    void Promise.resolve().then(async () => {
+      if (disposed) return;
+      try {
+        const result = await client.fetch({ type: 'terminal.history.list', sessionId: source.id });
+        if (!disposed && client.state.connectionId === generation) {
+          setItems(result.items);
+          setListedConnection(generation);
+        }
+      } catch (error) {
+        if (!disposed) setError(error instanceof Error ? error.message : '历史读取失败。');
+      } finally {
+        if (!disposed) setLoading(false);
+      }
+    });
+    return () => {
+      disposed = true;
+    };
+  }, [client, source.id, refresh, state.connectionId, state.status]);
+  return (
+    <Modal title="继续官方历史会话" onClose={onClose}>
+      <p className="terminal-file-path">
+        {source.device?.name} · {source.projectPath}
+      </p>
+      {/* One sentence (G4); the details are in the help text of the button and the checkbox. */}
+      <p
+        className="muted terminal-history-note"
+        title="只列出 CC 启动时建立准确关联的历史；旧终端请用官方 CLI 的历史选择器。外部 CLI 占用以官方提示为准，不会强制接管。"
+      >
+        在新终端里接着这段官方历史继续，原来的进程不会恢复。
+      </p>
+      <label className="terminal-history-confirm">
+        <input
+          type="checkbox"
+          checked={confirmed}
+          onChange={(event) => setConfirmed(event.target.checked)}
+        />
+        我已确认当前 CLI 环境和账号适合继续此历史
+      </label>
+      {loading && <p role="status">正在读取历史元数据…</p>}
+      {error && <p role="alert">{error}</p>}
+      {!loading && !error && !items.length && <p className="muted">暂无关联的官方历史。</p>}
+      {/* Each history is a row: its title and when, and “继续” at the end. */}
+      <div className="terminal-history-list" role="list">
+        {items.map((item) => (
+          <div key={item.nativeId} role="listitem">
+            <span className="terminal-history-title">
+              <strong title={item.nativeId}>{item.title}</strong>
+              <small>
+                {item.updatedAt}
+                {item.reason ? ` · ${item.reason}` : ''}
+              </small>
+            </span>
+            <Button
+              size="sm"
+              aria-label={`新开终端继续 ${item.title}`}
+              title="新开终端继续这段历史"
+              disabled={
+                loading ||
+                !!error ||
+                !confirmed ||
+                !item.available ||
+                state.status !== 'connected' ||
+                listedConnection !== state.connectionId
+              }
+              onClick={() => {
+                if (
+                  listedConnection === client.state.connectionId &&
+                  client.state.status === 'connected'
+                )
+                  onContinue(item.sessionId);
+              }}
+            >
+              继续
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="dialog-actions">
+        <Button disabled={loading} onClick={() => setRefresh((value) => value + 1)}>
+          刷新列表
+        </Button>
+      </div>
+    </Modal>
+  );
+}

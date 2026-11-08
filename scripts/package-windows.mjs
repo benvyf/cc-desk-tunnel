@@ -1,0 +1,113 @@
+import { existsSync, readFileSync } from 'node:fs';
+import files from 'node:fs/promises';
+import { setTimeout as delay } from 'node:timers/promises';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
+import { build as electronBuild, Platform, Arch } from 'electron-builder';
+import { stageDesktop } from './package-desktop.mjs';
+import { managedBuildIdentity } from './managed-client-build.mjs';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
+const app = join(root, '.local/windows-package/app');
+const vendor = join(root, 'apps/desktop/vendor');
+const output = join(root, 'artifacts/windows');
+const unpacked = process.argv.includes('--dir');
+if (process.platform !== 'win32' || process.arch !== 'x64')
+  throw new Error('Build the Windows x64 package on Windows x64.');
+for (const file of ['openssh/sshd.exe', 'openssh/ssh-keygen.exe', 'pwsh/pwsh.exe']) {
+  if (!existsSync(join(vendor, file)))
+    throw new Error(`Missing bundled component: ${file}. Run npm run prepare:windows:package.`);
+}
+await stageDesktop(root, app, {
+  description: 'Windows client for a native remote Claude Code session',
+  files: ['prepare-ssh.ps1', 'component-host.ps1', 'managed-install.ps1'],
+  managedIdentity: managedBuildIdentity(root),
+});
+const electron = JSON.parse(readFileSync(join(root, 'node_modules/electron/package.json'), 'utf8'));
+// Security software may hold an executable for some seconds after it is copied, while it scans it; electron-builder
+// writes the executable's resources right after copying it and fails. Its writes wait for the file instead.
+const writeFile = files.writeFile;
+files.writeFile = async (...args) => {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await writeFile(...args);
+    } catch (error) {
+      if (attempt === 30 || !['UNKNOWN', 'EBUSY', 'EPERM', 'EACCES'].includes(error.code))
+        throw error;
+      if (attempt === 1) console.log(`Waiting for ${args[0]}, which another program holds.`);
+      await delay(2000);
+    }
+  }
+};
+const results = await electronBuild({
+  targets: Platform.WINDOWS.createTarget(unpacked ? 'dir' : 'nsis', Arch.x64),
+  publish: 'never',
+  config: {
+    appId: 'io.github.ccdesktunnel.desktop',
+    productName: 'CC Space',
+    electronVersion: electron.version,
+    electronDist: join(root, 'node_modules/electron/dist'),
+    directories: { app, output },
+    npmRebuild: false,
+    asar: true,
+    asarUnpack: ['electron/*.ps1', 'node_modules/**'],
+    files: ['brand.json', 'package.json', 'electron/**', 'dist/**', 'node_modules/**'],
+    extraResources: [
+      {
+        from: vendor,
+        to: 'vendor',
+        filter: ['openssh/**', 'pwsh/**', '!**/runtime.json'],
+      },
+    ],
+    win: {
+      target: 'nsis',
+      signExecutable: false,
+      icon: join(root, 'apps/desktop/electron/icon.png'),
+    },
+    nsis: {
+      include: join(root, 'scripts/installer-branding.nsh'),
+      oneClick: false,
+      perMachine: false,
+      allowElevation: true,
+      allowToChangeInstallationDirectory: true,
+      createDesktopShortcut: true,
+      createStartMenuShortcut: true,
+      shortcutName: 'CC Space',
+      runAfterFinish: true,
+      deleteAppDataOnUninstall: false,
+      artifactName: 'CC-Space-Setup-${version}-${arch}.${ext}',
+    },
+  },
+});
+// Exercise the actual packaged main process and preload before a release can upload this installer.
+// Always use an isolated profile and stay offline, even if the caller configured native testing.
+execFileSync(
+  process.execPath,
+  [join(root, 'node_modules/@playwright/test/cli.js'), 'test', 'package.spec.ts'],
+  {
+    cwd: root,
+    windowsHide: true,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      WINDOWS_PACKAGE_EXE: join(output, 'win-unpacked/CC Space.exe'),
+      NATIVE_TEST_CONFIG: '',
+    },
+  },
+);
+execFileSync(
+  'pwsh.exe',
+  [
+    '-NoLogo',
+    '-NoProfile',
+    '-NonInteractive',
+    '-Command',
+    `Get-ChildItem -LiteralPath '${output.replaceAll("'", "''")}' -File -Filter '*.exe' | Get-FileHash -Algorithm SHA256 | Select-Object Path,Hash`,
+  ],
+  { windowsHide: true, stdio: 'inherit' },
+);
+console.log(`Windows package: ${results.join(', ') || join(output, 'win-unpacked/CC Space.exe')}`);
+console.log(
+  'No service token, OAuth data, local history, test fixtures or source repository included.',
+);

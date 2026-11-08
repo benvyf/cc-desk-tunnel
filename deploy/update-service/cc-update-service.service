@@ -1,0 +1,31 @@
+[Unit]
+Description=CC managed update publication service
+After=network.target
+
+[Service]
+Type=simple
+User=ccupdates
+Group=ccupdates
+WorkingDirectory=/opt/cc-update-service
+ExecStart=/opt/cc-update-runtime/bin/node /opt/cc-update-service/apps/update-service/src/main.ts --config /etc/cc-update-service/config.json
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=20
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/srv/cc-update-service
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=true
+LimitNOFILE=1024
+
+[Install]
+WantedBy=multi-user.target

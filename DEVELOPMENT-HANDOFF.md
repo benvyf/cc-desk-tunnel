@@ -1,0 +1,645 @@
+# CC 管理中心开发交接（2026-10-24，香港时间）
+
+### 2026-11-07 Windows Build 32 / Linux Build 19 已发布，Ubuntu 由用户自行升级
+
+发行源码 `86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f`，均为 0.3.10 / 协议 24。管理中心 pilot 已提供客户端 Build 32、服务端 Build 19；旧制品不覆盖，stable 与线上管理中心运行文件保持。新签名服务端入口保留默认空间准备、空闲受控断开、冷备份/恢复及上一套必要回退，精确支持 Build 16 等旧基线和新增 Build 18。先在管理中心刷新并获取 Build 19 新任务/指令，由用户执行，再从客户端内更新到 32；本轮未下发节点安装任务，三台仍上报 16，03 既有 failed phase 未改写，04～06 未新增授权。
+
+真实 EXE/组件、公开签名及完整下载摘要、管理中心现行 agent 选路、新迁移实际签名准入、精确续期与真实 systemd/timer 均通过；客户端更新核心 49 项、UI 24 项，Linux 隔离迁移/清理/轮转 30 项、首次安装 7 项及冷备份/切换/恢复 32 项通过。额外旧 bootstrap 夹具只修正测试基线及原运行级别，不改产品准入和已签名制品。无真实模型调用。续期引用的 `/root/.cc-update-admin/source-build-32` 与 `/root/.cc-update-admin/linux-build19-preparation/source` 不得清理。详见[发行记录](docs/RELEASE-CLIENT32-SERVER19-2026-11-07.md)及[结构化证据](docs/evidence/release-client32-server19-2026-11-07.json)。下文“未发行”均为本次发布前的历史状态。
+
+### 2026-11-07 上游吸收实施 review 完成
+
+在 `e3bf917` 后完成实施差异复查，修复提交 `9bf9480`：处理 SDK 暂缺父记录导致跨轮答案错配及旧 idle 提前结束新轮；在会话私有配置中绑定实际 PATH 并保留原配置，受管 PATH/noexec 走显式 `ssh -F`；状态采样写库错误不再逃逸监听器中断服务；旧 POSIX 未声明 Shell 时不按系统猜测别名。核心 79 项、Linux 通道 122 项及最终只读无网络修订 31 项通过；官方 CLI/SDK 在自定义 PATH 下的四条受控执行链、私有设置权限/清理和界面回归通过。无真实模型调用、发行或生产安装，实验资源已清理。详见[专项复查](docs/UPSTREAM-0.3.13-ADOPTION-REVIEW-2026-11-07.md)。
+
+### 2026-11-07 上游 0.3.13 吸收：源码及隔离验收完成，未发行
+
+分支 `codex/upstream-013-adoption` 从 `2550318` 实施，功能提交 `5ac54c1`、`e36a491`、`5f6d157`，UNC 提示边界补齐于 `45e72f7`。完成 Windows scp/sftp 路径与实际 CLI 设置口径、终端增量同步/迟到回答/本地命令及快速手动压缩记录、按设备协商的 PowerShell/Git Bash 与偏好、保留旧配置/别名的每会话 SSH 包装器。保留协议 24 与既有内嵌终端、SSH 目标、Ubuntu 模型边界；不引入 CCDT、缓存过期提醒或空闲自动压缩。
+
+用户明确允许不使用真实模型调用验收。官方 CLI/SDK 在隔离 Ubuntu 配合受控 HTTP/SSE 完成 Windows 和 Linux SSH 执行端的聊天/终端接续、读写及两种终端显示模式；目标各恰好写入 2 次。Linux 目标是同一容器内的独立执行进程/目录，不冒称独立物理节点。核心、更新、Linux/Windows 原生通道、界面及最终修订检查通过，详见[实施记录](docs/UPSTREAM-0.3.13-ADOPTION-STATUS.md)和[结构化证据](docs/evidence/upstream-013-adoption-2026-11-07.json)。源码完成不等于已安装客户端得到更新：公开索引仍为 Windows 31 / Linux 18，未分配新 Build、打包发行或部署。后续发行先遵守[强制规则](docs/UPDATE-RELEASE-RULES.md)，当前绑定 Build 18 的迁移脚本不能直接复用成新 Build。压缩上下文后只据此确认进度和下一项，不重新全面复查已通过的旧路径。
+
+### 2026-11-06 发布后专项 review：两个链路遗漏已修复上线
+
+复现并修复：通用发布工具取自身运行级别而非归档声明；管理中心首次安装公开脚本不支持 v3。源码 `c194486`，在运行基线 `1efc04d` 上仅 overlay 三个模块并新增 `fresh-install-v3.py`，保留线上宿主机通道及并行授权功能。旧安装脚本 URL/摘要、Build 18/31 与 stable 索引、精确续期配置及节点版本/作业均保持。管理中心带冷备份和回退短切换约 0.907 秒；12 项真实 Node24 测试、类型检查、隔离 HTTP/真实签名归档/新接入命令摘要及公开 v3 脚本准入、两套 systemd 续期检查通过。三配置/三索引备份名分别校验，未创建生产接入授权或安装作业，不调用模型。详见 [review 与证据](docs/TERMINAL-BUILD18-REVIEW-2026-11-06.md)。下文“管理中心未修改/未重启”是上一轮发行时的历史状态。
+
+### 2026-11-06 Linux Build 18 / Windows Build 31 已发布，Ubuntu 待用户逐台安装
+
+03 镜像内 node-pty 有单字节异常，打开终端崩溃并触发三次启动锁定；用户定点恢复文件及计数后健康恢复，数据未回退，旧镜像仍异常。新增构建/安装真实 PTY、启动依赖摘要检查和明确锁定日志，保留默认空间准备、空闲受控断开、冷备份/失败恢复及备份轮转；客户端增加窗口关闭来源/无响应/渲染退出日志。偶发窗口消失/缩放卡顿及硬件根因仍未确认，不宣称已全部修复。
+
+Windows Build 31 源码 `dd8effe` / revision 46；Linux Build 18 源码 `90d50f2` / revision 30，均 0.3.10 / 协议 24。Build 17 因旧发布工具写入 v2 而迁移要求 v3，安装安全拒绝，未执行节点安装，保留原包并以 18 替代。已固定 Linux 发布/续期工具到干净源码，并对真实公开签名执行迁移准入；续期 source `/root/.cc-update-admin/linux-build18-preparation/source` 为运行引用，不得清理。管理中心程序未改/未重启，三台仍 Build 16，03 phase=failed 是此前状态，健康接口已恢复；没有提交新升级任务。
+
+Linux 隔离 40 项、首次安装 7 项、Node24 真实 PTY 和单字节损坏拒绝通过；相关核心首批 76 项通过，运行级别修正后合约/发布/启动预算 32 通过/1 条件跳过；类型检查、真实 EXE/内嵌组件、Electron 窗口回归和 24 项更新 UI 通过。公开签名/完整下载/精确续期、真实 systemd 与 agent 路由及实际签名安装准入均通过；无真实模型调用。用户应刷新管理中心选 **18**，不要重试 17；客户端内检查更新获取 31。详见 [服务端发行](docs/RELEASE-SERVER-BUILD18.md)、[客户端发行](docs/CLIENT-BUILD31-PUBLICATION.md)、[故障记录](docs/TERMINAL-RUNTIME-RECOVERY-2026-11-06.md)。
+
+### 2026-11-06 Linux Build 16：默认只保留一套验证通过的上一代冷备份
+
+用户要求抑制历史备份堆积。其在 ubuntu-cc 实际退役 13 份旧归档，逻辑 5,211,617,680 字节，可用 2.9G→7.7G，当前必要回退完整保留。随后将同一验证规则接入签名升级默认入口：当前回退验证后清理更早归档，新安装健康且记为 installed 后轮转；失败不执行安装后轮转，退役异常记录 RETENTION_PENDING，不误报健康切换失败。只删旧归档，保留元数据/日志/挂载及所有镜像容器；Node/CLI/SDK/审核/模型网络未变。Build 16 / 协议 24，源码 `c584ecd`，revision 26；Linux 隔离 54/54、公网签名/完整下载/235 文件、精确续期/真实 systemd、现行 agent 选路通过。三台仍 Build 14，未创建安装任务，Windows/中心不变。用户刷新后新建 Build 16 任务；见 [发行记录](docs/RELEASE-SERVER-BUILD16.md)与[证据](docs/evidence/linux-build16-production-2026-11-06.json)。
+
+### 2026-11-06 Linux Build 15 升级入口已发布（用户逐台执行）
+
+用户要求更新服务端升级指令后自行安装。发布 Linux Build 15 / 0.3.10 / 协议 24，源码 `4308a04`，精确准入当前 Build 14，保留 Node/CLI/SDK、账号/审核与模型网络，以及默认空间清理、空闲检查、受控断开、冷备份和回退。Linux 隔离 30+16 项通过（Docker 模拟），本机核心 36 项通过、签名分发 14 通过/2 条件跳过；完整清单、公开下载摘要/签名、精确续期、真实 systemd 与现行 agent 迁移选路已验证。revision 24，两个 timer active；三台仍 Build 14、可用 15，未创建或执行安装任务。Windows/stable/中心运行清单和节点旧作业未变，04～06 未授权。详见 [Build 15](docs/RELEASE-SERVER-BUILD15.md)及[证据](docs/evidence/linux-build15-production-2026-11-06.json)。
+
+### 2026-11-06 Windows Build 30 已发布
+
+按用户指定 `f126a7f` 构建，发行提交 `187f3ce` 仅将 Build 29→30；0.3.10 / 协议 24 保持。管理中心 Windows pilot 下载入口已切到 Build 30，旧 Build 29 保留。真实 EXE 解包及离线启动、28 个主进程模块/691 个组件、公开索引验签/完整下载摘要、精确续期和真实 systemd 验证通过，revision 44，两个 timer active。最终更新核心 42 项、NSIS 钩子 2 项、侧栏/项目 UI 20 项、隔离适配更新 UI 24 项通过；首轮目录清理 EPERM 与旧夹具 SSH API 不匹配如实记录。没有部署服务端输出合并、重启中心或修改 Linux/stable/节点作业；未调用真实模型。详见 [Build 30 发布记录](docs/CLIENT-BUILD30-PUBLICATION.md)及[证据](docs/evidence/windows-build30-production-2026-11-06.json)。
+
+### 2026-11-05 终端状态、查找与阅读改进（源码，未发布）
+
+按优先级完成连接/工作状态分离、等待执行通道再启动、本地终端查找、普通滚动缓冲的新输出提示，以及接回原进程/已结束的明确说明。查找使用固定的 xterm addon-search 0.16.0，只选择当前匹配，不争用预测插件的 proposed API，不给 CLI 发送查找文字；MIT 许可已进入 dist。普通缓冲沿用 2,000 行保留；交替屏幕只查当前屏幕，不接管 CLI 自身历史滚动。修复窄窗遮挡、按钮 Enter、组合输入关闭残留、再次聚焦与退出状态重复等细节。
+
+120 项相关 Node 测试通过；80 项界面组合首轮 79 通过、1 项重复展示失败，修正后分组与针对性验收通过，分次范围见记录。新 100 次预测 DOM 显示 P95 约 0.5ms。WebGL 三轮 P95 8.1–8.5ms、默认 7.6–7.8ms，未引入；2ms 合并使分散输出消息 122→200，缺少跟手收益证据，保留 5ms。所有试测使用受控/录制输出或模拟服务，没有调用真实 Claude、读取生产凭据或改变模型出口。详见 [实施取舍与验证](docs/TERMINAL-USABILITY-2026-11-05.md)及[证据](docs/evidence/terminal-usability-2026-11-05.json)。未打包、签名、发布或部署。
+
+### 2026-11-05 终端优化与远端 Ubuntu 验证（源码，未发布）
+
+再次专项 review：81 项网络/模型边界、签名更新、审核策略与终端历史测试通过，未发现本次改动新增越界。已成功读取 Claude 官方法律、SDK、网络和认证文档；第三方 SDK 产品的 API/云凭据要求与用户自行登录官方交互 CLI 的适用情况必须分开，生产凭据模式/许可及真实出站线路尚未核实，不能称整体已确认合规。见 [专项记录](docs/TERMINAL-NETWORK-CLAUDE-REVIEW-2026-11-05.md)。本轮不修改生产认证或代理，也不调用真实模型。
+
+用户追加 review 后修复两处：大首条 JSONL 被 256 KiB 标题预览上限误判，导致压缩禁用及重新打开未 resume；跨协议完整包获取的新错误被旧检查错误遮住。标题预览上限保持，持久化判断独立读取已选文件元数据。增量本机核心 13/13、更新 UI 3/3、远端 Ubuntu 历史/续接 4/4 通过，类型/构建/格式通过；新增运行文件哈希与清理记录见下方验证文档的“再次 review”。未重复运行首轮性能测试，未发布。
+
+按终端优化方案完成桌面 SSH 正常 EOF 的有界收尾、终端结束后的原生上下文持久化状态，以及服务端 5ms/16,384 UTF-16 code units 输出合并；保留预测回显、输入原路径、UTF-8 ACK、恢复快照和审核边界。另按强制规则补齐独立跨协议更新弹窗的验签完整包获取入口，没有放宽自动安装。
+
+本机相关核心组 136/136、后续修改核心组 10/10、受管控制器/上下文组 34/34；终端界面与真实 Electron 48/48，追加性能用例 2/2，压缩按钮 UI 1/1，含公开已验签索引控制器状态的更新 UI 2/2。VPS Ubuntu 真实 PTY 与隔离测试最终 126 通过、11 项 Windows 专用跳过、0 失败；改动运行文件哈希一致。固定碎片负载帧数 800→40，真实 PTY 本次 90→40，输出完整；跨机器 Electron 预测与真实回显收敛通过。未调用真实 Claude 账号，未做物理输入法人工验收；WebGL 尚无准入证据，本轮不引入，缓存功能按方案后续安排。远端隔离进程/监听/目录已清理，未部署或发布。详见 [实施、review 与验证记录](docs/TERMINAL-OPTIMIZATION-RESULTS-2026-11-05.md)与[机器可读证据](docs/evidence/terminal-optimization-2026-11-05.json)。
+
+### 2026-11-05 SSH 多连接授权互相撤销修复（管理中心已上线）
+
+用户连接 SSH 出现“登录授权已结束”，复现为 connect 每次删除同 session/node 原票据，新增后台连接与主窗口互相撤销。只移除该互斥删除，多条票据仍受会话/用户/节点权限/单设备登录统一撤销；不改客户端、Ubuntu、CLI/SDK或网络。VPS 生产基线授权模块 12 测试通过，本机真实 HTTP/WebSocket 集成覆盖并行续租及换设备两个旧 socket 4001。
+
+中心源码 `1efc04d` 已上线，实际只改 desktop-access.ts；冷备份 `/var/backups/cc-update-service/parallel-tickets-20261105T062027Z`，旧运行目录保留。Windows/Linux 索引、私有配置及续期登记、节点版本/作业未变，两个 timer active；未创建生产测试账号或发模型请求。用户需重新登录/连接 CC Space 获取新票据，旧已撤销票据不复活。详见 [修复记录](docs/SSH-PARALLEL-AUTHORIZATION-FIX.md)。
+
+## 后续更新必须遵守的用户规则（2026-11-05）
+
+任何更新相关开发和发布前先读 [更新与发布强制规则](docs/UPDATE-RELEASE-RULES.md)：服务端默认清理可回收空间，检查足够后确认空闲并受控断开客户端，保留备份与失败恢复；新客户端必须在登录前/断开/跨协议时也能提示新版并从应用内获取，不以复制 URL 作为常规流程。跨协议仍禁止未经配套校验的自动安装。规则文件明确了发布门槛和现有缺口，优先于下方历史流程描述。
+
+### 2026-11-05 Windows Build 29 更新提示修复（已发布并清理本地旧包）
+
+用户反馈 Build 27 不提示协议 24 新版，定位为 selectUpdate 返回 protocol-mismatch 时清空 release，控制器使界面失去目标版本。只在控制器保留已验签且较新的跨协议元数据；下载/安装仍拒绝跨协议，手动查询后账本不抑制提醒。41 项核心与签名契约测试、跨协议界面测试通过。用户授权发布新客户端并清理无用旧安装包，按 0.3.10 / Build 29 / 协议 24 准备；Build 27 需手动覆盖一次，不能远程注入修复。见 [Build 29](docs/CLIENT-BUILD29-PUBLICATION.md)。
+
+Windows pilot 已发布 revision 42，源码 `25cb477`，258579717 字节，SHA256 `2feae8b42039bd5a38436b2b52b8bde9335ca2a39803d168a39a3e27b06f5c71`。48 核心、2 真实 NSIS 钩子、实际包启动、28 模块与 691 组件逐项匹配通过；线上完整下载/hash、签名、本机独立验签、精确续期和 systemd 运行验证通过。Windows stable、Linux Build 14 索引及管理中心代码未变，两个 timer active。发布后删除本地 23 个旧安装包和附属文件（31 文件、约 10.33 GiB），最新包/线上回退制品、用户软件和配置保留。详情及证据见上述发布说明。
+
+### 2026-11-05 扩展宿主机安全清理（Build 14 已上线）
+
+用户要求尽量清理可回收空间，新增默认 APT 下载缓存、无人引用的旧 CC 候选镜像和旧构建解包文件回收；保留所有容器（含停止的回退容器）、回退记录、当前候选和它们引用的镜像/目录，保留策略与失败日志。只删升级目录内经过路径检查的旧 program/，不全局删卷或镜像、不降低备份空间阈值。45 项 Linux 隔离测试通过（Docker 模拟）。按新 Build 14 签名发布，原 Build 13 不覆盖；详见 [Build 14](docs/RELEASE-SERVER-BUILD14.md)。
+
+已发布 pilot revision 22 / 源码 `86ba960`，归档 SHA256 `3bd6e113fdac7d6e1b5afa010a1071d6bb1037b1453f99466df278fc8103b807`。233 文件清单、签名、公开全量下载、精确续期与现行 agent 路由验证通过；两个 timer active。三台接口当前 Build 10、可用 Build 14，第一台原 Build 13 任务 failed，其余任务保留；无安装作业提交。Windows 通道和管理中心运行代码未变。用户刷新后选 Build 14 重新更新，不重试原失败任务；未将发布当作节点清理/升级成功。
+
+### 2026-11-05 宿主机更新默认清理空间修复（Build 13 已上线）
+
+用户回传 Build 12 离线预检通过后备份空间不足：需 2.54 GiB，仅余 0.12 GiB，原服务未切换。确认现行宿主机 agent 未传 `--cleanup`，原签名迁移仅在该参数存在时清缓存。现将迁移脚本改为基线/空闲核对后、构建前自动清未使用 Docker build cache，并在离线预检后再次清缓存和检查备份预算；无需调用方传参。客户端仍在预检及空间检查通过、冻结确认空闲后自动断开，不强杀运行任务，不删除镜像、容器、数据或回退资源。空间不足或清理失败继续保留原服务。
+
+用户随后授权上线，已发布 Linux Build 13 / 0.3.10 / 协议 24 / pilot revision 20，源码 `e963398`，归档 SHA256 `94a2e0176593e5e2b8cce2175ccbf89f8187b76fcc2463425f255d32211a1562`。42 项 Linux 迁移/策略/空闲断开/回退测试（Docker 模拟）通过，232 个文件清单、签名、公开全量下载摘要、精确续期、现行 agent 三节点签名迁移选择均通过。保留原 Build 12 归档，增加其精确基线准入；旧锁和当前仅桌面版本号变化的新锁分别校验，CLI/SDK/Node 不变。
+
+三台管理接口显示当前 Build 10、可用 Build 13；第一台旧 Build 12 任务 failed，其他原任务保留，未创建安装作业。Windows 两通道与管理中心运行代码未变，两个续期 timer active，没有重启管理中心。用户须刷新后选择 Build 13 逐台更新，不能重试旧任务。详情见 [Build 13 发布说明](docs/RELEASE-SERVER-BUILD13.md)及[空间准备修复](docs/HOST-UPDATE-SPACE-PREPARATION.md)。
+
+### 2026-11-05 Windows Build 28 / 协议 24 已发布，配套 Linux Build 12
+
+按用户要求打包并替换管理中心旧客户端下载。Windows v0.3.10 / Build 28 / 协议 24 已发布（源码 `643b1f0`，pilot revision 40）；包含主分支 SSH 稳定性和中性浅色主题，并取回已发布 Build 27 的客户端升级提示、命名兼容、管理入口限制、安装完成后启动和可恢复安装包清理。安装身份、配置目录、签名信任与更新账本保留；未整体合入宿主机分支或重部署管理中心。
+
+完整包 258580014 字节，SHA256 `85205fd44c4ab7dd3ca8e660774d9d4c1b601c3b36ead94ffcd874dfba0cca71`。884 核心通过 / 43 条件跳过，85 界面通过；实际包启动、28 个 CJS 源码文件、691 个内置组件和 2 项 NSIS 钩子验证通过。VPS 公开完整下载/hash、本机验签及首中尾 HTTPS 字节核对通过；本机完整下载慢/超时，未计为通过。首个遗漏组件的包未发布，已重建为最终完整包。
+
+Windows 精确续期登记已指向新干净源码和新公开包；真实 systemd 强制续期、普通 `not-due`、临时参数清理及两个 timer active 均验证。Linux Build 12 和 stable 索引不变，三台仍为 Build 10 / 协议 23、旧任务不变。用户应先下载完整新客户端，结束任务后逐台确认服务端 Build 12，再保留原目录覆盖安装新客户端；旧 Build 27 不可与协议 24 服务端混用，不强行跨协议自动安装。
+
+安装包与证据见 [Build 28 发布说明](docs/CLIENT-BUILD28-PUBLICATION.md)及[脱敏记录](docs/evidence/windows-build28-production-2026-11-05.json)。VPS 安全记录 `/root/.cc-update-admin/release-build28/`，备份 `/var/backups/cc-update-service/client28-publication-20261105T015345Z`；私钥和令牌未下载，未安装用户正在使用的软件或执行生产 Ubuntu 升级/模型请求。下方客户端待发布为历史记录。
+
+### 2026-11-05 Linux Build 12 / 协议 24 已发布
+
+用户要求更新管理中心服务端升级入口供 `ubuntu-cc`、`ubuntu-cc-02`、`ubuntu-cc-03` 使用。已签名发布 Linux Build 12 / 协议 24（源码 `936609c`，pilot revision 18），包含当前主分支 SSH 服务端配套、设备改名和 Tunnel 收尾修复，以及配套 Web 浅色主题。归档携带适用于精确 Build 10/11 基线的宿主机迁移，保留 Node 24.22.2、CLI/SDK、账号/数据、空闲检查、冷备份与回退。
+
+三台节点均在线，实际管理接口显示当前 Build 10 / 协议 23、可用 Build 12 / 协议 24；没有创建安装任务，用户从设备的“服务端更新”入口逐台确认。管理中心运行程序未变、未重启；Linux 精确续期及其 systemd 服务通过，两个续期 timer active。Windows pilot/stable 保持原字节，Build 27 仍为协议 23，完整配套还需要单独打包发布协议 24 客户端，不能用旧客户端连接已升级服务端。
+
+10 项迁移和 11 项策略测试在 VPS Linux 隔离目录通过（Docker 模拟），核心 843 项通过 / 61 按条件跳过；归档 232 个文件、签名、公网全量下载哈希以及现行 agent 从签名包选择迁移入口均验证。详见 [Build 12 发布记录](docs/RELEASE-SERVER-BUILD12.md)及[脱敏证据](docs/evidence/linux-build12-production-2026-11-05.json)。下方“SSH 尚未发布”和 Build 11 为历史记录；未执行生产 Ubuntu 安装或真实模型请求。
+
+### 2026-11-04 SSH 远程开发源码与 review 修复（尚未发布）
+
+按用户要求实现「设置 → 连接」，本机 SSH 直连 Linux 开发设备，通过现有 WSS/Tunnel 让 Ubuntu 上的 Claude 操作远程项目；Claude、SDK、账号和模型出口仍仅在 Ubuntu。包含密钥/密码认证、指纹确认、目录选择、最近项目/会话恢复和分阶段诊断。源码协议升级为 24，后续需桌面与服务端配套发行；未改已发布 Build 编号或生产节点。
+
+再次 review 修复退出期间旧重连继续登录、目标断线后迟到桥接端口未关闭、SSH 编辑重发入口被隐藏、退出码先于完整输出返回四处问题。46 项核心/边界测试、5 项界面与跨设备回归、类型检查、桌面构建及 SSR bridge 导入通过。用户暂时没有真实测试条件，真实 Linux 编译与 Ubuntu 实际模型出口仍待验收，不能将隔离夹具当作实机证据。详见 [技术方案](docs/SSH-REMOTE-DEVELOPMENT-DESIGN.md)与[实施及 review 记录](docs/SSH-REMOTE-DEVELOPMENT-STATUS.md)。本次用户授权提交并推送 main，不包含打包、发布或部署。
+
+### 2026-11-04 Linux Build 11 已发布，等待用户逐台点击升级
+
+按用户要求发布包含侧聊原生分支、安全截点和终端同步修复的 Linux Build 11 / 协议 23（源码 `2cd22ef`，pilot revision 16），兼容 Windows v0.3.9 Build 27。旧 Build 10 的存储和原生调用兼容摘要不同，不能直接替换程序；签名归档附带 Build 10→11 的宿主机迁移程序，复用线上已验证的策略保留、冷备份、空闲检查和回退支持脚本，保留现有 Node/CLI。已接入通道自动识别签名包内的迁移，无需重装 agent。42 项 Node 回归通过、1 项 Windows 平台跳过，TypeScript 和 Linux 20 项迁移/策略测试通过；迁移中的 Docker 操作为模拟，未升级生产 Ubuntu。
+
+公网归档全量 hash 与发布签名已验证，精确续期登记匹配，两套续期 timer active。三台节点均在线，接口显示当前 Build 10、可用 Build 11，没有创建安装任务。Windows 两通道索引、控制中心运行代码和既有作业未修改；发布未重启控制中心。详情、归档摘要和备份位置见 [Build 11 发布记录](docs/RELEASE-SERVER-BUILD11.md)。下方“未发布”是此前阶段的历史记录，服务端发布状态以本段为准；客户端没有重发。
+
+### 2026-11-04 main 引入上游 #157，尚未发布客户端/服务端
+
+在 `cdc3a0a` 主分支适配上游 [#157](https://github.com/sun168567/cc-desk-tunnel/pull/157)，来源提交 `3018554ae7c912b26ea5ae620712ff3c22346403`。后台缓存不再因全局终端额度事件推进游标，切回时能补齐遗漏轮次；当前项目有上游未包含的侧边对话订阅，因此事件过滤保留当前主会话和活跃侧边订阅，关闭侧边窗格后的缓存同样不被额度广播推进。终端不再阻止其他会话读取状态；读取终端所属原生会话时沿用 `terminalForNative` 和 `resume:false`，不接管终端历史。保留当前多终端窗口和启动时的状态读取互斥。
+
+遵循 karpathy-guidelines，仅改变三个运行文件及针对性测试；不修改 CLI 二进制、认证、环境清理、hooks/statusLine 或一分钟额度缓存，不新增 Claude 网络端点或绕过限制的机制。已复现上游缓存回归失败，再验证修复。相关 Node 回归 80 项（客户端缓存/侧边会话、原生额度、终端创建/历史/控制、服务端侧边原生分支）和浏览器终端状态测试 1 项通过，typecheck、格式检查及生产构建通过。本轮无视觉布局和样式变更。
+
+本条记录表示源码引入；没有发布新签名包、没有更新管理中心或 Ubuntu。完整生效需后续配套构建客户端和服务端，使用新的发布 Build，不能覆盖现有 Build 10 归档。
+
+随后按用户要求复查：未发现需变更运行代码的阻塞问题。补充验证后台额度广播仍更新全局额度、但不推进后台历史游标；终端并存的状态读取仍保持 mutation 互斥，同会话/跨会话并发读取均被拒绝，失败后释放锁且不终止终端。38 项相关客户端/侧边订阅/终端控制回归及 typecheck 通过。本次复查只补测试，不改变运行行为或 UI，也未推送/部署。
+
+### 2026-10-30 Build 9 升级解包目录冲突已修复并更新线上命令
+
+用户在 ubuntu-cc 执行时报 helper.py:307，根因为升级脚本先创建 program 目录，而固定校验解包 helper 要求目标不存在。发生在清理/切换前。已移除提前 mkdir，测试改用真实 helper.unpack：在 Linux 重现旧脚本的 `Stage already exists`，确认新脚本及实际签名 Build 9 包解包通过，11 项升级回归通过。异常输出保留受控安装器诊断，JSON/子进程等异常内容继续脱敏。
+
+管理中心兼容源码 `4d49965cf50b8d479cf7ebeb36b53acf814e5e1c` 已上线，仅运行文件 scripts/upgrade-message-review.py 改变；备份 `/var/backups/cc-update-service/linux-build9-center-20261030T150801Z`，旧运行目录 `/opt/cc-update-service.previous-linux-build9-unpack-fix`。账号、权限、审核策略和三份发布索引保持；Linux 仍为原 Build 9/原摘要，不覆盖发布包。线上完整命令解码验证通过，内嵌 helper 实际解包同一包通过，第一台 health 正常。用户须刷新管理中心重新复制基础镜像升级命令，旧复制内容不会自动更新。见 [修复证据](docs/evidence/linux-build9-unpack-fix-2026-10-30.json)。
+
+### 2026-10-30 Linux Build 9 与三节点基础镜像升级命令已发布
+
+Linux 0.3.7 / Build 9 / protocol 22，源码 `4802d83afb8d0345f156bd8d1c8a2cb1dbd53033`，1659909 字节，SHA256 `e74572f2934f5545140899b621fdbae5b9ab9313cbed750460123a64522c8e3a`。新消息审核修复、对应 Web、单事件策略模板与恢复属主修复均进入签名包。Linux pilot revision 13，发布时有效至 `2026-11-13T14:57:06.294Z`；精确 expectedRelease 登记和强制/systemd 续签通过。Windows Build 24 pilot/stable 索引未变。详见 [发布证据](docs/evidence/linux-build9-production-2026-10-30.json)。
+
+管理中心从真实生产兼容基线制作源码 `0b88c7bfeba19428697a8c0ea75d8158bb941f55`，仅变更 server-distribution.ts、http.ts、server-download.js 并新增 upgrade-message-review.py，保留现有 UI、跨电脑登录及其他线上修复。冷备份 `/var/backups/cc-update-service/linux-build9-center-20261030T145649Z`；旧程序目录 `/opt/cc-update-service.previous-linux-build9`。用户/权限与审核策略一致，公开 Windows/旧 Linux 索引在中心切换时保持，随后只发布 Linux 9。源码 bundle、包、签名与运维证据保存在 VPS `/root/.cc-update-admin/linux-build9/`，发布备份 `/var/backups/cc-update-service/linux-build9-publication-2026-10-30T14-57-05.455Z`。
+
+页面“清理并升级基础镜像（ubuntu-cc / 02 / 03）”提供固定 Build 9/摘要的完整命令，内嵌新升级脚本、原有切换/回滚和固定哈希 helper；公网脚本/完整下载、命令内嵌文件与实际浏览器 63202 字节精确复制通过。脚本校验旧 Build 4/5/8 清单、CLI/SDK/锁文件、容器和挂载，离线预检后检查无运行/等待任务，自动断开空闲客户端、冷备份，再同时切换镜像与独立策略 bind；原策略不修改，回滚仍使用原策略。支持重复执行同版本的验证返回。用户明确本轮不升级 04、05、06，脚本拒绝这些主机。
+
+真实官方 CLI 在 `--network none`、只读、无账号挂载的容器中经 PTY 验证：新消息拒绝先于模拟模型，下一条新消息保持原文；SDK 正常完成且无重复审核，0 真实 provider/JEV 请求。最终归档在实际 Linux 镜像中的 readiness/health/SIGTERM/零 CLI 启动验证通过。新升级 Python 11 项、既有切换 16 项、配置恢复 19 项在 Linux 隔离环境通过；发布/命令/浏览器、类型与仓库检查通过。尚未代用户执行三台 Ubuntu 的生产安装，02 原故障会话仍待用户执行新命令并验收。操作说明见 [Build 9 升级指南](docs/LINUX-BUILD9-MESSAGE-REVIEW-UPGRADE.md)。
+
+### 2026-10-30 审核最终范围：只限聊天/终端新消息（本地源码，未部署）
+
+用户明确只审核每次聊天或终端中新发送的消息原文，排除历史、附加上下文、问答回复、权限补充、压缩说明和全局说明修改。已按此覆盖此前流式候选：聊天端仅 `message.send` 调用审核；SDK 使用实际 `sdk-ts` 入口，不重复审核 CC 已处理的输入或内部继续文本；交互终端使用实际 `cli` 入口，仅审核 `UserPromptSubmit.prompt`。不再读取 transcript_path，也不需要游标/历史缓存或累计 64 KiB 限制。64 KiB 只限制当前一条消息，拒绝/错误/超时继续阻止这条消息发送。范围外独立事件返回成功，不改变 Claude 原生工具审批。
+
+单事件安装模板和配置器已同步；新程序拒绝带有旧 CC 三事件注册的策略，避免大工具输出继续进入旧钩子调用。部署必须在空闲维护窗口把新镜像与策略一起迁移并保留成对回滚，不能直接普通在线更新或先在旧运行程序上单独换策略。本次提交记录源码/模板，尚未打包或部署；旧节点行为未变。最终说明见 [消息审核范围与上线说明](docs/NATIVE-HOOK-LARGE-HISTORY-FIX.md)。
+
+本机 83 项 Node 回归通过，配置器 14 项中 11 通过/3 项 POSIX 跳过；Linux 临时目录核心/部署 14/14、配置器 14/14 通过，目录已清理、无生产配置/账号加载、无真实 Claude/JEV 调用。最后补充带配置参数的旧命令迁移拒绝，本机部署回归 7/7 通过。TypeScript 与格式检查通过。
+
+最终范围 review 再修复两项遗漏：明确 `source=user` 不能被继承的 SDK/代理标记跳过，未知来源仍拒绝；配置器从登记的原挂载目录合并旧策略，只替换 CC 自己的注册，保留独立/混合组钩子和其他设置，缺失外部策略或全局禁用时停止，备份/原子写入/失败回滚/幂等已验证。启动检查与配置器一致，拒绝全部非消息事件中的 CC 注册。最终本机 84 项 Node 通过；配置器 17 项中 14 通过/3 POSIX 跳过；Linux 临时目录核心/部署 15/15、配置器 17/17 通过，临时目录已清理，无生产配置/账号加载或真实模型调用。TypeScript、格式、diff 检查通过。尚未部署，Git 提交与推送状态以仓库记录为准。
+
+集成复核又发现 `manage.sh restore` 全目录 chown 会把管理员策略变为 UID 1000，使新配置器恢复失败。已复现并修复：解压前要求 root，恢复属主时保留 `.managed` 的 root 归属，仅应用数据设为 UID 1000，且不跟随链接改动外部文件。当前配置/恢复回归 Linux 19/19，本机 14 通过/5 平台跳过，Bash 语法与 diff 检查通过；应用源码未变，沿用前述 84 项回归。实际官方 CLI/SDK 联调未补完：旧实验 CLI 二进制与固定 Ubuntu 镜像已清理，不把模拟测试冒充实际联调；发布前需恢复隔离测试资源、准备新镜像/策略成对切换入口，再用 02 原会话验收。未改动生产服务或调用真实模型。
+
+### 2026-10-30 原生审核钩子大历史修复（历史候选，已由上方新消息方案替代）
+
+用户回传 02 旧会话完整读取报 `Native transcript limit`，新会话 28 KB 完整读取通过。已复现 16 MiB 整文件上限导致大工具输出后会话持续拒绝，改为固定快照逐行扫描、共享原有用户文本提取逻辑，并保留 64 KiB 送审上限、拒绝/不可用时阻止提交及权限反馈审核。部分末行/工具批次只作有界本地等待；读取与送审共享九秒预算。新增脱敏阶段错误码，方便缺日志时定位。32 项针对性测试通过，无真实 Claude/JEV 调用。详见 [修复与上线说明](docs/NATIVE-HOOK-LARGE-HISTORY-FIX.md)。
+
+本轮定向 review 又复现并修复并发追加、截短、替换导致返回旧历史的竞态；读取后核对字节数、文件身份与修改状态，变更只作有界本地重读，曾存在的历史消失时不降级为空历史。补齐 UTF-8 跨块和 64 KiB 精确边界。最终本机 38 项中 36 通过、2 项 Windows 平台跳过；在 VPS 临时隔离目录完成 Linux 钩子 17/17（包含替换/删除场景），192 MiB V8 堆上限，无生产配置/账号挂载、无模型请求，临时目录已清理。TypeScript、格式与 diff 检查通过。
+
+尚未提交、打包或部署。该 hook 位于兼容性保护清单且受管策略固定调用 `/app`，需新基础镜像及对应签名 Build；普通业务在线更新不能证明本修复生效。后续先核实 02 当前镜像/挂载，离线预检、空闲切换、保留回滚，再由用户在原旧会话正常发送验收。新会话是否仍报错以及配置脚本中的 `ENOENT` 缺失路径未确认，不据旧会话结论一并关闭。
+
+### 2026-10-30 Windows Build 24 与跨电脑登录确认已发布
+
+Windows 0.3.7 / Build 24 / protocol 22 已替换 VPS pilot 下载；制品源码为干净提交 `4d55cd20b9f13d3d21d9799766f5a4c28884ab11`，201199466 字节，SHA256 `465b43e8570c8f16a813e6d9af1492c68781ae5a7f0a9c1d5d0c892254a50726`。包含跨电脑登录确认、消息发送下拉框样式统一、调用日志标题对齐、上游 Windows SSH 临时目录权限修复，并保留 Build 23 界面功能。实际打包 EXE 隔离启动通过，包内身份和 26 个模块逐字节核对通过。
+
+管理中心从当前生产基线 `b1340a1` 制作兼容源码 `baa6fa5ffca0f8b5a06e3103f04bca62737f4402`，只改变运行文件 `apps/update-service/src/desktop-access.ts`；保留管理页面、基础镜像升级命令和其他线上修复。14 项鉴权/HTTP/WebSocket 配套测试通过，配置、已有账号/权限/会话及发布索引保持；旧运行目录 `/opt/cc-update-service.previous-build24-login`，数据库备份 `/var/backups/cc-update-service/build24-login-20261030T065438Z`。两份精确源码 bundle 保存于 VPS `/root/.cc-update-admin/release-build24/`。Ubuntu Build 8 / protocol 22 不变，未操作节点或调用 Claude。
+
+pilot revision 28，发布时有效至 `2026-11-02T06:56:14.763Z`，自动续期登记为 Build 24 的精确源码和公开安装包，强制续签及 systemd 检查通过；stable 和 Linux 索引保持。公网完整下载/hash 校验通过，本机另行验签并核对 HEAD、首/中/尾三个 Range。随后删除旧 Build 23 公开安装包和 Build 24 临时上传副本，共 402397211 字节（约 383.76 MiB）；VPS 仅保留一个最新公开 Windows 安装包，旧 Build 23 下载返回 404。清理后可用空间 7998820352 字节（约 7.45 GiB）。未删除历史构建身份、审计、配置或源码记录。
+
+本机安装包：`artifacts/windows/CC-Desk-Tunnel-Setup-0.3.7-x64.exe`；带 Build 名称副本：`.local/release-20261030-build24/CC-SPACE-Setup-0.3.7-Build24.exe`。用户本机安装和两台真实电脑的人工切换验收仍待正常使用反馈；Windows SSH 回归测试使用管理员权限，不能宣称已覆盖所有普通用户环境。详细脱敏证据见 [Build 24 发布记录](docs/evidence/windows-build24-production-2026-10-30.json)。
+
+### 2026-10-30 基础镜像升级自动断开客户端（已部署）
+
+用户确认 02 已 UPGRADE_OK，备份 `/var/lib/cc-space-terminal-upgrade/backup-20261029T155758Z-02db46ca`；03 在 frozen_idle 的 TCP 检查处停止，尚未完成升级。按用户要求，管理中心完整命令新增 `--disconnect-clients`：清理构建缓存、校验/预检后，暂停原容器检查 Claude 进程及只读会话 activeRun；无任务才隔离网络、停止原服务并关闭客户端连接，随后冷备份/升级。网络隔离阻止切换期间重连；连接本身不再阻止此显式模式。运行或等待中的任务、缺失会话库仍拒绝；默认非强制路径及离线回滚保留原约束。切换失败沿用恢复原容器/网络/重启策略流程。
+
+16 项 Linux 隔离测试通过（Docker 模拟，新增空闲连接切换、运行任务/缺失状态拒绝、断网失败与备份失败进入回滚；不代表真实 03 安装已验证），发布/命令回归通过，浏览器复制命令验证通过，typecheck 通过。VPS 实际兼容中心源码 `b1340a1ffb630c27d7bce75a5a698204410c56f4`，备份 `/var/backups/cc-update-service/build22-compatible-20261029T161509Z`。线上命令参数及内嵌脚本逐字验证，配置/登录/用户权限/节点/Build22与8索引/续期定时器保持。仅部署管理中心，没有操作 Ubuntu 节点或调用模型。
+
+下一步：用户刷新管理中心重新复制「清理并升级基础镜像（ubuntu-cc / 02 / 03）」到 03 执行，先结束运行/等待任务，无需退出客户端；01、02 已成功，无需重复。旧复制命令内嵌旧脚本，不能继续使用。
+
+### 2026-10-29 根据用户现场检查适配 02 / 03 基础镜像升级
+
+用户已提供两台实际配置，基础描述符均 `fc8afc4c71fe556135fc356aca8186a104943afe021fdc27bd4f43d41a86cad6`（Build 5 / protocol 22 / source `12b2da3`），Node v24.21.0、CLI hash、SDK 0.3.286 与锁文件匹配。分别固定 02 容器 `cc-desk-tunnel-96ccb91a-proxy-1`、镜像 `cb3822893e9da5bd3c21c68810309b9238c263e2a227c5207d875b12f5484697` 和 03 容器 `cc-desk-tunnel-4b35c593-proxy-1`、镜像 `ae2d8b77a5dde6bced39f93ffcbe281def8f117c9b262b69580a0cd4faa40aca`，策略源目录为各自 `/var/lib/cc-node-rebuild-<hostname>/policy`。
+
+统一命令现支持 01/02/03 主机识别，02/03 额外核对已确认的原镜像 ID 和基础描述符；保持固定 helper 的运行约束，仅为明确核实的策略源做副本归一化验证，实际容器配置和挂载不改写。冷备份生成的独立 rollback.py 固化当前 NODE 和 ROOT，离线回滚会重新选择正确容器；未知设备、镜像变化、策略源变化或可写策略挂载拒绝。15 项 Linux 隔离测试通过（Docker 模拟，含02/03流程、真实validator、生成回滚脚本加载/路由、忙碌时解除暂停但不切换），14 项发布/命令/UI 回归通过、1 Linux-only skipped，类型检查通过。真实02/03未执行安装。
+
+生产兼容中心源码 `d7d983900ab4d5aab1a323582c80ace8e21307e3` 已部署，备份 `/var/backups/cc-update-service/build22-compatible-20261029T155043Z`；仅两份升级脚本及 server-download.js 改变。在线完整命令双脚本和 --cleanup/--install 参数已验证，原配置/登录/权限/节点/Build22与8索引/续期登记保持。用户刷新管理中心复制「清理并升级基础镜像（ubuntu-cc / 02 / 03）」，先02成功后03；结束任务并完全退出客户端，等待 UPGRADE_OK，成功后无需再次普通升级。第一台已成功，不重跑。
+
+### 2026-10-29 第一台升级成功；管理中心增加清理后升级完整命令
+
+用户已反馈第一台 `ubuntu-cc` 输出 `UPGRADE_OK: Linux Build 8 / protocol 22`，冷备份 `/var/lib/cc-space-terminal-upgrade/backup-20261029T150004Z-294e50da`，原容器/镜像保留；无需再执行普通升级，客户端聊天/终端体验待用户测试。02 仍需适配、03 待检查，不能误用第一台脚本。
+
+按用户要求，管理中心现提供「清理并升级基础镜像（仅 ubuntu-cc）」完整命令，内嵌 `--cleanup --install`：校验已知基线和签名后仅清理未使用的 Docker 构建缓存，构建前检查备份需求并留准备空间，离线预检后再次检查备份空间，再进入原冷备份/切换/回滚流程。不会自动删除安装介质、容器、正式镜像、账号数据或回滚备份；不足时停止。已更新页面说明为实际目标 Build，并标明已升级节点无需执行。Linux 模拟回归 9 项通过，发布/命令回归及 UI 14 passed / 1 Linux-only skipped，补充浏览器复制/范围/版本文案验证通过，类型检查通过。实际兼容中心源码 `828f34cb6f62dce87565ca4c2b0f908a2a8b6a53`，备份 `/var/backups/cc-update-service/build22-compatible-20261029T151221Z`；线上 3 个运行文件改变，原配置/登录/节点/索引/续期登记保留，完整命令参数和内嵌脚本验证通过。仅更新管理中心，未代用户执行新清理/升级。
+
+### 2026-10-29 第一台重试构建重新耗尽备份空间
+
+用户清理构建缓存后可用 3.7 GiB，重试构建/预检后降至 1.28 GiB，低于备份要求 2.50 GiB，无备份记录，仍未切换容器。脚本新增复用候选镜像：核对父镜像层、签名描述符及其全部文件、入口脚本和固定 CLI hash，固定不可变镜像 ID，每次重跑离线预检；校验失败不安装。Linux 模拟 Docker 回归 7 项通过，覆盖无镜像构建、重试跳过构建、基础层错误和候选校验失败拒绝安装。另已加入不含异常消息/环境的错误文件名及行号。VPS 兼容中心源码 `93fe00180b40cfe004e0c8999d2af7ea615ecbf1`，备份 `/var/backups/cc-update-service/build22-compatible-20261029T143415Z`，在线命令内嵌最新脚本验证通过，配置/登录/索引/续期登记不变。下一步用户仅清理 Docker 构建缓存（保留 Build 8 镜像），确认空间后刷新管理中心复制新基础升级命令；真实 Ubuntu 安装未完成，不能宣称已验收。
+
+### 2026-10-29 第一台基础镜像升级 TypeError 修复
+
+用户执行基础镜像升级在切换前报 TypeError；只读输出显示原容器仍 running/unpaused、启动时间未变，配置/运行环境检查通过，无 backup 记录，存在 Build 8 预检目录。根因是 `upgrade-terminal-base.py` 向 `offline_preflight` 传文件对象，而 helper 的 `command` 会再次调用 open，要求路径。已改传日志 Path；测试改为实际 helper 预检函数，并修正旧夹具写死 Build 7，Linux 隔离测试复现原 TypeError、修复后 4 项通过（Docker 调用模拟，不代表真实镜像安装验收）。兼容中心实际部署源码 `76e286fba505b2dce157a400e14ee7087d9febe3`，仅升级脚本一个运行文件改变；验证管理中心新生成命令包含修复后脚本，登录/权限/节点/发布索引和续期登记保留。备份 `/var/backups/cc-update-service/build22-compatible-20261029T141720Z`。用户须刷新管理中心重新复制命令，旧复制命令内嵌旧脚本，不能继续使用。未操作真实 Ubuntu 节点；02 已确认 Build 6→8 返回 manual-image-upgrade，03 待检查，第一台专用脚本仍不能用于 02/03。
+
+### 2026-10-29 修复管理中心界面被旧 main 覆盖
+
+新版界面及用户启停代码此前仅在 `codex/email-login`，未进入 main，后续 main 部署覆盖了界面；Build 22 兼容部署沿用旧基线，未恢复新版。现已将原始 `c9ad2fc` / `ee6d3fe` 相关代码补入 main（`fba44d6`），并合并兼容部署提交（`4ed3d44`）。VPS 实际运行 `7a565a3728f818a2be937cf265c508754c4ca032`，仅 7 个运行文件改变，11 个页面/静态资源线上验证通过，登录/权限/节点/Build 22 与 Build 8 索引/续期登记保持正常。备份 `/var/backups/cc-update-service/build22-compatible-20261029T104803Z`。两项浏览器流程及升级指令回归通过（9 passed，1 Linux-only skipped），类型检查通过。旧全量中心暂存包标记作废，未来从修复后的 main 重打，不能再部署含旧界面的 `6e28782` 全量中心包。详见 [管理中心布局说明](docs/MANAGEMENT-CENTER-REDESIGN.md)。
+
+### 2026-10-29 Build 22 / Build 8 发布
+
+用户授权提交、推送全部未提交改动，打包并替换 VPS 客户端下载入口，同时完善服务端升级指令。版本仍为 0.3.7 / 协议 22，pilot。功能提交 `6e28782` 与兼容中心分支已合并并推送 main（合并提交 `e89b931`，文件树相同）。Windows Build 22 / Linux Build 8 已发布，公开下载 hash、索引签名和精确续期登记验证通过；旧 Build 21 / Build 7 制品保留，stable 不变。生产中心实际运行 `84af18e` 兼容版本，仅更新 Build 8 升级指令；完整中心包待真实节点升级后切换。用户安装和 Ubuntu 节点升级尚未执行。校验和、测试、备份及部署顺序见 [Build 22 发布记录](docs/RELEASE-BUILD-22.md)，后续不重复审查已验收部分。
+
+### 2026-10-29 终端体验发布准备：Windows Build 21 / Linux Build 7
+
+用户已授权提交、推送、合并 main、打包并发布到 VPS，先测试已安装客户端接收更新，再测试客户端升级服务端。六项终端体验和两轮 review 已完成，详见 [验收记录](docs/TERMINAL-EXPERIENCE-IMPLEMENTATION-STATUS.md)。新版本继续 0.3.7 / 协议 22，pilot；不覆盖已发布 Build 20/6 的制品。
+
+Build 7 增加终端历史表及协议命令，旧基础镜像的兼容性摘要不同，普通在线更新会返回 manual-image-upgrade。用户已选择先准备基础镜像升级命令，再安排客户端升级测试。`scripts/upgrade-terminal-base.py` 默认只离线准备和检查，`--install` 才执行有完整冷备份及离线回退的切换；只支持已确认的 ubuntu-cc Build 4 基础镜像（其受管子程序可能为 Build 5/6），遇到未知镜像拒绝。CLI/SDK 与依赖沿用已核实的镜像，不重新登录或调用模型。真实节点尚未执行；发布完成后另记制品和索引证据。
+
+
+### 2026-10-29 多标签终端源码实施
+
+已按确认计划实现多标签工作区与专用创建/状态协议，核心测试、兼容 schema、类型检查和生产构建通过。详见 [实施记录与验收证据](docs/MULTI-TERMINAL-IMPLEMENTATION-STATUS.md)。集合稳定挂载在主渲染器页面分支之外，App 保留入口与活跃摘要；设置/任务页面不会卸载终端。终端启动已去除 completeOnboarding 依赖，但全项目 SDK/订阅等 P0 未决事项没有自动关闭。未打正式包、未部署或操作真实节点；后续按记录处理发布门槛和单节点试点，不重复审查已验收的无关旧模块。
+
+### 当前用户指令（2026-10-29）：提交并推送主分支
+
+用户要求把当前工作提交并推送到 main。本轮合并终端状态协调、正常退出提示、按钮样式及多标签实施方案；多标签产品功能仍未实现。本次授权为 Git 提交/推送，不包含生成安装包、更新 VPS 或真实节点。远端既有 Build 20 发布记录保留如下，不能把本次合并后的源码称为已发布客户端。
+
+合并 origin/main 既有三项后续提交，仅交接文档冲突，保留双方信息并区分本次 Git 授权与历史制品发布。合并后 TypeScript、28 项客户端/服务端终端测试、5 项浏览器回归通过；仓库索引/秘密忽略/文档链接检查通过。主目录另有 12 份未跟踪的旧部署资料、证据及固定 CLI 恢复脚本，本轮一并归档，旧指南标注历史范围，脚本仅检查语法未执行；完整本机安装目录 `CC Desk Tunnel/` 不入库，加入忽略规则。未运行真实 Claude 或更改生产。
+
+### 2026-10-29 多标签终端实施方案（仅文档，尚未实现）
+
+方案定向 review 已直接修订正文：补齐 `session.create` 固定当前设备并清空订阅的实际副作用，定义独立 `terminal.session.create` 契约（来源校验、不改订阅、创建/权限原子保存）；补充 `terminal.state` 只读结果确认与明确终端工作区能力声明。区分有界响应缓存与持久化创建幂等，明确新状态查询使用新 requestId，避免缓存旧失败/旧状态和超时重复启动；补充丢失输出不补猜 ack、不为单个未知标签断开其他标签。原生 PTY 可能承载官方认证字节，不宣称完全不经手；工程决策与已确认官方禁令分开，官方 CLI 自己读取合法凭据不受阻。C1—C14 对应条目已加强，补充不可信输出、未知退出码、共享 nativeRoot 和首次官方引导回归要求。只检查文档链接、编号、编码与 diff；未将设计接口标为已实现，未运行产品或发布。
+
+用户暂定多标签终端 UI，要求先形成可执行方案，并重点遵守 Anthropic/Claude 规则。新增 [多标签终端实施方案与合规边界](docs/MULTI-TERMINAL-IMPLEMENTATION-PLAN.md)，以 28325d3 为源码检查基线，覆盖独立会话、后台输出确认、错误归属、创建失败/关闭/断线、窗口最小权限、容量、状态读取/升级、C1—C14 验收、分阶段发布与回滚。当前原型在本聊天可写 visualization 目录的 cc-terminal-refined.html，非产品实现。
+
+2026-10-29 再次读取官方法律/认证/并行工作流与条款页面；Usage Policy 和 Supported Regions 页面均标 2026-11-12 生效，不能据此声称未来具体条款今天已经生效。P0 必须解决实际使用与授权/地区/用途资格、既有 SDK/订阅组合未决项，以及 openTerminal→completeOnboarding 读取 accessToken 存在并修改引导状态的旧依赖；不能因只是改 UI 放行。本人原生 CLI 与自定义 SDK 集成分开评估，不自动转 API 计费、不代联系 Anthropic，不因本方案自动批准真实账号验证或发布。
+
+本轮只新增方案和交接说明；已检查本地文档链接及 diff 格式，未修改程序/依赖，未启动真实 CLI 或调用 provider，未操作生产节点、打包或发布。后续先按方案 P0 核对，隔离模拟开发可先进行，真实接入/生产启用必须解决相应未决项。
+
+### 2026-10-29 独立终端提示按钮样式（源码，待打包）
+
+本次样式定向 review 未发现新增问题，无需补改产品代码。临时浏览器验证浅/深色 × 12/20px 支持字号 × 320/920px 窗口共 8 种组合，按钮可见、无横向溢出或文字截断；最大字号窄窗口截图已查看，键盘焦点轮廓清晰，Enter 显示和 Tab/Space 关闭正常且只发送一次 terminal.close。复用此前已通过的 TypeScript 检查，不重复无关测试。截图 .local/terminal-notice-review-{light,dark}.png；未打包/发布。
+
+“显示终端”“关闭终端”由浏览器默认 button 改为客户端现有 Button，小尺寸细边框显示按钮及 ghost 关闭按钮，使用已有终端/X 图标；提示文字采用 caption 字号，减少垂直留白。操作按钮作为一组换行，避免窄窗口拆散。临时浏览器验证浅/深色、920/320px 无横向溢出，点击显示、Tab 焦点及 Enter 关闭通过；已查看截图，TypeScript 检查通过。未修改终端协议或登录调用，未打包/发布。预览保存在 .local/terminal-notice-{light,dark}-{920,320}.png。
+
+### 2026-10-29 终端关闭定向 review（源码，待打包）
+
+补充浏览器回归复现：关闭请求失败后，进程随后自行退出时，旧的关闭失败红字仍残留。匹配 terminal.closed 时现在同步清理本地错误并显示中性结束状态；终端仍活跃时的真实关闭失败继续显示，允许输入和重试。
+
+3 项浏览器回归通过，覆盖关闭中停止输入/ack/resize、关闭请求未完成时进程先退出且请求随后失败、真实关闭失败后继续输入并重试、后续自然退出清除旧错误及结束后关闭不重复请求。TypeScript 与 git diff --check 通过；仅使用合成终端消息，未调用真实 Claude，未打包/发布或安装。
+
+### 2026-10-29 终端正常结束后的迟到控制错误（源码，待打包）
+
+用户要求关闭终端后不要显示“原生终端已结束或属于另一连接”红字。定位为服务端对迟到的 terminal.input/resize/ack 返回 connection.error/terminal_inactive，被客户端写入全局 error。客户端记录当前终端 ID 及 ended 生命周期，仅当已收到该终端 terminal.closed 且未再打开新终端时忽略此码；其他错误、活跃终端的 terminal_inactive 保持可见，断开连接时清除生命周期。原生终端关闭发起后停止输入/resize/ack，取消待执行计时器；close 请求期间进程先退出时安静结束，真正关闭失败仍显示错误并恢复确认/尺寸发送。
+
+新增客户端回归先复现旧逻辑红字，再验证正常结束安静、其他连接错误和新活跃终端所有权错误仍可见。client.test 22 项通过，最后扩展的针对性测试通过；独立终端窗口及状态读取浏览器回归 2 项通过，TypeScript 检查通过。未操作实际节点或调用真实 Claude，未打包/发布。
+
+### 2026-10-29 终端/状态读取定向 review 补充（源码，待打包）
+
+复查 e84ee7a 发现可复现遗漏：读取 A 期间切换 B，自动读取 effect 会先把 B 标为已读取，再因 refreshing 返回，导致 B 丢失自动读取。已将 refreshing 纳入自动读取前置条件及 effect 依赖，A 结束后继续 B；增加同步 statusReading ref 防止同一次 React 更新中的重复读取，顶栏和菜单处理函数也检查该 ref。finally 在成功/失败/请求拒绝时释放本地读取状态。
+
+浏览器回归扩展至三个合成会话，先在上一版复现 A→B 后缺少第二次读取，再验证修复后读取按序进行、第二次读取返回错误后错误可见且终端入口恢复、从未选择会话直接开终端不触发读取、关闭终端后恢复延后读取。扩展回归与 TypeScript 检查均通过；未调用真实 CLI/Claude/JEV，未再次跑与修改无关的旧逻辑测试。服务端 mutations 保护保留，本修复不承诺其他客户端或实际会话修改占用时强制打开终端。代码仍待打包及真实安装验收。
+
+### 2026-10-29 原生终端与状态读取冲突修复（源码，待打包）
+
+基于 VPS 已发布 Windows Build 20 源码 bd5c58c 创建分支 codex/terminal-status-coordination，本地位置 D:/cc-desk-tunnel/.local/terminal-status-fix。修复 App 后台 session.status 使用服务端 mutations 锁时，终端入口仍然可点造成 session_busy：顶栏与会话菜单在 refreshing 时禁用并显示“正在读取会话状态，完成后可打开终端”；入口处理也检查 refreshing。terminalSessionId 已设置或终端打开期间跳过自动/手动状态读取，避免从其他会话直接打开终端时同时启动状态读取。关闭终端后恢复尚未执行的自动读取。
+
+新增模拟 WebSocket 浏览器回归，延迟状态读取响应先复现旧版终端入口错误启用，再验证顶栏/菜单禁用、读取结束可用、从未选中过的会话直接打开终端不额外读取、关闭后恢复自动读取。只使用合成协议帧，无真实 Claude/额度/JEV 调用。TypeScript 检查通过。尚未生成安装包或部署，不把现有客户端称为已修复。既有 Build 20 的 VPS 制品不覆盖。
+
+### 历史发布记录（2026-10-29）：提交主分支并发布已审核的 Build 20
+
+用户已明确授权将当前改动提交并推送到 GitHub 主分支，并用新的 Windows 安装包替换 VPS 当前下载版本。终端多开仅完成可行性讨论，本轮不实现。此前的暂停打包指令已被后续 Build 19/20 交付及本次发布授权取代；下面的历史记录保留原始时间状态。
+
+本轮安装包为 `CC-SPACE-Setup-0.3.7-Build20.exe`，Windows Build 20 / 0.3.7 / 协议 22，制品源码 `bd5c58c4d2497717dc9771afdd4c52916066c349`，201168400 字节，SHA256 `98d231c3eb7634f84b08fa1e25f5653676698310c099d360a0a99b313cba184c`。额外测试提交 `9ccbe7f` 不改变运行代码；后续主分支中的 Linux 修复、管理中心升级命令和发布文档不改变这个已验证 Windows 制品的源码身份。精确制品源码 bundle 随安装包上传 VPS；签名及自动续期使用该干净提交，不把合并后的主分支冒充为安装包来源。
+
+独立终端支持移动、缩放、最大化和最小化，帮助旁新增终端入口。Review 已修复主窗口事件路由、隐藏主窗口后的 PTY 尺寸更新、窄窗口按钮隐藏和子窗口 opener 反向引用。终端与主界面共用渲染进程，不提供崩溃隔离；桌面运行时仅实测 Windows。验收使用合成终端和账号，不启动真实 Claude/JEV。
+
+已上线 Linux Build 6 / 协议 22 的终端按键修复，以及管理中心识别本机唯一 CC Compose 容器的升级指令，同步整合进主分支。Linux 精确制品源码仍为 `f52c765bf746251924bd3efc4fb39a47b5ce1296`，归档 SHA256 `4be6ae3cb034e5fb62360cf25a7b4f8d1486fb23e0318dcc2da6c33c5c461f84`；证据见 `docs/evidence/native-terminal-build6-2026-10-29.json`。不自动升级任何 Ubuntu 节点。
+
+2026-10-29 已完成发布：GitHub main 已包含终端窗口及 Linux/管理中心修复；Windows pilot 由 Build 18 升至 Build 20，首次发布 revision 21，真实续期验收后 revision 22。VPS 与本机均完整下载 201168400 字节并核对 SHA256，本机独立验签通过。新续期登记指向干净制品源码和精确 EXE，两套 timer 均 active，候选数为 0；Linux Build 6、其续期配置和 stable 索引逐字节保持。旧 Windows Build 9/18 已从公开目录转移到本次受保护备份，公开目录只保留 Build 20。备份为 `/var/backups/cc-update-service/windows-build20-20261028T184732Z`。66 项相关回归、4 项终端界面测试、TypeScript、格式及实际打包程序路由复测通过。发布证据见 `docs/evidence/windows-client-build20-2026-10-29.json`；实际索引 revision 和有效期仍以 VPS 实时状态为准。
+
+2026-10-28 邮箱远端升级复查：修复检查到当前版本/暂不安装后缺少重连入口、安装响应损坏时停止查询、协议不匹配后无法从登录页进入升级三个问题；补齐旧管理中心 404 提示，将邮箱安装超时调整为 180 秒、检查/查询为 50 秒，Nginx 对应 190 秒。30 项主进程/授权/TLS 测试、26 项更新界面测试、TypeScript 和代码格式检查通过；旧服务端升级测试已更新为当前菜单入口，包含浅深色窄屏与键盘操作。仍未打包、部署或操作真实远端升级。
+
+2026-10-28 邮箱远端升级已在源码接入：设置“检查更新”弹窗增加服务端入口，断开业务连接时保留邮箱会话，提交 workspace ID 与精确确认，管理中心按授权代转固定远端接口；服务凭据保留在 VPS。成功或回滚后可直接重新连接。29 项主进程/授权/真实 TLS 代理测试、10 项界面测试通过；还需同时发布管理中心和客户端，并应用新增 Nginx 升级路由超时。没有打包、部署或向真实 Ubuntu 提交升级。细节见 [邮箱远端升级](docs/EMAIL-SERVER-UPDATES.md)。
+
+2026-10-28 后续源码修改：关于页已移除更新卡片、运行方式和项目主页按钮，只保留版本信息与排查入口；帮助页相关介绍已删除。定制更新现接到设置按钮上方的蓝色下载图标，按签名索引中的 Build 识别新版，弹窗显示版本、发布说明、下载进度、取消与重试。下载后须断开连接才能安装；断开后登录页保留更新入口。协议不匹配仅提示管理中心配套升级，不开放安装。复用现有 VPS 更新后台，未更改签名校验、发布索引或服务器。5 项更新界面测试（含深色窄屏）、28 项更新后台测试及 TypeScript 检查通过。上述修改尚未打包或发布，配置中 Build 18 仍仅为预留版本。
+
+更新入口复查：已用失败测试复现并修复迟到的初始状态覆盖新通知、另一窗口更新成功后本地错误提示残留；补充初始读取失败时的重试入口，取消操作优先显示后台友好提示。协议变更文案明确要求管理员安排客户端与服务端配套升级。9 项更新界面测试和 TypeScript 检查通过，覆盖正式邮箱登录后断开、关闭再打开更新弹窗、安装前不触发自动重连；仍仅修改源码，未打包、未发布。
+
+本轮已在源码提交 `013ac93` 删除账号页“账号由服务端管理，登录、退出和换号请在 Ubuntu 终端操作。编号与邮箱的对应关系可在 CC 控制中心查看。”说明，TypeScript 与 593 个索引文件检查通过。Build 18 打包进程及其子进程已按要求停止，未完成、未验证、未交付，不要把中间产物作为新安装包。上一次完整交付仍为 Build 17。配置中的 Build 18 为待打包版本。
+
+### 2026-10-28 登录页精简：Windows Build 17
+
+按用户截图要求删除“你的专属工作空间”和“使用邮箱登录，继续你的创作与开发。”两句，标题居中，收紧卡片宽度和留白；工作空间选择页仍显示当前邮箱。最新安装包为 Build 17 / protocol 22，源码 `02f5b1af8b5d53f7eccaa04f78a996a832e4b964`，位于 `D:\cc-desk-tunnel\artifacts\cc-space-email-only-build17\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164371 字节，SHA256 `0f58da34a78c436bd59bfbab99cc477a5451523406f12f51c1af0d0e8660ff94`。
+
+9 项邮箱界面测试、深浅色/窄屏/大字号截图检查、TypeScript、仓库检查和实际打包程序启动通过；包内身份、3 个主进程模块及 71 个前端文件核对一致。未改变管理中心或公开更新索引；Ubuntu 已由用户确认升级为 Build 5，邮箱连接成功与仅邮箱模式仍待反馈。见[本轮证据](docs/evidence/email-login-layout-build17-2026-10-28.json)。
+
+### 2026-10-28 现场已升级 Ubuntu：Linux Build 5 / protocol 22
+
+用户报告邮箱连接报“服务凭据不正确”。本机只读核对：已安装 Windows Build 16 / protocol 22，有保存的邮箱会话，没有旧手动连接配置；连接已到达节点但授权被拒绝。用户在 Ubuntu 返回诊断 `build=4, protocol=21, configuredLoginMode=both, monitorConfigured=true`，确认旧服务端不识别邮箱票据。
+
+核对固定升级脚本、在线升级 helper 摘要及签名 Linux 索引后，用户执行升级并返回 `SUCCESS: Linux Build 5 / protocol 22 is installed and committed.`，因此 Ubuntu Build 5 现场升级已确认，无需再次升级或重建 Docker。下一步只需客户端重新邮箱登录，等待连接成功反馈；两电脑实测与 Ubuntu 切换 `PROXY_LOGIN_MODE=email` 仍未确认。不要把“升级成功”写成“邮箱连接已验收”。
+
+### 2026-10-28 邮箱登录页 Review：Windows Build 16
+
+最新交付为 Build 16 / protocol 22，源码 `981f7312db6d60a73c33c2b670ec27025ec9485a`。三处已复现并修复：授权失效后密码显示状态保留、迟到的保存状态覆盖新输入/触发旧账号自动登录、保存状态读取失败缺少诊断。9 项邮箱界面与 17 项授权测试、TypeScript、仓库检查、实际打包程序启动/旧配置迁移、包内身份及 3 个主进程模块和 71 个前端文件一致性通过。
+
+安装包 `D:\cc-desk-tunnel\artifacts\cc-space-email-only-build16\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164545 字节，SHA256 `9ca5c204e4258b066c95ca3a297ccfe772d9030a6283221ccfc7f548256df699`。本轮没有管理中心部署、公开索引发布或本机软件安装。Linux 继续 Build 5；真实邮箱/两电脑及 Ubuntu 仅邮箱模式仍待现场确认。Build 15 属于上一轮交付，应使用 Build 16。详见[Review](docs/CC-SPACE-EMAIL-ONLY-REVIEW.md)与[证据](docs/evidence/email-only-review-2026-10-28.json)。
+
+### 2026-10-28 邮箱专用登录页：Windows Build 15
+
+最新客户端为 Build 15 / protocol 22，源码 `f01571603881365e43b45e9f75a4a15a2cbf73dd`。正式客户端仅显示邮箱登录，删除手动地址/凭据/证书入口；启动时清理旧 `login` 配置和旧 `proxy-url`，不再恢复 token 自动登录。保留邮箱加密会话、设备身份和本机工作数据；设置与帮助也改为管理中心配置说明。开发模拟入口只在未打包环境保留。
+
+安装包：`D:\cc-desk-tunnel\artifacts\cc-space-email-only-build15\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`，201164114 字节，SHA256 `895348a44bd65ed1de70135429551d09154d1d16dbeb815cb6b7fd7749f00eb2`。31 项 Edge 界面回归、深浅/窄屏/大字体截图检查、TypeScript、590 个索引文件检查及实际打包 EXE 启动/旧配置迁移均通过，包内身份及三个主进程模块与源码一致。完整测试 578 项中 542 通过、35 跳过，1 项仅临时目录清理 EPERM；该项原样单独重跑通过，未修改旧测试或产品代码。
+
+本轮只交付客户端，未部署管理中心、修改公开索引或在本机安装。Linux 仍用 Build 5；Ubuntu 是否已升级、邮箱创建与实机登录、两电脑切换及 `PROXY_LOGIN_MODE=email` 仍需用户验收。关闭客户端手动入口不代表远端 token 已停用。见[说明](docs/CC-SPACE-EMAIL-ONLY.md)及[证据](docs/evidence/email-only-login-2026-10-28.json)。
+
+### 2026-10-28 第二轮单电脑登录 review：Windows Build 14
+
+最新客户端为 Build 14 / protocol 22，源码 `d59bae8971c9096711307b7af0f00f5a0a3cf0d6`。复现并修复旧会话失效后、用户正在密码登录时，恰好开始的后台授权检查把新登录取消的问题：登录进行中暂停后台检查，全部并发登录结束后恢复，失败路径也释放计数。原先对迟到响应的代次校验保留。
+
+最新完整回归 578 项：543 通过、35 跳过、0 失败；TypeScript、实际打包程序启动及包内身份/三个主进程模块与源码核对通过。安装包在 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build14\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。仅客户端运行代码变化，管理中心本轮未重部署，Linux Build 5 保持；不要继续以 Build 13 作为最新客户端。两电脑实机切换及 Ubuntu 仅邮箱模式仍待用户验收。见[第二轮证据](docs/evidence/single-computer-review2-2026-10-28.json)。
+
+### 2026-10-28 单电脑登录 review 完成
+
+管理中心最新运行源码 `997186a7384f8343eb820a4337322616d4a46bfb`。复现并修复管理员改邮箱与旧邮箱登录并发时，旧邮箱仍能成功登录一次的问题：密码派生返回后重新核对邮箱、启用状态与密码。新增故障注入证明替换电脑时数据库写入失败会回滚，原电脑会话、票据和设备映射均保留。相关 15 项认证回归及 TypeScript 通过，未重复运行上一节已通过的全量测试。
+
+修复已部署；备份 `/var/backups/cc-update-service/single-computer-review-20261028T024201Z`，旧目录 `/opt/cc-update-service.before-single-computer-review-20261028T024201Z`。配置、Nginx、公开索引保持；管理服务与两个续期 timer active。仅管理中心运行代码变化，继续使用 Windows Build 13 / Linux Build 5。真实两台电脑切换与 Ubuntu 仅邮箱模式仍待用户验收。见[审查证据](docs/evidence/single-computer-review-2026-10-28.json)。
+
+### 2026-10-28 单电脑登录已实现、打包并部署管理中心
+
+最新试点客户端为 Windows Build 13 / protocol 22，源码 `f5842d521b76de54f788d3b49baff7a8daedd71d`。同一邮箱的新电脑密码登录原子撤销其他电脑的会话及票据；同机多窗口可共存。主进程每 15 秒检查授权，失效后关闭本机通道、清除保存会话并回到登录页；自动恢复不重新提交密码，旧响应不影响新登录。数据库新增独立设备映射表，保留旧会话表结构以便程序回退。
+
+管理中心同源码已上线，备份 `/var/backups/cc-update-service/single-computer-20261028T023826Z`，旧目录 `/opt/cc-update-service.before-single-computer-20261028T023826Z`。配置、Nginx 和发布索引保持；服务及两续期 timer active。实际安装包启动、Edge 邮箱页面、TypeScript、完整 574 项测试（539 通过、35 跳过、0 失败）通过；未调用真实 Claude/JEV。
+
+安装包位于 `D:\cc-desk-tunnel\artifacts\cc-space-single-computer-build13\CC-Desk-Tunnel-Setup-0.3.7-x64.exe`。Linux 仍为 Build 5；尚未收到该版本安装和真实邮箱验收，生产邮箱数仍为 0。单电脑规则约束邮箱账号，Ubuntu 仍待在邮箱验证成功后切换 `PROXY_LOGIN_MODE=email`，否则传统 token 可绕过；不要宣称节点已经关闭传统入口。操作与边界见[单电脑登录](docs/CC-SPACE-SINGLE-COMPUTER-LOGIN.md)，摘要及精确包身份见[发布证据](docs/evidence/single-computer-login-2026-10-28.json)。
+
+### 2026-10-28 邮箱登录第二轮 review 已部署
+
+管理中心运行源码 `f5f69048e36ece8b9027c41dfefce4deb21b3f46`，修复异步密码重置覆盖并发停用/撤权的问题；保存冲突返回 409。新增认证边界回归通过，全量测试发现的两处旧版本期望已修正并针对性复跑通过。补充定制 Build 与协议对应记录，不改变受保护运行时文件。详见[第二轮 review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)及[证据](docs/evidence/email-login-review2-2026-10-28.json)。
+
+部署备份 `/var/backups/cc-update-service/email-review2-20261028T022821Z`，旧运行目录 `/opt/cc-update-service.before-email-review2-20261028T022821Z`；配置、Nginx 和公开索引保持，管理服务与两个续期 timer active。Windows 仍使用 Build 12、Linux 仍使用 Build 5；本轮未修改其运行代码或重打包。生产邮箱用户数仍为 0，Ubuntu Build 5/Windows Build 12 安装及真实邮箱登录验收仍待用户确认。
+
+### 2026-10-28 邮箱登录 review 修复
+
+最新客户端应使用 Windows Build 12（协议 22），修复源码 `0ddfa93311c6cd9f22a11ddbf6c8d9a98f8d0efd`。本次修复临时票据请求失败后的重连、失效登录清理、账号切换、邮箱模式下错误的旧升级入口、代理后 IP 限流和关闭面板后密码残留。Linux Build 5/升级脚本保持，未收到真实 Ubuntu 升级及邮箱登录验收。具体发现、回归与部署见 [review 记录](docs/CC-SPACE-EMAIL-LOGIN-REVIEW.md)。
+
+管理中心修复已部署，备份 `/var/backups/cc-update-service/email-review-20261028T022120Z`，旧运行目录 `/opt/cc-update-service.before-email-review-20261028T022120Z`。配置、公开 Windows/Linux 索引不变；服务与两续期 timer active。下节 Build 11 是初次实现状态，当前试点客户端以本节 Build 12 为准。
+
+### 2026-10-28 邮箱登录已实现，等待首台实机切换
+
+`codex/email-login` 在上游合并分支上新增个人邮箱登录。安装包源码 `12b2da3ca49ffeb7d712a96d4c8302a582a2a873`，Windows Build 11 / Linux Build 5 / protocol 22。管理中心已部署到 VPS，`ubuntu-cc` 服务地址和完整证书指纹已配置；用户尚未创建邮箱账号，Ubuntu 仍是先前用户确认的 Build 4，不能写成邮箱登录实机通过。
+
+Linux Build 5 已发布到 pilot，revision 7，初始有效期至 `2026-11-11T02:13:54.616Z`；自动续期已登记精确 Build 5 并通过强制续签及 systemd 执行。Windows 公开渠道仍 Build 9，stable 未改。Build 4 与 5 运行时兼容指纹一致，直接走现有受管程序更新，无需新镜像。操作见[邮箱登录试点](docs/CC-SPACE-EMAIL-LOGIN-PILOT.md)；用户执行 `scripts/upgrade-cc-space-email.py` 前需结束任务、退出客户端，升级后安装 Windows Build 11。
+
+管理中心备份 `/var/backups/cc-update-service/email-login-20261028T021053Z`，旧运行目录 `/opt/cc-update-service.before-email-login-20261028T021053Z`；Linux 发布与续期备份 `/var/backups/cc-update-service/email-server5-20261028T021353Z`。旧 Build 4 镜像及冷备份保留。此后的更新覆盖下节“公开 Linux Build 3”状态；下节其余既有实机反馈仍为历史依据。
+
+本轮已验证主进程加密会话、管理 API/页面、真实代理握手及停用用户关闭长连接、邮箱 UI 与实际 Windows 打包 smoke；具体证据见 [email-login-2026-10-28.json](docs/evidence/email-login-2026-10-28.json)。未发起真实 Claude/JEV 调用。源码与包不得混淆：后续文档、测试或运维脚本提交不会改变现有 Build 11/5 归档源码身份。
+
+### 2026-10-28 上游 0.3.7 合并候选（试点客户端与服务端已正常使用）
+
+最新用户反馈：本电脑安装新版客户端后可以正常使用，暂未发现问题。基本连接及实际使用已得到用户确认；下文客户端待验收描述属于此前阶段，文件、图片、后台任务及审核等专项验收仍未逐项确认。PR 合并与公共渠道发布尚未完成。
+
+最新进度：用户在 `ubuntu-cc` 执行固定版本切换脚本，回传 `UPGRADE_OK`，Linux Build 4 / protocol 21 已就绪，旧容器、镜像及冷备份保留。备份位于 `/var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676`，完整回退命令见下方试升级说明。Windows Build 10 实机连接、历史、账号及真实对话验收仍待完成；公共渠道未更新。以下准备阶段记录中“尚未收到生产切换成功”已被本段替代。
+
+分支 `codex/merge-upstream-0.3.7` 将原版 `f2e3ef3` 合入最新定制主线 `05918cd`，合并提交 `0c2caa8`。候选为 CC SPACE 0.3.7 / Windows Build 10 / Linux Build 4 / 协议 21；已保留品牌、界面动效、账号监控及审核。旧协议 20 镜像不能用普通程序更新接收这次协议/schema/运行代码变化，必须按[试升级说明](docs/CC-SPACE-0.3.7-UPGRADE.md)准备新基础镜像，不能放宽兼容性校验。
+
+候选安装包、服务端归档和验证记录见[本次证据](docs/evidence/upstream-037-candidate-2026-10-28.json)。公开渠道仍为 Windows Build 9 / Linux Build 3。开发机缺少发布 VPS 管理员 SSH 身份，Ubuntu 试点由用户通过远程桌面执行命令；用户已回传归档摘要一致、候选镜像 `cc-space-preview:0.3.7-build4` 的 `OFFLINE_PREFLIGHT_OK`、原容器仍运行，准备目录 `/var/tmp/cc-space-037-mb0x0m3t`。正式切换脚本 `scripts/install-cc-space-037.py` 已准备，尚未收到生产切换成功。不要把本地打包和离线验证写成生产部署成功。
+
+这是本项目当前工作状态与跨电脑续做的权威入口。旧文档中的 Build 2/3、未接入客户端、没有续期等陈述属于历史阶段；遇到冲突以本文件及 VPS 实际签名索引为准。生产状态是检查时的快照，后续 revision／有效期会自动续期。
+
+### 2026-10-25 CC SPACE Windows Build 9
+
+最新客户端已从干净源码 `8b01c740b8513c73b621b378990a5db7025d4795` 打包并发布到 VPS pilot：版本 0.3.6／Build 9／协议 20，包含 CC SPACE 品牌与图标、默认模型与推理强度、完整模型名称、字体大小、消息悬停操作，以及登录页布局和高级连接选项的稳定展开动效。源码位于 `codex/login-layout` 分支。安装包 201152867 字节，SHA256 `a20041d9c69329eb6c3d9c69a491e9489404a53f3e4c71b52d4c40fd71e0bef6`；实际打包 EXE 的隔离启动测试、包内身份、全部 CommonJS 模块、品牌资源与前端资源逐字节核对通过。
+
+发布及自动续期验收后的 pilot revision 16，有效至 `2026-10-28T10:35:58.344Z`，以后由 VPS 续期。公开完整下载/hash 校验在 VPS 通过；本机独立验签、HEAD 及首部／中部／尾部各 1 MiB Range 字节核对通过，未进行本机完整下载。新包验证后删除旧 Build 8 公开安装包及上传副本，共 402191526 字节；旧 Build 2–8 地址均返回 404，历史构建身份与审计保留。
+
+Windows 续期登记已切换至 `/root/.cc-update-admin/source-build-9` 和 `/root/.cc-update-admin/client-build-9/`，强制续签及 systemd 检查成功，两套续期 timer 均 active。stable 和 Linux 索引保持；未安装本机客户端、未升级 Ubuntu、未发起 Claude/JEV 请求。发布与清理证据见 [Build 9 发布证据](docs/evidence/windows-client-build9-2026-10-25.json)，VPS 原始记录在 `/root/.cc-update-admin/client-build-9/`。
+
+### 2026-10-25 Windows Build 8 与旧客户端清理
+
+全部十项桌面 UI 改进已合入并推送 `main`；Windows Build 8 从干净源码 `d4241207606dde316e5b02bb17d4e795217b159d` 打包，版本 0.3.6／协议 20。实际打包 EXE 的隔离离线启动测试、包内身份与源码模块核对通过。安装包 201095763 字节，SHA256 `cd38fa53c6acec2161ce143b90a72ec8caaf6fa8160a25fb1dff42bc86bc3719`。生产签名 pilot revision 14，发布时有效至香港时间 2026-10-28 01:49:07；自动续期已登记、强制续签与 systemd 服务验证通过。
+
+新包公网完整下载/hash 校验通过后，按用户要求删除旧 Windows Build 2–7 的六个公开安装包及五个上传副本，共 2211868732 字节（约 2.06 GiB）；VPS 空闲空间由约 1.2 GiB 增至 2.8 GiB。保留 Build 8 的公开包和续期源包，以及不可复用的历史构建身份、源码和审计。后续发布也应在验证新包后及时清理旧 Windows 安装包。Linux Build 3、stable 索引及原有管理服务保持，未安装本机客户端，未操作 Ubuntu，也未发起 Claude/JEV/额度请求。
+
+发布与清理证据位于 VPS `/root/.cc-update-admin/client-build-8/`；新源码为 `/root/.cc-update-admin/source-build-8`，自动续期配置仍为 `/root/.cc-update-admin/automation/config.json`。公开下载及脱敏验证见[Build 8 发布证据](docs/evidence/windows-client-build8-2026-10-25.json)。
+
+VPS 侧公网完整下载的大小与 SHA256 校验通过；本机完整下载在五分钟后超时，未声称该项通过。随后本机核对固定公钥签名、HEAD、首部／中部／尾部各 1 MiB 的 Range 内容与本地原包逐字节一致，并确认全部旧 Build 2–7 地址返回 404。
+
+### 2026-10-24 review修复：策略更新后的缓存顺序
+
+review离线复现512条缓存已满、修改策略、重新审核最旧文本后，该条目因Map.set覆盖不更新顺序而被下一条新内容淘汰，重复文本多付一次审核。修复只在替换条目前delete再set，保持最新审核结果的淘汰顺序。扩展原有容量回归，先证实旧代码失败，再验证新代码复用：模拟审核调用由515恢复预期514。15项去重/HTTP相关测试及TypeScript通过，没有真实Claude/JEV请求。仅发布控制中心模块，不改Ubuntu、审核策略或发布索引；原生hook修复仍待镜像维护。
+
+控制中心已从干净源码c47de22a27d6483a062d94ac9cd4b8cf0fc2d714上线，48个运行文件中只改变moderation-nodes.ts；正式包独立导入通过。备份/var/backups/cc-update-service/jev-cache-order-20261024T092101Z，旧运行目录/opt/cc-update-service.previous-jev-cache-order-c47de22。配置、管理员登录、审核策略、发布索引、续期登记及节点清单均保持，两timer active。实际生产Claude/JEV验收请求为0。详见[缓存顺序修复发布](docs/evidence/jev-cache-order-production-2026-10-24.json)。
+
+### 2026-10-24 JEV小范围费用优化
+
+用户要求优先采用改动小、收益明确的两项修复。控制中心扩展为同节点/会话/策略下完整相同文本跨入口复用，最多512份近期内容并刷新命中顺序，保留A→B→A的通过结果；拒绝、错误、请求ID冲突、内容/策略/会话隔离保持。原生hook按tool_use_id和实际文本避免transcript与tool_calls重复拼接，不遗漏不同hook内容或权限反馈。9项去重/hook测试、27项HTTP/审核回归、18项打包/发布/兼容性测试通过（另2项平台/浏览器测试跳过），TypeScript通过；没有真实Claude/JEV请求。
+
+发布检查发现native-moderation-hook.ts属于现有COMPATIBILITY_PATHS保护闭包，普通程序更新不能替换。保持校验与已发布Linux Build3不变，只部署控制中心优化；hook修复源码与测试准备完成，待后续管理员镜像维护。本环境没有ubuntu-cc的SSH管理入口，不能宣称已应用该节点修复，也不应发一个现有节点无法普通升级的Build4。完整边界见[审核说明](docs/MODERATION-NODE-GATE.md)和[后续设计](docs/JEV-COST-REPAIR-DESIGN.md)。当前工作区并行桌面样式改动保留，不纳入本次提交。
+
+控制中心已从干净源码e2b5fdfddb90acf5f9a43e57d0a5e55916bd13bc上线，正式包SHA256为7e8fe1c2c4d4554d00942d55f8e93503006a5dfa669dabb976f1287d542c88e2，48文件中仅审核节点模块和审核说明变化。备份/var/backups/cc-update-service/jev-small-20261024T091422Z；配置、管理员登录、审核策略、发布索引、续期登记及现有节点均保持，两timer active。实际运行包独立导入和干净checkout类型检查通过，真实Claude/JEV调用为0。Windows Build7/Linux Build3不变，Ubuntu未操作。部署证据见[小范围修复发布](docs/evidence/jev-small-production-2026-10-24.json)。
+
+### 2026-10-24 原生终端重复JEV调用
+
+用户报告一个问题产生多次审核。只读VPS事件元数据确认，香港时间16:14–16:19的8条记录中有5次相同16161字节文本和2次相同16169字节文本，均为同一会话；工具批次hook生成新请求ID导致原有去重失效。控制中心新增原生会话最近通过内容的摘要/策略revision缓存及同时请求合并，不缓存拒绝或错误；新内容、节点/会话/策略变化重新审核。普通CC输入仍按请求审核，入口与终端审查内容不同可能各触发一次。见[审核说明](docs/MODERATION-NODE-GATE.md)。13项相关测试通过，合成JEV提供方证明一次输入加8次相同工具hook只记1次JEV请求；未调用真实Claude/JEV。工作区并行中的客户端界面改动由用户保留，本次不纳入提交或发布。
+
+已从干净源码 `ac37b523fcd468f59127a973b8edf3bad4bc56ad` 发布控制中心，运行清单仍48文件，仅审核节点模块与说明变化。备份 `/var/backups/cc-update-service/native-review-dedup-20261024T082429Z`，旧运行目录 `/opt/cc-update-service.previous-native-review-dedup-ac37b52`。原审核策略/阈值、管理员与节点凭据、账号监控、发布索引与续期登记均保留，两timer active；Ubuntu和客户端无需升级。干净源码TypeScript及实际运行包导入通过，未为验收发真实请求。后续正常使用观察缓存效果，服务重启后首次内容会再审一次。证据见 [重复审核修复发布](docs/evidence/native-review-dedup-2026-10-24.json)。
+
+### 2026-10-24 空白 Ubuntu 一条命令部署
+
+后续用户要求 review，发现并修复三项故障恢复/可用性问题：配置中断残留阻止重试、兑换响应丢失后无法同机恢复、错误安装码触发全局失败计数后阻断正确码。新流程在请求前落盘随机安装标识，安装码只绑定该实例，同机可在有效期内重领相同配置，服务器只存摘要；配置通过同文件系统阶段目录和原子发布支持中断恢复，已配置的镜像/凭据直接复用。六项 Linux 测试及新增 HTTP 故障场景通过；仍未把模拟 Docker 当成完整新 VM 实测。修复后需要重新生成安装命令，旧命令固定了旧安装脚本摘要。
+
+review 修复已从干净源码 `1c67bf1d5bac6dc6a9f304377ae3a5c4ce41e593` 上线，运行清单48文件。备份 `/var/backups/cc-update-service/fresh-ubuntu-20261024T074649Z`，旧运行目录 `/opt/cc-update-service.previous-fresh-review-1c67bf1`。公网修复资源核对通过，已有节点、凭据、审核策略、发布索引与续期登记不变，两timer active。原生产安装注册表保持原字节，未签发测试安装码、未改Ubuntu节点、未请求Claude/JEV。证据见 [review 发布与故障回归](docs/evidence/fresh-ubuntu-review-2026-10-24.json)。
+
+新增控制中心“客户端更新 → 新建 Ubuntu 一键部署”，目标空白 Ubuntu 24.04 LTS x64。管理员输入独立节点名称生成十分钟、单次兑换命令；Ubuntu 自动安装 Docker、验证当前签名 Linux Build、静态验证固定官方运行时、构建镜像并完成无网络无账号 sentinel 就绪检查，配置独立监控/审核凭据及只读策略挂载，最终显示客户端连接信息。官方 Claude 登录由用户之后执行本机 helper。原首台接入白名单、已发布 Windows Build 7／Linux Build 3 及现有节点不变。
+
+新增动态注册表保存在管理服务 private 目录，只存凭据摘要，兼容原静态节点配置；重启时先合并节点再打开监控数据库。核心接口、Linux OpenSSL 与模拟安装、真实 Edge 复制/过期/清空/390px、实际运行包导入测试通过。尚无空白 Ubuntu VM 完整联网安装反馈，不把模拟 apt/Docker 流程当成实机成功。使用、重试边界及网络说明见 [新机部署](docs/FRESH-UBUNTU-INSTALL.md)。
+
+控制中心已从干净源码 `75e92b102fd5d28305385031beafdd865aae5477` 打包并上线，运行清单48文件。VPS备份 `/var/backups/cc-update-service/fresh-ubuntu-20261024T073549Z`，旧运行目录 `/opt/cc-update-service.previous-fresh-75e92b1`。公网四项资源与源码字节相同；实际公开 Linux Build 3 的签名、完整归档清单和配套 Web 经新安装器函数验证通过。原配置、管理员凭据、审核策略、节点列表、发布索引、续期登记不变，两timer active；未签发生产测试安装码、未改任何Ubuntu节点、未发Claude/JEV请求。脱敏证据见 [新机入口发布](docs/evidence/fresh-ubuntu-production-2026-10-24.json)。
+
+### 2026-10-24 GitHub 同步完成
+
+用户已授权将最新改动同步到 GitHub，账号编号、服务端账号管理、控制中心升级命令、客户端固定升级入口及发布记录均已推送至 `benvyf/cc-desk-tunnel` 的 `codex/account-monitor-production` 分支。下文各发布快照中的“尚未推送 GitHub”是当时状态，以本节为准；安装包与运行包的源码身份不因后续文档提交改变。工作区原有未跟踪安装目录和历史资料保留本地，未纳入本次推送。
+
+### 2026-10-24 客户端固定服务端升级入口（Windows Build 7 已发布）
+
+用户要求像源项目一样，在客户端升级服务端，即使协议相同也能按 Build 检查。已从干净源码 `fb873003731df95ea34f5078548cd1b668063e60` 构建发布 Windows Build 7／0.3.6／协议20，pilot revision12。连接页固定显示“检查服务端更新”；已连接时“设置 → 关于与更新”和“设置与账号”菜单均有入口，确认断开后关闭隧道并自动检查，本窗口临时保留连接信息，取消确认则保持连接。展示目标版本／Build／协议／SHA256，再确认安装，沿用现有主进程签名、重放保护与服务端备份／就绪／回滚。活动任务或终端时禁用设置入口，其他连接仍由服务端准入拒绝。
+
+新包201081647字节，SHA256 `f44819ed3ba6c9d813ddd3bbead359f8943e626be65bbc31968f9c7edab2e656`；[Windows Build 7 下载](https://api.ghostapi.org/cc-updates/v1/artifacts/7/win32-x64/CC-Desk-Tunnel-Setup-0.3.6-x64.exe)。Linux仍为Build3，控制中心运行源码仍为 `d63607d…`，均不重发；stable空通道不变，两timer active。Windows续期已登记新源码和精确制品并验证成功。TypeScript、6项React/Edge界面场景、11项相关主进程回归及1项最终EXE/preload/组件关闭测试通过；公网生产公钥验签、完整下载摘要及HEAD/Range通过。未调用真实Claude／JEV／额度接口。用户Windows安装和新入口实机行为尚待反馈，首台Ubuntu先前已回传Build3升级成功，不必重复升级。操作见 [客户端服务端升级](docs/CLIENT-SERVER-UPGRADE.md)，证据见 [Build 7 发布](docs/evidence/client-server-upgrade-build7-2026-10-24.json)。源码完整bundle保存在VPS，本次仍未推送GitHub。
+
+### 2026-10-24 服务端登录、客户端编号（VPS 已上线，首台 Ubuntu 已升级）
+
+用户要求客户端不再管理 Claude 登录、客户端不显示邮箱，控制中心显示编号与邮箱对应；已明确选择在 Ubuntu 终端通过官方 Claude Code 登录。工作区已实现移除客户端登录/退出/授权码入口、服务端拒绝对应远程账号操作、账号身份元数据发送前转为稳定编号（含历史回放），控制中心并列显示/搜索编号和邮箱。编号基于既有完整账号 ID，示例 `CC-7A3F-91C2-6B8D-4E50`，无需新增请求、编号分配服务或数据库迁移。原始监控仍保留邮箱。
+
+后续 review 的两项发布问题已修复：控制中心运行包补入编号依赖；编号解析扩展独立到 `packages/protocol/src/account-display.ts`，保持 `index.ts`、`native-account.ts` 与 Build 2 原始字节一致，旧登录实现保留但账号入口不调用。不修改受管升级白名单和校验规则，可沿用现有程序升级路径；离线回归以已发布 Build 2 摘要为基线，检查模拟新 Build 的兼容性准入、实际运行包完整性及编号往返解析。
+
+review 修复后通过 Node24 TypeScript、前端生产构建、74项相关回归及模拟数据的真实 React/Edge 账号页面检查。随后用户授权“部署上线”：以干净源码 `224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a` 正式构建并部署控制中心，发布 Windows Build 6（pilot revision 11）和 Linux Build 3（pilot revision 5），版本0.3.6／协议20；stable 保持空通道。两套续期登记已更新、timer active。完整制品摘要、公网签名和管理页资源均核验通过；未启动真实 Claude/SDK 会话、JEV 或额度请求。发布详情与证据见 [正式发布记录](docs/ACCOUNT-MODE-RELEASE-2026-10-24.md)。
+
+用户升级客户端后看到“账号编号尚未读取”，随后确认 Ubuntu 执行的是首次接入命令，输出 already installed，因此当时未升级程序。改用受管升级命令后，用户回传 `SUCCESS: Linux Build 3 / protocol 20 is installed and committed.`，确认首台服务端已安装提交 Build 3。Windows 新账号页已经显示，精确客户端构建号未经开发机独立读取；重新连接后编号显示仍待用户反馈。不要重跑首次 bootstrap 或为此重新登录 Claude。VPS 备份 `/var/backups/cc-update-service/account-display-20261024T041203Z`，旧运行目录 `/opt/cc-update-service.previous-account-224d7bc`。本次发布源码及历史提交已保存 VPS Git bundle，尚未推送 GitHub。
+
+用户进一步指出控制中心缺少服务端升级指令。已从源码 `d63607d1401bd84c0d1724488533190913031e64` 部署独立的“已接入服务端升级”与“首次接入”命令，绑定当前发布的精确 Build／协议／摘要，可整行复制并显示进度；过期不提供命令，忙碌不绕过现有准入。仅更新控制中心44文件运行包，不重发 Windows6／Linux3，两套续期登记与签名索引原字节不变，timer active。备份 `/var/backups/cc-update-service/server-upgrade-ui-20261024T060655Z`，旧运行目录 `/opt/cc-update-service.previous-upgrade-ui-d63607d`。14项相关测试通过，1项POSIX权限测试在Windows跳过；TypeScript、真实管理接口合成升级、真实浏览器复制/过期/390px检查、实际运行归档及公网资源核验通过。证据见 [控制中心升级入口部署](docs/evidence/control-center-server-upgrade-2026-10-24.json)。
+
+### 2026-10-24 首台受管接入、正常会话与被动上报成功（当前状态）
+
+用户在 `ubuntu-cc` 执行带进度的首次接入命令后，回传 `Managed server installed. Local readiness passed; no Claude/provider queries made.`，并正常返回 shell。首次受管接入已完成：目标 0.3.6／Linux Build 2／协议 20，安装器通过新容器健康、受管状态及发布描述文件摘要检查后写入 installed.json。此结论依据用户节点安装器成功输出，不是开发机直接 SSH 验收；没有进行真实 Claude／额度／JEV 会话测试。
+
+本次完整冷备份及回滚脚本位于 `/var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3`；离线回滚命令为 `sudo python3 /var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3/rollback.py --rollback /var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3`，仅在需要回滚时使用，当前不执行。保留此前 CLI 异常文件备份及手动中断备份。脱敏证据 `docs/evidence/bootstrap-production-success-2026-10-24.json`。
+
+用户随后确认“已经安装最新的安装包、已经连接上、会话也正常”。这是用户实际使用反馈，未由开发工具主动启动客户端或 Claude 会话，也未独立读取本机客户端构建号。只读核对 VPS 监控缓存于香港时间 2026-10-24 11:14:37 完成：配置节点6、已上报节点1、账号1；首台 `ubuntu-cc` 为 schema 2，identity=identified，邮箱存在，套餐 Claude Pro，quotaStatus=ok，两个额度窗口，已有会话 usage。最新观察香港时间11:13:30，接收11:13:30，额度采集11:13:29。本次读取仅访问 VPS loopback 管理缓存 API，不触发节点或供应商请求，脱敏证据 `docs/evidence/natural-monitor-cache-verification-2026-10-24.json`。
+
+用户在收到管理页核对建议后确认“都正常”。首台的受管安装、用户客户端连接/正常会话、自然被动上报和管理页日常查看基础流程验收通过。此反馈未细分备注保存/刷新持久化，不能扩大为所有边界场景已验收。后续仍需正常使用中确认备注持久化、换号/多节点隔离、未知/过期/错误状态，以及主机重启和后续升级/回滚的实机行为。其余五台继续暂缓，不为填充管理页数据主动调用 Claude／额度／JEV。以下各节保留历史排障过程，旧的“尚未接入/无自然上报”描述以本节为准。
+
+### 2026-10-24 首次接入手动中断与重试准备
+
+官方 CLI 恢复后，用户执行首次受管接入，因终端长时间无输出而按 Ctrl+C，再运行只读诊断。故此前“进程已结束”不能解释为安装自行失败。备份 `/var/lib/cc-server-bootstrap/backup-20261024T025834Z-a7e5958b` 有 `data.tar.gz`、`snapshot-id` 和 `offline-build.log`，无 replacement intent/record/id，也无 installed.json；说明已进入备份后离线构建/验收阶段，尚未记录新容器创建。
+
+用户进一步回传当前容器与原记录的 ID、镜像、名称、Config、HostConfig、Mounts 均一致，网络名称集合一致，running=true、paused=false、health=healthy。因此原服务已恢复，可在保持任务空闲和客户端关闭后重试；无需再运行回滚脚本，也不删除现有备份。只读结果见 `docs/evidence/bootstrap-interruption-recovery-2026-10-24.json`。
+
+本机 `.local/server-bootstrap-next-command.txt` 改为带进度的单行启动命令：保留管理 API 原始启动代码、同一安装器和制品摘要，外层每15秒显示等待时间及 preflight/新备份的文件大小；不读取日志内容，不部署新安装器，也不发起 Claude/JEV/额度请求。本地仅用 sleep/print 合成流程核验进度显示和结束清理。用户随后重试成功，见顶部成功记录；无需重复执行首次接入。
+
+### 2026-10-24 实际 CLI 单字节差异与恢复完成
+
+首台用户重试 bootstrap 后，运行环境校验拒绝继续。只读检查确认 Node v24.21.0、SDK 0.3.286、四个审核 hook、账号数据路径、节点配置格式及只读策略挂载符合要求；实际 CLI 摘要不符。用户节点缓存的官方 2.1.295 包 SHA256 为 `d45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95`，包内文件 SHA256 为 `4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358`；容器文件为 `f66a66b89fa1c229ff9edce0065277a2d0897ebd6710f6d3e8b722c6e1d9ec2e`。用户完整逐字节比对证实仅 offset 194437468 从官方 `9f` 变为 `f5`，两文件均为 256113848 字节。VPS 独立重现此改动得到相同摘要，差异位于 ELF `.bun` 节；原因未知，不能认定恶意或无害，也不能再称实际节点 CLI 已验真且原样。
+
+已准备 `scripts/restore-reviewed-claude-cli.py`：只接受本次异常摘要，验证本地官方缓存包和完整官方文件，在暂停后的空闲检查通过后，备份异常文件、原子替换完整同版本文件并核验 root/0755 与 SHA256；替换后校验失败会恢复旧文件，普通异常、Ctrl+C/SIGTERM 会尝试解除暂停。强制 SIGKILL 或宿主故障无法执行清理，运行时会显示手工解除暂停命令。它不执行 Claude，不读取账号文件、不改审核策略、SDK、网络配置或安装器白名单；备份位于 `/var/lib/cc-cli-official-restore/`。
+
+在 VPS 无网络、无账号挂载、入口仅 `/bin/sleep` 的临时 Docker overlay 容器验证 5/5 通过：真实完整官方文件恢复与备份、重复执行无修改、activeRun 拒绝并解除暂停、替换后注入失败原子回滚、暂存时中断保留旧文件并解除暂停。证据 `docs/evidence/cli-restoration-integration-2026-10-24.json`。本机 `.local/cli-official-restore-commands.txt` 提供两条独立单行命令，避免终端长行截断及 heredoc 粘贴问题；第二条校验源码摘要后执行。
+
+**用户已在真实 Ubuntu 执行 CLI 恢复成功。** 用户回传 `SUCCESS`、官方完整 SHA256 `4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358`、root/0755 校验通过及 `containerRunning: true`，暂停已解除；备份 `/var/lib/cc-cli-official-restore/20261024T025442Z-hi6k94xg`。此为用户节点执行输出，非开发机直接连接验收。差异原因仍未知。生产恢复证据见 `docs/evidence/cli-production-restoration-2026-10-24.json`。后续受管接入亦已成功，见顶部记录。
+
+接入前已只读核对管理中心认证 API 和公网 bootstrap：Linux Build 2 发布有效，制品摘要为 `19f4a60538b1fea67a9f4438d13c4cf75a821bed0b9973d93af7d5c69d852f11`，安装器摘要为 `270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0`。本机 `.local/server-bootstrap-next-command.txt` 保留管理 API 原始启动代码，增加本地进度显示并编码为单行，避免 heredoc/多行粘贴。CLI 恢复和受管接入是两次独立执行，现均有用户成功回传；未新增启动 Claude、JEV 或额度请求。
+
+### 2026-10-24 首次接入挂载修复补充
+
+用户执行首台 bootstrap 时，在停服前收到 `Expected data and read-only policy bind mounts.`。回传只读 inspect 确认容器仍 running，数据源为 `/srv/cc-desk-tunnel`，审核源为历史正式激活目录 `/var/lib/cc-native-terminal-paths-ff5743958cb8/activation/managed`，后者正确地只读挂载到容器内 `/etc/claude-code`。安装器此前只允许宿主源 `/etc/claude-code`，遗漏了这个已审查的历史路径。
+
+修复提交 `0fcc03ecd2954720e647bbedf2cd995ebbc0bc50` 只增加该精确路径的兼容，仍拒绝可写审核目录、未知路径及额外挂载；克隆容器时保留原 HostConfig。回归先复现失败再通过，Linux Python bootstrap 16/16 通过。VPS 管理中心已从该提交的干净源码运行包部署，42 文件 inventory 校验通过，公开安装器 SHA256 为 `270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0`，管理 API 生成命令已绑定新摘要。发布的 Windows Build 5、Linux Build 2、三个已核对的通道索引、生产配置和 CURRENT-RELEASE 均未改动；两套续期继续使用这些不可变制品对应的源码。
+
+备份 `/var/backups/cc-update-service/bootstrap-policy-0fcc03e-20261024T022330Z`；旧运行目录 `/opt/cc-update-service.previous-bootstrap-policy-0fcc03e`。脱敏部署证据见 `docs/evidence/bootstrap-policy-mount-fix-2026-10-24.json`。下文较早的“VPS 运行源码同为 9ab5f49”属于修复前快照，当前管理中心源码以本补充为准，安装包源码身份仍为 9ab5f49。首台尚待用户刷新管理页、重新复制命令并执行成功；旧命令绑定旧安装器摘要，不能复用。本轮未启动真实 Claude、JEV 或额度查询。
+
+## 1. 用户要实现什么
+
+把 CC Desk Tunnel 定制维护版做成完整管理系统。管理中心统一登录、顶部导航，每个功能独立页面与地址：账号监控、客户端更新、内容审核。页面刷新及前进后退保留当前功能，只加载当前页面所需数据。
+
+核心目标是后续管理很多 Claude Pro/Max 账号，主要通过 Claude Code 使用。账号采用完整邮箱＋自定义备注；区分账号、Ubuntu 节点、Windows 客户端，能看清每个账号当前身份、额度和数据时效。账号监控复用 Ubuntu CC 服务端正常使用时已经得到的结果，推送一份到 VPS；VPS 页面只读自己的缓存。
+
+另一个已授权目标是把最新定制客户端和完整配套服务端包放到 VPS。客户端发现服务端协议不匹配时提供“升级配套服务端”，显示精确目标版本、Build 和摘要，用户确认后才升级；空闲检查、冷备份、就绪检查和失败回滚必须保留。旧服务端第一次需要在 Ubuntu 控制台运行接入命令；以后支持兼容的程序升级。
+
+长期约束：尽可能不打扰 Claude。开发、验收、页面刷新、安装包下载不得为了填数据主动查询 Claude／额度／JEV，不启动真实原生终端，不升级官方 CLI/SDK，不重新登录账号或切换网络出口。本轮只用了合成账号数据、loopback 和隔离 Docker；CLI sentinel 证明没有启动 Claude。此设计减少额外请求，不是对第三方账号政策或风控结果的保证。
+
+## 2. 机器与数据流
+
+```text
+用户自己的 Windows 电脑：安装 CC 桌面客户端，代码和工具留在本机
+    ↕ WSS 控制和临时 SSH 执行隧道
+远端 Windows 宿主机：通过 UU 远程管理，里面运行 Ubuntu 虚拟机
+    └─ 第一台 Ubuntu ubuntu-cc：Docker 中的 CC 服务端＋官方 Claude Code
+           ├─ 正常登录／用量事件 → 被动同步模块 → HTTPS 上报 VPS 缓存
+           └─ 原有审核 hook → VPS 审核功能（与账号监控独立）
+VPS api.ghostapi.org：管理中心、审核、账号缓存、签名更新与下载分发
+```
+
+“宿主机”是运行虚拟机的那台远端 Windows，不是 Ubuntu，也不是 VPS。目前没有可直接操作 Ubuntu 的 SSH 地址；用户通过 UU → 远端 Windows → 虚拟机控制台操作。CC 的业务隧道不等于 Ubuntu SSH 管理入口。
+
+账号同步只上报白名单字段：账号稳定 ID、邮箱、订阅类型、组织、认证方式、provider；身份状态；额度状态／窗口利用率／重置时间；正常会话已有的 usage；观察时间及 VPS 接收时间。自定义备注保存在 VPS，按账号关联多个节点快照。没有观察到的字段必须显示未知或不可用，不能把缺失当成 0。usage 是已观察到的会话／run 统计，不是完整官方账单。配置最多 64 个节点；同节点 ID 多生产者冲突检测、账号档案分页／自动过期删除、完整换号流水、逐字段采样台账尚未实现，规模化前需逐项评估。
+
+不上传 Claude OAuth token、Cookie、密码、私钥或完整聊天。上报身份使用独立节点鉴权；VPS 发布公钥是安装包验签用途，不用于登录 Claude。实际字段契约见 `packages/protocol/src/account-monitor.ts`。
+
+## 3. 现在做到哪
+
+| 部分 | 当前状态与边界 |
+| --- | --- |
+| VPS 管理中心 | 已上线，独立账号监控／客户端更新／内容审核页面，统一顶部导航与登录 |
+| 签名下载 | pilot 客户端 Build 9、Linux 服务端 Build 3；版本 0.3.6，协议 20；旧 Windows Build 2–8 安装包已清理；stable 保持空通道；用户已回传首台 Build 3 升级成功 |
+| 续期 | Windows 与 Linux 各有独立 systemd timer，登记精确源码／制品身份；不会自动推进 Build 或同步上游 |
+| 被动监控代码 | schema 2、邮箱／备注、身份／额度时效、重试与缓存已实现 |
+| 第一台监控接入 | 用户安装成功，VPS 缓存已收到 ubuntu-cc 自然上报：1账号、1节点，身份/邮箱/Pro套餐、额度和会话usage有数据；备份见下文 |
+| 第一台服务端受管升级接入 | 用户实机首次 bootstrap 成功，Build 2／协议 20，本地就绪通过；用户确认客户端连接和会话正常，主机重启及后续升级/回滚尚待验收 |
+| 本机桌面安装 | 用户确认已安装最新包并成功连接、正常会话；开发工具未自动安装或启动客户端，未独立读取实际客户端构建号 |
+| 其余五台 Ubuntu | 暂缓，只有首台有 Claude 账号；未自动接入、登录、迁移或批量升级 |
+| 大规模账号运营 | 基础字段与账号／节点关系已铺好；真实多账号持续数据、容量和日常操作验收尚待后续 |
+
+“账号监控一键接入”和“配套服务端升级首次接入”是两个独立入口，不能混为一次安装。登录 CC 只有在原有流程确实获取到身份／额度结果后才可能产生同步；登录管理中心或反复点刷新只读 VPS，不强制查询 Claude。
+
+## 4. 源码身份、下载与本轮 review
+
+完整工作分支：`codex/account-monitor-production`。GitHub 仓库：<https://github.com/benvyf/cc-desk-tunnel.git>。本轮检查远端尚无此工作分支，普通 clone 不能取得当前全部工作；请使用交接包内的 `cc-desk-tunnel-source.bundle`。交接 bundle 包含提交后的代码、文档与全部祖先，不包含未提交文件和依赖。
+
+重要提交：
+
+- `3ff4c5c`：合并 GitHub 更新、管理页和账号监控工作。
+- `57bf058`、`7f5ad39`：服务端签名契约／监督升级、桌面确认升级。
+- `b05f6644105cbc56e0b50b93101cf51a860b9931`：历史 Windows Build 4／Linux Build 1 的不可变发布源码。
+- `a16ba6f8418425fd5ada9e51928016235b6a3bb4`：历史 VPS 长摘要移动端换行修复。
+- `ee92b32`：本轮审查前的发布记录基线。
+- `9ab5f49f8155076ae5d7eacb33d9e369da4e2199`：本轮四项修复及 Windows Build 5／Linux Build 2 发布源码。
+- 文档提交在上述发布源码之后；以恢复后的 `git log -5 --oneline` 查看，不把文档 HEAD 误当成安装包源码身份。
+
+已修复并经独立复审：
+
+1. 中断解包留下半成品，导致相同发布永久不能重试。现在写到同级临时目录，校验、持久化后原子重命名；旧残缺缓存隔离保留，不无界删除。
+2. 安装连接丢失时误认上次失败／回滚为本次结果。准备阶段在网络等待前清理旧终态；客户端收到确认响应或看到精确目标的进行中状态后，才接受失败／回滚。无法关联的状态继续等待，超时提示人工核对，不重复安装。
+3. 首次接入和监督程序固定 Build 1。现在按签名 release 与镜像内身份校验 Build，baseline 也来自该身份；公钥、源站、现有运行环境与持久化校验仍保留。
+4. Docker 已创建替换容器但 ID 尚未落盘时中断，无法恢复。创建前持久化 intent，按原容器 ID、目标镜像及随机 label 三项精确核对认领；未知容器拒绝删除。
+
+本轮验证：Node 24 全量 498 项，466 通过、32 平台／可选跳过、0 失败；TypeScript、仓库检查和 diff 检查通过。Python bootstrap 15 项（本机 14 通过、1 POSIX 跳过），监控安装器 5 通过。新增回归先确认原实现失败，再验证修复通过。实际最终安装包、Linux 权限与上线验证见随交接包附带的脱敏证据。
+
+### 先前 Build 5／2 发布与验证快照（历史；当前发布见顶部）
+
+- Windows x64 Build 5：201080092 字节，SHA256 `301822128518e76af90e6ca62e5fc3ac07786b4ca4a4df5fe8d3f6158670206c`；pilot revision 10，有效期至 `2026-10-26T19:49:08.623Z`。
+- Linux x64 Build 2：1563938 字节，SHA256 `19f4a60538b1fea67a9f4438d13c4cf75a821bed0b9973d93af7d5c69d852f11`；descriptor SHA256 `3d81089396d4a2820adcca021f10a5d66fc58120037344a78fda26fc48e1f626`；pilot revision 4，有效期至 `2026-11-06T19:49:06.726Z`。
+- [Windows 完整包](https://api.ghostapi.org/cc-updates/v1/artifacts/5/win32-x64/CC-Desk-Tunnel-Setup-0.3.6-x64.exe)；[Linux 完整程序包](https://api.ghostapi.org/cc-updates/server/v1/artifacts/2/linux-x64/cc-desk-tunnel-server-0.3.6-build2.tar.gz)。实时状态以管理中心和签名索引为准，不能仅根据历史直链安装。
+- VPS 运行源码同为 `9ab5f49f8155076ae5d7eacb33d9e369da4e2199`，42 个运行文件哈希一致、root 所有、0644，配置及 `state.sqlite`／`moderation.sqlite`／`monitor.sqlite` 逻辑内容和私有身份在部署时保持一致。
+- 本轮运行／冷数据备份 `/var/backups/cc-update-service/server-distribution-20261023T194726Z`；旧运行目录 `/opt/cc-update-service.previous-server-distribution-20261023T194726Z`。续期配置与 loader 备份 `/root/.cc-update-admin/automation-backups/2026-10-23T19-49-05-831Z`。
+- 注册状态 `complete`；Windows／Linux 两套强制续期、systemd 沙箱执行成功，两 timer 和管理服务／Nginx active。候选数 0，stable 空通道原始字节未变。
+- 最终 Windows 完整包真正启动／preload／随包组件关闭测试通过。Linux 最终归档真正 COPY 进入镜像后，以 UID 1000、只读、无网络、无账号挂载、限制资源运行：状态 Build 2／协议 20、health、SIGTERM 和零 CLI sentinel 检查通过。Python bootstrap 在 Linux 15/15 通过，补足本机 POSIX 跳过项。
+- 公开签名与下载大小／摘要、最新 bootstrap hash、管理页复制命令、退出清除、390px 无横向溢出、零页面错误均通过。浏览器使用真实线上公开资源与 Linux 下载，管理 API 元数据通过只读 SSH 在 VPS 内认证后提供给浏览器，令牌未进入开发电脑或浏览器；不等于最终生产浏览器真实密码登录演练。
+- 最终只读核对：配置节点 6、已上报节点 0、账号 0；首台 Ubuntu bootstrap 未执行。未进行真实 Claude／额度／JEV 验收调用。
+- 发布辅助脚本也经独立复审：暂停双 timer 后明确拒绝 `activating` 等 oneshot 运行状态；登记失败持久化 `REGISTRATION-STATUS.json` 并停止 timer 待修复，不错误恢复旧 expectedRelease。本轮实际登记完成，未遗留恢复任务。
+- 本地本轮原始脱敏证据位于 `.local/review-release/production-evidence/verification.json`、`vps-verification.json`、`linux-package-smoke.log`、`.local/client-build-5-integrity.json` 和 `.local/review-*.log`；交接 ZIP 的 `evidence/` 收录必要副本。
+
+## 5. 换电脑如何恢复
+
+把完整交接 ZIP 复制到新电脑，解压到普通用户可写的开发目录。不要只复制这个 Markdown。包内包含本文件、完整 Git bundle、SHA256SUMS、脱敏证据、精确本次发布辅助脚本快照；不包含生产凭据、账号资料、node_modules、vendor、VPS 数据库或安装包。
+
+在 PowerShell 中先核对 `SHA256SUMS.txt` 内每个文件的 SHA256，再恢复（路径按新电脑选择）：
+
+```powershell
+python ./verify-handoff.py
+Get-FileHash ./cc-desk-tunnel-source.bundle -Algorithm SHA256
+git clone --branch codex/account-monitor-production ./cc-desk-tunnel-source.bundle ./cc-desk-tunnel
+Set-Location ./cc-desk-tunnel
+git bundle verify ../cc-desk-tunnel-source.bundle
+git remote set-url origin https://github.com/benvyf/cc-desk-tunnel.git
+git status --short
+git log -5 --oneline
+```
+
+`git bundle verify` 放在恢复后的 Git 仓库内执行，避免不同 Git 版本要求当前目录在仓库内的差异。恢复应干净、包含本轮修复和本文档。完整 bundle 可离线 clone。联网 fetch 远端更新后先比较再合入，不能 reset 到较旧的 GitHub 分支。仅在用户授权的发布／推送安排下推进远端，不强推。
+
+准备 Node **24.x**、npm、Git、Python 3、Windows PowerShell **7（pwsh）**；不要依赖旧电脑 `C:/Users/benben/...npm-cache/...node.exe` 的路径。根目录 `package.json` 要求 `>=24 <25`；`node --version` 必须先确认。旧机器系统 Node 25 不是本项目的运行基线。
+
+```powershell
+node --version
+npm ci
+npm run doctor
+npm run typecheck
+npm run check
+npm test
+python apps/update-service/test/server-bootstrap.test.py
+python apps/update-service/test/monitor-installer.test.py
+npm run build
+```
+
+Python 测试文件名含点，使用上面的直接执行方式；不要用普通 unittest discover 后误把“0 tests”当通过。Windows 上 POSIX 测试跳过，在 Linux 隔离环境补验。网络受限时先解决正常依赖获取，不为完成测试改动锁文件或换版本。
+
+打 Windows 完整包前运行 `npm run prepare:windows:package` 获取有固定摘要的 OpenSSH/PowerShell，再运行 `npm run package:windows`；它会执行真正打包程序的离线 smoke。平台组件不在 Git。Linux 程序包用 `node scripts/package-server.mjs <绝对输出路径>`，管理中心运行包用 `node scripts/package-update-service.mjs <绝对输出路径>`。发布包要求干净且已提交的源码；修改后应使用新 Build，不能覆盖已发布同 Build。
+
+旧 `.local/` 目录不随源码恢复。里面有历史 fixture、junction 和身份固定的临时部署脚本，不能整目录上传、不能递归清理未知 junction。交接包 `operations/` 是本轮脚本快照，包含精确旧／新提交前提；只供复核／改造，不要直接重跑已经完成的发布或历史激活。
+
+## 6. VPS 运维与发布位置
+
+- 域名：<https://api.ghostapi.org>；更新页 `/cc-updates/admin/updates`，其余页面地址以顶部导航为准。
+- VPS：`74.82.201.214`，SSH ED25519 指纹 `SHA256:Q7TmQOsYoY+V4agj8p2bwHx5qICS3gBqt0NIan/38to`，保留主机校验。
+- 运行目录 `/opt/cc-update-service`；Node `/opt/cc-update-runtime/bin/node`；监听 loopback 8817；systemd `cc-update-service`。
+- 配置 `/etc/cc-update-service/config.json`；数据 `/srv/cc-update-service`；Nginx snippet `/etc/nginx/snippets/cc-update-service.conf`。
+- 生产发布身份 `/root/.cc-update-admin/identity-public.json`；签名私钥 `signing/managed-vps-2026-10-23.pem`；管理令牌 `access/admin-token.txt`。私钥和令牌始终留在 VPS，不粘贴到聊天／Git／浏览器测试。
+- Windows 续期配置 `/root/.cc-update-admin/automation/config.json`，loader `/opt/cc-update-renewer/scripts/renew-managed-index.mjs`，单元 `cc-update-renew.service/timer`。
+- Linux 续期配置 `/root/.cc-update-admin/server-renewal.json`，入口 `scripts/managed-server-publication.mjs renew CONFIG [--force]`，单元 `cc-server-index-renew.service/timer`。
+- 当前精确制品登记 `/root/.cc-update-admin/CURRENT-RELEASE.json`；源码、输入包与证据在该目录下 `source-build-5/`、`release-input/`、`release-output/`，最终交接包也备份在 `release-input/`。
+
+新电脑需要已有授权的 SSH 身份。当前电脑使用 `C:/Users/benben/.ssh/vps_bandwagon_ed25519`，这是本机路径，不是公共下载地址；不能从 Git 或 ZIP 获得私钥。可由用户另行配置新电脑合法管理身份；不必下载 VPS 发布私钥。
+
+发布流程：先干净提交、离线验证、打包；传精确 Git bundle、EXE、Linux archive 与模板到 VPS；在新的干净源码目录签名和发布。Windows 用 `scripts/publish-managed-update.mjs`，Linux 用 `scripts/managed-server-publication.mjs sign/publish`。发布前暂停两套 timer，并核实没有续期服务正在运行；备份运行目录、配置、单元、Nginx 和一致的数据快照。先 pilot，保留 stable 原始字节。
+
+发布后必须登记新的 expectedRelease、干净源码和独立制品路径，更新续期 loader（如有变更），强制续期并测试 systemd 沙箱，然后恢复两个 timer。不可只改页面显示或把自动续期配置留在旧 Build。确认候选完成后清理候选记录，保留公开制品；核对签名、版本、完整下载大小和 hash、bootstrap hash、运行文件 inventory、服务／timer 状态及 stable 字节不变。
+
+失败恢复程序与配置，不把旧业务数据库覆盖回去。程序升级回滚保留候选写入的新业务数据，冷备份留作人工恢复依据。VPS 同机备份不等于异地灾难恢复。
+
+## 7. 第一台 Ubuntu 的准确现场信息
+
+- hostname `ubuntu-cc`；容器 `cc-desk-tunnel-ba938975-proxy-1`。
+- 实际容器业务程序 0.3.6／协议 20，官方 CLI 2.1.295，SDK 0.3.286。
+- 宿主路径 `/opt/cc-desk-tunnel` 是旧 0.3.5／协议 19，**不能用该旧目录重建覆盖现有容器**。
+- Docker 29.9.1／API 1.56；进程检查用 `docker top CONTAINER -eo pid,args`。缺 PID 的 `-eo comm` 曾导致 daemon HTTP 500。
+- 数据 `/srv/cc-desk-tunnel`，管理员策略 `/etc/claude-code` 只读挂载。
+- 用户已执行的被动监控备份：`/var/lib/cc-monitor-install/backup-20261023T164726Z`。该目录 `rollback.py` 是监控安装回滚，与服务端 bootstrap 回滚不同。
+- 受管服务端首次 bootstrap 已成功，Build 2／协议 20。备份 `/var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3`；后续程序升级走 CC 确认流程，首次接入无需重跑。bootstrap 仍仅支持已审查的首台 profile。
+- 已审查官方 CLI 原始 SHA256：`4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358`。原试点没有 CLI stamp，脚本按原始字节、root 所有权和权限验证，不执行 `claude --version`。
+
+首次 bootstrap 会验证已有源码、运行环境和只读审核策略，隔离无网预检后保存冷备份，替换容器时保留配置／挂载／网络／数据。既有镜像可能派生于此前审核镜像，不得因为与老 base ID 不同就直接替换。依赖、持久化、审核 hook 或固定运行环境不兼容时明确要求人工镜像升级；程序更新不自动升级 CLI／SDK。监督程序属于不可变镜像，修它需要对应镜像／首次接入，不能把普通业务程序包视为自动更新了旧镜像监督器。
+
+## 8. 接下来按什么顺序做
+
+1. 在新电脑恢复交接 bundle，先看工作树和本文档，核对线上签名索引／CURRENT-RELEASE；不要重复历史发布。
+2. VPS 已发布 Windows Build 7／Linux Build 3；用户已回传首台服务端升级成功。安装Build7后，连接页与“设置 → 关于与更新”可按Build检查服务端；控制中心仍可复制专用命令。保留现有备份，无需重复升级服务端、重跑接入、再次恢复CLI或重新登录。等待用户反馈账号编号和新客户端升级入口的正常使用。
+3. 用户已确认最新完整桌面包连接、会话及管理页查看正常；VPS 已核对到首台真实自然上报的身份/邮箱/套餐、额度及usage，基础流程验收通过。后续在正常使用中核对备注持久化、缓存滞后、退出、未知和错误状态，尚未观察到的状态标为待验证，不为演示主动调用第三方接口。
+4. 在首台完成真实安装、重启、正常使用及失败恢复演练后，再决定其他节点接入；每台先核实真实镜像／源码／版本，独立审核与上报身份，不共用秘密、不自动登录 Claude。
+5. 多账号后续工作：在真实自然样本下核验同账号多节点归并、换号后归属、未知字段和额度缓存隔离、备注持久化；现有邮箱／备注／节点／套餐／组织搜索已实现，再按规模完善筛选、分页、保留策略、容量测试和运维备份。未在此轮实现账号池自动调度、自动换号、批量登录或对第三方额度的主动轮询。
+6. 试点验收后再决定 stable 推广和把完整工作分支推到 GitHub；当前 bundle 是跨电脑继续开发的可用源码来源。
+
+## 9. 可直接给下一台电脑 Codex 的提示词
+
+> 请继续 CC Desk Tunnel 定制管理中心开发。先完整阅读根目录 DEVELOPMENT-HANDOFF.md，核对分支 codex/account-monitor-production、git status、最近提交以及 VPS 实际发布身份。当前源码通过交接 Git bundle 恢复，不要 reset 到较旧的 GitHub 分支。产品目标是独立页面的账号监控／客户端更新／审核，以及很多账号的清晰管理；只把 Ubuntu 正常使用中已得到的数据被动同步给 VPS，VPS 页面只读缓存。首台监控安装和服务端受管首次 bootstrap 均已在真实 Ubuntu 成功（Build 2／协议 20），用户确认最新客户端连接和会话正常；VPS 已收到1节点1账号自然上报，身份/邮箱/Claude Pro套餐、额度及usage有数据。主机重启、特殊状态、多账号及后续升级/回滚尚待实机验收，其余五台暂停。此前 CLI 单字节差异已恢复完整同版本官方文件，原因未知，不要重跑修复或首次接入。不要主动调用 Claude／额度／JEV，不启动真实原生终端，不升级 CLI／SDK，不重登／换出口。当前发布 Build 与哈希以本文档、签名索引和 CURRENT-RELEASE 为准，任何新包用新 Build。生产私钥／令牌仅在 VPS 使用，保留审核策略与数据，不执行旧宿主源码重建或历史 .local 激活脚本。请先说明你核对的状态和将处理的下一项，再在现有授权范围继续；无需再次询问已授权的实现方案。

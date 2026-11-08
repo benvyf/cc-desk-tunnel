@@ -1,0 +1,2870 @@
+import { randomUUID, createHash, timingSafeEqual } from 'node:crypto';
+import { mkdirSync, readFileSync, rmSync, unwatchFile, watchFile } from 'node:fs';
+import { createServer } from 'node:http';
+import { totalmem } from 'node:os';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import type { IncomingMessage, RequestListener } from 'node:http';
+import { createServer as createHttpsServer } from 'node:https';
+import { WebSocket, WebSocketServer } from 'ws';
+import {
+  deleteSession,
+  forkSession,
+  getSessionMessages,
+  renameSession,
+} from '@anthropic-ai/claude-agent-sdk';
+import {
+  authSchema,
+  commandSchema,
+  continues,
+  deviceIdentitySchema,
+  isFragment,
+  leaveSchema,
+  MAX_FRAME_BYTES,
+  pathKey,
+  platformOf,
+  PROTOCOL_VERSION,
+  TUNNEL_CLOSE,
+  tunnelAttachSchema,
+  tunnelCredentialsSchema,
+  terminalControlSchema,
+  webActivitySchema,
+  webAuthSchema,
+} from '@cc-desk-tunnel/protocol';
+import type {
+  AccountState,
+  Command,
+  Device,
+  EventPayload,
+  Fragment,
+  ServerMessage,
+  Session,
+  TerminalControl,
+  TunnelCredentials,
+  TerminalActivity,
+} from '@cc-desk-tunnel/protocol';
+import {
+  runClaude,
+  nativeDirectory,
+  prepareNativeDirectory,
+  readNativeStatus,
+  quotas,
+} from './claude.ts';
+import type { ClaudeOptions } from './claude.ts';
+import {
+  terminalHistoryContext,
+  readTerminalHistory,
+  readTerminalMessages,
+  readTerminalContext,
+  terminalHistoryPath,
+  TerminalHistoryReader,
+} from './terminal-history.ts';
+import { statusLineQuota } from './native-controls.ts';
+import {
+  TerminalTranscript,
+  terminalSettings,
+  terminalHooks,
+  terminalActivity,
+  statusLineContext,
+} from './terminal-transcript.ts';
+import { readTerminalFile } from './terminal-files.ts';
+import { DomainError } from './errors.ts';
+import { systemShell } from './device-terms.ts';
+import type { DeviceExecution } from './device-terms.ts';
+import { accountMessageForClient } from './account-presentation.ts';
+import { NativeInput } from './native-input.ts';
+import {
+  readNativeSettings,
+  updateNativeSettings,
+  terminalCompactWindow,
+  writeSessionSshSettings,
+} from './native-settings.ts';
+import { readInstructions, writeInstructions } from './native-instructions.ts';
+import type { NativeTerminal } from './native-terminal.ts';
+import { inOrder } from './question.ts';
+import { simulate } from './simulation.ts';
+import { SessionStore } from './store.ts';
+import { sideForkBoundary } from './side-fork.ts';
+import { Throttle } from './throttle.ts';
+import { Door, Tunnel, sessionSsh, sessionSshPath, sessionSshBinPath } from './tunnel.ts';
+import type { TunnelOptions } from './tunnel.ts';
+import { serviceVersion } from './updates.ts';
+import type { UpdateOptions } from './updates.ts';
+import { UsageLog, createUsageReceiver, telemetryEnvironment } from './usage.ts';
+import { WebAccess } from './web-access.ts';
+import { browserActivity, browserCommands, isWebCommand } from './web-commands.ts';
+import { AccountMonitor, type AccountMonitorOptions } from './account-monitor.ts';
+import { reviewInput, type ModerationOptions } from './moderation.ts';
+import { assertNativeTerminalReview } from './native-terminal-policy.ts';
+import { managedServerHandler, type ManagedBackend } from './managed-server-http.ts';
+import { validateDesktopTicket, type DesktopAccessOptions } from './desktop-access.ts';
+
+type Peer = {
+  socket: WebSocket;
+  id: string;
+  address: string;
+  authenticated: boolean;
+  access?: { ticket: string; userId: string; validUntil: number };
+  browser?: string;
+  origin?: string;
+  // A browser that came through a trusted proxy, which serves it the proxy's certificate.
+  proxied?: boolean;
+  // The computer it is from: the name it signed in with, and the identity that follows in a frame of its own.
+  name: string;
+  device?: Device;
+  tunnel?: Tunnel;
+  registering: boolean;
+  // The client said it was closing the connection: nothing is kept for it to come back to.
+  left: boolean;
+  // The client keeps the plan quota current on its screen, so the service reads it while runs go on.
+  quotaWanted?: boolean;
+  subscriptions: Set<string>;
+  responses: Map<string, { command: string; response: Promise<ServerMessage> }>;
+};
+// A run belongs to the computer its session is on, not to the connection that started it: connections come
+// and go with the network, and the CLI goes on working here meanwhile. `connectionId` only names the one that
+// started it, in the record.
+export type Run = {
+  id: string;
+  sessionId: string;
+  device: string;
+  connectionId: string;
+  controller: AbortController;
+  // Simulation keeps its single tool and approval here; native runs use `approvals` and `input`.
+  toolId?: string;
+  toolFinished: boolean;
+  approvalId?: string;
+  decide?: (allowed: boolean, answers?: Record<string, string>) => void;
+  approvals: Map<string, (allowed: boolean, answers?: Record<string, string>) => void>;
+  // Approvals and questions answered already: a second answer, from another window or computer, came late.
+  answered: Set<string>;
+  cancelReason?: string;
+  // Output still arriving in pieces: sent on as it comes, recorded once it is whole.
+  open?: Fragment;
+  input?: NativeInput;
+  controls: {
+    refresh?: (asked?: boolean) => Promise<void>;
+    stopTask?: (taskId: string) => Promise<void>;
+    backgroundTask?: (toolId: string) => Promise<boolean>;
+  };
+  // Turn figures are reported one after another, so a later report for the same question never lands before an earlier one.
+  stats: ReturnType<typeof inOrder>;
+};
+type Terminal = {
+  id: string;
+  sessionId: string;
+  owner?: Peer;
+  process?: NativeTerminal;
+  closing?: boolean;
+  idle?: ReturnType<typeof setTimeout>;
+  continued?: {
+    nativeId: string;
+    config: string;
+    empty?: boolean;
+    known: Set<string>;
+    connectionId: string;
+    at: string;
+    last?: string;
+    settingsPath: string;
+    hooksPath: string;
+    statusPath: string;
+    quota?: string;
+    contextKey?: string;
+    statusFailed?: boolean;
+    compactWindow?: number | null;
+    offset: number;
+    heard: Promise<void>;
+    activity?: TerminalActivity;
+    elsewhere?: boolean;
+    toldElsewhere?: boolean;
+    reader: TerminalHistoryReader;
+    transcript: TerminalTranscript;
+    imported: { payload: EventPayload; at?: string }[];
+    snapshot?: Awaited<ReturnType<TerminalHistoryReader['read']>>;
+    syncTimer?: ReturnType<typeof setInterval>;
+    syncQueued?: boolean;
+    syncFailed?: boolean;
+  };
+};
+// One of the user's computers, while it is connected or expected back: its connections, the door its commands
+// go through, and the wait that ends its runs if it stays away.
+type Seat = {
+  device: string;
+  peers: Set<Peer>;
+  door?: Door;
+  opening?: Promise<void>;
+  away?: NodeJS.Timeout;
+};
+const INTERRUPTS = new Set(['\x1b', '\x03', '\x1b[27u', '\x1b[99;5u']);
+type CommandOf<T extends Command['type']> = Extract<Command, { type: T }>;
+export type ServerOptions = {
+  managed?: {
+    backend: ManagedBackend;
+    initialMaintenance?: boolean;
+    readiness?: () => unknown;
+    nonce?: string;
+  };
+  accountMonitor?: AccountMonitorOptions;
+  desktopAccess?: DesktopAccessOptions;
+  token: string;
+  dataDir: string;
+  moderation?: ModerationOptions;
+  nativeTerminalReview?: boolean;
+  stepMs?: number;
+  allowedOrigins?: string[];
+  claude?: ClaudeOptions;
+  tunnel?: TunnelOptions;
+  tls?: { cert: Buffer; key: Buffer };
+  reverseProxy?: boolean;
+  host?: string;
+  // Legacy option retained for callers; managed builds do not serve cached installers.
+  clientDir?: string;
+  // How many native runs and terminals may be going at once, over all connections; by default what the
+  // memory of this machine holds.
+  maxRuns?: number;
+  // Legacy option retained for callers; managed builds always ignore release tracking.
+  updates?: Omit<UpdateOptions, 'clientDir'>;
+  // How long the runs of a computer go on after its last connection broke, for it to come back to. By default
+  // five minutes with the real CLI and none in simulation.
+  graceMs?: number;
+  // Defaults to the frontend shipped beside the server. Tests can provide a small fixture directory.
+  webDirectory?: string;
+};
+
+// How many answered requests a connection remembers, to answer a resend of one the same way.
+const REMEMBERED = 256;
+// How much unfinished output a run holds before recording it, in characters.
+const OPEN_LIMIT = 64 * 1024;
+// What the "continue" button sends in the user's place. The turn before it was stopped or cut off, and a
+// command that was under way then may or may not have taken effect.
+const CONTINUE =
+  'Continue from where the last turn stopped. A command that was running when it stopped may or may not have taken effect: check its result before repeating it.';
+
+export function createProxyServer(options: ServerOptions) {
+  if (options.token.length < 24)
+    throw new Error('PROXY_TOKEN must contain at least 24 characters.');
+  if (options.claude && (!options.tunnel || (!options.tls && !options.reverseProxy)))
+    throw new Error(
+      'Native mode requires TLS or explicit reverse proxy mode, and the execution channel.',
+    );
+  const store = new SessionStore(options.dataDir);
+  const usage = new UsageLog(store.database);
+  const accountMonitor = options.accountMonitor
+    ? new AccountMonitor(options.accountMonitor)
+    : undefined;
+  const usageReceiver = options.claude ? createUsageReceiver(usage) : undefined;
+  const peers = new Set<Peer>();
+  quotas.wanted = () => [...peers].some((peer) => peer.quotaWanted);
+  // One run or one terminal per session, each a CLI process of its own in the session's directory. What reads
+  // or changes the state the CLI keeps for all of them — a status read or session change (`mutations`), an
+  // account change — waits until none is going.
+  const runs = new Map<string, Run>();
+  const mutations = new Set<string>();
+  const reviewing = new Set<string>();
+  const inputQueues = new Map<string, Promise<unknown>>();
+  const reviewDeadlines = new WeakMap<object, number>();
+
+  async function review(
+    peer: Peer,
+    command: { requestId: string; type: string },
+    sessionId: string,
+    text: string,
+  ) {
+    if (!options.moderation || command.type !== 'message.send') return;
+    if (closing || peer.left || peer.socket.readyState !== WebSocket.OPEN)
+      throw new DomainError('connection_closed', '连接已关闭，本次未发送。');
+    const run = runs.get(sessionId);
+    reviewing.add(sessionId);
+    try {
+      const remaining = Math.min(
+        7500,
+        (reviewDeadlines.get(command) ?? Date.now() + 7500) - Date.now(),
+      );
+      await reviewInput(
+        options.moderation,
+        {
+          requestId: command.requestId,
+          sessionId,
+          deviceId: peer.device?.id ?? serverDevice.id,
+          kind: command.type,
+          text,
+        },
+        remaining,
+      );
+      if (
+        Date.now() > (reviewDeadlines.get(command) ?? Infinity) ||
+        closing ||
+        peer.left ||
+        peer.socket.readyState !== WebSocket.OPEN ||
+        runs.get(sessionId) !== run
+      )
+        throw new DomainError('review_state_changed', '审核期间连接或运行状态已变化，请重新提交。');
+    } finally {
+      reviewing.delete(sessionId);
+    }
+  }
+  const terminals = new Map<string, Terminal>();
+  const seats = new Map<string, Seat>();
+  const graceMs = options.graceMs ?? (options.claude ? 300_000 : 0);
+  // Each run or terminal is a CLI process that keeps some 250 MB; more of them than the memory holds would
+  // take the machine down, and every one of them with it.
+  const capacity =
+    options.maxRuns ?? Math.max(1, Math.floor((totalmem() - 300 * 2 ** 20) / (300 * 2 ** 20)));
+  // Background work that close() waits for.
+  const tasks = new Set<Promise<unknown>>();
+  const tunnelTasks = new Set<Promise<unknown>>();
+  let closing = false;
+  let maintenance = options.managed?.initialMaintenance ?? false;
+  let webRequests = 0;
+  function maintenanceBusy(disconnectClients: boolean) {
+    try {
+      return !!(
+        closing ||
+        runs.size ||
+        terminals.size ||
+        mutations.size ||
+        reviewing.size ||
+        inputQueues.size ||
+        tasks.size ||
+        tunnelTasks.size ||
+        webRequests ||
+        store.list().some((session) => session.activeRun) ||
+        [...peers].some((peer) => peer.registering || (!disconnectClients && peer.authenticated))
+      );
+    } catch {
+      return true;
+    }
+  }
+  const managedMaintenance = {
+    recoverRelay() {
+      if (maintenance || closing) return false;
+      // The root host controller has confirmed its old SSH transport is disconnected.
+      // Preserve existing tasks, approvals, terminals and peers while holding the same
+      // maintenance owner as installs; a tunnel-only restart does not terminate them.
+      maintenance = true;
+      return true;
+    },
+    serving() {
+      return !maintenance && !closing;
+    },
+    busy() {
+      return maintenance || maintenanceBusy(true);
+    },
+    enter(disconnectClients = false) {
+      if (maintenance || closing) return false;
+      maintenance = true;
+      if (maintenanceBusy(disconnectClients)) {
+        maintenance = false;
+        return false;
+      }
+      if (disconnectClients)
+        for (const peer of peers) {
+          peer.left = true;
+          peer.socket.close(1012, 'Server update; reconnect after maintenance');
+        }
+      return true;
+    },
+    leave() {
+      maintenance = false;
+    },
+    release() {
+      maintenance = false;
+    },
+  };
+  const adapter = options.claude ? 'claude-code' : 'simulation';
+  const origins = options.allowedOrigins ?? [
+    'http://127.0.0.1:5173',
+    'http://localhost:5173',
+    'file://',
+    'null',
+  ];
+  const expectedToken = createHash('sha256').update(options.token).digest();
+  const authorized = (token: string) =>
+    timingSafeEqual(expectedToken, createHash('sha256').update(token).digest());
+  const version = serviceVersion();
+  const throttle = new Throttle();
+  const web = new WebAccess({
+    database: store.database,
+    token: options.token,
+    directory: options.webDirectory ?? fileURLToPath(new URL('../web/', import.meta.url)),
+    dataDir: options.dataDir,
+    tls: options.tls,
+    reverseProxy: options.reverseProxy,
+    host: options.host ?? '127.0.0.1',
+  });
+  const serverDevice: Device = { id: web.serverDeviceId, name: '服务端', platform: 'linux' };
+  const originOf = (request: IncomingMessage) =>
+    `${options.tls || options.reverseProxy ? 'https' : 'http'}://${request.headers.host}`;
+  // Behind the reverse proxy every socket comes from the proxy itself; it passes the client on in X-Real-IP.
+  const addressOf = (request: IncomingMessage) =>
+    (options.reverseProxy && [request.headers['x-real-ip']].flat()[0]) ||
+    request.socket.remoteAddress ||
+    'unknown';
+  function refuse(address: string, what = 'service token') {
+    const count = throttle.fail(address);
+    const wait = throttle.blocked(address);
+    console.log(
+      `Sign-in refused from ${address}: wrong ${what}, ${count} in a row${wait ? `; blocked for ${wait}s` : ''}`,
+    );
+  }
+
+  const managedHandler = options.managed
+    ? managedServerHandler({
+        token: options.token,
+        backend: options.managed.backend,
+        admission: managedMaintenance,
+        address: addressOf,
+        readiness: options.managed.readiness,
+        nonce: options.managed.nonce,
+        authorizeDesktopTicket: options.desktopAccess
+          ? (ticket) => validateDesktopTicket(options.desktopAccess!, ticket)
+          : undefined,
+      })
+    : undefined;
+  const handler: RequestListener = (request, response) => {
+    if (managedHandler?.(request, response)) return;
+    if (maintenance && !(request.method === 'GET' && request.url === '/health')) {
+      response.writeHead(503, { 'Retry-After': '5', 'Cache-Control': 'no-store' }).end();
+      return;
+    }
+    if (request.method === 'GET' && request.url === '/health') {
+      response.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      response.end(JSON.stringify({ status: 'ok', protocolVersion: PROTOCOL_VERSION, adapter }));
+    } else if (request.method === 'GET' && request.url === '/client/installer') {
+      // The same secret as the WebSocket: only a signed-in client can fetch the installer.
+      const address = addressOf(request);
+      if (throttle.blocked(address)) {
+        response.writeHead(429, { 'Retry-After': throttle.blocked(address) }).end();
+      } else if (!authorized(request.headers.authorization?.replace(/^Bearer /, '') ?? '')) {
+        refuse(address);
+        response.writeHead(401).end();
+      } else {
+        response.writeHead(404).end();
+      }
+    } else if (options.desktopAccess && !options.desktopAccess.allowLegacy) {
+      response.writeHead(403).end('请使用 CC SPACE 邮箱登录。');
+    } else {
+      webRequests++;
+      void web
+        .handle(request, response)
+        .then((handled) => {
+          if (!handled) response.writeHead(404).end();
+        })
+        .catch(() => {
+          if (response.headersSent) response.destroy();
+          else response.writeHead(500).end();
+        })
+        .finally(() => {
+          webRequests--;
+        });
+    }
+  };
+  const server = options.tls
+    ? createHttpsServer(
+        {
+          ...options.tls,
+          SNICallback: (servername, done) => done(null, web.certificates.context(servername)),
+        },
+        handler,
+      )
+    : createServer(handler);
+  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
+  server.on('upgrade', (request, socket, head) => {
+    if (maintenance) {
+      socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
+      return;
+    }
+    if (
+      !closing &&
+      !(options.desktopAccess && !options.desktopAccess.allowLegacy) &&
+      web.matchesUpgrade(request)
+    ) {
+      const address = web.address(request);
+      const session = web.authenticate(request);
+      if (!session) {
+        socket.end('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+        return;
+      }
+      if (web.throttle.blocked(address) || !web.throttle.enter(address)) {
+        socket.end('HTTP/1.1 429 Too Many Requests\r\nConnection: close\r\n\r\n');
+        return;
+      }
+      wss.handleUpgrade(request, socket, head, (ws) =>
+        wss.emit('connection', ws, address, {
+          browser: session.id,
+          origin: originOf(request),
+          proxied: web.proxied(request),
+        }),
+      );
+      return;
+    }
+    if (
+      closing ||
+      request.url !== '/ws' ||
+      (request.headers.origin && !origins.includes(request.headers.origin))
+    ) {
+      socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
+      return;
+    }
+    const address = addressOf(request);
+    if (throttle.blocked(address) || !throttle.enter(address)) {
+      socket.end(
+        `HTTP/1.1 429 Too Many Requests\r\nRetry-After: ${throttle.blocked(address) || 5}\r\nConnection: close\r\n\r\n`,
+      );
+      return;
+    }
+    wss.handleUpgrade(request, socket, head, (ws) =>
+      wss.emit('connection', ws, address, { origin: originOf(request) }),
+    );
+  });
+
+  function send(peer: Peer, message: ServerMessage) {
+    if (peer.socket.readyState === WebSocket.OPEN)
+      peer.socket.send(JSON.stringify(accountMessageForClient(message)));
+  }
+  function broadcast(message: ServerMessage, sessionId?: string) {
+    for (const peer of peers) {
+      if (peer.authenticated && (!sessionId || peer.subscriptions.has(sessionId)))
+        send(peer, message);
+    }
+  }
+  function deviceOf(peer: Peer) {
+    if (!peer.device) throw new DomainError('device_unknown', '客户端没有报告设备标识。');
+    return peer.device;
+  }
+  function subscribe(peer: Peer, sessionId: string) {
+    if (!peer.subscriptions.has(sessionId) && peer.subscriptions.size >= 32)
+      throw new DomainError(
+        'subscription_limit',
+        '同一连接最多同时订阅 32 个会话，请先关闭其他侧边会话。',
+      );
+    peer.subscriptions.add(sessionId);
+  }
+  // A session's commands run on the computer its project directory is on, whichever of the user's computers
+  // asks; that computer has to be connected and its execution channel ready. One from before computers were
+  // told apart becomes that of the first to use it. Gives the computer's ID.
+  function target(peer: Peer, session: Session) {
+    if (session.device?.id === serverDevice.id) return serverDevice.id;
+    const device = peer.browser ? undefined : deviceOf(peer);
+    if (!session.device) {
+      // Before computers were told apart they were all Windows ones, and so is the session's project path.
+      if (!device || platformOf(device) !== 'win32')
+        throw new DomainError(
+          'other_device',
+          '此会话在一台 Windows 电脑上。要在本机接着做，请先为它选择本机的项目目录，或把它分叉到本机。',
+        );
+      updated(store.claim(session.id, device).id);
+    }
+    const place = session.device ?? device!;
+    const seat = seats.get(place.id);
+    if (place.id === device?.id) {
+      if (options.claude && !(peer.tunnel?.ssh && seat?.door?.ssh))
+        throw new DomainError(
+          'execution_offline',
+          '本机的执行通道尚未就绪，请稍候；客户端正在建立或重新建立连接。',
+        );
+    } else if (!seat?.peers.size)
+      throw new DomainError(
+        'device_offline',
+        `设备“${place.name}”不在线。它连上服务后才能在这里操作它的会话；也可以把会话接到本机或分叉到本机。`,
+      );
+    else if (options.claude && !seat.door?.ready)
+      throw new DomainError(
+        'execution_offline',
+        `设备“${place.name}”的执行通道尚未就绪，请稍候再试。`,
+      );
+    return place.id;
+  }
+  // Which of the user's computers are connected and whether commands reach them, told to every window when
+  // it changes. A computer whose runs wait for it to come back is not connected.
+  let presence = '';
+  function devices(): ServerMessage {
+    return {
+      type: 'devices',
+      devices: [
+        // The service itself is always there. It is listed once it has sessions, with Web on or off, so a
+        // desktop that never used it is told of its computers just as before.
+        ...(store.list().some((session) => session.device?.id === serverDevice.id)
+          ? [{ ...serverDevice, ready: true, server: true as const }]
+          : []),
+        ...[...seats.values()].flatMap((seat) => {
+          const device = [...seat.peers].findLast((peer) => peer.device)?.device;
+          return device
+            ? [
+                {
+                  ...device,
+                  ready: !options.tunnel || !!seat.door?.ready,
+                  ...deviceExecution(device),
+                },
+              ]
+            : [];
+        }),
+      ],
+    };
+  }
+  function deviceExecution(device?: Device): DeviceExecution {
+    const platform = platformOf(device);
+    const shells = device?.viaSsh
+      ? ['bash' as const]
+      : (seats.get(device?.id ?? '')?.door?.shells ??
+        (platform === 'win32' ? [systemShell(platform)] : undefined));
+    const shell = store.preferredShell(device?.id);
+    return { shells, ...(shell ? { shell } : {}) };
+  }
+  function announce() {
+    const message = devices();
+    const text = JSON.stringify(message);
+    if (closing || text === presence) return;
+    presence = text;
+    broadcast(message);
+  }
+  function room() {
+    if (options.claude && runs.size + terminals.size >= capacity)
+      throw new DomainError(
+        'capacity',
+        `服务端同时最多进行 ${capacity} 个运行或终端（按服务器内存估算，可用 PROXY_MAX_RUNS 调整）。请等其他任务结束后再试。`,
+      );
+  }
+  function track(task: Promise<unknown>, group = tasks) {
+    group.add(task);
+    void task.finally(() => group.delete(task));
+  }
+  function updated(sessionId: string) {
+    broadcast({ type: 'session.updated', session: store.get(sessionId).session });
+  }
+
+  // Stores an event and sends it to the session's subscribers; quota readings also drive the usage periods.
+  function record(sessionId: string, runId: string, payload: EventPayload, at?: string) {
+    accountMonitor?.observe(payload, sessionId, runId);
+    if (payload.type === 'native.metrics' && payload.rateLimits?.available)
+      usage.observe(payload.rateLimits);
+    const event = store.append(sessionId, runId, payload, at);
+    broadcast({ type: 'session.event', event }, sessionId);
+    return event;
+  }
+  // Records what has arrived of the output the run is in the middle of.
+  function settle(run: Run) {
+    const open = run.open;
+    if (!open) return;
+    run.open = undefined;
+    record(run.sessionId, run.id, open);
+  }
+  function emit(run: Run, payload: EventPayload) {
+    // A background task's word of itself is for whoever is watching now.
+    if (payload.type === 'native.progress') {
+      broadcast(
+        { type: 'session.fragment', sessionId: run.sessionId, runId: run.id, payload },
+        run.sessionId,
+      );
+      return;
+    }
+    if (isFragment(payload)) {
+      if (run.open && !continues(run.open, payload)) settle(run);
+      run.open = run.open ? { ...run.open, text: run.open.text + payload.text } : payload;
+      broadcast(
+        { type: 'session.fragment', sessionId: run.sessionId, runId: run.id, payload },
+        run.sessionId,
+      );
+      // Very long output is recorded a part at a time, so that what is held here stays small.
+      if (run.open.text.length >= OPEN_LIMIT) settle(run);
+      return;
+    }
+    settle(run);
+    record(run.sessionId, run.id, payload);
+    if (payload.type === 'native.title' && store.get(run.sessionId).session.autoTitle)
+      broadcast({
+        type: 'session.updated',
+        session: store.renameNative(run.sessionId, payload.title),
+      });
+    if (payload.type === 'native.compact') store.compacted(run.sessionId);
+    if (payload.type === 'run.status') updated(run.sessionId);
+  }
+  // The CLI reports its model requests a moment after the turn ends. Wait for as many as the turn made, then
+  // record what they add up to; whatever has not come by then is left out and the figures are marked partial.
+  async function turnStats(
+    run: Run,
+    turn: {
+      messageId?: string;
+      startedAt: number;
+      endedAt: number;
+      requests: number;
+      outputTokens: number;
+      promptIds: string[];
+      background: boolean;
+    },
+  ) {
+    // Complete once every request of the main loop is there and the records add up to the output the CLI counted for the
+    // turn, which includes its subagents. Subagent records must not stand in for a main request that is still on its way.
+    const complete = (stats: { mainRequests: number; outputTokens: number }) =>
+      stats.mainRequests >= turn.requests && stats.outputTokens >= turn.outputTokens;
+    let stats = usage.turnStats(run.sessionId, turn);
+    // Without a count of requests to wait for, give the usual export delay one chance.
+    for (let waited = 0; waited < 8000; waited += 500) {
+      if (turn.requests ? complete(stats) : waited >= 3000) break;
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      stats = usage.turnStats(run.sessionId, turn);
+    }
+    const { mainRequests, ...figures } = stats;
+    if (figures.requests)
+      emit(run, {
+        type: 'turn.stats',
+        messageId: turn.messageId,
+        ...figures,
+        partial: turn.background || !complete(stats),
+      });
+  }
+  function finish(run: Run, status: 'completed' | 'cancelled' | 'failed', reason?: string) {
+    if (runs.get(run.sessionId) !== run) return;
+    run.input?.close();
+    if (run.toolId && !run.toolFinished) {
+      emit(run, {
+        type: 'tool.result',
+        toolId: run.toolId,
+        status: 'cancelled',
+        output: '模拟工具未执行。',
+        exitCode: null,
+      });
+    }
+    emit(run, { type: 'run.status', status, reason, connectionId: run.connectionId });
+    runs.delete(run.sessionId);
+    accountMonitor?.forgetSource(run.id);
+    run.controller.abort();
+    run.decide?.(false);
+    for (const decide of run.approvals.values()) decide(false);
+    run.approvals.clear();
+  }
+  // A native run ends through its own adapter, which reports what is known about in-flight tools first.
+  function cancel(run: Run, reason: string) {
+    if (!options.claude) {
+      finish(run, 'cancelled', reason);
+      return;
+    }
+    run.cancelReason = reason;
+    run.input?.close();
+    run.controller.abort();
+    for (const decide of run.approvals.values()) decide(false);
+    run.approvals.clear();
+  }
+  function nativeRoot(sessionId: string) {
+    return store.get(sessionId).session.nativeRoot ?? sessionId;
+  }
+  async function native(run: Run) {
+    try {
+      const { session } = store.get(run.sessionId);
+      const ssh = run.device === serverDevice.id ? undefined : seats.get(run.device)!.door!.ssh!;
+      const said = store.promptValues(run.sessionId, deviceExecution(session.device));
+      const status = await runClaude(options.claude!, {
+        sessionId: run.sessionId,
+        nativeRoot: session.nativeRoot ?? session.id,
+        projectPath: said.projectPath,
+        platform: said.platform,
+        ...(said.shells ? { shells: said.shells, shell: said.shell } : {}),
+        ...(session.device?.viaSsh ? { viaSsh: true } : {}),
+        permissionMode: session.permissionMode,
+        model: session.model,
+        effort: session.effort,
+        input: run.input!,
+        controls: run.controls,
+        waiting: (background) =>
+          emit(run, {
+            type: 'run.status',
+            status: 'running',
+            connectionId: run.connectionId,
+            ...(background ? { waiting: 'background' as const } : {}),
+          }),
+        turnEnded: (turn) => track(run.stats(() => turnStats(run, turn))),
+        dataDir: store.directory,
+        resume: store.hasNativeContext(run.sessionId),
+        sideContext: store.sidePrompt(run.sessionId),
+        nativeSide: store.isNativeSide(run.sessionId),
+        signal: run.controller.signal,
+        ssh: ssh ? sessionSsh(store.directory, run.sessionId, ssh) : undefined,
+        emit: (event) => emit(run, event),
+        approve: (toolId, waiting) => {
+          if (run.controller.signal.aborted) return Promise.resolve({ allowed: false });
+          const approvalId = randomUUID();
+          return new Promise((resolve) => {
+            run.approvals.set(approvalId, (allowed, answers) => {
+              emit(run, { type: 'approval.resolved', approvalId, allowed });
+              resolve({ allowed, answers });
+            });
+            emit(run, { type: 'approval.requested', approvalId, toolId });
+            emit(run, {
+              type: 'run.status',
+              status: 'awaiting_approval',
+              connectionId: run.connectionId,
+              waiting,
+            });
+          });
+        },
+      });
+      finish(run, status, run.cancelReason);
+    } catch {
+      emit(run, {
+        type: 'run.error',
+        code: 'native_adapter_failed',
+        message: '原生进程适配失败；请检查服务配置和 CLI 版本。',
+      });
+      finish(run, run.controller.signal.aborted ? 'cancelled' : 'failed', run.cancelReason);
+    }
+  }
+
+  async function publishAccount(target: Peer) {
+    const { accountStatus } = await import('./native-account.ts');
+    const state: AccountState = {
+      ...(await accountStatus(options.claude!.executable)),
+      login: null,
+    };
+    accountMonitor?.observe({ type: 'account.state', ...state });
+    send(target, { type: 'account.state', ...state });
+  }
+  async function account(peer: Peer, command: CommandOf<`account.${string}` & Command['type']>) {
+    if (command.type !== 'account.status')
+      throw new DomainError(
+        'account_server_managed',
+        '账号由服务端管理，请在 Ubuntu 终端使用官方 Claude Code 登录、退出或换号。',
+      );
+    if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有原生账号。');
+    await publishAccount(peer);
+  }
+
+  // Starts the CLI without a prompt to read its account, model and quota state.
+  async function readStatus(peer: Peer, command: CommandOf<'session.status'>) {
+    if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有原生账号状态。');
+    // During a run its own CLI answers, so quota can be reread without waiting for the turn to end.
+    const active =
+      runs.get(command.sessionId) ?? [...runs.values()].find((run) => run.controls.refresh);
+    if (active?.controls.refresh && !mutations.size) {
+      await active.controls.refresh(command.quota);
+      return;
+    }
+    // Read a terminal's status through a separate CLI without resuming its native session.
+    if (runs.size || mutations.size)
+      throw new DomainError('native_busy', '运行结束后再刷新原生状态。');
+    const resume = !terminalForNative(command.sessionId);
+    const last = resume ? null : store.lastMetrics(command.sessionId);
+    mutations.add(command.sessionId);
+    const controller = new AbortController();
+    const closed = () => controller.abort();
+    peer.socket.once('close', closed);
+    accountMonitor?.beginSource(command.requestId);
+    try {
+      const events = await readNativeStatus(
+        options.claude,
+        store.directory,
+        nativeRoot(command.sessionId),
+        command.sessionId,
+        controller.signal,
+        { asked: command.quota, previous: store.lastMetrics(command.sessionId)?.usage, resume },
+      );
+      for (const read of events) {
+        const payload: EventPayload =
+          resume || read.type !== 'native.metrics'
+            ? read
+            : { ...read, context: last?.context ?? null, usage: last?.usage ?? null };
+        const event = record(command.sessionId, command.requestId, payload);
+        if (!peer.subscriptions.has(command.sessionId))
+          send(peer, { type: 'session.event', event });
+      }
+      updated(command.sessionId);
+    } finally {
+      peer.socket.removeListener('close', closed);
+      accountMonitor?.forgetSource(command.requestId);
+      mutations.delete(command.sessionId);
+    }
+  }
+  async function closeTerminal(peer: Peer, command: CommandOf<'terminal.close'>) {
+    const terminal = terminals.get(command.sessionId);
+    if (!terminal || terminal.id !== command.terminalId)
+      throw new DomainError('terminal_inactive', '原生终端已结束。');
+    if (terminal.owner && terminal.owner !== peer)
+      throw new DomainError('not_owner', '原生终端属于另一连接。');
+    if (!terminal.owner) target(peer, store.get(command.sessionId).session);
+    terminal.closing = true;
+    await terminal.process?.close();
+  }
+  // The terminal occupies its session like a run does, so other connections see it as busy.
+  function terminalForNative(sessionId: string) {
+    return (
+      terminals.get(sessionId) ??
+      [...terminals.values()].find((terminal) => terminal.continued?.nativeId === sessionId)
+    );
+  }
+  async function openTerminal(peer: Peer, command: CommandOf<'terminal.open'>, session: Session) {
+    if (options.moderation && !options.nativeTerminalReview)
+      throw new DomainError(
+        'moderation_terminal_disabled',
+        '此节点已启用内容审核，请使用聊天输入；原生终端暂不可用。',
+      );
+    if (!options.claude) throw new DomainError('native_unavailable', '离线模拟不启动原生终端。');
+    const existing = terminals.get(command.sessionId);
+    if (
+      command.terminalId &&
+      (!existing ||
+        existing.id !== command.terminalId ||
+        existing.process?.exited ||
+        existing.closing)
+    )
+      throw new DomainError('terminal_inactive', '原终端已结束，未新建进程。请新开终端继续。');
+    if (existing?.process && !existing.closing) {
+      target(peer, session);
+      if (existing.owner === peer) throw new DomainError('native_busy', '原生终端已经打开。');
+      if (existing.owner && existing.owner !== peer)
+        throw new DomainError('not_owner', '原生终端正在另一连接中显示。');
+      existing.owner = peer;
+      clearTimeout(existing.idle);
+      send(peer, {
+        type: 'terminal.opened',
+        sessionId: existing.sessionId,
+        terminalId: existing.id,
+      });
+      await existing.process.attach(command.cols, command.rows);
+      return;
+    }
+    if (existing || runs.has(command.sessionId) || mutations.size)
+      throw new DomainError('native_busy', '请先结束这个会话的运行或会话管理，再打开终端。');
+    const device = target(peer, session);
+    // target() may claim a legacy session; use its persisted device identity.
+    session = store.get(session.id).session;
+    const ssh = seats.get(device)?.door?.ssh;
+    if (!ssh && device !== serverDevice.id)
+      throw new DomainError('execution_offline', '本机的执行通道尚未就绪。');
+    room();
+    const current: Terminal = { id: randomUUID(), sessionId: command.sessionId, owner: peer };
+    terminals.set(current.sessionId, current);
+    try {
+      const { NativeTerminal, terminalArguments, terminalEnvironment } =
+        await import('./native-terminal.ts');
+      if (closing || peer.socket.readyState !== WebSocket.OPEN)
+        throw new Error('Connection closed');
+      let executable = options.claude.executable;
+      if (options.nativeTerminalReview) {
+        if (!options.moderation) throw new Error('Native terminal review requires node moderation');
+        executable = assertNativeTerminalReview(executable);
+      }
+      const env = terminalEnvironment(options.claude);
+      // The user's choice for this process, through the CLI's own documented switches: its `tui` setting
+      // (written to this terminal's --settings below) and the matching environment variable.
+      if (command.display) env.CLAUDE_CODE_NO_FLICKER = command.display === 'screen' ? '1' : '0';
+      const context = terminalHistoryContext(
+        options.claude,
+        env,
+        nativeDirectory(store.directory, nativeRoot(session.id)),
+      );
+      let history = store.terminalHistory(session.id);
+      if (!history) {
+        const now = new Date().toISOString();
+        history = {
+          sessionId: session.id,
+          nativeId: session.id,
+          root: nativeRoot(session.id),
+          deviceId: session.device!.id,
+          pathKey: pathKey(session.projectPath),
+          configKey: context.key,
+          mode: 'new',
+          createdAt: now,
+          updatedAt: now,
+        };
+        store.saveTerminalHistory(history);
+      }
+      if (
+        history.configKey !== context.key ||
+        history.root !== nativeRoot(session.id) ||
+        history.deviceId !== session.device?.id ||
+        history.pathKey !== pathKey(session.projectPath)
+      )
+        throw new DomainError(
+          'history_environment_changed',
+          '终端关联的 CLI 配置或项目已变化，请新开终端或在官方 CLI 中选择历史。',
+        );
+      if (runs.has(history.nativeId))
+        throw new DomainError('history_busy', '此官方历史正在聊天界面运行，请结束后再打开终端。');
+      if (
+        [...terminals.keys()].some(
+          (id) => id !== session.id && store.terminalHistory(id)?.nativeId === history.nativeId,
+        )
+      )
+        throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
+      const cwd = prepareNativeDirectory(options.claude, store.directory, nativeRoot(session.id));
+      const reader = new TerminalHistoryReader(context.config, cwd, history.nativeId);
+      const messages = await reader.read({ final: true });
+      const saved =
+        (await readTerminalHistory(context.config, cwd, history.nativeId)) ??
+        (messages.length ? await readTerminalContext(context.config, cwd, history.nativeId) : null);
+      if (history.mode === 'resume' && !saved)
+        throw new DomainError('history_missing', '官方历史已删除或尚无有效消息，不会静默新建。');
+      if (history.mode === 'new' && saved && history.nativeId !== session.id)
+        throw new DomainError('history_exists', '此终端已有官方历史，请显式选择继续历史会话。');
+      const directory = join(store.directory, 'terminal-runtime');
+      mkdirSync(directory, { recursive: true, mode: 0o700 });
+      const imported: { payload: EventPayload; at?: string }[] = [];
+      current.continued = {
+        nativeId: history.nativeId,
+        config: context.config,
+        empty: !messages.length,
+        known: new Set(messages.map((message) => message.uuid)),
+        connectionId: peer.id,
+        at: new Date().toISOString(),
+        last: messages.at(-1)?.uuid,
+        settingsPath: join(directory, `${current.id}.json`),
+        hooksPath: join(directory, `${current.id}.hooks`),
+        statusPath: join(directory, `${current.id}.status`),
+        offset: 0,
+        heard: Promise.resolve(),
+        reader,
+        imported,
+        snapshot: messages,
+        transcript: new TerminalTranscript((payload, at) => imported.push({ payload, at })),
+        // Unknown until the CLI's first hook: starting as 'idle' made its SessionStart (also 'idle') look
+        // unchanged, so a fresh terminal stayed without a state until the first prompt.
+      };
+      terminalSettings(
+        current.continued.settingsPath,
+        current.continued.hooksPath,
+        options.claude.settingsPath,
+        current.continued.statusPath,
+        join(context.config, 'settings.json'),
+        command.display && (command.display === 'screen' ? 'fullscreen' : 'default'),
+      );
+      current.continued.compactWindow = terminalCompactWindow(
+        context.config,
+        cwd,
+        current.continued.settingsPath,
+      );
+      const reach = ssh ? sessionSsh(store.directory, session.id, ssh) : undefined;
+      if (reach?.bin) {
+        const path = writeSessionSshSettings(current.continued.settingsPath, {
+          source: current.continued.settingsPath,
+          config: context.config,
+          cwd,
+          bin: reach.bin,
+          inheritedPath: env.PATH ?? '/usr/bin:/bin',
+        });
+        if (path) env.PATH = path;
+        else delete reach.bin;
+      }
+      if (closing || current.closing || peer.socket.readyState !== WebSocket.OPEN)
+        throw new DomainError('connection_closed', '连接或终端已关闭，本次未启动。');
+      current.process = new NativeTerminal(
+        executable,
+        terminalArguments(
+          { ...options.claude, settingsPath: current.continued.settingsPath },
+          session,
+          reach,
+          { ...history, mode: saved ? 'resume' : history.mode },
+          deviceExecution(session.device),
+        ),
+        {
+          cwd,
+          cols: command.cols,
+          rows: command.rows,
+          env,
+          screen: {
+            detached: () => {
+              if (current.owner)
+                send(current.owner, {
+                  type: 'terminal.detached',
+                  sessionId: current.sessionId,
+                  terminalId: current.id,
+                  reason: 'stalled',
+                });
+              detachTerminal(current);
+            },
+          },
+        },
+        (data, bytes) => {
+          if (current.owner)
+            send(current.owner, {
+              type: 'terminal.data',
+              sessionId: current.sessionId,
+              terminalId: current.id,
+              data,
+              bytes,
+            });
+        },
+        async (exitCode) => {
+          if (terminals.get(current.sessionId) !== current) return;
+          clearTimeout(current.idle);
+          clearInterval(current.continued!.syncTimer);
+          unwatchFile(current.continued!.hooksPath);
+          unwatchFile(current.continued!.statusPath);
+          try {
+            await heardTerminal(current, true);
+            if (
+              current.continued!.empty === true &&
+              current.continued!.nativeId === session.id &&
+              !store.hasNativeContext(session.id)
+            )
+              rmSync(terminalHistoryPath(context.config, cwd, session.id), { force: true });
+            terminalQuota(current);
+            store.touchTerminalHistory(current.sessionId);
+            record(current.sessionId, current.id, {
+              type: 'run.status',
+              status: 'completed',
+              surface: 'terminal',
+              connectionId: peer.id,
+            });
+            updated(current.sessionId);
+          } finally {
+            try {
+              cleanupTerminal(current);
+            } finally {
+              if (terminals.get(current.sessionId) === current) terminals.delete(current.sessionId);
+              if (current.owner)
+                send(current.owner, {
+                  type: 'terminal.closed',
+                  sessionId: current.sessionId,
+                  terminalId: current.id,
+                  exitCode,
+                  reason: current.process?.reason ?? 'process_exit',
+                });
+            }
+          }
+        },
+      );
+      if (current.closing || peer.socket.readyState !== WebSocket.OPEN) {
+        await current.process.close(
+          peer.socket.readyState === WebSocket.OPEN ? 'user_close' : 'disconnected',
+        );
+        return;
+      }
+      record(command.sessionId, current.id, {
+        type: 'run.status',
+        status: 'running',
+        surface: 'terminal',
+        connectionId: peer.id,
+      });
+      if (history.nativeId !== session.id)
+        record(session.id, current.id, {
+          type: 'native.notice',
+          text: '此终端继续独立官方历史；新内容会记入当前记录，但不会合并到原聊天上下文。',
+        });
+      updated(command.sessionId);
+      watchFile(current.continued.hooksPath, { interval: 500 }, () => void heardTerminal(current));
+      watchFile(current.continued.statusPath, { interval: 1000 }, () => terminalQuota(current));
+      current.continued.syncTimer = setInterval(() => {
+        const continued = current.continued!;
+        if (continued.syncQueued || continued.syncFailed || current.process?.exited) return;
+        continued.syncQueued = true;
+        void heardTerminal(current, false, false, true).finally(() => {
+          continued.syncQueued = false;
+        });
+      }, 1000);
+      send(peer, { type: 'terminal.opened', sessionId: command.sessionId, terminalId: current.id });
+      store.touchTerminalHistory(command.sessionId);
+    } catch (error) {
+      await current.process?.close();
+      cleanupTerminal(current);
+      if (terminals.get(current.sessionId) === current) terminals.delete(current.sessionId);
+      if (error instanceof DomainError) throw error;
+      console.error(
+        'Native terminal startup failed',
+        { requestId: command.requestId, sessionId: session.id, terminalId: current.id },
+        error instanceof Error ? error.stack : String(error),
+      );
+      throw new DomainError('terminal_failed', '原生终端启动失败，请检查 Linux PTY 组件与 CLI。');
+    }
+  }
+  function detachTerminal(terminal: Terminal) {
+    terminal.owner = undefined;
+    terminal.process?.detach();
+    clearTimeout(terminal.idle);
+    terminal.idle = setTimeout(() => {
+      terminal.closing = true;
+      const task = terminal.process?.close('disconnected');
+      if (task) track(task);
+    }, graceMs);
+  }
+  function cleanupTerminal(terminal: Terminal) {
+    if (!terminal.continued) return;
+    clearInterval(terminal.continued.syncTimer);
+    for (const path of [
+      terminal.continued.settingsPath,
+      terminal.continued.hooksPath,
+      terminal.continued.statusPath,
+    ]) {
+      unwatchFile(path);
+      rmSync(path, { force: true });
+    }
+  }
+  function heardTerminal(
+    terminal: Terminal,
+    ended = false,
+    interrupted = false,
+    incremental = false,
+  ) {
+    const continued = terminal.continued!;
+    const task = continued.heard
+      .then(async () => {
+        if (terminals.get(terminal.sessionId) !== terminal) return;
+        const { hooks, offset } = terminalHooks(continued.hooksPath, continued.offset);
+        continued.offset = offset;
+        let activity: TerminalActivity | undefined;
+        for (const hook of hooks) {
+          if (typeof hook.session_id === 'string' && hook.session_id !== continued.nativeId)
+            continued.elsewhere = true;
+          activity = terminalActivity(hook) ?? activity;
+        }
+        interrupted &&= !hooks.length && continued.activity === 'working';
+        if (interrupted) activity = 'idle';
+        if (
+          !continued.syncFailed &&
+          (incremental ||
+            ended ||
+            interrupted ||
+            hooks.some((hook) => terminalActivity(hook) === 'idle'))
+        )
+          await importTerminal(terminal, ended, !incremental);
+        if (
+          ended ||
+          !activity ||
+          (activity === continued.activity &&
+            !hooks.some((hook) => hook.hook_event_name === 'Stop'))
+        )
+          return;
+        continued.activity = activity;
+        record(terminal.sessionId, terminal.id, {
+          type: 'run.status',
+          status: 'running',
+          surface: 'terminal',
+          activity,
+          connectionId: continued.connectionId,
+        });
+        updated(terminal.sessionId);
+      })
+      .catch((error) => {
+        if (continued.syncFailed) return;
+        continued.syncFailed = true;
+        continued.empty = undefined;
+        clearInterval(continued.syncTimer);
+        console.error(
+          'Terminal conversation import failed',
+          {
+            sessionId: terminal.sessionId,
+            terminalId: terminal.id,
+            nativeId: continued.nativeId,
+            path: continued.reader.path,
+          },
+          error,
+        );
+        const message = '终端记录同步失败，原始历史已保留；终端仍可继续使用。';
+        try {
+          record(terminal.sessionId, terminal.id, { type: 'native.notice', text: message });
+        } catch {}
+        broadcast(
+          {
+            type: 'connection.error',
+            code: 'terminal_sync_failed',
+            message,
+            sessionId: terminal.sessionId,
+            terminalId: terminal.id,
+          },
+          terminal.sessionId,
+        );
+      });
+    continued.heard = task;
+    return task;
+  }
+  // The quota a terminal's CLI showed in its status line, its replies' as a chat run's stream would carry it: it goes
+  // to the account's quota, and every connection is told, as the quota is the account's, not the session's.
+  function terminalQuota(terminal: Terminal) {
+    const continued = terminal.continued!;
+    if (continued.statusFailed) return;
+    let windows;
+    let context;
+    try {
+      const status: unknown = JSON.parse(readFileSync(continued.statusPath, 'utf8'));
+      windows = statusLineQuota(status);
+      const session = (status as { session_id?: unknown } | null)?.session_id;
+      context =
+        continued.elsewhere || (typeof session === 'string' && session !== continued.nativeId)
+          ? null
+          : statusLineContext(status, continued.compactWindow);
+    } catch {
+      return;
+    }
+    const heard = JSON.stringify(windows);
+    const quotaChanged = windows.length > 0 && heard !== continued.quota;
+    const contextKey =
+      context && JSON.stringify([context.model, context.usedTokens, context.windowTokens]);
+    const contextChanged = !!contextKey && contextKey !== continued.contextKey;
+    if (!quotaChanged && !contextChanged) return;
+    try {
+      const last = store.lastMetrics(terminal.sessionId);
+      const observed = quotaChanged ? quotas.observeTerminal(windows) : null;
+      const rateLimits = observed?.available ? observed : (last?.rateLimits ?? null);
+      const event = store.append(terminal.sessionId, terminal.id, {
+        type: 'native.metrics',
+        context: contextChanged ? context! : (last?.context ?? null),
+        usage: last?.usage ?? null,
+        rateLimits,
+      });
+      if (quotaChanged) continued.quota = heard;
+      if (contextChanged) continued.contextKey = contextKey!;
+      if (observed?.available) {
+        usage.observe(observed);
+        accountMonitor?.observe(event.payload, terminal.sessionId, terminal.id);
+      }
+      broadcast(
+        { type: 'session.event', event },
+        observed?.available ? undefined : terminal.sessionId,
+      );
+    } catch (error) {
+      continued.statusFailed = true;
+      unwatchFile(continued.statusPath);
+      console.error(
+        'Terminal status synchronization failed',
+        {
+          sessionId: terminal.sessionId,
+          terminalId: terminal.id,
+          path: continued.statusPath,
+        },
+        error,
+      );
+      const message = '终端状态同步失败，终端仍可继续使用；请检查服务端日志。';
+      try {
+        record(terminal.sessionId, terminal.id, { type: 'native.notice', text: message });
+      } catch {}
+      broadcast(
+        {
+          type: 'connection.error',
+          code: 'terminal_status_failed',
+          message,
+          sessionId: terminal.sessionId,
+          terminalId: terminal.id,
+        },
+        terminal.sessionId,
+      );
+    }
+  }
+  async function importTerminal(terminal: Terminal, ended = false, reconcile = false) {
+    const continued = terminal.continued!;
+    const { known } = continued;
+    const { sessionId } = terminal;
+    const now = new Date().toISOString();
+    // Each at the time the CLI recorded it, after what was recorded of its turns before and no later than now. What the
+    // terminal was doing is recorded as it happens, and does not move them: a turn keeps the times it took.
+    const emit = (payload: EventPayload, at?: string) => {
+      const time = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : now;
+      continued.at = time < continued.at ? continued.at : time > now ? now : time;
+      record(sessionId, terminal.id, payload, continued.at);
+    };
+    const dir = nativeDirectory(store.directory, nativeRoot(sessionId));
+    continued.empty = undefined;
+    const messages = await continued.reader.read({ final: ended, reconcile });
+    if (terminals.get(sessionId) !== terminal) return;
+    if (!ended && !reconcile && messages === continued.snapshot) return;
+    continued.snapshot = messages;
+    continued.empty = !messages.length;
+    if (messages.length && continued.nativeId === sessionId && !store.hasNativeContext(sessionId)) {
+      const answer = messages.findLast((message) => message.type === 'assistant')?.message as
+        { model?: unknown } | undefined;
+      emit({
+        type: 'native.session',
+        nativeSessionId: sessionId,
+        model: typeof answer?.model === 'string' ? answer.model : '',
+        version: '',
+      });
+    }
+    const compacted =
+      continued.transcript.compactedSince() ||
+      messages.some(
+        (message) =>
+          !known.has(message.uuid) && (message as { isCompactSummary?: boolean }).isCompactSummary,
+      );
+    if (
+      continued.last &&
+      !compacted &&
+      !messages.some((message) => message.uuid === continued.last)
+    )
+      emit({ type: 'native.notice', text: '终端里回退了对话，上面有些内容已不在上下文中。' });
+    const commit = () => {
+      const records = continued.imported.splice(0).map(({ payload, at }) => {
+        const time = at && !Number.isNaN(Date.parse(at)) ? new Date(at).toISOString() : now;
+        continued.at = time < continued.at ? continued.at : time > now ? now : time;
+        return { payload, createdAt: continued.at };
+      });
+      for (const event of store.appendMany(sessionId, terminal.id, records))
+        broadcast({ type: 'session.event', event }, sessionId);
+    };
+    for (const message of messages) {
+      if (known.has(message.uuid)) continue;
+      continued.transcript.accept([message], known);
+      commit();
+      known.add(message.uuid);
+    }
+    if (ended) {
+      continued.transcript.settle();
+      commit();
+    }
+    continued.last = messages.at(-1)?.uuid ?? continued.last;
+    if (continued.elsewhere && !continued.toldElsewhere) {
+      continued.toldElsewhere = true;
+      emit({
+        type: 'native.notice',
+        text: '终端里换到了另一段对话（/clear 或 /resume），那之后的内容不在这个会话中。',
+      });
+    }
+    // Only the successfully read, unchanged native history can enable chat compaction.
+    // Use the PTY's selected config directory, rather than the process-global SDK default.
+    if (ended && messages.length && !continued.elsewhere && continued.nativeId === sessionId) {
+      const history = await readTerminalContext(continued.config, dir, continued.nativeId);
+      if (history)
+        record(sessionId, terminal.id, {
+          type: 'native.context',
+          nativeSessionId: sessionId,
+          persisted: true,
+          updatedAt: history.updatedAt,
+        });
+    }
+  }
+  // Rename and delete change the native session first; the proxy record follows only when that succeeded.
+  async function manageSession(
+    command: CommandOf<'session.delete' | 'session.rename'>,
+    session: Session,
+  ) {
+    if (session.activeRun) throw new DomainError('run_active', '请先结束当前运行再管理会话。');
+    mutations.add(command.sessionId);
+    try {
+      if (options.claude && store.hasNativeContext(command.sessionId)) {
+        const nativeOptions = {
+          dir: nativeDirectory(store.directory, nativeRoot(command.sessionId)),
+        };
+        if (command.type === 'session.delete')
+          await deleteSession(command.sessionId, nativeOptions);
+        else await renameSession(command.sessionId, command.title, nativeOptions);
+      }
+      if (command.type === 'session.delete') {
+        store.delete(command.sessionId);
+        rmSync(sessionSshPath(store.directory, command.sessionId), { force: true });
+        rmSync(dirname(sessionSshBinPath(store.directory, command.sessionId)), {
+          recursive: true,
+          force: true,
+        });
+        broadcast({ type: 'session.deleted', sessionId: command.sessionId });
+        for (const other of peers) other.subscriptions.delete(command.sessionId);
+      } else {
+        broadcast({
+          type: 'session.updated',
+          session: store.rename(command.sessionId, command.title),
+        });
+      }
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
+      throw new DomainError(
+        'native_mutation_failed',
+        '原生会话更新失败，代理记录保留。请检查原生存储与权限。',
+      );
+    } finally {
+      mutations.delete(command.sessionId);
+    }
+  }
+  // A fork is the native session copied under a new ID, together with the proxy's record of it. The SDK cuts
+  // a copy after a message and only knows the source's message IDs, so stopping before a message takes two
+  // copies: one through that message, then one of it up to the entry before its last.
+  async function fork(peer: Peer, command: CommandOf<'session.fork'>, session: Session) {
+    if (session.activeRun) throw new DomainError('run_active', '请先结束当前运行再分叉会话。');
+    const place = { device: deviceOf(peer), projectPath: command.projectPath };
+    const existing = store.created(command.requestId);
+    if (existing) return existing.id;
+    const before = command.beforeMessageId
+      ? store.forkPoint(command.sessionId, command.beforeMessageId)
+      : undefined;
+    const title = `${session.title.slice(0, 116)}（分叉）`;
+    let id: string = randomUUID();
+    let resumable = false;
+    mutations.add(command.sessionId);
+    try {
+      if (options.claude && store.hasNativeContext(command.sessionId)) {
+        const dir = nativeDirectory(store.directory, nativeRoot(command.sessionId));
+        if (!command.beforeMessageId) {
+          id = (await forkSession(command.sessionId, { dir, title })).sessionId;
+          resumable = true;
+        } else {
+          const through = await forkSession(command.sessionId, {
+            dir,
+            upToMessageId: command.beforeMessageId,
+          });
+          try {
+            const kept = (await getSessionMessages(through.sessionId, { dir })).at(-2);
+            // Nothing before the message: the fork starts a native session of its own.
+            if (kept) {
+              id = (await forkSession(through.sessionId, { dir, upToMessageId: kept.uuid, title }))
+                .sessionId;
+              resumable = true;
+            }
+          } finally {
+            await deleteSession(through.sessionId, { dir });
+          }
+        }
+      }
+      const created = store.fork(
+        command.requestId,
+        command.sessionId,
+        id,
+        title,
+        resumable,
+        place,
+        before,
+      );
+      broadcast({ type: 'session.updated', session: created });
+      return created.id;
+    } catch (error) {
+      if (error instanceof DomainError) throw error;
+      throw new DomainError(
+        'native_mutation_failed',
+        '原生会话分叉失败，未创建新会话。该位置可能不在原生记录中。',
+      );
+    } finally {
+      mutations.delete(command.sessionId);
+    }
+  }
+  // Freeze a native prefix now; resuming the child later never rereads the growing parent. The UI's
+  // selected quote carries any visible output that the CLI has not yet persisted in that prefix.
+  async function createSide(command: CommandOf<'session.side.create'>) {
+    const previous = store.sideCreated(command.requestId, command.sessionId, command.title);
+    if (previous) return previous;
+    const { session: parent } = store.get(command.sessionId);
+    if (mutations.has(parent.id) || reviewing.has(parent.id) || terminals.has(parent.id))
+      throw new DomainError('session_busy', '来源会话正在更新或使用原生终端，请稍后重试。');
+    if (!options.claude || !store.hasNativeContext(parent.id))
+      return store.createSide(
+        command.requestId,
+        parent.id,
+        command.title,
+        runs.get(parent.id)?.open,
+      );
+    mutations.add(parent.id);
+    const dir = nativeDirectory(store.directory, nativeRoot(parent.id));
+    const throughSequence = store.lastSequence(parent.id);
+    let id: string | undefined;
+    try {
+      const messages = await getSessionMessages(parent.id, { dir, includeSystemMessages: true });
+      if (!messages.length)
+        throw new DomainError(
+          'native_context_missing',
+          '来源会话尚无可分叉的原生记录；请等待当前回答保存后重试。',
+        );
+      const boundary = sideForkBoundary(messages);
+      if (!boundary)
+        throw new DomainError(
+          'native_side_no_safe_boundary',
+          '来源会话尚无工具记录完整的安全截点，未创建侧边会话；请等待当前工具调用结束后重试。',
+        );
+      id = (await forkSession(parent.id, { dir, upToMessageId: boundary, title: command.title }))
+        .sessionId;
+      // The SDK reconstructs sibling tool blocks for display, while forkSession cuts physical file
+      // order. Validate the independent copy too, including source changes during the async fork.
+      const copied = await getSessionMessages(id, { dir, includeSystemMessages: true });
+      const end = copied.findLast((entry) => entry.type !== 'system' && !entry.parent_tool_use_id);
+      if (!end || sideForkBoundary(copied) !== end.uuid) {
+        console.warn('side_fork_unsafe_copy', {
+          sessionId: id,
+          parentSessionId: parent.id,
+          boundary,
+        });
+        throw new DomainError(
+          'native_side_unsafe_copy',
+          '原生分叉副本的工具记录不完整，已取消创建；请等待主对话完成当前回答后重试。',
+        );
+      }
+      return store.createSide(command.requestId, parent.id, command.title, undefined, {
+        id,
+        boundary,
+        throughSequence,
+      });
+    } catch (error) {
+      if (id) {
+        try {
+          await deleteSession(id, { dir });
+        } catch (cleanupError) {
+          console.error('side_fork_cleanup_failed', {
+            sessionId: id,
+            parentSessionId: parent.id,
+            error: cleanupError,
+          });
+        }
+      }
+      if (error instanceof DomainError) throw error;
+      console.error('side_fork_failed', { parentSessionId: parent.id, error });
+      throw new DomainError(
+        'native_side_fork_failed',
+        '原生侧边会话分叉失败，未创建侧边会话；请检查来源原生记录与服务端日志。',
+      );
+    } finally {
+      mutations.delete(parent.id);
+    }
+  }
+
+  // A message starts a run on the computer the session is on, or joins the native run going there. Compacting
+  // is the native /compact command sent as a message.
+  async function submit(
+    peer: Peer,
+    command: CommandOf<'message.send' | 'session.compact' | 'run.continue'>,
+    session: Session,
+  ) {
+    if (command.type === 'session.compact' && !options.claude)
+      throw new DomainError('native_unavailable', '离线模拟不提供原生上下文压缩。');
+    if (command.type === 'session.compact' && !store.hasNativeContext(command.sessionId))
+      throw new DomainError('native_context_missing', '先建立原生会话再压缩上下文。');
+    const continued = command.type === 'run.continue';
+    if (command.type !== 'message.send' && store.sidePrompt(command.sessionId))
+      throw new DomainError('side_question_required', '侧边会话需要先明确输入问题并发送。');
+    if (continued && session.activeRun) throw new DomainError('run_active', '当前会话正在运行。');
+    const text =
+      command.type === 'session.compact' ? '/compact' : continued ? CONTINUE : command.text;
+    const scenario = command.type === 'message.send' ? command.scenario : 'chat';
+    // A repeated request ID is the same message arriving again, not a second message.
+    const existing = store.userMessage(command.sessionId, command.requestId);
+    if (existing?.payload.type === 'message.user') {
+      if (existing.payload.text !== text || existing.payload.scenario !== scenario)
+        throw new DomainError('request_conflict', '请求 ID 已被其他内容使用。');
+      return;
+    }
+    if (options.moderation && command.type === 'message.send') {
+      await review(peer, command, session.id, text);
+      session = store.get(session.id).session;
+      if (mutations.has(session.id) || terminals.has(session.id))
+        throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
+    }
+    if (session.activeRun) {
+      const active = runs.get(command.sessionId);
+      if (!options.claude || command.type !== 'message.send' || !active?.input)
+        throw new DomainError('run_active', '当前会话正在运行。');
+      if (active.controller.signal.aborted)
+        throw new DomainError('run_finishing', '原生运行正在停止，请稍后发送。');
+      active.input.assertWritable();
+      subscribe(peer, command.sessionId);
+      emit(active, { type: 'message.user', messageId: command.requestId, text, scenario });
+      active.input.submit(
+        command.requestId,
+        store.notice(
+          command.sessionId,
+          deviceExecution(store.get(command.sessionId).session.device),
+        ) + text,
+      );
+      return;
+    }
+    if (options.claude && mutations.size)
+      throw new DomainError('native_busy', '原生状态正在读取，请稍后发送。');
+    const device = target(peer, session);
+    room();
+    subscribe(peer, command.sessionId);
+    const run: Run = {
+      id: randomUUID(),
+      sessionId: command.sessionId,
+      device,
+      connectionId: peer.id,
+      controller: new AbortController(),
+      toolFinished: false,
+      approvals: new Map(),
+      answered: new Set(),
+      controls: {},
+      stats: inOrder(),
+    };
+    runs.set(command.sessionId, run);
+    accountMonitor?.beginSource(run.id);
+    if (options.claude) run.input = new NativeInput(run.sessionId, (event) => emit(run, event));
+    emit(run, {
+      type: 'message.user',
+      messageId: command.requestId,
+      text,
+      scenario,
+      ...(continued ? { continued } : {}),
+    });
+    emit(run, { type: 'run.status', status: 'running', connectionId: run.connectionId });
+    // What Claude's system prompt no longer has right is told to it with this message; the transcript shows the
+    // user's own text.
+    run.input?.submit(
+      command.requestId,
+      store.notice(
+        command.sessionId,
+        deviceExecution(store.get(command.sessionId).session.device),
+      ) + text,
+    );
+    track(
+      options.claude
+        ? native(run)
+        : simulate(
+            run,
+            { ...command, type: 'message.send', text, scenario },
+            {
+              stepMs: options.stepMs ?? 110,
+              projectPath: () => store.get(run.sessionId).session.projectPath,
+              emit: (payload) => emit(run, payload),
+              finish: (status, reason) => finish(run, status, reason),
+            },
+          ),
+    );
+  }
+  // Any window of any of the user's computers may stop a run or answer it. Two may do so at once: stopping
+  // what has already stopped is nothing, and of two answers the first counts.
+  async function controlRun(
+    peer: Peer,
+    command: CommandOf<'run.cancel' | 'run.task.stop' | 'run.task.background' | 'approval.reply'>,
+  ) {
+    const run = runs.get(command.sessionId);
+    if (!run || run.id !== command.runId) {
+      if (command.type !== 'approval.reply') return;
+      throw new DomainError('run_inactive', '运行已结束，操作未生效。');
+    }
+    if (command.type === 'approval.reply' && run.answered.has(command.approvalId))
+      throw new DomainError('approval_answered', '这一项已经处理过了，可能是在另一台设备上。');
+    if (command.type === 'run.task.stop') {
+      if (!run.controls.stopTask) return;
+      // The CLI reports the task gone through its task list; a task already over is not an error.
+      void run.controls.stopTask(command.taskId).catch(() => {});
+      return;
+    }
+    if (command.type === 'run.task.background') {
+      if (!run.controls.backgroundTask) return;
+      // A call that has returned meanwhile is nothing to send; the CLI refuses only when background tasks are off.
+      void run.controls.backgroundTask(command.toolId).catch(() => {
+        if (runs.get(run.sessionId) === run)
+          emit(run, {
+            type: 'native.notice',
+            text: '未能转到后台：这台电脑的 Claude Code 关闭了后台任务。',
+          });
+      });
+      return;
+    }
+    if (command.type === 'run.cancel') {
+      cancel(
+        run,
+        options.claude
+          ? '用户停止；已发出的 SSH 命令可能继续执行，副作用未撤销，不能自动重试。'
+          : '用户停止',
+      );
+      return;
+    }
+    if (options.claude) {
+      const decide = run.approvals.get(command.approvalId);
+      if (!decide) throw new DomainError('approval_inactive', '审批已失效。');
+      run.approvals.delete(command.approvalId);
+      run.answered.add(command.approvalId);
+      decide(command.allowed, command.answers);
+      if (!run.approvals.size)
+        emit(run, { type: 'run.status', status: 'running', connectionId: peer.id });
+      return;
+    }
+    if (!run.decide || run.approvalId !== command.approvalId)
+      throw new DomainError('approval_inactive', '审批已失效。');
+    const decide = run.decide;
+    run.decide = undefined;
+    run.answered.add(command.approvalId);
+    decide(command.allowed, command.answers);
+  }
+
+  // Resolves to the session ID carried in the response frame; account and usage commands have none.
+  async function execute(peer: Peer, command: Command): Promise<string | undefined> {
+    if (
+      reviewing.size &&
+      [
+        'account.login',
+        'account.code',
+        'account.logout',
+        'settings.update',
+        'instructions.update',
+      ].includes(command.type)
+    )
+      throw new DomainError('session_busy', '内容正在审核，请稍后修改账号或设置。');
+    if (isWebCommand(command)) {
+      send(
+        peer,
+        web.execute(command, {
+          desktop: !peer.browser,
+          address: peer.address,
+          sessionId: peer.browser,
+          origin: peer.origin,
+        }),
+      );
+      return undefined;
+    }
+    switch (command.type) {
+      case 'terminal.session.create': {
+        if (!!command.sourceSessionId === !!command.projectPath)
+          throw new DomainError('invalid_source', '请选择来源会话或本机项目目录。');
+        const signature = JSON.stringify({
+          user: peer.access?.userId ?? peer.browser ?? 'desktop',
+          source: command.sourceSessionId ?? null,
+          projectPath: command.projectPath ?? null,
+          device: command.projectPath ? deviceOf(peer).id : null,
+          title: command.title,
+          permissionMode: command.permissionMode,
+          model: command.model,
+          effort: command.effort,
+        });
+        const previous = store.terminalCreated(command.requestId, signature);
+        if (previous) return previous.id;
+        const source = command.sourceSessionId
+          ? store.get(command.sourceSessionId).session
+          : undefined;
+        if (source) target(peer, source);
+        const device = source?.device ?? deviceOf(peer);
+        if (peer.browser && device.id !== serverDevice.id)
+          throw new DomainError('web_forbidden', '浏览器只能创建服务器项目终端。');
+        const session = store.createTerminal(
+          command.requestId,
+          signature,
+          command.title,
+          source?.projectPath ?? command.projectPath!,
+          device,
+          command,
+        );
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
+      case 'terminal.history.list': {
+        const session = store.get(command.sessionId).session;
+        target(peer, session);
+        if (!options.claude) throw new DomainError('native_unavailable', '模拟模式没有官方历史。');
+        const { terminalEnvironment } = await import('./native-terminal.ts');
+        const context = terminalHistoryContext(
+          options.claude,
+          terminalEnvironment(options.claude),
+          nativeDirectory(store.directory, nativeRoot(session.id)),
+        );
+        const seen = new Set<string>();
+        const items = [];
+        for (const entry of store.terminalHistories(session)) {
+          if (seen.has(entry.nativeId)) continue;
+          seen.add(entry.nativeId);
+          let reason =
+            entry.configKey !== context.key
+              ? 'CLI 配置已变化，请使用官方历史选择器确认。'
+              : undefined;
+          if (
+            runs.has(entry.nativeId) ||
+            [...terminals.keys()].some(
+              (id) => store.terminalHistory(id)?.nativeId === entry.nativeId,
+            )
+          )
+            reason = '此历史正在运行。';
+          let metadata = null;
+          if (!reason) {
+            try {
+              metadata = await readTerminalHistory(
+                context.config,
+                nativeDirectory(store.directory, entry.root),
+                entry.nativeId,
+              );
+            } catch {
+              reason = '历史元数据无法读取或格式暂不支持。';
+            }
+            if (!metadata && !reason) reason = '尚无有效历史、文件已删除或超出元数据读取范围。';
+          }
+          items.push({
+            sessionId: entry.sessionId,
+            nativeId: entry.nativeId,
+            title: metadata?.title ?? '官方终端历史',
+            updatedAt: metadata?.updatedAt ?? entry.updatedAt,
+            available: !reason,
+            ...(reason ? { reason } : {}),
+          });
+        }
+        send(peer, {
+          type: 'terminal.histories',
+          requestId: command.requestId,
+          sessionId: session.id,
+          items,
+        });
+        return session.id;
+      }
+      case 'terminal.history.continue': {
+        const source = store.get(command.sessionId).session;
+        target(peer, source);
+        const signature = JSON.stringify({
+          type: command.type,
+          source: source.id,
+          history: command.historySessionId,
+          user: peer.access?.userId ?? peer.browser ?? 'desktop',
+        });
+        const previous = store.terminalCreated(command.requestId, signature);
+        if (previous) return previous.id;
+        if (!options.claude) throw new DomainError('native_unavailable', '模拟模式没有官方历史。');
+        if (options.moderation && !options.nativeTerminalReview)
+          throw new DomainError('moderation_terminal_disabled', '此节点暂不支持原生终端。');
+        const entry = store
+          .terminalHistories(source)
+          .find((item) => item.sessionId === command.historySessionId);
+        if (!entry)
+          throw new DomainError('history_unassociated', '没有与此项目和设备关联的官方历史。');
+        const { terminalEnvironment } = await import('./native-terminal.ts');
+        const context = terminalHistoryContext(
+          options.claude,
+          terminalEnvironment(options.claude),
+          nativeDirectory(store.directory, entry.root),
+        );
+        if (entry.configKey !== context.key)
+          throw new DomainError(
+            'history_environment_changed',
+            'CLI 配置已变化，请使用官方历史选择器确认。',
+          );
+        if (
+          runs.has(entry.nativeId) ||
+          [...terminals.keys()].some((id) => store.terminalHistory(id)?.nativeId === entry.nativeId)
+        )
+          throw new DomainError('history_busy', '此官方历史正在运行，不会强制接管。');
+        if (
+          !(await readTerminalHistory(
+            context.config,
+            nativeDirectory(store.directory, entry.root),
+            entry.nativeId,
+          ))
+        )
+          throw new DomainError(
+            'history_missing',
+            '官方历史不存在或尚无可读取的消息；未新建会话。',
+          );
+        room();
+        const session = store.createTerminal(
+          command.requestId,
+          signature,
+          '继续官方历史',
+          source.projectPath,
+          source.device!,
+          source,
+          entry,
+        );
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
+      case 'terminal.file.read': {
+        const session = store.get(command.sessionId).session;
+        target(peer, session);
+        if (session.device?.viaSsh)
+          throw new DomainError('terminal_file_unavailable', 'SSH 项目暂不提供文件预览。');
+        try {
+          const roots = [
+            nativeDirectory(store.directory, nativeRoot(session.id)),
+            ...(session.device?.id === serverDevice.id ? [session.projectPath] : []),
+          ];
+          const file = await readTerminalFile(command.path, roots);
+          send(peer, {
+            type: 'terminal.file',
+            requestId: command.requestId,
+            sessionId: session.id,
+            ...file,
+          });
+        } catch (error) {
+          throw new DomainError(
+            'terminal_file_unavailable',
+            error instanceof Error && !('code' in error)
+              ? error.message
+              : '节点文件不可用或无法读取。',
+          );
+        }
+        return session.id;
+      }
+      case 'terminal.state': {
+        store.get(command.sessionId);
+        const terminal = terminals.get(command.sessionId);
+        const owned =
+          terminal?.owner === peer && (!command.terminalId || command.terminalId === terminal.id);
+        send(peer, {
+          type: 'terminal.state',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          state: !terminal
+            ? 'absent'
+            : !owned
+              ? 'unavailable'
+              : terminal.closing || terminal.process?.closing
+                ? 'closing'
+                : terminal.process
+                  ? 'running'
+                  : 'opening',
+          ...(owned ? { terminalId: terminal!.id } : {}),
+        });
+        return command.sessionId;
+      }
+      case 'server.session.create': {
+        const session = store.createOnServer(command.requestId, command.title, serverDevice);
+        peer.subscriptions.clear();
+        peer.subscriptions.add(session.id);
+        broadcast({ type: 'session.updated', session });
+        announce();
+        return session.id;
+      }
+      case 'account.status':
+      case 'account.login':
+      case 'account.code':
+      case 'account.cancel':
+      case 'account.logout':
+        await account(peer, command);
+        return undefined;
+      case 'settings.get':
+      case 'settings.update': {
+        if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有原生设置。');
+        try {
+          const values =
+            command.type === 'settings.get'
+              ? readNativeSettings()
+              : updateNativeSettings(command.values);
+          send(peer, { type: 'settings.state', requestId: command.requestId, values });
+        } catch {
+          throw new DomainError(
+            'settings_failed',
+            '原生设置文件无法读取或写入；请在原生终端用 /config 检查。',
+          );
+        }
+        return undefined;
+      }
+      case 'instructions.get':
+      case 'instructions.update': {
+        if (!options.claude) throw new DomainError('native_unavailable', '离线模拟没有全局说明。');
+        try {
+          const state =
+            command.type === 'instructions.get'
+              ? readInstructions()
+              : writeInstructions(command.text, command.version);
+          send(peer, { type: 'instructions.state', requestId: command.requestId, ...state });
+        } catch (error) {
+          if (error instanceof DomainError) throw error;
+          throw new DomainError('instructions_failed', '全局说明文件无法读取或写入。');
+        }
+        return undefined;
+      }
+      case 'usage.summary':
+        send(peer, { type: 'usage.summary', requestId: command.requestId, ...usage.summary() });
+        return undefined;
+      case 'quota.watch':
+        peer.quotaWanted = command.active;
+        return undefined;
+      case 'session.stats':
+        store.get(command.sessionId);
+        send(peer, {
+          type: 'session.stats',
+          requestId: command.requestId,
+          sessionId: command.sessionId,
+          ...usage.sessionStats(command.sessionId),
+        });
+        return undefined;
+      case 'service.update.check':
+      case 'service.update.install':
+        throw new DomainError('updates_unavailable', '定制版更新由管理员统一部署。');
+      case 'usage.query': {
+        const titles = new Map(store.list().map((session) => [session.id, session.title]));
+        send(peer, {
+          type: 'usage.page',
+          requestId: command.requestId,
+          ...usage.query(command, (sessionId) => titles.get(sessionId) ?? null),
+        });
+        return undefined;
+      }
+      case 'project.move': {
+        const from = pathKey(command.from);
+        if (
+          store
+            .list()
+            .some(
+              (session) =>
+                (mutations.has(session.id) || reviewing.has(session.id)) &&
+                pathKey(session.projectPath) === from,
+            )
+        )
+          throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
+        for (const session of store.moveProject(command.from, command.to, deviceOf(peer)))
+          broadcast({ type: 'session.updated', session });
+        return undefined;
+      }
+      case 'session.side.create': {
+        const session = await createSide(command);
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
+      case 'session.unsubscribe':
+        peer.subscriptions.delete(command.sessionId);
+        return command.sessionId;
+      case 'device.rename': {
+        const device = { ...deviceOf(peer), name: command.name };
+        for (const member of seats.get(device.id)?.peers ?? []) {
+          member.name = command.name;
+          if (member.device) member.device = { ...member.device, name: command.name };
+        }
+        for (const session of store.named(device)) broadcast({ type: 'session.updated', session });
+        announce();
+        return undefined;
+      }
+      case 'device.shell': {
+        const device = deviceOf(peer);
+        if (platformOf(device) !== 'win32' || device.viaSsh)
+          throw new DomainError('shell_unavailable', '此设备不支持 Windows Shell 偏好。');
+        if (command.shell && !deviceExecution(device).shells?.includes(command.shell))
+          throw new DomainError(
+            'shell_unavailable',
+            '此设备尚未检测到这个 Shell，请安装后重新连接。',
+          );
+        store.preferShell(device.id, command.shell);
+        announce();
+        return undefined;
+      }
+      case 'session.create': {
+        const session = store.create(
+          command.requestId,
+          command.title,
+          command.projectPath,
+          deviceOf(peer),
+        );
+        peer.subscriptions.clear();
+        peer.subscriptions.add(session.id);
+        broadcast({ type: 'session.updated', session });
+        return session.id;
+      }
+    }
+    const { session } = store.get(command.sessionId);
+    if (
+      reviewing.has(command.sessionId) &&
+      ![
+        'run.cancel',
+        'run.task.stop',
+        'session.subscribe',
+        'session.history',
+        'session.status',
+      ].includes(command.type)
+    )
+      throw new DomainError('session_busy', '内容正在审核，请稍后操作。');
+    if (mutations.has(command.sessionId))
+      throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
+    switch (command.type) {
+      case 'session.status':
+        await readStatus(peer, command);
+        return command.sessionId;
+      case 'terminal.close':
+        await closeTerminal(peer, command);
+        return command.sessionId;
+      case 'terminal.open':
+        await openTerminal(peer, command, session);
+        return command.sessionId;
+      case 'session.subscribe':
+        if (!command.retain) peer.subscriptions.clear();
+        subscribe(peer, command.sessionId);
+        send(peer, {
+          type: 'session.snapshot',
+          ...store.history(command.sessionId, command.requestId, command.afterSequence),
+        });
+        // The history ends where the run's unfinished output begins.
+        {
+          const run = runs.get(command.sessionId);
+          if (run?.open)
+            send(peer, {
+              type: 'session.fragment',
+              sessionId: run.sessionId,
+              runId: run.id,
+              payload: run.open,
+            });
+        }
+        return command.sessionId;
+      case 'session.history':
+        send(peer, {
+          type: 'session.snapshot',
+          ...store.history(command.sessionId, command.requestId, 0, command.beforeSequence),
+        });
+        return command.sessionId;
+      case 'run.cancel':
+      case 'run.task.stop':
+      case 'run.task.background':
+      case 'approval.reply':
+        await controlRun(peer, command);
+        return command.sessionId;
+    }
+    if (terminalForNative(command.sessionId))
+      throw new DomainError('native_busy', '这个会话的原生终端开着，请先关闭终端再操作它。');
+    switch (command.type) {
+      case 'session.configure':
+        broadcast({
+          type: 'session.updated',
+          session: store.configure(
+            command.sessionId,
+            command.permissionMode,
+            command.model,
+            command.effort,
+          ),
+        });
+        break;
+      case 'session.move':
+        broadcast({
+          type: 'session.updated',
+          session: store.move(command.sessionId, command.projectPath, deviceOf(peer)),
+        });
+        break;
+      case 'session.delete':
+      case 'session.rename':
+        await manageSession(command, session);
+        break;
+      case 'session.fork':
+        return fork(peer, command, session);
+      case 'message.send':
+      case 'session.compact':
+      case 'run.continue':
+        await submit(peer, command, session);
+        break;
+    }
+    return command.sessionId;
+  }
+
+  // The first frame must authenticate; a desktop client also asks for its execution channel here.
+  async function authenticate(peer: Peer, value: unknown) {
+    if (peer.browser) {
+      const auth = webAuthSchema.safeParse(value);
+      if (
+        !auth.success ||
+        auth.data.protocolVersion !== PROTOCOL_VERSION ||
+        !web.active(peer.browser)
+      ) {
+        peer.socket.close(4001, 'Invalid browser authentication');
+        return false;
+      }
+      peer.authenticated = true;
+      send(peer, {
+        type: 'ready',
+        protocolVersion: PROTOCOL_VERSION,
+        connectionId: peer.id,
+        adapter,
+        terminalWorkspace: { version: 1, minRows: 1, resumable: true },
+        terminalDisplay: { version: 1 },
+        terminalFiles: { version: 1 },
+        terminalHistory: { version: 1 },
+        deviceShells: { version: 1 },
+        sideConversations: true,
+        model: options.claude?.model,
+        version,
+        sessions: store.list(),
+        browser: {
+          sessionId: peer.browser,
+          serverDeviceId: serverDevice.id,
+          selfSigned: web.selfSigned(peer.origin, peer.proxied),
+        },
+      });
+      send(peer, devices());
+      return true;
+    }
+    const auth = authSchema.safeParse(value);
+    // Only a wrong token counts against the address: an outdated client holding the right one is not guessing.
+    const token = (value as { token?: unknown } | null)?.token;
+    let allowed =
+      typeof token === 'string' &&
+      authorized(token) &&
+      options.desktopAccess?.allowLegacy !== false;
+    if (
+      auth.success &&
+      options.desktopAccess &&
+      typeof token === 'string' &&
+      token.startsWith('ccs_')
+    ) {
+      try {
+        peer.access = await validateDesktopTicket(options.desktopAccess, token);
+        allowed = true;
+      } catch {
+        send(peer, {
+          type: 'connection.error',
+          code: 'unauthorized',
+          message: '邮箱登录已失效或管理中心暂不可用，请重新登录。',
+        });
+        peer.socket.close(4001, 'Desktop authorization unavailable');
+        return false;
+      }
+      if (closing || peer.socket.readyState !== WebSocket.OPEN) return false;
+    }
+    if (!allowed) refuse(peer.address);
+    else throttle.succeed(peer.address);
+    if (!auth.success || !allowed) {
+      send(peer, {
+        type: 'connection.error',
+        code: 'unauthorized',
+        message:
+          '服务凭据不正确。\n请核对安装时给出的服务凭据，注意不要带上首尾空格；在服务器上更换过凭据后要用新的。连续失败多次会被暂时拒绝。',
+      });
+      peer.socket.close(4001, 'Unauthorized');
+      return false;
+    }
+    // A mismatched client is directed to its administrator; no installer is advertised.
+    if (auth.data.protocolVersion !== PROTOCOL_VERSION) {
+      send(peer, {
+        type: 'connection.error',
+        code: 'version_mismatch',
+        message: `客户端与服务端（${version}）的版本不一致，请联系管理员安装匹配的定制版。`,
+        service: version,
+      });
+      peer.socket.close(4002, 'Version mismatch');
+      return false;
+    }
+    peer.authenticated = true;
+    peer.name = auth.data.deviceName;
+    send(peer, {
+      type: 'ready',
+      protocolVersion: PROTOCOL_VERSION,
+      connectionId: peer.id,
+      adapter,
+      terminalWorkspace: { version: 1, minRows: 1, resumable: true },
+      terminalDisplay: { version: 1 },
+      terminalFiles: { version: 1 },
+      terminalHistory: { version: 1 },
+      deviceShells: { version: 1 },
+      sideConversations: true,
+      model: options.claude?.model,
+      version,
+      sessions: store.list(),
+    });
+    send(peer, devices());
+    // Every connection that asks has an execution channel of its own, to the computer it comes from.
+    if (auth.data.tunnel && options.tunnel) {
+      peer.tunnel = new Tunnel(
+        options.tunnel,
+        store.directory,
+        peer.id,
+        (channelId) => {
+          if (peer.socket.readyState !== WebSocket.OPEN) return false;
+          send(peer, { type: 'tunnel.open', connectionId: peer.id, channelId });
+          return true;
+        },
+        () => peer.socket.close(4003, 'Tunnel closed'),
+      );
+      track(
+        peer.tunnel
+          .start()
+          .then((offer) => send(peer, offer))
+          .catch(() => {
+            send(peer, {
+              type: 'connection.error',
+              code: 'tunnel_failed',
+              message:
+                '服务端没能准备好执行通道。\n请查看服务日志；数据目录不可写或服务器资源耗尽时会出现这种情况。',
+            });
+            peer.socket.close(4003, 'Tunnel failed');
+          }),
+        tunnelTasks,
+      );
+    }
+    return true;
+  }
+  // A connection whose first frame attaches it to a device's tunnel carries one SSH connection and nothing
+  // else: it is no peer, receives no message and sends none. Only a wrong secret for a live tunnel counts
+  // against the address; a channel arriving after its tunnel ended is an ordinary race of disconnecting.
+  function attachChannel(peer: Peer, value: unknown) {
+    const attach = tunnelAttachSchema.safeParse(value);
+    const tunnel = attach.success
+      ? [...peers].find(
+          (owner) =>
+            owner.authenticated &&
+            (!owner.access || owner.access.validUntil > Date.now()) &&
+            owner.id === attach.data.connectionId,
+        )?.tunnel
+      : undefined;
+    if (!attach.success || !tunnel) {
+      peer.socket.close(TUNNEL_CLOSE.unknown, 'Unknown tunnel');
+      return false;
+    }
+    if (!tunnel.matches(attach.data.secret)) {
+      refuse(peer.address, 'tunnel secret');
+      peer.socket.close(TUNNEL_CLOSE.refused, 'Unauthorized');
+      return false;
+    }
+    peers.delete(peer);
+    peer.socket.removeAllListeners('message');
+    if (!tunnel.attach(attach.data.channelId, peer.socket)) {
+      peer.socket.close(TUNNEL_CLOSE.unknown, 'Unknown channel');
+      return false;
+    }
+    return true;
+  }
+  function registerTunnel(peer: Peer, credentials: TunnelCredentials) {
+    if (!peer.tunnel || peer.registering || credentials.connectionId !== peer.id) {
+      peer.socket.close(4002, 'Inactive tunnel registration');
+      return;
+    }
+    peer.registering = true;
+    track(
+      peer.tunnel
+        .accept(
+          peer.device?.viaSsh ? { ...credentials, shells: ['bash'] } : credentials,
+          peer.device?.platform,
+        )
+        .then(() => adopt(peer))
+        .then(() => {
+          send(peer, { type: 'tunnel.ready', connectionId: peer.id });
+        })
+        .catch(() => {
+          send(peer, {
+            type: 'connection.error',
+            code: 'ssh_failed',
+            message:
+              platformOf(peer.device) === 'win32'
+                ? '服务端经隧道连不上本机的 SSH 服务。\n隧道已经建立，但探测命令没有得到应答：常见于安全软件拦截了内置的 sshd.exe 或 PowerShell，请检查保护记录后重新连接。'
+                : '服务端经隧道连不上本机的 SSH 服务。\n隧道已经建立，但探测命令没有得到应答：请重新连接；反复出现时在“设置 → 常规”里打开连接日志查看原因。',
+          });
+          peer.socket.close(4003, 'SSH probe failed');
+        }),
+      tunnelTasks,
+    );
+  }
+  // Keystrokes, resizes and flow-control acknowledgments carry no request ID and get no response.
+  function controlTerminal(peer: Peer, control: TerminalControl) {
+    // Reviewed terminals enforce policy at CLI hooks; their raw keys must reach the PTY.
+    // Keep input disabled when the node has no native review path.
+    if (options.moderation && !options.nativeTerminalReview && control.type === 'terminal.input')
+      return;
+    const current = terminals.get(control.sessionId);
+    if (!current || current.owner !== peer || current.id !== control.terminalId) {
+      send(peer, {
+        type: 'connection.error',
+        code: 'terminal_inactive',
+        message: '原生终端已结束或属于另一连接。',
+        sessionId: control.sessionId,
+        terminalId: control.terminalId,
+      });
+      return;
+    }
+    try {
+      if (control.type === 'terminal.input') {
+        current.process?.write(control.data);
+        const continued = current.continued;
+        if (continued?.activity === 'working' && INTERRUPTS.has(control.data)) {
+          const offset = continued.offset;
+          setTimeout(() => {
+            if (
+              !current.process?.exited &&
+              continued.activity === 'working' &&
+              continued.offset === offset
+            )
+              void heardTerminal(current, false, true);
+          }, 2000).unref();
+        }
+      } else if (control.type === 'terminal.resize')
+        current.process?.resize(control.cols, control.rows);
+      else current.process?.acknowledge(control.bytes);
+    } catch {
+      send(peer, {
+        type: 'connection.error',
+        code: 'terminal_control_failed',
+        message: '终端控制失败，正在关闭该终端。',
+        sessionId: control.sessionId,
+        terminalId: control.terminalId,
+      });
+      const task = current.process?.close('control_error');
+      if (task) track(task);
+    }
+  }
+  // A request ID is answered once: a resend gets the same response, never a second execution.
+  function dispatch(peer: Peer, command: Command) {
+    // Reauthentication proofs and imported private keys must not stay in the request cache.
+    const serialized = command.type.startsWith('web.')
+      ? createHash('sha256').update(JSON.stringify(command)).digest('hex')
+      : JSON.stringify(command);
+    const previous = peer.responses.get(command.requestId);
+    if (previous) {
+      if (previous.command === serialized)
+        void previous.response.then((response) => send(peer, response));
+      else
+        send(peer, {
+          type: 'response',
+          requestId: command.requestId,
+          ok: false,
+          code: 'request_conflict',
+          message: '请求 ID 已被其他内容使用。',
+        });
+      return;
+    }
+    // Serialize reviewed messages across connections; keep cancellation and answers responsive.
+    const queued = options.moderation && command.type === 'message.send';
+    const queueId = 'sessionId' in command ? command.sessionId : 'global-instructions';
+    if (queued) reviewDeadlines.set(command, Date.now() + 8000);
+    const task = queued
+      ? (inputQueues.get(queueId) ?? Promise.resolve())
+          .catch(() => {})
+          .then(() => execute(peer, command))
+      : execute(peer, command);
+    if (queued) {
+      inputQueues.set(queueId, task);
+      void task
+        .finally(() => {
+          if (inputQueues.get(queueId) === task) inputQueues.delete(queueId);
+        })
+        .catch(() => {});
+    }
+    const response = task.then(
+      (sessionId): ServerMessage => ({
+        type: 'response',
+        requestId: command.requestId,
+        ok: true,
+        sessionId,
+      }),
+      (error): ServerMessage => ({
+        type: 'response',
+        requestId: command.requestId,
+        ok: false,
+        code: error instanceof DomainError ? error.code : 'internal_error',
+        message: error instanceof DomainError ? error.message : '服务处理失败。',
+      }),
+    );
+    peer.responses.set(command.requestId, { command: serialized, response });
+    // A resend follows its request closely: the latest few are all that can still be asked for again.
+    if (peer.responses.size > REMEMBERED)
+      peer.responses.delete(peer.responses.keys().next().value!);
+    track(response.then((value) => send(peer, value)));
+  }
+  // The computer's place here, made when the first of its connections says which computer it is.
+  function enter(peer: Peer) {
+    const device = deviceOf(peer).id;
+    let seat = seats.get(device);
+    if (!seat) {
+      seat = { device, peers: new Set() };
+      seats.set(device, seat);
+      if (options.tunnel) {
+        seat.door = new Door(options.tunnel, store.directory, device);
+        seat.opening = seat.door.start();
+        seat.opening.catch(() => {});
+      }
+    }
+    clearTimeout(seat.away);
+    seat.away = undefined;
+    seat.peers.add(peer);
+    return seat;
+  }
+  // The device's commands go through this connection's tunnel from now on: the newest that is ready.
+  async function adopt(peer: Peer) {
+    if (!peer.device || !peer.tunnel?.ssh) return;
+    const seat = seats.get(peer.device.id);
+    if (!seat?.door) return;
+    await seat.opening;
+    if (peers.has(peer) && seat.peers.has(peer)) seat.door.use(peer.tunnel);
+    announce();
+  }
+  // Nothing more is kept for a computer: its runs end and its door closes.
+  function vacate(seat: Seat, reason: string) {
+    clearTimeout(seat.away);
+    if (seats.get(seat.device) !== seat) return;
+    seats.delete(seat.device);
+    for (const run of runs.values()) if (run.device === seat.device) cancel(run, reason);
+    for (const terminal of terminals.values()) {
+      if (store.get(terminal.sessionId).session.device?.id === seat.device) {
+        terminal.closing = true;
+        const task = terminal.process?.close('disconnected');
+        if (task) track(task);
+      }
+    }
+    if (seat.door) track(seat.door.close(), tunnelTasks);
+    announce();
+  }
+  // What belongs to the connection itself ends with it: its terminal and its tunnel. The runs
+  // of its computer go on. If no other connection of that computer is here they are given `graceMs` for one
+  // to come back, unless the client said it was leaving; nothing is replayed for a later connection either way.
+  function release(peer: Peer) {
+    peers.delete(peer);
+    for (const terminal of terminals.values())
+      if (terminal.owner === peer) {
+        if (
+          !closing &&
+          !peer.left &&
+          terminal.process &&
+          !terminal.process.closing &&
+          !terminal.closing
+        )
+          detachTerminal(terminal);
+        else {
+          terminal.closing = true;
+          const task = terminal.process?.close('disconnected');
+          if (task) track(task);
+        }
+      }
+    const seat = peer.device && seats.get(peer.device.id);
+    if (seat?.peers.delete(peer)) {
+      if (seat.door?.uses(peer.tunnel))
+        seat.door.use([...seat.peers].findLast((other) => other.tunnel?.ssh)?.tunnel);
+      if (!seat.peers.size) {
+        const waiting =
+          [...runs.values()].some((run) => run.device === seat.device) ||
+          [...terminals.values()].some(
+            (terminal) => store.get(terminal.sessionId).session.device?.id === seat.device,
+          );
+        const gone = options.claude
+          ? '连接断开，运行未重放；在途命令结果可能未知。'
+          : '连接断开，运行未重放。';
+        if (closing || peer.left || !waiting || !graceMs) vacate(seat, gone);
+        else
+          seat.away = setTimeout(
+            () =>
+              vacate(
+                seat,
+                `设备离线超过 ${Math.round(graceMs / 1000)} 秒，运行已停止；在途命令结果可能未知。`,
+              ),
+            graceMs,
+          );
+      }
+    }
+    if (peer.tunnel) track(peer.tunnel.close(), tunnelTasks);
+    announce();
+  }
+
+  wss.on(
+    'connection',
+    (
+      socket: WebSocket,
+      address: string,
+      context?: { browser?: string; origin: string; proxied?: boolean },
+    ) => {
+      const peer: Peer = {
+        socket,
+        id: randomUUID(),
+        address,
+        authenticated: false,
+        browser: context?.browser,
+        origin: context?.origin,
+        proxied: context?.proxied,
+        name: '',
+        registering: false,
+        left: false,
+        subscriptions: new Set(),
+        responses: new Map(),
+      };
+      peers.add(peer);
+      // Browsers wait for sign-in in places of their own, so that they cannot crowd out desktops.
+      const gate = peer.browser ? web.throttle : throttle;
+      if (peer.browser && !web.attach(peer.browser, socket)) {
+        peers.delete(peer);
+        gate.leave(address);
+        socket.close(4001, 'Browser session unavailable');
+        return;
+      }
+      const opened = Date.now();
+      const authTimer = setTimeout(() => socket.close(4001, 'Authentication timeout'), 5000);
+      // A long unattended run should survive a brief network stall: only two pings in a row without an answer,
+      // about 45 seconds of silence, end the connection.
+      let missed = 0;
+      let timedOut = false;
+      // Whether this connection still holds one of the places for those that have not signed in.
+      let signedIn = false;
+      let greeted = false;
+      let pendingIdentity: unknown;
+      let renewing = false;
+      const revoke = () => {
+        peer.left = true;
+        send(peer, {
+          type: 'connection.error',
+          code: 'unauthorized',
+          message: '登录授权已结束，请重新登录。',
+        });
+        socket.close(4001, 'Desktop authorization expired');
+      };
+      const accessTimer = setInterval(() => {
+        if (!peer.access || !options.desktopAccess || renewing) return;
+        if (peer.access.validUntil <= Date.now()) {
+          revoke();
+          return;
+        }
+        renewing = true;
+        void validateDesktopTicket(options.desktopAccess, peer.access.ticket, true)
+          .then((access) => {
+            peer.access = access;
+          }, revoke)
+          .finally(() => {
+            renewing = false;
+          });
+      }, 30_000);
+      socket.on('pong', () => {
+        missed = 0;
+      });
+      const heartbeat = setInterval(() => {
+        if (missed >= 2) {
+          timedOut = true;
+          socket.terminate();
+          return;
+        }
+        missed++;
+        socket.ping();
+      }, 15000);
+      socket.on('error', () => socket.terminate());
+      socket.on('message', (data, isBinary) => {
+        if (maintenance) {
+          socket.close(1013, 'Server maintenance');
+          return;
+        }
+        let value: unknown;
+        try {
+          if (isBinary) throw new Error('Binary frame');
+          value = JSON.parse(data.toString('utf8'));
+        } catch {
+          send(peer, {
+            type: 'connection.error',
+            code: 'invalid_json',
+            message: '消息必须是 JSON 文本。',
+          });
+          socket.close(4002, 'Invalid frame');
+          return;
+        }
+        if (!peer.authenticated) {
+          // Only the first frame signs in. What a refused client sent after it is not another attempt.
+          if (greeted) {
+            // Desktop sends its device frame immediately after auth; account validation is asynchronous.
+            if (pendingIdentity === undefined && deviceIdentitySchema.safeParse(value).success)
+              pendingIdentity = value;
+            return;
+          }
+          greeted = true;
+          const channel =
+            !peer.browser && (value as { type?: unknown } | null)?.type === 'tunnel.attach';
+          void Promise.resolve(channel ? attachChannel(peer, value) : authenticate(peer, value))
+            .then((accepted) => {
+              if (!accepted) return;
+              clearTimeout(authTimer);
+              signedIn = true;
+              gate.leave(address);
+              if (pendingIdentity !== undefined && peer.authenticated)
+                socket.emit('message', Buffer.from(JSON.stringify(pendingIdentity)), false);
+            })
+            .catch(() => socket.close(4001, 'Authentication failed'));
+          return;
+        }
+        if (peer.access && peer.access.validUntil <= Date.now()) {
+          revoke();
+          return;
+        }
+        if (peer.browser) {
+          if (!web.active(peer.browser)) {
+            socket.close(4001, 'Browser session ended');
+            return;
+          }
+          if (webActivitySchema.safeParse(value).success) {
+            web.touch(peer.browser);
+            return;
+          }
+          const type = (value as { type?: unknown } | null)?.type;
+          if (
+            type === 'device' ||
+            type === 'auth' ||
+            type === 'web.auth' ||
+            (typeof type === 'string' && type.startsWith('tunnel.'))
+          ) {
+            socket.close(4003, 'Browser execution frames are not allowed');
+            return;
+          }
+        }
+        const credentials = tunnelCredentialsSchema.safeParse(value);
+        if (credentials.success) {
+          registerTunnel(peer, credentials.data);
+          return;
+        }
+        const identity = deviceIdentitySchema.safeParse(value);
+        if (identity.success) {
+          if (identity.data.id === serverDevice.id) {
+            socket.close(4003, 'Reserved device');
+            return;
+          }
+          peer.device = {
+            id: identity.data.id,
+            name: peer.name,
+            ...(identity.data.platform ? { platform: identity.data.platform } : {}),
+            ...(identity.data.viaSsh ? { viaSsh: true } : {}),
+          };
+          // With the line written when it closes, this tells which computer a connection was and how long it held.
+          if (!closing)
+            console.log(
+              `Connection ${peer.id.slice(0, 8)} opened: device "${peer.name}" (${identity.data.id.slice(0, 8)}) from ${address}`,
+            );
+          for (const session of store.named(peer.device))
+            broadcast({ type: 'session.updated', session });
+          enter(peer);
+          announce();
+          track(adopt(peer), tunnelTasks);
+          return;
+        }
+        if (leaveSchema.safeParse(value).success) {
+          peer.left = true;
+          return;
+        }
+        const control = terminalControlSchema.safeParse(value);
+        if (control.success) {
+          if (peer.browser && control.data.type === 'terminal.input') web.touch(peer.browser);
+          controlTerminal(peer, control.data);
+          return;
+        }
+        const command = commandSchema.safeParse(value);
+        if (!command.success) {
+          send(peer, {
+            type: 'connection.error',
+            code: 'invalid_command',
+            message: '请求格式无效。',
+          });
+          return;
+        }
+        if (peer.browser) {
+          if (!browserCommands.has(command.data.type)) {
+            send(peer, {
+              type: 'response',
+              requestId: command.data.requestId,
+              ok: false,
+              code: 'web_forbidden',
+              message: '浏览器不支持这项操作，请使用桌面客户端。',
+            });
+            return;
+          }
+          if (browserActivity.has(command.data.type)) web.touch(peer.browser);
+        }
+        dispatch(peer, command.data);
+      });
+      socket.on('close', (code) => {
+        clearTimeout(authTimer);
+        clearInterval(accessTimer);
+        clearInterval(heartbeat);
+        if (!signedIn) gate.leave(address);
+        // Why a connection ended is the first thing needed when a run was cut short.
+        const device = peer.device?.id;
+        const before = [...runs.values()].filter((run) => run.device === device).length;
+        release(peer);
+        // A native run that is being ended takes a moment to go: what became of the runs is told by whether the
+        // computer still has a place here.
+        const seat = device ? seats.get(device) : undefined;
+        if (peer.authenticated && !closing)
+          console.log(
+            `Connection ${peer.id.slice(0, 8)} closed after ${Math.round((Date.now() - opened) / 1000)} s: ${peer.left ? 'the client left' : timedOut ? 'no heartbeat answer for 45s' : `code ${code}`}; runs of its device: ${before}${!before ? '' : !seat ? ', ended' : seat.away ? `, kept for ${Math.round(graceMs / 1000)} s` : ', going on over another connection'}`,
+          );
+      });
+    },
+  );
+  return {
+    store,
+    managedMaintenance: options.managed ? managedMaintenance : undefined,
+    async listen(port = 8787): Promise<string> {
+      if (usageReceiver)
+        options.claude!.environment = {
+          ...options.claude!.environment,
+          ...telemetryEnvironment(await usageReceiver.listen()),
+        };
+      await new Promise<void>((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(port, options.host ?? '127.0.0.1', () => {
+          server.off('error', reject);
+          resolve();
+        });
+      });
+      const address = server.address();
+      if (!address || typeof address === 'string') throw new Error('No listening address');
+      return `${options.tls ? 'https' : 'http'}://${options.host ?? '127.0.0.1'}:${address.port}`;
+    },
+    async close() {
+      closing = true;
+      accountMonitor?.close();
+      web.close();
+      const terminalCleanup = Promise.all(
+        [...terminals.values()].map((terminal) => terminal.process?.close()),
+      );
+      for (const run of runs.values()) cancel(run, '服务停止，运行未重放。');
+      for (const seat of seats.values()) clearTimeout(seat.away);
+      const cleanup = [
+        ...[...peers].map((peer) => peer.tunnel?.close()),
+        ...[...seats.values()].map((seat) => seat.door?.close()),
+      ];
+      for (const peer of peers) peer.socket.terminate();
+      await Promise.all([...tasks]);
+      await terminalCleanup;
+      await Promise.all([...tunnelTasks]);
+      await Promise.all(cleanup);
+      await usageReceiver?.close();
+      await new Promise<void>((resolve) => wss.close(() => resolve()));
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      );
+      store.close();
+    },
+  };
+}

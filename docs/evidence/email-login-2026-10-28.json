@@ -1,0 +1,82 @@
+{
+  "phase": "management-and-linux-pilot-published-awaiting-user-upgrade-and-account-setup",
+  "recordedAt": "2026-10-28T02:15:04.453711+00:00",
+  "sourceCommit": "12b2da3ca49ffeb7d712a96d4c8302a582a2a873",
+  "branch": "codex/email-login",
+  "version": "0.3.7",
+  "windowsBuild": 11,
+  "serverBuild": 5,
+  "protocol": 22,
+  "artifacts": {
+    "windows": {
+      "filename": "CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+      "size": 201162434,
+      "sha256": "e8155cd4486150c33de039ff9e9572a0b51ed271e91df9e43926d3776fdb7ce1"
+    },
+    "server": {
+      "filename": "cc-desk-tunnel-server-0.3.7-build5.tar.gz",
+      "size": 1602727,
+      "sha256": "f9431e97816c5eb5e1ed3144641b85c45037b928f836aab5fa08e4c3fe305990"
+    },
+    "management": {
+      "filename": "cc-update-service-email-login.tar.gz",
+      "size": 135883,
+      "sha256": "e32fc8844d5fef6278bd7d024753fe4a026a8bfbe16e53f73054d3befa0e92f0"
+    },
+    "upgrade": {
+      "filename": "upgrade-cc-space-email.py",
+      "size": 1559,
+      "sha256": "1573cd080134125da2e9001791779d4e758ae69d81730493d0be11dc56e0680a"
+    }
+  },
+  "verification": {
+    "typecheck": "passed",
+    "productionFrontendBuild": "passed",
+    "accountStoreAndMainProcess": "4 tests passed",
+    "managerAndProxyIntegration": "36 tests passed including early device frame and live authorization revocation",
+    "clientReconnectServerConfigPasswordAndPackage": "32 tests passed",
+    "emailAndExistingLoginUI": "13 tests passed",
+    "managementTabsAndUserUI": "1 test passed",
+    "actualWindowsPackagedSmoke": "passed; email-first flow and manual fallback, assets/runtime and process cleanup",
+    "build4ToBuild5Compatibility": "identical protected runtime fingerprints; ordinary managed upgrade supported",
+    "upgradeLauncher": "Python syntax, actual HTTPS helper checksum, exact Docker command and Node syntax passed; no Ubuntu command executed",
+    "realClaudeOrJevRequests": 0
+  },
+  "vps": {
+    "managementDeployed": true,
+    "managementBackup": "/var/backups/cc-update-service/email-login-20261028T021053Z",
+    "previousRuntime": "/opt/cc-update-service.before-email-login-20261028T021053Z",
+    "managementChecks": [
+      "public desktop-access.js matches package",
+      "unauthenticated workspaces returns 401",
+      "admin API lists existing nodes"
+    ],
+    "linuxPilotPublished": true,
+    "linuxRevision": 7,
+    "initialExpiresAt": "2026-11-11T02:13:54.616Z",
+    "linuxPublicationBackup": "/var/backups/cc-update-service/email-server5-20261028T021353Z",
+    "linuxPublicDownloadVerified": true,
+    "linuxRenewalRegistered": true,
+    "forcedRenewalAndSystemdPassed": true,
+    "windowsPublicBuild": 9,
+    "windowsAndStableUnchanged": true,
+    "nodeConnectionConfigured": "ubuntu-cc",
+    "nodeFingerprintMatchesPriorScreenshotPrefix": true,
+    "legacyCredentialSaved": false,
+    "userCountAtSetup": 0
+  },
+  "pilot": {
+    "ubuntuLastUserConfirmedBuild": 4,
+    "ubuntuUpgradeExecuted": false,
+    "windowsBuild11InstalledByUser": false,
+    "emailLoginAcceptedOnRealDevice": false,
+    "legacyTokenMode": "both retained",
+    "oldBackup": "/var/lib/cc-space-037-upgrade/backup-20261028T012932Z-31010676"
+  },
+  "remaining": [
+    "User runs pinned launcher on ubuntu-cc",
+    "User installs Windows Build 11",
+    "User creates private email/password in management UI",
+    "User accepts email login on real client"
+  ]
+}

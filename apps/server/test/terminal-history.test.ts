@@ -1,0 +1,596 @@
+import assert from 'node:assert/strict';
+import { randomUUID } from 'node:crypto';
+import {
+  appendFileSync,
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  renameSync,
+  readFileSync,
+} from 'node:fs';
+import { registerHooks } from 'node:module';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
+import { test } from 'node:test';
+import { setTimeout as delay } from 'node:timers/promises';
+import { WebSocket } from 'ws';
+import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import type { EventPayload } from '@cc-desk-tunnel/protocol';
+import { TerminalTranscript } from '../src/terminal-transcript.ts';
+import {
+  terminalHistoryPath,
+  terminalHistoryContext,
+  readTerminalMessages,
+  TerminalHistoryReader,
+} from '../src/terminal-history.ts';
+
+test('transcript imports read only the selected CLI configuration and never fall back to another history', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-transcript-scope-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'selected-config');
+  const cwd = join(root, 'project');
+  const id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const question = randomUUID(),
+    answer = randomUUID();
+  writeFileSync(
+    path,
+    [
+      {
+        type: 'user',
+        uuid: question,
+        parentUuid: null,
+        sessionId: id,
+        message: { role: 'user', content: 'selected history' },
+      },
+      {
+        type: 'assistant',
+        uuid: answer,
+        parentUuid: question,
+        sessionId: id,
+        message: {
+          role: 'assistant',
+          id: 'answer',
+          content: [{ type: 'text', text: 'selected answer' }],
+        },
+      },
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join('\n') + '\n',
+  );
+  const messages = await readTerminalMessages(config, cwd, id);
+  assert.deepEqual(
+    messages.map((message) => message.uuid),
+    [question, answer],
+  );
+  assert.deepEqual(await readTerminalMessages(join(root, 'another-config'), cwd, id), []);
+});
+
+test('real Linux CLI 2.1.295 main-chain and system local commands import through the SDK', async (t) => {
+  // Recorded with an isolated HOME and localhost API fixture; attachment bodies removed.
+  const rows = JSON.parse(
+    readFileSync(new URL('./fixtures/terminal-cli-2.1.295.json', import.meta.url), 'utf8'),
+  );
+  const root = mkdtempSync(join(tmpdir(), 'cc-real-transcript-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  const id = rows.find((row: { type: string }) => row.type === 'user').sessionId;
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  const events: EventPayload[] = [],
+    known = new Set<string>();
+  const transcript = new TerminalTranscript((event) => events.push(event));
+  // Replay writes in the actual file order, including local-command records split across reads.
+  for (const row of rows) {
+    appendFileSync(path, JSON.stringify(row) + '\n');
+    const messages = await reader.read();
+    transcript.accept(messages, known);
+    for (const message of messages) known.add(message.uuid);
+  }
+  assert.equal(events.filter((event) => event.type === 'message.user').length, 1);
+  assert.equal(events.filter((event) => event.type === 'text.delta').length, 1);
+  assert.ok(
+    events.some(
+      (event) =>
+        event.type === 'native.notice' && event.text.startsWith('在终端里执行了 /context：'),
+    ),
+  );
+});
+
+test('a fast real CLI manual compaction preserves its question even after the SDK drops the old chain', async (t) => {
+  const rows = JSON.parse(
+    readFileSync(new URL('./fixtures/terminal-compact-2.1.295.json', import.meta.url), 'utf8'),
+  );
+  const root = mkdtempSync(join(tmpdir(), 'cc-fast-compact-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project');
+  const id = rows.find((row: { sessionId?: string }) => row.sessionId)?.sessionId;
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, rows.map((row: object) => JSON.stringify(row)).join('\n') + '\n');
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  const events: EventPayload[] = [],
+    known = new Set<string>();
+  const transcript = new TerminalTranscript((event) => events.push(event));
+  for (const message of await reader.read()) {
+    transcript.accept([message], known);
+    known.add(message.uuid);
+  }
+  assert.deepEqual(
+    events.map((event) => event.type),
+    ['message.user', 'native.compact'],
+  );
+  assert.equal(events[0].type === 'message.user' && events[0].text, '/compact');
+  assert.equal(events[1].type === 'native.compact' && events[1].trigger, 'manual');
+  for (const message of await reader.read({ reconcile: true })) {
+    transcript.accept([message], known);
+    known.add(message.uuid);
+  }
+  assert.equal(
+    events.length,
+    2,
+    'Stop reconciliation does not duplicate the compact question or mark',
+  );
+});
+
+test('incremental history waits for complete UTF-8 rows, follows the SDK chain and handles replacement', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-history-incremental-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const q = randomUUID(),
+    system = randomUUID(),
+    a = randomUUID();
+  const question = {
+    type: 'user',
+    uuid: q,
+    parentUuid: null,
+    sessionId: id,
+    message: { role: 'user', content: '问' },
+  };
+  writeFileSync(path, JSON.stringify(question) + '\n');
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  assert.equal((await reader.read()).length, 1);
+  appendFileSync(
+    path,
+    JSON.stringify({
+      type: 'system',
+      subtype: 'informational',
+      uuid: system,
+      parentUuid: q,
+      sessionId: id,
+    }) + '\n',
+  );
+  const bytes = Buffer.from(
+    JSON.stringify({
+      type: 'assistant',
+      uuid: a,
+      parentUuid: system,
+      sessionId: id,
+      message: { role: 'assistant', id: 'msg-one', content: [{ type: 'text', text: '回答🙂' }] },
+    }) + '\n',
+  );
+  const split = bytes.indexOf(Buffer.from('🙂')) + 2;
+  appendFileSync(path, bytes.subarray(0, split));
+  assert.ok(!(await reader.read()).some((row) => row.uuid === a));
+  // Stop/full reconciliation is also a live prefix read, not a strict parse of the half row.
+  assert.ok(!(await reader.read({ reconcile: true })).some((row) => row.uuid === a));
+  appendFileSync(path, bytes.subarray(split));
+  assert.ok((await reader.read()).some((row) => row.uuid === a));
+  const unchanged = await reader.read();
+  assert.equal(await reader.read(), unchanged);
+  const next = { ...question, uuid: randomUUID(), message: { role: 'user', content: 'new file' } };
+  writeFileSync(path + '.next', JSON.stringify(next));
+  renameSync(path + '.next', path);
+  assert.deepEqual(
+    (await reader.read({ final: true })).map((row) => row.uuid),
+    [next.uuid],
+  );
+  appendFileSync(path, '\n{broken}\n');
+  await assert.rejects(reader.read(), /Invalid terminal transcript at line 2/);
+});
+
+test('a question whose parent is still being written waits for the complete SDK chain', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-pending-parent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  const q1 = randomUUID(),
+    q2 = randomUUID(),
+    late = randomUUID();
+  const first = {
+    type: 'user',
+    uuid: q1,
+    parentUuid: null,
+    sessionId: id,
+    timestamp: '2026-11-07T00:00:01Z',
+    message: { role: 'user', content: 'question 1' },
+  };
+  const second = {
+    type: 'user',
+    uuid: q2,
+    parentUuid: late,
+    sessionId: id,
+    timestamp: '2026-11-07T00:00:04Z',
+    message: { role: 'user', content: 'question 2' },
+  };
+  const answer = {
+    type: 'assistant',
+    uuid: late,
+    parentUuid: q1,
+    sessionId: id,
+    timestamp: '2026-11-07T00:00:03Z',
+    message: {
+      role: 'assistant',
+      id: 'late-answer',
+      content: [{ type: 'text', text: 'answer to question 1' }],
+    },
+  };
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  writeFileSync(path, JSON.stringify(first) + '\n');
+  const initial = await reader.read();
+  appendFileSync(path, JSON.stringify(second) + '\n');
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [q1],
+  );
+  assert.deepEqual(
+    (await reader.read({ reconcile: true })).map((row) => row.uuid),
+    [q1],
+  );
+  await assert.rejects(reader.read({ final: true }), /Unresolved parent in terminal transcript/);
+  appendFileSync(path, JSON.stringify(answer) + '\n');
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [q1, late, q2],
+  );
+  assert.equal(initial.length, 1);
+});
+
+test('incremental completeness checks preserve a pre-existing historical root with an archived parent', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-archived-parent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id),
+    q = randomUUID(),
+    a = randomUUID();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      type: 'user',
+      uuid: q,
+      parentUuid: randomUUID(),
+      sessionId: id,
+      message: { role: 'user', content: 'historical root' },
+    }) + '\n',
+  );
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  assert.deepEqual(
+    (await reader.read({ final: true })).map((row) => row.uuid),
+    [q],
+  );
+  appendFileSync(
+    path,
+    JSON.stringify({
+      type: 'assistant',
+      uuid: a,
+      parentUuid: q,
+      sessionId: id,
+      message: {
+        role: 'assistant',
+        id: 'new-answer',
+        content: [{ type: 'text', text: 'new answer' }],
+      },
+    }) + '\n',
+  );
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [q, a],
+  );
+});
+
+test('an appended SDK root with an empty parent is a reset rather than an incomplete child', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-empty-parent-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const config = join(root, 'config'),
+    cwd = join(root, 'project'),
+    id = randomUUID();
+  const path = terminalHistoryPath(config, cwd, id),
+    first = randomUUID(),
+    next = randomUUID();
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(
+    path,
+    JSON.stringify({
+      type: 'user',
+      uuid: first,
+      parentUuid: null,
+      sessionId: id,
+      timestamp: '2026-11-07T00:00:01Z',
+      message: { role: 'user', content: 'old root' },
+    }) + '\n',
+  );
+  const reader = new TerminalHistoryReader(config, cwd, id);
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [first],
+  );
+  appendFileSync(
+    path,
+    JSON.stringify({
+      type: 'user',
+      uuid: next,
+      parentUuid: '',
+      sessionId: id,
+      timestamp: '2026-11-07T00:00:02Z',
+      message: { role: 'user', content: 'new root' },
+    }) + '\n',
+  );
+  assert.deepEqual(
+    (await reader.read()).map((row) => row.uuid),
+    [next],
+  );
+});
+
+test('corrupt transcript rows are reported instead of being treated as an empty history', async (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-transcript-corrupt-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const id = randomUUID(),
+    config = join(root, 'config'),
+    cwd = join(root, 'project');
+  const path = terminalHistoryPath(config, cwd, id);
+  mkdirSync(dirname(path), { recursive: true });
+  writeFileSync(path, '{broken transcript row}\n');
+  await assert.rejects(readTerminalMessages(config, cwd, id), /line 1/);
+});
+
+test('official IDs persist and explicit continuation checks files, scope, locks and request identity without provider calls', async () => {
+  const args: string[][] = [];
+  const key = Symbol.for('cc-history-fixture');
+  Reflect.set(globalThis, key, args);
+  const hooks = registerHooks({
+    resolve(specifier, context, next) {
+      if (specifier === 'node-pty') return { url: 'test:history-pty', shortCircuit: true };
+      return next(specifier, context);
+    },
+    load(url, context, next) {
+      if (url === 'test:history-pty')
+        return {
+          format: 'module',
+          shortCircuit: true,
+          source: `
+        export function spawn(_file, args) {
+          const calls = globalThis[Symbol.for('cc-history-fixture')]; calls.push(args); let exit;
+          if (calls.failOnce) { calls.failOnce = false; throw new Error('Fixture spawn failed'); }
+          return {pid:2147483647,onData(){return {dispose(){}}},onExit(fn){exit=fn;return {dispose(){}}},
+            write(){throw new Error('No input replay allowed')},resize(){},pause(){},resume(){},
+            kill(){queueMicrotask(()=>exit({exitCode:0}))}};
+        }`,
+        };
+      if (url.endsWith('/native-onboarding.ts'))
+        return {
+          format: 'module',
+          shortCircuit: true,
+          source: `export function completeOnboarding(){throw new Error('No credential reads allowed')}`,
+        };
+      return next(url, context);
+    },
+  });
+  const { createProxyServer } = await import('../src/server.ts');
+  const directory = mkdtempSync(join(tmpdir(), 'cc-history-'));
+  const config = join(directory, 'cli-config');
+  assert.equal(
+    terminalHistoryContext({ executable: 'fixture' }, { CLAUDE_CONFIG_DIR: 'profile' }, directory)
+      .config,
+    join(directory, 'profile'),
+  );
+  const options = {
+    token: randomUUID(),
+    dataDir: directory,
+    reverseProxy: true,
+    tunnel: {},
+    maxRuns: 4,
+    claude: { executable: 'never-launch-provider', environment: { CLAUDE_CONFIG_DIR: config } },
+  };
+  let server = createProxyServer(options);
+  let socket: WebSocket | undefined;
+  async function connect() {
+    const url = await server.listen(0);
+    socket = new WebSocket(url.replace('http', 'ws') + '/ws');
+    const messages: any[] = [];
+    socket.on('message', (raw) => messages.push(JSON.parse(raw.toString())));
+    await new Promise<void>((resolve) => socket!.once('open', resolve));
+    const send = (value: object) => socket!.send(JSON.stringify(value));
+    async function wait(predicate: (value: any) => boolean) {
+      for (let i = 0; i < 500; i++) {
+        const index = messages.findIndex(predicate);
+        if (index >= 0) return messages.splice(index, 1)[0];
+        await delay(5);
+      }
+      throw new Error('History fixture response timeout');
+    }
+    send({
+      type: 'auth',
+      token: options.token,
+      protocolVersion: PROTOCOL_VERSION,
+      deviceName: 'fixture',
+    });
+    send({ type: 'device', id: randomUUID() });
+    const ready = await wait((value) => value.type === 'ready');
+    assert.equal(ready.terminalHistory.version, 1);
+    async function request(command: object, requestId = randomUUID()) {
+      send({ ...command, requestId });
+      return wait((value) => value.type === 'response' && value.requestId === requestId);
+    }
+    async function histories(sessionId: string) {
+      const requestId = randomUUID();
+      const response = await request({ type: 'terminal.history.list', sessionId }, requestId);
+      assert.equal(response.ok, true);
+      return (
+        await wait((value) => value.type === 'terminal.histories' && value.requestId === requestId)
+      ).items;
+    }
+    return { request, histories, wait };
+  }
+  try {
+    let client = await connect();
+    const original = (await client.request({ type: 'server.session.create', title: 'original' }))
+      .sessionId;
+    assert.deepEqual(await client.histories(original), []); // Old/unassociated session: no scan/guess.
+    Reflect.set(args, 'failOnce', true);
+    assert.equal(
+      (await client.request({ type: 'terminal.open', sessionId: original, cols: 80, rows: 24 }))
+        .code,
+      'terminal_failed',
+    );
+    const failedId = server.store.terminalHistory(original)!.nativeId;
+    assert.equal(
+      (await client.request({ type: 'terminal.open', sessionId: original, cols: 80, rows: 24 })).ok,
+      true,
+    );
+    const first = server.store.terminalHistory(original)!;
+    assert.equal(first.nativeId, original);
+    assert.equal(first.nativeId, failedId);
+    assert.deepEqual(args[0].slice(0, -2), args[1].slice(0, -2)); // Per-process hook settings have distinct paths.
+    assert.equal(args[0][args[0].indexOf('--session-id') + 1], first.nativeId);
+    const opened = await client.wait((value) => value.type === 'terminal.opened');
+    assert.equal((await client.histories(original))[0].available, false); // Managed active lock.
+    assert.equal(
+      (
+        await client.request({
+          type: 'terminal.close',
+          sessionId: original,
+          terminalId: opened.terminalId,
+        })
+      ).ok,
+      true,
+    );
+    assert.equal((await client.histories(original))[0].available, false); // Empty native session.
+    const command = {
+      type: 'terminal.history.continue',
+      sessionId: original,
+      historySessionId: original,
+      confirmed: true,
+    };
+    assert.equal((await client.request(command)).code, 'history_missing');
+    const file = terminalHistoryPath(config, join(directory, 'native', first.root), first.nativeId);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(
+      file,
+      'null\n' +
+        JSON.stringify({
+          type: 'user',
+          sessionId: first.nativeId,
+          message: {
+            role: 'user',
+            content: [null, { type: 'text', text: 42 }, { type: 'text', text: '中文历史任务' }],
+          },
+        }) +
+        '\n',
+    );
+    const readyHistory = (await client.histories(original))[0];
+    assert.equal(readyHistory.available, true, readyHistory.reason);
+    assert.equal(readyHistory.title, '中文历史任务');
+    const foreign = (
+      await client.request({ type: 'server.session.create', title: 'another-project' })
+    ).sessionId;
+    assert.equal(
+      (await client.request({ ...command, sessionId: foreign })).code,
+      'history_unassociated',
+    );
+    const continueId = randomUUID();
+    const resumed = await client.request(command, continueId);
+    assert.equal(resumed.ok, true);
+    assert.notEqual(resumed.sessionId, original);
+    assert.equal(server.store.get(original).session.title, 'original');
+    assert.equal(server.store.terminalHistory(resumed.sessionId)?.nativeId, first.nativeId);
+    assert.equal((await client.request(command, continueId)).sessionId, resumed.sessionId);
+    assert.equal(
+      (
+        await client.request({
+          type: 'terminal.open',
+          sessionId: resumed.sessionId,
+          cols: 80,
+          rows: 24,
+        })
+      ).ok,
+      true,
+    );
+    assert.equal(args.at(-1)![args.at(-1)!.indexOf('--resume') + 1], first.nativeId);
+    assert.equal(args.at(-1)!.includes('--session-id'), false);
+    assert.equal(
+      (
+        await client.request({
+          type: 'message.send',
+          sessionId: original,
+          text: 'must not launch another CLI',
+          scenario: 'chat',
+        })
+      ).code,
+      'native_busy',
+    );
+    assert.equal(
+      (
+        await client.request({
+          type: 'session.rename',
+          sessionId: original,
+          title: 'must not mutate shared history',
+        })
+      ).code,
+      'native_busy',
+    );
+    assert.equal((await client.request(command)).code, 'history_busy');
+    socket!.terminate();
+    await server.close();
+    server = createProxyServer(options);
+    client = await connect();
+    assert.equal(server.store.terminalHistory(original)?.nativeId, first.nativeId);
+    assert.equal((await client.request(command, continueId)).sessionId, resumed.sessionId); // Durable lost-response recovery.
+    assert.equal((await client.histories(original))[0].available, true);
+    const count = server.store.list().length;
+    server.store.database.exec(
+      "CREATE TRIGGER fail_history BEFORE INSERT ON terminal_history BEGIN SELECT RAISE(ABORT, 'fixture'); END;",
+    );
+    assert.equal((await client.request(command)).ok, false);
+    assert.equal(server.store.list().length, count); // Binding + business session + receipt are atomic.
+    server.store.database.exec('DROP TRIGGER fail_history');
+    // Same mapped project, but a different selected CLI directory.
+    options.claude.environment.CLAUDE_CONFIG_DIR = join(directory, 'different-config');
+    assert.equal((await client.histories(original))[0].available, false);
+    assert.equal((await client.request(command)).code, 'history_environment_changed');
+    options.claude.environment.CLAUDE_CONFIG_DIR = config;
+    rmSync(file);
+    assert.equal(
+      (
+        await client.request({
+          type: 'terminal.open',
+          sessionId: resumed.sessionId,
+          cols: 80,
+          rows: 24,
+        })
+      ).code,
+      'history_missing',
+    );
+    assert.equal(args.length, 3); // One failed spawn, two successful PTYs; no silent new CLI or prompt replay.
+  } finally {
+    socket?.terminate();
+    await server.close();
+    hooks.deregister();
+    Reflect.deleteProperty(globalThis, key);
+    rmSync(directory, { recursive: true, force: true });
+  }
+});

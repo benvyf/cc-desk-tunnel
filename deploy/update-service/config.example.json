@@ -1,0 +1,10 @@
+{
+  "origin": "https://updates.example.invalid",
+  "dataDir": "/srv/cc-update-service",
+  "port": 8817,
+  "adminName": "administrator",
+  "adminTokenSha256": "REPLACE_WITH_SHA256_OF_RANDOM_ADMIN_TOKEN",
+  "trustedKeys": {
+    "managed-2026": "REPLACE_WITH_OFFLINE_SIGNER_ED25519_PUBLIC_KEY_PEM"
+  }
+}

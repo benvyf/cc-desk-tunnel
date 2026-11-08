@@ -1,0 +1,139 @@
+{
+  "date": "2026-11-06",
+  "timezone": "Asia/Hong_Kong",
+  "requestedFeatureCommit": "f126a7f",
+  "releaseCommit": "187f3ce3c1861ab7ed03baec663eb65ab2a4a728",
+  "publication": {
+    "published": true,
+    "backup": "/var/backups/cc-update-service/client30-publication-20261106T041701Z",
+    "release": {
+      "build": 30,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "187f3ce3c1861ab7ed03baec663eb65ab2a4a728",
+      "filename": "CC-Space-Setup-0.3.10-x64.exe",
+      "notes": "CC Space 0.3.10 / Build 30：包含 f126a7f 的多设备项目与侧栏改进、SSH 项目选择、终端状态图标、本地查找、阅读位置保护；补齐跨协议更新弹窗内获取完整安装包入口。应用版本仍为 0.3.10，协议 24；已安装的 Build 28/29 可通过客户端检查更新。旧协议客户端须先结束任务并退出全部窗口，再保留原安装目录覆盖安装；服务端需配套协议 24。Claude、SDK、账号与模型网络仍在 Ubuntu；服务端侧输出合并需另行升级服务端，不由本客户端安装包注入。",
+      "size": 258602132,
+      "sha256": "4f858887c666e4b7788747c98adda33f64bb46f9a7d23f77a337b106bfd2551c"
+    },
+    "revision": 43,
+    "publicIndexVerified": true,
+    "publicInstallerVerified": true,
+    "stableUnchanged": true,
+    "linuxUnchanged": true,
+    "renewalRegistrationUpdated": true,
+    "candidates": 0,
+    "managementRuntimeChanged": false,
+    "nodeInstallJobsCreated": false,
+    "completedAt": "2026-11-06T04:17:15.593Z"
+  },
+  "verification": {
+    "published": true,
+    "release": {
+      "build": 30,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "187f3ce3c1861ab7ed03baec663eb65ab2a4a728",
+      "filename": "CC-Space-Setup-0.3.10-x64.exe",
+      "notes": "CC Space 0.3.10 / Build 30：包含 f126a7f 的多设备项目与侧栏改进、SSH 项目选择、终端状态图标、本地查找、阅读位置保护；补齐跨协议更新弹窗内获取完整安装包入口。应用版本仍为 0.3.10，协议 24；已安装的 Build 28/29 可通过客户端检查更新。旧协议客户端须先结束任务并退出全部窗口，再保留原安装目录覆盖安装；服务端需配套协议 24。Claude、SDK、账号与模型网络仍在 Ubuntu；服务端侧输出合并需另行升级服务端，不由本客户端安装包注入。",
+      "size": 258602132,
+      "sha256": "4f858887c666e4b7788747c98adda33f64bb46f9a7d23f77a337b106bfd2551c"
+    },
+    "revision": 44,
+    "expiresAt": "2026-11-09T04:17:47.326Z",
+    "renewalRegistered": true,
+    "realSystemdRunSucceeded": true,
+    "timers": {
+      "cc-update-renew.timer": "active",
+      "cc-server-index-renew.timer": "active"
+    },
+    "stableUnchanged": true,
+    "linuxUnchanged": true,
+    "managementRuntimeUnchanged": true,
+    "realModelRequests": 0
+  },
+  "package": {
+    "release": {
+      "build": 30,
+      "appVersion": "0.3.10",
+      "protocol": 24,
+      "sourceCommit": "187f3ce3c1861ab7ed03baec663eb65ab2a4a728",
+      "filename": "CC-Space-Setup-0.3.10-x64.exe",
+      "size": 258602132,
+      "sha256": "4f858887c666e4b7788747c98adda33f64bb46f9a7d23f77a337b106bfd2551c"
+    },
+    "modulesMatched": 28,
+    "vendorFilesMatched": 691,
+    "packagedSmokePassed": true,
+    "updateFixEmbedded": true,
+    "modelRuntimePackagesAbsent": true,
+    "independentArtifact": "D:\\cc-desk-tunnel\\artifacts\\windows\\build30\\CC-Space-Setup-0.3.10-x64.exe"
+  },
+  "installer": {
+    "realInstallerExtracted": true,
+    "extraction": "7za automatically extracted NSIS payload to application files",
+    "embeddedAsarMatchesVerifiedPackage": true,
+    "sha256": "80a9dd1fca74ec7a9ffeb5e02e3c87af45b43f15740ce7452f9d2097598a5915"
+  },
+  "publicDownload": {
+    "publicSignatureVerified": true,
+    "fullPublicDownloadVerified": true,
+    "build": 30,
+    "revision": 44,
+    "size": 258602132,
+    "sha256": "4f858887c666e4b7788747c98adda33f64bb46f9a7d23f77a337b106bfd2551c"
+  },
+  "liveController": {
+    "publicSignatureVerified": true,
+    "modelInvoked": false,
+    "results": [
+      {
+        "build": 29,
+        "protocol": 24,
+        "targetBuild": 30,
+        "phase": "available"
+      },
+      {
+        "build": 27,
+        "protocol": 23,
+        "targetBuild": 30,
+        "manualUrl": "https://api.ghostapi.org/cc-updates/v1/artifacts/30/win32-x64/CC-Space-Setup-0.3.10-x64.exe",
+        "automaticDownloadRejected": true,
+        "noticeRetained": true
+      },
+      {
+        "build": 30,
+        "protocol": 24,
+        "noUpdate": true
+      }
+    ]
+  },
+  "center": {
+    "centerDownloadBuild": 30,
+    "candidateCount": 0,
+    "oldBuild29Retained": true,
+    "nodeVersionsAndJobsUnchanged": true,
+    "managementRuntimeUnchanged": true
+  },
+  "tests": {
+    "updateCoreInitial": {
+      "passed": 41,
+      "reason": "EPERM temporary directory cleanup after Windows helper",
+      "failed": 1
+    },
+    "updateCoreFinal": {
+      "failed": 0,
+      "passed": 42
+    },
+    "nsisHooksPassed": 2,
+    "featureUiPassed": 20,
+    "updateUiPassed": 24,
+    "updateUiFixture": "isolated copy explicitly disables absent SSH API; original legacy Proxy fixture incompatible with useSshTargets",
+    "packagedSmokePassed": true,
+    "extractedInstallerSmokePassed": true
+  },
+  "modelRequests": 0,
+  "linuxInstalled": false,
+  "managementRuntimeChanged": false,
+  "oldArtifactOverwritten": false
+}

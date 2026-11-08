@@ -1,0 +1,9 @@
+services:
+  proxy:
+    volumes:
+      - type: bind
+        source: ${MANAGED_CONFIG_DIR:?Import this node configuration with manage.sh init or moderation-config}
+        target: /etc/claude-code
+        read_only: true
+        bind:
+          create_host_path: false

@@ -1,0 +1,680 @@
+{
+  "schema": 1,
+  "dateHongKong": "2026-11-06",
+  "verifiedAtUtc": "2026-11-05T18:35:22.191597+00:00",
+  "branch": "codex/multi-device-development",
+  "featureBaseCommit": "b12ef04cd104b5a9522c5f98f66e2bdb03a84282",
+  "startingHead": "3a7a295c99d49c46017b941cd7eda0796085f891",
+  "plan": {
+    "file": "32-multi-device-fix-plan.md",
+    "sha256": "6c1ebc68335226cf8b81ed0316ec5645b3b9ca3ea0c70ef9e9814c37e9d649f6"
+  },
+  "status": "verified",
+  "node": "24.21.0",
+  "checks": {
+    "broadUi": {
+      "startTime": "2026-11-05T18:23:01.757Z",
+      "duration": 433645.67,
+      "expected": 189,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/fix-plan-verified-ui.log",
+      "report": ".local/fix-plan-verified-ui.json",
+      "sourceSha256": {
+        "apps/desktop/src/App.tsx": "a3064fa75730e0f1b9fa0a2907de75fbaabfa506f1aea0e75c14cc1c211fbe1b",
+        "apps/desktop/src/NativeTerminal.tsx": "8b46acc40d858b9e5fd181a1714aea0d14f018f7984f0e5282c1ecb6cd23ea77",
+        "apps/desktop/src/OpenProjectDialog.tsx": "a124088ce7794aba8137430798f94dcc69d57331a549611f8257431a04b6eecc",
+        "apps/desktop/src/Sidebar.tsx": "ac895b6e712bf5bc04452e66b962d7fa458597b52e93ad7879f127d987fb094e",
+        "apps/desktop/src/TerminalWindow.tsx": "dcc30c9a9d8942f00d0ae88a013978afea9874b7914044bdcbfd84197462a9ee",
+        "apps/desktop/src/developmentProjects.ts": "346b062ba0081a5da17c75aef3e7f1ed611fe8d17e73ac65ba713c55d551634e",
+        "apps/desktop/src/style.css": "0e3b2228bb0a87be7e06daf8ff35ea718a180488899196c1e6a7fc4f6183d907"
+      }
+    },
+    "finalTerminalSupplement": {
+      "startTime": "2026-11-05T18:31:07.520Z",
+      "duration": 100821.39,
+      "expected": 71,
+      "skipped": 0,
+      "unexpected": 0,
+      "flaky": 0,
+      "log": ".local/fix-plan-supplement-ui.log",
+      "report": ".local/fix-plan-supplement-ui.json",
+      "changedProductionFilesSinceBroadBatch": ["apps/desktop/src/TerminalWindow.tsx"],
+      "reason": "Encoded option IDs for paths with spaces; owning-window resize positioning. Includes two new cases and real Electron resize."
+    },
+    "distinctFinalUiCases": {
+      "passed": 191,
+      "failed": 0,
+      "skipped": 0,
+      "previousRegressionGroup": 125,
+      "updatedMultiDeviceGroup": 63,
+      "additionalTerminalAppearanceGroup": 3,
+      "byFile": {
+        "app.spec.ts": 16,
+        "buttons.spec.ts": 7,
+        "conversation-status.spec.ts": 4,
+        "follow-ups-navigation.spec.ts": 11,
+        "layout.spec.ts": 7,
+        "motion.spec.ts": 19,
+        "multi-device-development.spec.ts": 20,
+        "multi-device-electron.spec.ts": 1,
+        "multi-device-sidebar.spec.ts": 7,
+        "new-session.spec.ts": 2,
+        "open-project-dialog.spec.ts": 9,
+        "sidebar-details.spec.ts": 8,
+        "sidebar-merge.spec.ts": 7,
+        "ssh-settings.spec.ts": 3,
+        "terminal-close.spec.ts": 3,
+        "terminal-preview-chrome.spec.ts": 3,
+        "terminal-projects.spec.ts": 26,
+        "terminal-status.spec.ts": 1,
+        "terminal-usability.spec.ts": 15,
+        "terminal-window.spec.ts": 2,
+        "terminal-workspace.spec.ts": 20
+      }
+    },
+    "relatedCore": {
+      "passed": 72,
+      "failed": 0,
+      "skipped": 0,
+      "log": ".local/fix-plan-verified-core.log"
+    },
+    "typecheck": {
+      "status": "passed",
+      "log": ".local/fix-plan-typecheck.log"
+    },
+    "build": {
+      "status": "passed with existing bundler warnings",
+      "log": ".local/fix-plan-build.log"
+    },
+    "modelBoundary": "passed by build precheck and model-boundary core tests",
+    "format": "passed",
+    "diffWhitespace": "passed"
+  },
+  "scope": {
+    "changedProduction": "apps/desktop/src only",
+    "unchangedPrefixes": ["apps/server", "packages/protocol", "apps/desktop/electron"],
+    "proof": "git diff --exit-code 3a7a295 -- apps/server packages/protocol apps/desktop/electron",
+    "realClaudeInference": false,
+    "productionDevicesAccessed": false,
+    "linuxLabRerun": false,
+    "packaged": false,
+    "pushed": false,
+    "published": false,
+    "originalUiMotionWorktreeEdited": false
+  },
+  "review": {
+    "specification": "passed",
+    "codeQuality": "passed",
+    "remainingActionableFindings": [],
+    "resolved": [
+      "configure failure retains session and retry dialog",
+      "disabled Enter guard",
+      "bottom action Enter guard",
+      "Tab focus synchronizes selected row",
+      "narrow local path and remote footer name",
+      "device and alias search with waiting status",
+      "valid active-descendant IDs for paths with spaces",
+      "open menu follows owning-window resize"
+    ]
+  },
+  "requirements": {
+    "remote-only-device-labels": "verified",
+    "A1-unified-anchored-menu-and-rename": "verified",
+    "A2-shortcuts-composition-and-popup-document": "verified",
+    "A3-project-menu-silent-terminal-creation": "verified",
+    "A4-ordinary-local-new-session": "verified",
+    "A5-remove-sidebar-terminal-note": "verified",
+    "B1-any-terminal-native-status-exclusion": "verified",
+    "B2-development-project-filter-and-dedup": "verified",
+    "B3-default-permission-configure-before-open-and-retry": "verified",
+    "C1-other-window-no-return-action": "verified",
+    "C2-project-hover-correct-action": "verified"
+  },
+  "productionSha256": {
+    "apps/desktop/src/App.tsx": "a3064fa75730e0f1b9fa0a2907de75fbaabfa506f1aea0e75c14cc1c211fbe1b",
+    "apps/desktop/src/NativeTerminal.tsx": "8b46acc40d858b9e5fd181a1714aea0d14f018f7984f0e5282c1ecb6cd23ea77",
+    "apps/desktop/src/OpenProjectDialog.tsx": "a124088ce7794aba8137430798f94dcc69d57331a549611f8257431a04b6eecc",
+    "apps/desktop/src/Sidebar.tsx": "ac895b6e712bf5bc04452e66b962d7fa458597b52e93ad7879f127d987fb094e",
+    "apps/desktop/src/TerminalWindow.tsx": "d71cfe896d7424196d4804d00b56042b60cda697be5347e89d09acc188b767be",
+    "apps/desktop/src/developmentProjects.ts": "346b062ba0081a5da17c75aef3e7f1ed611fe8d17e73ac65ba713c55d551634e",
+    "apps/desktop/src/style.css": "0e3b2228bb0a87be7e06daf8ff35ea718a180488899196c1e6a7fc4f6183d907"
+  },
+  "deletedProductionFiles": ["apps/desktop/src/TerminalProjectPicker.tsx"],
+  "screenshots": [
+    {
+      "path": "docs/evidence/multi-device/03-unified-projects.png",
+      "theme": "light",
+      "width": 1280,
+      "height": 900,
+      "sha256": "5f8315f91b4af7d99cacf05798a7e5527b4836e381cc57e62e1e3d1557aee9cf"
+    },
+    {
+      "path": "docs/evidence/multi-device/04-terminal-project-picker.png",
+      "theme": "light",
+      "width": 480,
+      "height": 800,
+      "sha256": "b3523fcac1b06e9ff78c43474d799e0d0bc980eb630db8ca29cd8d0e3bfc8215"
+    },
+    {
+      "path": "docs/evidence/multi-device/05-electron-projects.png",
+      "theme": "light",
+      "width": 1000,
+      "height": 680,
+      "sha256": "2903a55eb771f5d61454bdb006b41914bc41bb79d6cac541f94ac300a89ff9ca"
+    },
+    {
+      "path": "docs/evidence/multi-device/06-terminal-menu.png",
+      "theme": "shared",
+      "width": 1000,
+      "height": 680,
+      "sha256": "b368e6169709e53cf060e10c93fafbddcca80fd1cf1601becb7cf6014c93b789",
+      "note": "Terminal palette is shared by light/dark app themes; one image retained."
+    },
+    {
+      "path": "docs/evidence/multi-device/03-unified-projects-dark.png",
+      "theme": "dark",
+      "width": 1280,
+      "height": 900,
+      "sha256": "dbefb2246554908cab7ad80a0089acb897e5451b16f9804779c1100b2b598dcf"
+    },
+    {
+      "path": "docs/evidence/multi-device/04-terminal-project-picker-dark.png",
+      "theme": "dark",
+      "width": 480,
+      "height": 800,
+      "sha256": "996aac52f84b6921bece2bf359ef2574c2d0aff518bec1f9318dddb65672f261"
+    },
+    {
+      "path": "docs/evidence/multi-device/05-electron-projects-dark.png",
+      "theme": "dark",
+      "width": 1000,
+      "height": 680,
+      "sha256": "718a3ba201ba3b517d38ffeb71108920051872a18ff5e53eb9159fe11404b2aa"
+    }
+  ],
+  "limits": [
+    "Physical Windows IME was not manually certified; synthetic composition and real Electron keyboard paths were tested.",
+    "Production Anthropic authorization, public egress and existing branding risk are outside this renderer change; see network/Claude review.",
+    "Full repository Node suite not rerun; historical Docker allowlist baseline failure and cleanup issue remain documented."
+  ],
+  "previousVerification": "multi-device-development-verification.json",
+  "f54784aReviewCorrections": {
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:08:27.762870+00:00",
+    "baseCommit": "f54784a1af735f97e3a49e0faa7864109f0d6bba",
+    "plan": {
+      "file": "32-multi-device-review-f54784a.md",
+      "sha256": "87ed0f86b84b44455bc18834b5b45666cab7b1cf2706d16ac3230b59246be025"
+    },
+    "requirements": {
+      "M1": "Session menu refresh disabled by anyTerminal; idle left unchanged.",
+      "L2": "Fallback document shortcuts ignore focus outside .terminal-workspace; all four shortcut variants tested.",
+      "L3": "Ctrl+Shift+T uses the same readiness and active-tab conditions as the plus button.",
+      "L1": "Keep one shared terminal-menu screenshot; remove byte-identical dark duplicate and clarify app-theme evidence.",
+      "windows": "Actual Electron tests run on Windows, 3/3 passed."
+    },
+    "checks": {
+      "targetRed": {
+        "failed": 5,
+        "log": ".local/f54784a-plan-red.log"
+      },
+      "targetGreen": {
+        "passed": 5,
+        "log": ".local/f54784a-plan-green.log"
+      },
+      "relatedUi": {
+        "startTime": "2026-11-06T01:05:40.976Z",
+        "duration": 144326.765,
+        "expected": 110,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/f54784a-plan-ui.log",
+        "report": ".local/f54784a-plan-ui.json",
+        "byFile": {
+          "multi-device-development.spec.ts": 26,
+          "multi-device-electron.spec.ts": 1,
+          "multi-device-sidebar.spec.ts": 7,
+          "open-project-dialog.spec.ts": 9,
+          "sidebar-details.spec.ts": 8,
+          "terminal-preview-chrome.spec.ts": 3,
+          "terminal-projects.spec.ts": 33,
+          "terminal-status.spec.ts": 1,
+          "terminal-window.spec.ts": 2,
+          "terminal-workspace.spec.ts": 20
+        }
+      },
+      "windowsElectron": {
+        "platform": "win32",
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "file": "multi-device-electron.spec.ts",
+            "title": "real Electron popup owns project dialogs and opens another project without restarting original terminal",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached Electron terminal predicts on its own document and disables without restarting",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached terminal has native window controls, exact input, resize, focus and cleanup",
+            "status": "passed"
+          }
+        ],
+        "log": ".local/f54784a-plan-ui.log"
+      },
+      "relatedCore": {
+        "passed": 72,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/f54784a-plan-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/f54784a-plan-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing bundler warnings",
+        "log": ".local/f54784a-plan-build.log"
+      },
+      "prettier": "passed",
+      "diffWhitespace": "passed"
+    },
+    "review": {
+      "independentReview": "passed",
+      "remainingConfirmedFindings": []
+    },
+    "changedProductionSha256": {
+      "apps/desktop/src/App.tsx": "011438d5ee88a712cc899f096aad77b7a8af31a524db457afaa71a0708d212ab",
+      "apps/desktop/src/TerminalWindow.tsx": "869927be3d48d3ab7dadb12ce3d1cc49dd8e3973fde8007b4a83b23df25fbbdf"
+    },
+    "scope": {
+      "production": "apps/desktop/src only",
+      "documentation": "Requested implementation description and verification evidence updated.",
+      "serverProtocolElectronMainUnchanged": true,
+      "terminalPolishMerged": false,
+      "pushed": false,
+      "published": false,
+      "packaged": false,
+      "realClaudeInference": false
+    },
+    "note": "This appended review is the latest batch for M1/L1/L2/L3; preceding checks and productionSha256 remain historical. This is a related 110-case rerun, not a new full repository run."
+  },
+  "review96c2883": {
+    "reviewedCommit": "96c28834fd9a13924adbacfaa1440e0060d491c0",
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:25:59.782844+00:00",
+    "findings": {
+      "product": "No confirmed new product defect found in M1/L1/L2/L3 or protected boundaries.",
+      "test": "Native restore-size test could capture the intermediate 1000x680 resize before 800x500 settled. Unchanged isolated repeats reproduced intermittency.",
+      "fix": "Read-only FitAddon geometry snapshot; wait for requested content viewport, proposed grid, actual grid and transmitted resize to agree before storing sizes. Original restore equality remains."
+    },
+    "independentReview": "passed; read-only review of source boundaries and test synchronization fix",
+    "checks": {
+      "initialRelatedUi": {
+        "startTime": "2026-11-06T01:16:12.041Z",
+        "duration": 119065.628,
+        "expected": 109,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0,
+        "log": ".local/review-96c2883-ui.log"
+      },
+      "unchangedNativeRepeat": {
+        "passed": 1,
+        "failed": 1,
+        "log": ".local/review-96c2883-native-recheck.log"
+      },
+      "fixedNativeRepeat": {
+        "passed": 3,
+        "failed": 0,
+        "log": ".local/review-96c2883-resize-fixed.log"
+      },
+      "finalRelatedUi": {
+        "startTime": "2026-11-06T01:23:21.792Z",
+        "duration": 144381.43699999998,
+        "expected": 110,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/review-96c2883-final-ui.log",
+        "report": ".local/review-96c2883-final-ui.json"
+      },
+      "finalWindowsElectron": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "file": "multi-device-electron.spec.ts",
+            "title": "real Electron popup owns project dialogs and opens another project without restarting original terminal",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached Electron terminal predicts on its own document and disables without restarting",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached terminal has native window controls, exact input, resize, focus and cleanup",
+            "status": "passed"
+          }
+        ]
+      },
+      "core": {
+        "passed": 72,
+        "failed": 0,
+        "log": ".local/review-96c2883-core.log"
+      },
+      "typecheck": "passed",
+      "build": "passed with existing warnings",
+      "modelBoundary": "passed",
+      "format": "passed",
+      "sourceAndScreenshotHashes": "passed"
+    },
+    "changedTestSha256": {
+      "apps/desktop/test/terminal-window.fixture.tsx": "e8831d4078491e6d584692a522bc2e847262fb892afea7ccb60552d29d84865f",
+      "apps/desktop/test/terminal-window.spec.ts": "3e9643b4013de5d0c1d0c642b536e85fbaee5e72544ea0ac9336b7374f043e34"
+    },
+    "productionCodeChanged": false,
+    "pushed": false,
+    "published": false,
+    "packaged": false,
+    "limits": "Related suite rerun, not full repository rerun; physical IME and production Claude account/egress remain outside this test review."
+  },
+  "deepReviewF52cb69": {
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:42:08.317254+00:00",
+    "baseCommit": "f52cb69599e133701767230820cb8c15b356cba8",
+    "scope": "Full aggregate b12ef04..f52cb69 reviewed against approved fix and follow-up documents, plus this correction.",
+    "independentReviews": {
+      "creationAndRetry": "No confirmed findings.",
+      "terminalInteractionAndLifecycle": "P2 close confirmation allows new tabs, fixed and independently re-reviewed.",
+      "specificationAndEvidence": "Requirements and hashes match; latest-evidence link ambiguity corrected.",
+      "remainingConfirmedFindings": []
+    },
+    "finding": {
+      "priority": "P2",
+      "trigger": "While close-all confirmation is pending, Ctrl+Shift+T or a main-window create/show handle can append a new terminal absent from the confirmed snapshot. Accepting close-all then unmounts it too.",
+      "fix": "Guard add, chooseProject and the new-tab branch of show with existing confirmation and close-all promise refs. Preserve existing-tab focus; cancellation restores creation.",
+      "regressions": 7,
+      "realElectron": "Main-window close request, shortcut inside child confirmation and post-cancel creation tested."
+    },
+    "checks": {
+      "initialBroadBatch": {
+        "status": "interrupted after concrete finding, before changing production source",
+        "log": ".local/deep-review-f52cb69-ui.log"
+      },
+      "red": {
+        "failed": 7,
+        "logs": [".local/deep-review-close-red.log", ".local/deep-review-close-show-red.log"]
+      },
+      "green": {
+        "passed": 7,
+        "log": ".local/deep-review-close-green.log"
+      },
+      "fullUiBatch": {
+        "startTime": "2026-11-06T01:33:55.903Z",
+        "duration": 466820.369,
+        "expected": 210,
+        "skipped": 0,
+        "unexpected": 1,
+        "flaky": 0,
+        "log": ".local/deep-review-final-ui.log",
+        "report": ".local/deep-review-final-ui.json",
+        "note": "210 passed, 1 sending-mode baseline test failed due to reopening before Presence exit finished."
+      },
+      "testSynchronization": {
+        "scope": "Only follow-ups-navigation.spec.ts; Composer/ui/Presence product code unchanged since b12ef04.",
+        "unchangedRepeat": {
+          "passed": 2,
+          "failed": 1,
+          "log": ".local/deep-review-send-menu-recheck.log"
+        },
+        "fixedRepeat": {
+          "passed": 3,
+          "failed": 0,
+          "log": ".local/deep-review-send-menu-fixed.log"
+        },
+        "fix": "Wait for raw menu DOM removal before clicking reopen, preserving the existing mouse toggle checks."
+      },
+      "followupsSupplement": {
+        "startTime": "2026-11-06T01:41:08.716Z",
+        "duration": 30010.811999999998,
+        "expected": 11,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/deep-review-followups-ui.log",
+        "report": ".local/deep-review-followups-ui.json"
+      },
+      "finalDistinctUiCases": {
+        "passed": 211,
+        "failed": 0,
+        "skipped": 0,
+        "byFile": {
+          "app.spec.ts": 16,
+          "buttons.spec.ts": 7,
+          "conversation-status.spec.ts": 4,
+          "follow-ups-navigation.spec.ts": 11,
+          "layout.spec.ts": 7,
+          "motion.spec.ts": 19,
+          "multi-device-development.spec.ts": 26,
+          "multi-device-electron.spec.ts": 1,
+          "multi-device-sidebar.spec.ts": 7,
+          "new-session.spec.ts": 2,
+          "open-project-dialog.spec.ts": 9,
+          "sidebar-details.spec.ts": 8,
+          "sidebar-merge.spec.ts": 7,
+          "ssh-settings.spec.ts": 3,
+          "terminal-close.spec.ts": 3,
+          "terminal-preview-chrome.spec.ts": 3,
+          "terminal-projects.spec.ts": 40,
+          "terminal-status.spec.ts": 1,
+          "terminal-usability.spec.ts": 15,
+          "terminal-window.spec.ts": 2,
+          "terminal-workspace.spec.ts": 20
+        },
+        "note": "Complete batch plus fixed follow-ups group, deduplicated by file and test title. Production source identical across both batches."
+      },
+      "windowsElectron": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0,
+        "cases": [
+          {
+            "file": "multi-device-electron.spec.ts",
+            "title": "real Electron popup owns project dialogs and opens another project without restarting original terminal",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached Electron terminal predicts on its own document and disables without restarting",
+            "status": "passed"
+          },
+          {
+            "file": "terminal-window.spec.ts",
+            "title": "detached terminal has native window controls, exact input, resize, focus and cleanup",
+            "status": "passed"
+          }
+        ]
+      },
+      "relatedCore": {
+        "passed": 72,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/deep-review-final-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/deep-review-final-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing warnings",
+        "log": ".local/deep-review-final-build.log"
+      },
+      "prettier": "passed",
+      "modelBoundary": "passed",
+      "diffWhitespace": "passed"
+    },
+    "changedProductionSha256": {
+      "apps/desktop/src/TerminalWindow.tsx": "3f0849227a33eac8688d778a4fc7bf6f742814e2e4f6d542287d979c4056bd72"
+    },
+    "testSha256": {
+      "apps/desktop/test/terminal-projects.spec.ts": "1d24fd73f5100846a135ecb60132e55e7346ca505d13d733f0413a02540c80f5",
+      "apps/desktop/test/multi-device-electron.spec.ts": "0417ffbc1e62fe42b910cf06a8a3d5c308ccefbf853e8e32517e3822838d0328",
+      "apps/desktop/test/terminal-window.fixture.tsx": "e8831d4078491e6d584692a522bc2e847262fb892afea7ccb60552d29d84865f",
+      "apps/desktop/test/terminal-window.spec.ts": "3e9643b4013de5d0c1d0c642b536e85fbaee5e72544ea0ac9336b7374f043e34",
+      "apps/desktop/test/follow-ups-navigation.spec.ts": "8a0d8be684d19a055e4964b95a4a34d4419cd68b2131803b6b0316aca44eb221"
+    },
+    "boundaries": {
+      "serverProtocolMainProcessUnchangedSinceB12ef04": true,
+      "dependenciesUnchanged": true,
+      "terminalPolishMerged": false,
+      "realClaudeInference": false,
+      "productionDevicesAccessed": false,
+      "linuxLabRerun": false,
+      "pushed": false,
+      "published": false,
+      "packaged": false
+    },
+    "limits": [
+      "Full related UI regression rerun; full repository Node batch with known baseline failures not rerun.",
+      "Physical Windows IME, production Claude account authorization and public egress not certified by this renderer review."
+    ]
+  },
+  "terminalPolishMerge": {
+    "dateHongKong": "2026-11-06",
+    "verifiedAtUtc": "2026-11-06T01:52:31.082053+00:00",
+    "baseCommit": "e3c76023120cd48af8e0efce5c5001268e30d0e5",
+    "polishCommit": "a61514e2c344921d23234286c5560b55e283b41a",
+    "remoteMainBeforeMerge": "f631a61c3e195151bb0e5212dc37d8b3aed9b38c",
+    "target": "origin/main",
+    "merge": "Merge original a61514e, preserve its ancestry and all later multi-device fixes; no conflict.",
+    "checks": {
+      "relatedUi": {
+        "startTime": "2026-11-06T01:47:52.605Z",
+        "duration": 143769.952,
+        "expected": 118,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/terminal-polish-merge-ui.log",
+        "report": ".local/terminal-polish-merge-ui.json"
+      },
+      "supplementalUi": {
+        "startTime": "2026-11-06T01:50:55.152Z",
+        "duration": 58924.455,
+        "expected": 53,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0,
+        "log": ".local/terminal-polish-extra-verified-ui.log",
+        "report": ".local/terminal-polish-extra-verified-ui.json"
+      },
+      "distinctUiPassed": 171,
+      "byFile": {
+        "multi-device-development.spec.ts": 26,
+        "multi-device-electron.spec.ts": 1,
+        "multi-device-sidebar.spec.ts": 7,
+        "native-terminal.spec.ts": 11,
+        "stop-shortcut.spec.ts": 6,
+        "terminal-close.spec.ts": 3,
+        "terminal-predictive-echo.spec.ts": 36,
+        "terminal-preview-chrome.spec.ts": 3,
+        "terminal-projects.spec.ts": 40,
+        "terminal-status.spec.ts": 1,
+        "terminal-usability.spec.ts": 15,
+        "terminal-window.spec.ts": 2,
+        "terminal-workspace.spec.ts": 20
+      },
+      "relatedCore": {
+        "passed": 72,
+        "failed": 0,
+        "skipped": 0,
+        "log": ".local/terminal-polish-merge-core.log"
+      },
+      "typecheck": {
+        "status": "passed",
+        "log": ".local/terminal-polish-merge-typecheck.log"
+      },
+      "build": {
+        "status": "passed with existing warnings",
+        "log": ".local/terminal-polish-merge-build.log"
+      },
+      "prettier": "passed",
+      "modelBoundary": "passed",
+      "independentReview": "passed"
+    },
+    "harnessRecheck": {
+      "firstSupplement": {
+        "passed": 41,
+        "failed": 12,
+        "log": ".local/terminal-polish-extra-ui.log",
+        "reason": "Supplement reused the first batch web server, which stopped when its owner finished; remaining navigations returned ERR_CONNECTION_REFUSED."
+      },
+      "resolution": "Reran the complete supplemental53 using its own managed web server;53/53 passed."
+    },
+    "productionSha256": {
+      "apps/desktop/src/NativeTerminal.tsx": "f2d6bbe178f829e1b86f56d6472ce4dbb3c997b08e0b30b119cb2982740e1a77",
+      "apps/desktop/src/TerminalWindow.tsx": "11a3f1f7f483ecc88a4e84b8767764162ac83b8f90004edc52cfc38aa6147718",
+      "apps/desktop/src/style.css": "56cdedb29ed0f56a58b965056c7509257af612c17eebfa8d64252ab749edb78c"
+    },
+    "screenshots": [
+      {
+        "path": "docs/evidence/multi-device/04-terminal-project-picker.png",
+        "theme": "light",
+        "width": 480,
+        "height": 800,
+        "sha256": "b3523fcac1b06e9ff78c43474d799e0d0bc980eb630db8ca29cd8d0e3bfc8215"
+      },
+      {
+        "path": "docs/evidence/multi-device/05-electron-projects.png",
+        "theme": "light",
+        "width": 1000,
+        "height": 680,
+        "sha256": "2903a55eb771f5d61454bdb006b41914bc41bb79d6cac541f94ac300a89ff9ca"
+      },
+      {
+        "path": "docs/evidence/multi-device/04-terminal-project-picker-dark.png",
+        "theme": "dark",
+        "width": 480,
+        "height": 800,
+        "sha256": "996aac52f84b6921bece2bf359ef2574c2d0aff518bec1f9318dddb65672f261"
+      },
+      {
+        "path": "docs/evidence/multi-device/05-electron-projects-dark.png",
+        "theme": "dark",
+        "width": 1000,
+        "height": 680,
+        "sha256": "718a3ba201ba3b517d38ffeb71108920051872a18ff5e53eb9159fe11404b2aa"
+      },
+      {
+        "path": "docs/evidence/multi-device/06-terminal-menu.png",
+        "theme": "shared",
+        "width": 1000,
+        "height": 680,
+        "sha256": "b368e6169709e53cf060e10c93fafbddcca80fd1cf1601becb7cf6014c93b789",
+        "note": "Terminal palette is shared by light/dark app themes; one image retained."
+      }
+    ],
+    "scope": {
+      "serverProtocolMainProcessUnchangedRelativeToBase": true,
+      "dependenciesUnchanged": true,
+      "realClaudeInference": false,
+      "productionDevicesAccessed": false,
+      "packaged": false,
+      "signed": false,
+      "deployed": false
+    },
+    "pushVerification": "Main push occurs after this verified merge commit; final remote SHA checked separately after push."
+  }
+}

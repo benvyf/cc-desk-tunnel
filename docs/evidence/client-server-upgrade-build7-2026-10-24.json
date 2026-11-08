@@ -1,0 +1,53 @@
+{
+  "phase": "complete",
+  "sourceCommit": "fb873003731df95ea34f5078548cd1b668063e60",
+  "windowsBuild": 7,
+  "windowsRevision": 12,
+  "windowsRelease": {
+    "filename": "CC-Desk-Tunnel-Setup-0.3.6-x64.exe",
+    "build": 7,
+    "appVersion": "0.3.6",
+    "protocol": 20,
+    "sourceCommit": "fb873003731df95ea34f5078548cd1b668063e60",
+    "notes": "Build 7: permanent server-update checks on the connection page and in Settings > About and updates. Supports higher signed server builds with the same protocol. Confirm disconnect, inspect the exact target, then explicitly confirm installation. Existing admission, backup and rollback protections retained. Linux Build 3 remains the current matching server.",
+    "size": 201081647,
+    "sha256": "f44819ed3ba6c9d813ddd3bbead359f8943e626be65bbc31968f9c7edab2e656"
+  },
+  "windowsDownload": "https://api.ghostapi.org/cc-updates/v1/artifacts/7/win32-x64/CC-Desk-Tunnel-Setup-0.3.6-x64.exe",
+  "windowsArtifactVerified": true,
+  "linuxBuild": 3,
+  "linuxIndexUnchanged": true,
+  "linuxRegistrationUnchanged": true,
+  "stableUnchanged": true,
+  "candidateRemoved": true,
+  "bothRenewalTimersActive": true,
+  "windowsRenewalResult": "success",
+  "backup": "/root/.cc-update-admin/automation-backups/client-server-update-2026-10-24T06-27-55.395Z",
+  "providerRequests": 0,
+  "ubuntuUpgradeExecuted": false,
+  "date": "2026-10-24",
+  "publicVerification": {
+    "date": "2026-10-24",
+    "sourceCommit": "fb873003731df95ea34f5078548cd1b668063e60",
+    "windowsBuild": 7,
+    "windowsRevision": 12,
+    "linuxBuild": 3,
+    "signaturesVerifiedWithPinnedProductionKeys": true,
+    "windowsHeadAndRangeVerified": true,
+    "linuxReleaseUnchanged": true
+  },
+  "validation": {
+    "node": "v24.22.1",
+    "typescriptPassed": true,
+    "reactEdgeScenariosPassed": 6,
+    "relatedMainProcessTestsPassed": 11,
+    "packagedExeSmokePassed": 1,
+    "packagedIdentityVerified": true,
+    "realClaudeOrSdkSessionsStarted": false,
+    "jevOrQuotaRequestsMade": false
+  },
+  "controlCenterRuntimeSourceCommit": "d63607d1401bd84c0d1724488533190913031e64",
+  "linuxArtifactSourceCommit": "224d7bcae1e4d1e1f37a8b72bfdb3d48cfacaa6a",
+  "userWindowsInstallationExecuted": false,
+  "githubPushed": false
+}

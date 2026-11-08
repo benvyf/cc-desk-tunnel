@@ -1,0 +1,1018 @@
+import { continues, isFragment, PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import { serverMessageSchema } from '../../../packages/protocol/src/account-display.ts';
+import type {
+  AccountState,
+  NativeCapabilities,
+  ServerMessage,
+} from '../../../packages/protocol/src/account-display.ts';
+import type { EventPayload } from '@cc-desk-tunnel/protocol';
+import type {
+  Command,
+  Device,
+  NativeMetrics,
+  ServiceUpdate,
+  Session,
+  SessionEvent,
+  TerminalControl,
+} from '@cc-desk-tunnel/protocol';
+
+type Response = Extract<ServerMessage, { type: 'response' }>;
+type DataMessage = Extract<
+  ServerMessage,
+  {
+    type:
+      | 'usage.summary'
+      | 'usage.page'
+      | 'session.stats'
+      | 'settings.state'
+      | 'instructions.state'
+      | 'web.settings.state'
+      | 'web.totp.setup'
+      | 'web.certificate.state'
+      | 'terminal.state'
+      | 'terminal.file'
+      | 'terminal.histories';
+  }
+>;
+// Commands answered with a data frame, and the frame each one gets.
+type Replies = {
+  'terminal.history.list': 'terminal.histories';
+  'terminal.file.read': 'terminal.file';
+  'terminal.state': 'terminal.state';
+  'usage.summary': 'usage.summary';
+  'usage.query': 'usage.page';
+  'session.stats': 'session.stats';
+  'settings.get': 'settings.state';
+  'settings.update': 'settings.state';
+  'instructions.get': 'instructions.state';
+  'instructions.update': 'instructions.state';
+  'web.settings.get': 'web.settings.state';
+  'web.settings.update': 'web.settings.state';
+  'web.sessions.revoke': 'web.settings.state';
+  'web.totp.setup': 'web.totp.setup';
+  'web.totp.enable': 'web.settings.state';
+  'web.totp.disable': 'web.settings.state';
+  'web.certificate.get': 'web.certificate.state';
+  'web.certificate.set': 'web.certificate.state';
+  'web.certificate.reset': 'web.certificate.state';
+};
+type TerminalMessage = Extract<
+  ServerMessage,
+  {
+    type:
+      | 'terminal.opened'
+      | 'terminal.data'
+      | 'terminal.closed'
+      | 'terminal.detached'
+      | 'connection.error';
+  }
+>;
+type NewCommand = Command extends infer C
+  ? C extends Command
+    ? Omit<C, 'requestId'>
+    : never
+  : never;
+export class RequestFailedError extends Error {
+  readonly code?: string;
+  constructor(message: string, code?: string) {
+    super(message);
+    this.code = code;
+  }
+}
+// Losing a reply says nothing about whether the operation reached the service. Keep that uncertainty
+// separate from the current connection state, which can recover while the warning is still displayed.
+export class RequestInterruptedError extends Error {
+  readonly readOnly: boolean;
+  constructor(type: Command['type']) {
+    const readOnly = [
+      'session.subscribe',
+      'session.history',
+      'session.status',
+      'terminal.state',
+      'terminal.file.read',
+      'terminal.history.list',
+      'account.status',
+      'usage.summary',
+      'usage.query',
+      'quota.watch',
+      'session.stats',
+      'settings.get',
+      'instructions.get',
+      'web.settings.get',
+      'web.certificate.get',
+      'service.update.check',
+    ].includes(type);
+    super(
+      readOnly
+        ? '连接中断，上次读取未完成；连接恢复后可重试。'
+        : '连接中断；上次请求的确认未收到。任务可能仍在运行，请查看会话历史确认结果；不会自动重发。',
+    );
+    this.name = 'RequestInterruptedError';
+    this.readOnly = readOnly;
+  }
+  describe(connected: boolean) {
+    if (!connected) return this.message;
+    return this.readOnly
+      ? '连接已恢复；上次读取未完成，请重试。'
+      : '连接已恢复；上次请求的确认因断线未收到。任务可能仍在运行，请查看会话历史确认结果；不会自动重发。';
+  }
+}
+
+export type HistoryState = {
+  loaded?: boolean;
+  firstSequence: number;
+  lastSequence: number;
+  hasEarlier: boolean;
+  loading: boolean;
+  loadingEarlier: boolean;
+};
+export type ClientState = {
+  status: 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
+  connectionId: string | null;
+  terminalWorkspace?: { version: 1; minRows?: 1; resumable?: boolean };
+  terminalFiles?: { version: 1 };
+  terminalDisplay?: { version: 1 };
+  terminalHistory?: { version: 1 };
+  deviceShells?: { version: 1 };
+  sideConversations: boolean;
+  // The computer this client signed in as; a session's commands run on the one it is on.
+  device: Device | null;
+  browser: Extract<ServerMessage, { type: 'ready' }>['browser'] | null;
+  // The user's computers connected to the service now, and whether commands reach each yet. Another
+  // computer's sessions can be worked on from here while it is listed and ready.
+  devices: ConnectedDevice[];
+  sessions: Session[];
+  events: Record<string, SessionEvent[]>;
+  // Output a run is in the middle of, as far as it has arrived. It has no place in the history yet: the
+  // event that records it takes its place.
+  live: Record<string, SessionEvent>;
+  history: Record<string, HistoryState>;
+  selectedId: string | null;
+  error: string | null;
+  adapter: 'simulation' | 'claude-code';
+  // The Windows installer version the service offers, if any.
+  release: string | null;
+  // The service's version and where it stands against the published releases, if it follows them.
+  service: string | null;
+  update: ServiceUpdate | null;
+  // The service refused this client for its version; it may still hand out an installer.
+  mismatch: boolean;
+  clientUpgrade: { requiredProtocol: number } | null;
+  // How much of the installer of its own version the service has fetched so far, from 0 to 1, while it is
+  // still fetching it.
+  preparing: number | null;
+  model: string | null;
+  // The latest native readings from any session, for views that are not tied to the selected one.
+  capabilities: NativeCapabilities | null;
+  metrics: NativeMetrics | null;
+  account: AccountState | null;
+  // What each session's background tasks last said of themselves, by task: kept while the window is open
+  // and nowhere else.
+  progress: Record<string, Record<string, TaskProgress>>;
+};
+export type TaskProgress = Extract<EventPayload, { type: 'native.progress' }>;
+export type ConnectedDevice = Extract<ServerMessage, { type: 'devices' }>['devices'][number];
+
+// The renderer's single connection and its state store: components read `state` through subscribe / getSnapshot
+// and send commands with request(). A connection that breaks is made again, for as long as it takes, and what
+// was missed is read from the service's record; nothing is resent automatically.
+export class ProxyClient {
+  state: ClientState = {
+    status: 'disconnected',
+    connectionId: null,
+    sideConversations: false,
+    device: null,
+    browser: null,
+    devices: [],
+    sessions: [],
+    events: {},
+    live: {},
+    history: {},
+    selectedId: null,
+    error: null,
+    adapter: 'simulation',
+    release: null,
+    service: null,
+    update: null,
+    mismatch: false,
+    clientUpgrade: null,
+    preparing: null,
+    model: null,
+    capabilities: null,
+    metrics: null,
+    account: null,
+    progress: {},
+  };
+  results = new Map<string, DataMessage>();
+  listeners = new Set<() => void>();
+  terminalListeners = new Set<(message: TerminalMessage) => void>();
+  socket: WebSocket | null = null;
+  credentials: {
+    url: string;
+    token: string;
+    device: Device | null;
+    browser?: () => void;
+    validate?: () => Promise<boolean>;
+    reconnect: boolean;
+    // Remote mode: opens the bridge in the main process and resolves to its address. A bridge serves one
+    // connection, so every attempt asks for a new one.
+    bridge?: () => Promise<string | { url: string; token: string }>;
+  } | null = null;
+  retryTimer: ReturnType<typeof setTimeout> | undefined;
+  retryAttempt = 0;
+  // Whether this sign-in has stood once. Until then a failure is the user's to look at; after it, a fault on
+  // the way is tried again.
+  private established = false;
+  // Tells the answer of the bridge asked for last from those of earlier attempts.
+  private turn = 0;
+  // Streamed events and fragments are taken in batches, in the order they came, so a fast reply does not
+  // re-render per fragment.
+  streamTimer: ReturnType<typeof setTimeout> | undefined;
+  streamEvents: (SessionEvent | Extract<ServerMessage, { type: 'session.fragment' }>)[] = [];
+  // Event history is kept for the most recently viewed sessions only.
+  cacheOrder: string[] = [];
+  private observers = new Map<string, { count: number }>();
+  // When something last came from each session's run, by the service's clock, for telling a run that goes on
+  // from one that has been quiet for long. Readings of the context and the quota repeat through a long turn
+  // and say nothing of it.
+  private activity = new Map<string, number>();
+  // How far this computer's clock is ahead of the service's, as near as the fastest event yet shows.
+  private ahead = Infinity;
+  serviceNow = () => Date.now() - (Number.isFinite(this.ahead) ? this.ahead : 0);
+  activityAt = (sessionId: string) => this.activity.get(sessionId) ?? 0;
+  pending = new Map<
+    string,
+    {
+      resolve: (response: Response) => void;
+      reject: (error: Error) => void;
+      timer: ReturnType<typeof setTimeout>;
+      type: Command['type'];
+    }
+  >();
+  private terminals = new Map<string, { sessionId: string; ended: boolean }>();
+  getSnapshot = () => this.state;
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+  update(values: Partial<ClientState>) {
+    this.state = { ...this.state, ...values };
+    for (const listener of this.listeners) listener();
+  }
+  connect(
+    url: string,
+    token: string,
+    device: Device,
+    reconnect = true,
+    bridge?: () => Promise<string | { url: string; token: string }>,
+  ) {
+    const address = new URL(url);
+    if (
+      !['ws:', 'wss:'].includes(address.protocol) ||
+      address.username ||
+      address.password ||
+      address.search ||
+      address.hash
+    )
+      throw new Error('请输入不含凭据的 WebSocket 服务地址。');
+    if (
+      !['127.0.0.1', 'localhost', '[::1]'].includes(address.hostname) ||
+      address.protocol !== 'ws:'
+    )
+      throw new Error('当前离线原型仅连接本机环回服务。');
+    if (token.trim().length < 24) throw new Error('服务凭据至少 24 个字符。');
+    this.disconnect();
+    this.credentials = { url: address.toString(), token: token.trim(), device, reconnect, bridge };
+    this.established = false;
+    this.cacheOrder = [];
+    this.update({
+      status: 'connecting',
+      device,
+      browser: null,
+      devices: [],
+      error: null,
+      release: null,
+      service: null,
+      update: null,
+      mismatch: false,
+      clientUpgrade: null,
+      preparing: null,
+      sessions: [],
+      events: {},
+      live: {},
+      history: {},
+      selectedId: null,
+      capabilities: null,
+      metrics: null,
+      account: null,
+    });
+    this.open();
+  }
+  // The browser has an HttpOnly session, not a desktop identity or execution channel.
+  connectBrowser(url: string, expired: () => void, validate?: () => Promise<boolean>) {
+    const address = new URL(url);
+    const expected = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    if (
+      address.protocol !== expected ||
+      address.host !== location.host ||
+      address.username ||
+      address.password ||
+      address.search ||
+      address.hash
+    )
+      throw new Error('浏览器只能连接当前服务。');
+    this.disconnect();
+    this.credentials = {
+      url: address.href,
+      token: '',
+      device: null,
+      reconnect: true,
+      browser: expired,
+      validate,
+    };
+    this.established = false;
+    this.cacheOrder = [];
+    this.update({
+      status: 'connecting',
+      device: null,
+      browser: null,
+      devices: [],
+      error: null,
+      sessions: [],
+      events: {},
+      live: {},
+      history: {},
+      selectedId: null,
+    });
+    this.open();
+  }
+  private open() {
+    const credentials = this.credentials;
+    if (!credentials) return;
+    if (credentials.browser && credentials.validate) {
+      const turn = ++this.turn;
+      const current = () => this.credentials === credentials && this.turn === turn;
+      void credentials.validate().then(
+        (authenticated) => {
+          if (!current()) return;
+          if (authenticated) this.attach(credentials);
+          else {
+            this.credentials = null;
+            this.update({ status: 'disconnected', connectionId: null });
+            credentials.browser!();
+          }
+        },
+        () => {
+          if (!current()) return;
+          this.update({
+            status: 'reconnecting',
+            connectionId: null,
+            devices: [],
+            error: '暂时无法连接服务，正在重试。',
+          });
+          this.retryTimer = setTimeout(
+            () => {
+              this.retryTimer = undefined;
+              this.open();
+            },
+            Math.min(1000 * 2 ** this.retryAttempt++, 5000),
+          );
+        },
+      );
+      return;
+    }
+    if (!credentials.bridge) {
+      this.attach(credentials);
+      return;
+    }
+    const turn = ++this.turn;
+    const current = () => this.credentials === credentials && this.turn === turn;
+    credentials.bridge().then(
+      (connection) => {
+        if (!current()) return;
+        credentials.url = typeof connection === 'string' ? connection : connection.url;
+        if (typeof connection !== 'string') credentials.token = connection.token;
+        this.attach(credentials);
+      },
+      (error) => {
+        if (!current()) return;
+        if (this.established && credentials.reconnect && error?.retryable === true) {
+          this.update({
+            status: 'reconnecting',
+            connectionId: null,
+            devices: [],
+            error: error.message,
+          });
+          this.retryTimer = setTimeout(
+            () => {
+              this.retryTimer = undefined;
+              this.open();
+            },
+            Math.min(1000 * 2 ** this.retryAttempt++, 10000),
+          );
+          return;
+        }
+        // Local setup failures and refused authorization need user action.
+        this.credentials = null;
+        this.update({
+          status: 'disconnected',
+          connectionId: null,
+          error: error instanceof Error ? error.message : '本机连接准备失败。',
+          clientUpgrade:
+            Number.isSafeInteger(error?.clientUpgrade?.requiredProtocol) &&
+            error.clientUpgrade.requiredProtocol > 0
+              ? { requiredProtocol: error.clientUpgrade.requiredProtocol }
+              : null,
+        });
+      },
+    );
+  }
+  private attach(credentials: NonNullable<ProxyClient['credentials']>) {
+    const socket = new WebSocket(credentials.url);
+    this.socket = socket;
+    const timeout = setTimeout(() => socket.close(), 50000);
+    socket.onopen = () => {
+      if (credentials.browser) {
+        socket.send(JSON.stringify({ type: 'web.auth', protocolVersion: PROTOCOL_VERSION }));
+        return;
+      }
+      socket.send(
+        JSON.stringify({
+          type: 'auth',
+          protocolVersion: PROTOCOL_VERSION,
+          token: credentials.token,
+          deviceName: credentials.device!.name,
+        }),
+      );
+      socket.send(JSON.stringify({ type: 'device', id: credentials.device!.id }));
+    };
+    socket.onmessage = ({ data }) => {
+      if (this.socket !== socket) return;
+      let message: ServerMessage;
+      try {
+        message = serverMessageSchema.parse(JSON.parse(data));
+      } catch {
+        this.update({ error: '服务消息格式不兼容，已断开连接。' });
+        this.credentials = null;
+        socket.close();
+        return;
+      }
+      if (message.type === 'ready') {
+        if (message.adapter === 'claude-code' && !credentials.bridge && !credentials.browser)
+          credentials.reconnect = false;
+        this.established = true;
+        clearTimeout(timeout);
+        this.retryAttempt = 0;
+        const selectedId = message.sessions.some((session) => session.id === this.state.selectedId)
+          ? this.state.selectedId
+          : null;
+        for (const id of this.observers.keys())
+          if (!message.sessions.some((session) => session.id === id)) this.observers.delete(id);
+        this.update({
+          status: 'connected',
+          connectionId: message.connectionId,
+          terminalWorkspace: message.terminalWorkspace,
+          terminalFiles: message.terminalFiles,
+          terminalDisplay: message.terminalDisplay,
+          terminalHistory: message.terminalHistory,
+          deviceShells: message.deviceShells,
+          sideConversations: message.sideConversations === true,
+          browser: message.browser ?? null,
+          sessions: message.sessions,
+          selectedId,
+          error: null,
+          clientUpgrade: null,
+          adapter: message.adapter,
+          release: null,
+          service: message.version,
+          update: null,
+          model: message.model ?? null,
+        });
+        if (selectedId) this.load(selectedId);
+        else this.restoreObserved();
+      } else if (message.type === 'response') {
+        const request = this.pending.get(message.requestId);
+        if (!request) return;
+        clearTimeout(request.timer);
+        this.pending.delete(message.requestId);
+        if (message.ok) request.resolve(message);
+        else {
+          this.results.delete(message.requestId);
+          request.reject(new RequestFailedError(message.message ?? '请求失败。', message.code));
+        }
+      } else if (message.type === 'connection.error') {
+        // A final resize/ack can reach the server after it has announced the terminal's exit.
+        const ended = message.terminalId
+          ? this.terminals.get(message.terminalId)?.ended
+          : !this.state.terminalWorkspace &&
+            this.terminals.size === 1 &&
+            [...this.terminals.values()][0].ended;
+        if (message.code === 'terminal_inactive' && ended) return;
+        if (message.sessionId && message.terminalId) {
+          for (const listener of this.terminalListeners) listener(message);
+          return;
+        }
+        this.update({ error: message.message });
+        if (message.code === 'unauthorized' && credentials.browser) credentials.browser();
+        if (message.code === 'version_mismatch') {
+          const clientIsOlder =
+            message.requiredProtocol !== undefined && message.requiredProtocol > PROTOCOL_VERSION;
+          this.update({
+            mismatch: !clientIsOlder,
+            clientUpgrade: clientIsOlder ? { requiredProtocol: message.requiredProtocol! } : null,
+            service: message.service ?? null,
+            release: null,
+            preparing: null,
+          });
+        }
+        if (
+          [
+            'unauthorized',
+            'version_mismatch',
+            'tunnel_failed',
+            'ssh_failed',
+            'connection_lost',
+            'client_failed',
+          ].includes(message.code)
+        ) {
+          // The way to the service broke, or the service could not reach back: the next attempt may do.
+          const passing =
+            this.established &&
+            credentials.reconnect &&
+            ['tunnel_failed', 'ssh_failed', 'connection_lost'].includes(message.code);
+          if (!passing) this.credentials = null;
+          socket.close();
+        }
+      } else if (
+        message.type === 'usage.summary' ||
+        message.type === 'usage.page' ||
+        message.type === 'session.stats' ||
+        message.type === 'settings.state' ||
+        message.type === 'instructions.state' ||
+        message.type === 'web.settings.state' ||
+        message.type === 'web.totp.setup' ||
+        message.type === 'web.certificate.state' ||
+        message.type === 'terminal.state' ||
+        message.type === 'terminal.file' ||
+        message.type === 'terminal.histories'
+      ) {
+        if (this.pending.has(message.requestId)) this.results.set(message.requestId, message);
+      } else if (message.type === 'service.update') {
+        // Ignore release announcements from older or non-managed services.
+        return;
+      } else if (message.type === 'account.state') {
+        const { type: _type, ...account } = message;
+        // A signed-out account must not keep showing the previous one's identity and quota.
+        this.update(
+          account.loggedIn ? { account } : { account, capabilities: null, metrics: null },
+        );
+      } else if (message.type === 'devices') {
+        this.update({ devices: message.devices });
+      } else if (message.type === 'session.updated') {
+        this.upsert(message.session);
+      } else if (
+        message.type === 'terminal.opened' ||
+        message.type === 'terminal.detached' ||
+        message.type === 'terminal.data' ||
+        message.type === 'terminal.closed'
+      ) {
+        if (message.type === 'terminal.opened')
+          this.terminals.set(message.terminalId, { sessionId: message.sessionId, ended: false });
+        else if (message.type === 'terminal.closed') {
+          const terminal = this.terminals.get(message.terminalId);
+          if (terminal) terminal.ended = true;
+        }
+        for (const listener of this.terminalListeners) listener(message);
+      } else if (message.type === 'session.deleted') {
+        this.observers.delete(message.sessionId);
+        this.activity.delete(message.sessionId);
+        const events = { ...this.state.events };
+        const live = { ...this.state.live };
+        const history = { ...this.state.history };
+        const progress = { ...this.state.progress };
+        delete events[message.sessionId];
+        delete live[message.sessionId];
+        delete history[message.sessionId];
+        delete progress[message.sessionId];
+        this.streamEvents = this.streamEvents.filter(
+          (event) => event.sessionId !== message.sessionId,
+        );
+        this.cacheOrder = this.cacheOrder.filter((id) => id !== message.sessionId);
+        const sessions = this.state.sessions.filter((session) => session.id !== message.sessionId);
+        const selectedId =
+          this.state.selectedId === message.sessionId ? null : this.state.selectedId;
+        this.update({ sessions, events, live, history, progress, selectedId });
+      } else if (message.type === 'session.snapshot') {
+        this.flushStream();
+        if (
+          !this.pending.has(message.requestId) ||
+          !this.cacheOrder.includes(message.session.id) ||
+          !this.state.sessions.some((session) => session.id === message.session.id)
+        )
+          return;
+        this.upsert(message.session);
+        const id = message.session.id;
+        // History up to now ends where unfinished output begins; the service sends that again, whole.
+        if (message.mode !== 'prepend' && this.state.live[id]) {
+          const { [id]: _stale, ...live } = this.state.live;
+          this.update({ live });
+        }
+        const previous = this.state.history[id];
+        const history = {
+          loaded: true,
+          firstSequence:
+            message.mode === 'append'
+              ? (previous?.firstSequence ?? message.firstSequence)
+              : message.firstSequence,
+          lastSequence:
+            message.mode === 'prepend'
+              ? (previous?.lastSequence ?? message.lastSequence)
+              : message.lastSequence,
+          hasEarlier:
+            message.mode === 'append' ? (previous?.hasEarlier ?? false) : message.hasEarlier,
+          loading: false,
+          loadingEarlier: false,
+        };
+        this.merge(id, message.events, history, message.mode === 'replace');
+      } else if (message.type === 'session.event') {
+        const payload = message.event.payload;
+        const at = Date.parse(message.event.createdAt);
+        this.ahead = Math.min(this.ahead, Date.now() - at);
+        if (!['native.metrics', 'native.capabilities', 'native.context'].includes(payload.type))
+          this.activity.set(message.event.sessionId, at);
+        if (payload.type === 'native.capabilities') this.update({ capabilities: payload });
+        if (payload.type === 'native.metrics') this.update({ metrics: payload });
+        // Only subscribed histories receive a complete stream. Account-wide terminal quota broadcasts must not
+        // advance a background cache past turns it never received. Side panes retain their own subscriptions.
+        if (
+          message.event.sessionId !== this.state.selectedId &&
+          !this.observers.has(message.event.sessionId)
+        )
+          return;
+        this.streamEvents.push(message.event);
+        this.streamTimer ??= setTimeout(() => this.flushStream(), 32);
+      } else if (message.type === 'session.fragment') {
+        this.activity.set(message.sessionId, this.serviceNow());
+        if (!this.cacheOrder.includes(message.sessionId)) return;
+        this.streamEvents.push(message);
+        this.streamTimer ??= setTimeout(() => this.flushStream(), 32);
+      }
+    };
+    socket.onclose = (event) => {
+      clearTimeout(timeout);
+      if (this.socket !== socket) return;
+      this.socket = null;
+      if (credentials.browser && event.code === 4001) {
+        this.credentials = null;
+        credentials.browser();
+      }
+      this.flushStream();
+      this.rejectPending();
+      this.update({ sideConversations: false });
+      if (
+        !this.credentials ||
+        !this.credentials.reconnect ||
+        (this.credentials.bridge && !this.established)
+      ) {
+        const nativeClosed = !!this.credentials;
+        this.credentials = null;
+        this.observers.clear();
+        this.update({
+          status: 'disconnected',
+          connectionId: null,
+          error: this.state.error ?? (nativeClosed ? '原生连接已结束，请重新连接。' : null),
+        });
+        return;
+      }
+      this.update({ status: 'reconnecting', connectionId: null, devices: [] });
+      this.retryTimer = setTimeout(
+        () => {
+          this.retryTimer = undefined;
+          this.open();
+        },
+        Math.min(1000 * 2 ** this.retryAttempt++, credentials.bridge ? 10000 : 5000),
+      );
+    };
+    socket.onerror = () => {
+      /* onclose owns reconnect and pending request cleanup. */
+    };
+  }
+  // Makes the attempt that is waiting for its turn now: the network just came back.
+  retryNow() {
+    if (this.state.status !== 'reconnecting' || this.retryTimer === undefined) return;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    this.open();
+  }
+  disconnect() {
+    this.flushStream();
+    const browser = this.credentials?.browser;
+    this.credentials = null;
+    this.observers.clear();
+    this.turn++;
+    clearTimeout(this.retryTimer);
+    this.retryTimer = undefined;
+    const socket = this.socket;
+    this.socket = null;
+    // Said before closing, so that the service does not keep this computer's runs for it to come back to.
+    if (!browser && socket?.readyState === WebSocket.OPEN)
+      socket.send(JSON.stringify({ type: 'leave' }));
+    socket?.close();
+    this.rejectPending();
+    this.retryAttempt = 0;
+    this.update({
+      status: 'disconnected',
+      connectionId: null,
+      sideConversations: false,
+      error: null,
+      clientUpgrade: null,
+    });
+  }
+  private rejectPending() {
+    this.terminals.clear();
+    for (const [requestId, request] of this.pending) {
+      clearTimeout(request.timer);
+      this.results.delete(requestId);
+      request.reject(new RequestInterruptedError(request.type));
+    }
+    this.pending.clear();
+  }
+  private upsert(session: Session) {
+    this.update({
+      sessions: [...this.state.sessions.filter((item) => item.id !== session.id), session].sort(
+        (a, b) => b.updatedAt.localeCompare(a.updatedAt),
+      ),
+    });
+  }
+  private flushStream() {
+    clearTimeout(this.streamTimer);
+    this.streamTimer = undefined;
+    const grouped = new Map<string, SessionEvent[]>();
+    const live = { ...this.state.live };
+    let moved = false;
+    let progress = this.state.progress;
+    for (const item of this.streamEvents) {
+      const open = live[item.sessionId];
+      // A list of background tasks ends what the tasks no longer on it had said.
+      if (!('type' in item) && item.payload.type === 'native.tasks' && progress[item.sessionId]) {
+        const listed = item.payload.tasks.map((task) => task.id);
+        progress = {
+          ...progress,
+          [item.sessionId]: Object.fromEntries(
+            Object.entries(progress[item.sessionId]).filter(([id]) => listed.includes(id)),
+          ),
+        };
+      }
+      if ('type' in item) {
+        const { sessionId, runId, payload } = item;
+        if (payload.type === 'native.progress') {
+          progress = {
+            ...progress,
+            [sessionId]: { ...progress[sessionId], [payload.taskId]: payload },
+          };
+          continue;
+        }
+        if (!isFragment(payload)) continue;
+        const last = open?.runId === runId ? open.payload : undefined;
+        live[sessionId] =
+          open && last && isFragment(last) && continues(last, payload)
+            ? { ...open, payload: { ...payload, text: last.text + payload.text } }
+            : { sessionId, runId, sequence: 0, createdAt: new Date().toISOString(), payload };
+        moved = true;
+        continue;
+      }
+      // Whatever the run records next comes after its unfinished output, which is recorded first.
+      if (open?.runId === item.runId) {
+        delete live[item.sessionId];
+        moved = true;
+      }
+      const events = grouped.get(item.sessionId) ?? [];
+      events.push(item);
+      grouped.set(item.sessionId, events);
+    }
+    this.streamEvents = [];
+    if (progress !== this.state.progress) this.update({ progress });
+    if (moved) this.update({ live });
+    for (const [id, events] of grouped) this.merge(id, events);
+  }
+  private merge(
+    sessionId: string,
+    events: SessionEvent[],
+    history?: HistoryState,
+    replace = false,
+  ) {
+    const bySequence = new Map(
+      (replace ? [] : (this.state.events[sessionId] ?? [])).map((event) => [event.sequence, event]),
+    );
+    for (const event of events) bySequence.set(event.sequence, event);
+    const combined = [...bySequence.values()].sort((a, b) => a.sequence - b.sequence);
+    const previous = history ??
+      this.state.history[sessionId] ?? {
+        firstSequence: combined[0]?.sequence ?? 0,
+        lastSequence: 0,
+        hasEarlier: false,
+        loading: false,
+        loadingEarlier: false,
+      };
+    this.update({
+      events: {
+        ...this.state.events,
+        [sessionId]: combined,
+      },
+      history: {
+        ...this.state.history,
+        [sessionId]: {
+          ...previous,
+          lastSequence: Math.max(previous.lastSequence, combined.at(-1)?.sequence ?? 0),
+        },
+      },
+    });
+  }
+  // A session's events as they are shown: what is recorded, then the output still arriving, where the event
+  // that records it will be.
+  shown(sessionId: string): SessionEvent[] {
+    const recorded = this.state.events[sessionId] ?? [];
+    const unfinished = this.state.live[sessionId];
+    return unfinished
+      ? [...recorded, { ...unfinished, sequence: (recorded.at(-1)?.sequence ?? 0) + 1 }]
+      : recorded;
+  }
+  private load(sessionId: string, retain = false) {
+    const socket = this.socket;
+    const observer = this.observers.get(sessionId);
+    const previous = this.state.history[sessionId];
+    const afterSequence = previous?.lastSequence ?? 0;
+    this.update({
+      history: {
+        ...this.state.history,
+        [sessionId]: {
+          ...(previous ?? {
+            firstSequence: 0,
+            lastSequence: 0,
+            hasEarlier: false,
+            loadingEarlier: false,
+          }),
+          loading: true,
+          loaded: false,
+        },
+      },
+    });
+    void this.request({
+      type: 'session.subscribe',
+      sessionId,
+      afterSequence,
+      ...(retain ? { retain: true } : {}),
+    }).catch((error: Error) => {
+      if (
+        this.socket !== socket ||
+        this.state.status !== 'connected' ||
+        (retain && this.observers.get(sessionId) !== observer)
+      )
+        return;
+      const history = this.state.history[sessionId];
+      if (history)
+        this.update({
+          error: error.message,
+          history: { ...this.state.history, [sessionId]: { ...history, loading: false } },
+        });
+    });
+    // A main subscription replaces the server's set. Restore the visible side sessions after it.
+    if (!retain) this.restoreObserved();
+  }
+  private restoreObserved() {
+    if (!this.state.sideConversations || this.state.status !== 'connected') return;
+    for (const id of this.observers.keys()) if (id !== this.state.selectedId) this.load(id, true);
+  }
+  // A pane observes history and live output without changing the main conversation.
+  observeSession(sessionId: string): () => void {
+    if (
+      !this.state.sideConversations ||
+      !this.state.sessions.some((session) => session.id === sessionId)
+    )
+      return () => {};
+    let observer = this.observers.get(sessionId);
+    if (!observer) {
+      // The server admits 32 subscriptions; leave room for the main conversation.
+      if (this.observers.size >= 31) return () => {};
+      observer = { count: 0 };
+      this.observers.set(sessionId, observer);
+      this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
+      if (sessionId !== this.state.selectedId && this.state.status === 'connected')
+        this.load(sessionId, true);
+    }
+    observer.count++;
+    let active = true;
+    return () => {
+      if (!active) return;
+      active = false;
+      if (this.observers.get(sessionId) !== observer) return;
+      if (--observer.count > 0) return;
+      this.observers.delete(sessionId);
+      const evicted = this.trimCache();
+      if (evicted) this.update(evicted);
+      if (
+        sessionId !== this.state.selectedId &&
+        this.state.sideConversations &&
+        this.state.status === 'connected'
+      )
+        void this.request({ type: 'session.unsubscribe', sessionId }).catch(() => {});
+    };
+  }
+  private trimCache(selectedId = this.state.selectedId) {
+    const removed = new Set<string>();
+    while (this.cacheOrder.length > 4) {
+      const index = this.cacheOrder.findIndex((id) => id !== selectedId && !this.observers.has(id));
+      if (index === -1) break;
+      removed.add(this.cacheOrder.splice(index, 1)[0]);
+    }
+    if (!removed.size) return undefined;
+    const events = { ...this.state.events };
+    const live = { ...this.state.live };
+    const history = { ...this.state.history };
+    const progress = { ...this.state.progress };
+    for (const id of removed) {
+      delete events[id];
+      delete live[id];
+      delete history[id];
+      delete progress[id];
+    }
+    // Frames received just before a pane closed must not recreate its evicted cache on flush.
+    this.streamEvents = this.streamEvents.filter((event) => !removed.has(event.sessionId));
+    return { events, live, history, progress };
+  }
+  async loadEarlier(sessionId: string) {
+    const history = this.state.history[sessionId];
+    if (!history?.hasEarlier || history.loadingEarlier || history.loading) return;
+    const socket = this.socket;
+    this.update({
+      history: { ...this.state.history, [sessionId]: { ...history, loadingEarlier: true } },
+    });
+    try {
+      await this.request({
+        type: 'session.history',
+        sessionId,
+        beforeSequence: history.firstSequence,
+      });
+    } catch (error) {
+      const current = this.state.history[sessionId];
+      if (current && this.socket === socket)
+        this.update({
+          history: { ...this.state.history, [sessionId]: { ...current, loadingEarlier: false } },
+        });
+      throw error;
+    }
+  }
+  select(sessionId: string) {
+    this.flushStream();
+    this.cacheOrder = [...this.cacheOrder.filter((id) => id !== sessionId), sessionId];
+    this.update({ selectedId: sessionId, ...this.trimCache(sessionId) });
+    if (this.state.status === 'connected') this.load(sessionId);
+  }
+  // Terminal output bypasses the state store; xterm consumes it directly.
+  onTerminal = (listener: (message: TerminalMessage) => void) => {
+    this.terminalListeners.add(listener);
+    return () => {
+      this.terminalListeners.delete(listener);
+    };
+  };
+  // A browser's user is still there; its login's idle time starts over.
+  markActive() {
+    if (!this.state.browser || this.socket?.readyState !== WebSocket.OPEN) return false;
+    this.socket.send(JSON.stringify({ type: 'web.activity' }));
+    return true;
+  }
+  terminalControl(command: TerminalControl) {
+    if (this.state.status === 'connected' && this.socket?.readyState === WebSocket.OPEN)
+      this.socket.send(JSON.stringify(command));
+  }
+  // Data replies arrive just before their response frame.
+  async fetch<T extends keyof Replies>(command: Extract<NewCommand, { type: T }>) {
+    const response = await this.request(command);
+    const result = this.results.get(response.requestId);
+    this.results.delete(response.requestId);
+    if (!result) throw new Error('服务没有返回数据。');
+    return result as Extract<ServerMessage, { type: Replies[T] }>;
+  }
+  async request(command: NewCommand, requestId: string = crypto.randomUUID()): Promise<Response> {
+    if (this.state.status !== 'connected' || this.socket?.readyState !== WebSocket.OPEN)
+      throw new Error('服务未连接。');
+    return new Promise<Response>((resolve, reject) => {
+      const timer = setTimeout(
+        () => {
+          this.pending.delete(requestId);
+          this.results.delete(requestId);
+          reject(new Error('请求超时；请查看历史确认结果，未自动重发。'));
+        },
+        command.type === 'session.status' ||
+          command.type.startsWith('account.') ||
+          command.type.startsWith('service.')
+          ? 30000
+          : 10000,
+      );
+      this.pending.set(requestId, { resolve, reject, timer, type: command.type });
+      this.socket!.send(JSON.stringify({ ...command, requestId }));
+    });
+  }
+}

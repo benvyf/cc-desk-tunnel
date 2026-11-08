@@ -1,0 +1,618 @@
+import { mkdirSync, existsSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
+import { query, getSessionInfo, getSessionMessages } from '@anthropic-ai/claude-agent-sdk';
+import type { Query, SDKUserMessage } from '@anthropic-ai/claude-agent-sdk';
+import type {
+  DevicePlatform,
+  DeviceShell,
+  Effort,
+  EventPayload,
+  NativeMetrics,
+  PermissionMode,
+} from '@cc-desk-tunnel/protocol';
+import { deviceTerms } from './device-terms.ts';
+import type { DeviceExecution } from './device-terms.ts';
+import { ClaudeStream } from './claude-stream.ts';
+import type { SshConnection } from './tunnel.ts';
+import { loginOf, nativeCapabilities, nativeMetrics, Quotas } from './native-controls.ts';
+import type { NativeInput } from './native-input.ts';
+import { readNativeSettings, writeSessionSshSettings } from './native-settings.ts';
+import { questionTally } from './question.ts';
+
+// Whether reasoning summaries are asked for. A settings file that cannot be read leaves them on.
+function thinkingShown() {
+  try {
+    return readNativeSettings().showThinkingSummaries !== false;
+  } catch {
+    return true;
+  }
+}
+
+export type ClaudeOptions = {
+  executable: string;
+  model?: string;
+  settingsPath?: string;
+  maxTurns?: number;
+  contextRetentionDays?: number;
+  // Added to the CLI's inherited environment; set by the service for its usage collector.
+  environment?: Record<string, string>;
+};
+export type ClaudeRun = {
+  sessionId: string;
+  // The session whose Linux directory holds this session's native history; itself unless it is a fork.
+  nativeRoot: string;
+  projectPath: string;
+  // The system of the device, as the session's prompt has it.
+  platform: DevicePlatform;
+  shells?: DeviceShell[];
+  shell?: DeviceShell;
+  viaSsh?: true;
+  permissionMode: PermissionMode;
+  model?: string | null;
+  effort?: Effort | null;
+  input: NativeInput;
+  dataDir: string;
+  resume: boolean;
+  // A side conversation whose first input has not been received can retry an initialization that left no history.
+  sideContext?: string;
+  // Its inherited history is already persisted under this ID; never replace a missing fork with a new session.
+  nativeSide?: boolean;
+  signal: AbortSignal;
+  emit: (event: EventPayload) => void;
+  // Asks the user about a tool call. A question Claude asks comes back with the answers chosen.
+  approve: (
+    toolId: string,
+    waiting: 'approval' | 'question',
+  ) => Promise<{ allowed: boolean; answers?: Record<string, string> }>;
+  // Absent only for a session owned by the service itself.
+  ssh?: SshConnection;
+  // Told when Claude has finished its turn and the run goes on only for background tasks, and when it resumes.
+  waiting: (background: boolean) => void;
+  // Told when a turn ends: the figures so far for the user message the turn answered. A turn that a background task
+  // started adds to the question it belongs to, so these are running totals and `background` says more may follow.
+  turnEnded: (turn: {
+    messageId?: string;
+    startedAt: number;
+    endedAt: number;
+    requests: number;
+    outputTokens: number;
+    promptIds: string[];
+    background: boolean;
+  }) => void;
+  // Filled in while the CLI is running, so the service can ask it for fresh account quota mid-run and end
+  // one of its background tasks.
+  controls: {
+    // `asked`: the user asked on the account page, which reads the quota anew.
+    refresh?: (asked?: boolean) => Promise<void>;
+    stopTask?: (taskId: string) => Promise<void>;
+    backgroundTask?: (toolId: string) => Promise<boolean>;
+  };
+};
+// The plan quota, held by login for every session and device; the service tells it which clients want it current.
+export const quotas = new Quotas();
+const quotaOf =
+  (login: string, asked = false) =>
+  (query: Query) =>
+    quotas.through(login, query, { asked });
+// `sessionId` is the proxy's name for the session, which a scheduled task needs to continue it.
+export function remotePrompt(
+  projectPath: string,
+  ssh: SshConnection,
+  sessionId: string,
+  platform: DevicePlatform = 'win32',
+  viaSsh = false,
+  execution?: DeviceExecution,
+) {
+  const terms = deviceTerms(platform, projectPath, viaSsh, execution);
+  return [
+    "The user's projects are on their own computer, the device, NOT on this Linux host, which only runs Claude Code and has no copy of them.",
+    `Device: ${terms.name}. Project directory: ${JSON.stringify(projectPath)}.`,
+    `Do all project reads, edits, searches and commands on the device with your native Bash tool over SSH${ssh.bin ? ', using the session-provided ssh, scp and sftp commands' : `, with the configuration ${JSON.stringify(ssh.configPath)}`}. Do not use this host's Read/Edit tools on project files, and do not print, read into conversation or copy the SSH keys.`,
+    `Send a script on standard input, as a quoted Bash here-document: ssh ${ssh.bin ? '' : `-F ${JSON.stringify(ssh.configPath)} `}${execution?.shells?.length ? `device-${execution.shells[0]}` : 'device-script'} <<'PS' ... PS. ${terms.script}`,
+    `device-script is the host device with one fixed command, which the configuration shows as RemoteCommand, and takes none of its own. ${terms.command}`,
+    'If the device is unreachable, say so; never fall back to this host. After an interruption report results as unknown; do not repeat side effects on your own.',
+    'To look at a picture on the device, such as a pasted screenshot or an attached image, copy that one file with scp to a temporary file on this host, open it with the Read tool, and delete the copy afterwards. That is the only use of Read on this host for a file from the device.',
+    'Commands may run concurrently. One that blocks holds the turn until its Bash timeout: size the timeout to the work, and run anything long-lived, such as a dev server or watcher, as a background Bash task. Do not count on a process outliving the ssh command that started it, nor on ending the command to stop it: keep the command running for as long as the process is needed, and stop the process itself on the device.',
+    ...(viaSsh
+      ? [
+          'This is an SSH target. Desktop schedule files and desktop environment variables do not exist here. Do not install or run Claude or copy model credentials on the device; model traffic belongs to this Linux host.',
+        ]
+      : [
+          `Scheduled and recurring prompts are sent by the desktop client, not by cron on this host: edit the UTF-8 JSON file whose path is in the device's CC_DESK_TUNNEL_SCHEDULES environment variable (its "说明" field documents the format; changes apply within seconds). This session's ID for a task that continues it: ${sessionId}.`,
+        ]),
+  ].join('\n');
+}
+
+// The Linux working directory of a session's project, which its sessions share as they would the project's own
+// folder: the CLI keys native history, auto memory and project settings by it. A fork stays in the directory of
+// the session it came from, which is where the CLI puts a fork's history.
+export function nativeDirectory(dataDir: string, root: string) {
+  return join(dataDir, 'native', root);
+}
+
+export function prepareNativeDirectory(options: ClaudeOptions, dataDir: string, sessionId: string) {
+  const cwd = nativeDirectory(dataDir, sessionId);
+  mkdirSync(cwd, { recursive: true, mode: 0o700 });
+  const settingsDirectory = join(cwd, '.claude');
+  mkdirSync(settingsDirectory, { recursive: true, mode: 0o700 });
+  const localSettingsPath = join(settingsDirectory, 'settings.local.json');
+  const settings = existsSync(localSettingsPath)
+    ? JSON.parse(readFileSync(localSettingsPath, 'utf8'))
+    : {};
+  settings.cleanupPeriodDays = options.contextRetentionDays ?? 3650;
+  writeFileSync(localSettingsPath, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
+  return cwd;
+}
+
+export async function runClaude(
+  options: ClaudeOptions,
+  run: ClaudeRun,
+): Promise<'completed' | 'failed' | 'cancelled'> {
+  if (process.platform === 'win32') throw new Error('Native adapter must run on Linux.');
+  const mapper = new ClaudeStream(run.emit, run.permissionMode, run.effort);
+  const cwd = prepareNativeDirectory(options, run.dataDir, run.nativeRoot);
+  let resume = run.resume;
+  if (resume && !(await getSessionInfo(run.sessionId, { dir: cwd }))) {
+    if (run.sideContext && !run.nativeSide) resume = false;
+    else {
+      run.emit({
+        type: 'run.error',
+        code: 'native_context_missing',
+        message:
+          'Claude Code 原生上下文不存在；不会用界面记录伪造恢复或另开会话。请检查原生存储与备份。',
+      });
+      return 'failed';
+    }
+  }
+  let initialPrefix = run.sideContext ?? '';
+  if (resume && initialPrefix) {
+    // An input can be persisted before its receipt/output reaches us. Read the native transcript before
+    // retrying so its frozen background is neither duplicated nor omitted after initialization alone.
+    const history = await getSessionMessages(run.sessionId, { dir: cwd });
+    if (
+      history.some(({ type, message }) => {
+        if (type !== 'user' || !message || typeof message !== 'object') return false;
+        const content = (message as { content?: unknown }).content;
+        const text =
+          typeof content === 'string'
+            ? content
+            : Array.isArray(content)
+              ? content
+                  .filter((block) => block?.type === 'text' && typeof block.text === 'string')
+                  .map((block) => block.text)
+                  .join('')
+              : '';
+        return text.includes(initialPrefix);
+      })
+    )
+      initialPrefix = '';
+  }
+  const abortController = new AbortController();
+  const stop = () => abortController.abort();
+  run.signal.addEventListener('abort', stop, { once: true });
+  if (run.signal.aborted) stop();
+  let stderr = '',
+    failure: Error | undefined;
+  let session: Query | undefined;
+  // The prompts the CLI took since the last turn ended; the OpenTelemetry records of their requests carry the same ids.
+  let promptIds: string[] = [];
+  const tally = questionTally();
+  // Output tokens of every model call so far, subagents included, as the CLI's running total counts them; a turn's
+  // share is the step from one result to the next. A resumed session's total already holds earlier runs.
+  let outputSoFar: number | undefined = resume ? undefined : 0;
+  let settle: ReturnType<typeof setTimeout> | undefined;
+  let settled = false;
+  let scopedSettings: string | undefined;
+  try {
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      ...options.environment,
+      CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+    };
+    let settings = options.settingsPath;
+    let ssh = run.ssh;
+    if (run.ssh?.bin) {
+      scopedSettings = join(dirname(run.ssh.bin), 'sdk-settings.json');
+      const config = resolve(cwd, env.CLAUDE_CONFIG_DIR || join(homedir(), '.claude'));
+      const path = writeSessionSshSettings(scopedSettings, {
+        source: options.settingsPath,
+        config,
+        cwd,
+        bin: run.ssh.bin,
+        inheritedPath: env.PATH ?? '/usr/bin:/bin',
+      });
+      if (path) {
+        env.PATH = path;
+        settings = scopedSettings;
+      } else ssh = { configPath: run.ssh.configPath };
+    }
+    session = query({
+      prompt: run.input.stream(initialPrefix),
+      options: {
+        cwd,
+        pathToClaudeCodeExecutable: options.executable,
+        abortController,
+        includePartialMessages: true,
+        permissionMode: run.permissionMode,
+        // The SDK takes the mode that asks about nothing only with this said as well.
+        allowDangerouslySkipPermissions: run.permissionMode === 'bypassPermissions',
+        persistSession: true,
+        systemPrompt: {
+          type: 'preset',
+          preset: 'claude_code',
+          ...(ssh
+            ? {
+                append: remotePrompt(
+                  run.projectPath,
+                  ssh,
+                  run.sessionId,
+                  run.platform,
+                  run.viaSsh,
+                  run.shells ? { shells: run.shells, shell: run.shell } : undefined,
+                ),
+              }
+            : {}),
+          snapshot: false,
+        },
+        ...(resume ? { resume: run.sessionId } : { sessionId: run.sessionId }),
+        model: run.model ?? options.model,
+        effort: run.effort ?? undefined,
+        // Newer models return no reasoning text unless a summary is asked for; headless runs ignore the
+        // showThinkingSummaries setting, so this is the only switch. It follows that setting.
+        extraArgs: thinkingShown() ? { 'thinking-display': 'summarized' } : {},
+        settings,
+        settingSources: ['user', 'project', 'local'],
+        hooks: {
+          UserPromptSubmit: [
+            {
+              hooks: [
+                async (input) => {
+                  if (input.hook_event_name === 'UserPromptSubmit' && input.prompt_id)
+                    promptIds.push(input.prompt_id);
+                  return {};
+                },
+              ],
+            },
+          ],
+        },
+        maxTurns: options.maxTurns,
+        env,
+        stderr: (text) => {
+          stderr = (stderr + text).slice(-8192);
+        },
+        canUseTool: async (name, input, context) => {
+          const tool = mapper.tool(name, input, context.toolUseID);
+          const question = name === 'AskUserQuestion';
+          const { allowed, answers } =
+            context.signal.aborted || run.signal.aborted
+              ? { allowed: false }
+              : await run.approve(tool.id, question ? 'question' : 'approval');
+          tool.denied = !allowed;
+          if (!allowed)
+            return {
+              behavior: 'deny',
+              message: question
+                ? 'The user declined to answer.'
+                : 'The user denied or cancelled this request.',
+            };
+          // The official tool takes the user's choices as `answers`, keyed by question text.
+          return {
+            behavior: 'allow',
+            updatedInput: question && answers ? { ...input, answers } : input,
+          };
+        },
+      },
+    });
+    const initialized = await session.initializationResult();
+    const login = loginOf(initialized.account);
+    // The commands change while the run goes on: each turn's `init` names those bound to the CLI's terminal, and
+    // skills found on the way bring a new list. A change is passed on once.
+    let commands = initialized.commands;
+    let terminal: string[] = [];
+    let offered = '';
+    const offer = () => {
+      const payload = nativeCapabilities(
+        initialized.models,
+        initialized.account,
+        commands,
+        run.model ?? options.model,
+        terminal,
+      );
+      const key =
+        payload.type === 'native.capabilities' ? JSON.stringify(payload.commandDetails) : '';
+      if (key === offered || run.signal.aborted) return;
+      offered = key;
+      run.emit(payload);
+    };
+    offer();
+    let metrics: NativeMetrics | undefined;
+    let refresh: Promise<void> | undefined;
+    let refreshedAt = 0;
+    const running = session;
+    run.controls.stopTask = (taskId) => running.stopTask(taskId);
+    run.controls.backgroundTask = (toolId) => running.backgroundTasks(toolId);
+    run.controls.refresh = async (asked) => {
+      const payload = await nativeMetrics(running, undefined, {
+        quota: quotaOf(login, asked),
+        previous: metrics?.usage,
+      });
+      if (payload.type === 'native.metrics') metrics = payload;
+      if (!run.signal.aborted) run.emit(payload);
+    };
+    // Background Bash tasks and subagents live in the CLI process, and the completion of one starts a turn of
+    // its own. Closing the CLI with the turn that started them would kill them, so the run stays open until
+    // none is left.
+    let background = 0;
+    let idle = false;
+    let told = false;
+    let turnStartedAt = Date.now();
+    // What each background task last said of itself, and when it was passed on.
+    const progress = new Map<string, { said: string; at: number }>();
+    for await (const message of session) {
+      if (message.type === 'rate_limit_event') quotas.observe(login, message);
+      if (message.type === 'system' && message.subtype === 'init') {
+        terminal = message.terminal_slash_commands ?? [];
+        offer();
+      }
+      if (message.type === 'system' && message.subtype === 'commands_changed') {
+        commands = message.commands;
+        offer();
+      }
+      if (message.type === 'system' && message.subtype === 'task_progress' && !run.signal.aborted) {
+        const tool = message.last_tool_name?.slice(0, 100);
+        const summary = message.summary?.slice(0, 300);
+        const said = `${tool}\n${summary}`;
+        const last = progress.get(message.task_id);
+        // A task reports every few moments; the same word again is passed on at most every two seconds.
+        if (!last || last.said !== said || Date.now() - last.at >= 2000) {
+          progress.set(message.task_id, { said, at: Date.now() });
+          run.emit({
+            type: 'native.progress',
+            taskId: message.task_id,
+            tool,
+            toolUses: message.usage.tool_uses,
+            summary,
+          });
+        }
+      }
+      if (message.type === 'system' && message.subtype === 'background_tasks_changed') {
+        const tasks = message.tasks.filter((task) => !task.ambient);
+        background = tasks.length;
+        for (const id of progress.keys())
+          if (!tasks.some((task) => task.task_id === id)) progress.delete(id);
+        if (!run.signal.aborted)
+          run.emit({
+            type: 'native.tasks',
+            tasks: tasks.map((task) => ({
+              id: task.task_id,
+              kind: task.task_type,
+              description: task.description,
+            })),
+          });
+        // The turn a finished task starts follows at once, announced by the CLI's `init`. When none does,
+        // as after the user ended the last task, nothing is left to wait for.
+        clearTimeout(settle);
+        if (idle && !background)
+          settle = setTimeout(() => {
+            settled = true;
+            run.input.close();
+            running.close();
+          }, 3000);
+      } else if (
+        (message.type === 'system' && message.subtype === 'init') ||
+        ['user', 'assistant', 'stream_event'].includes(message.type)
+      ) {
+        if (told && !run.signal.aborted) run.waiting(false);
+        told = false;
+        idle = false;
+        clearTimeout(settle);
+      }
+      if (!run.signal.aborted) {
+        run.input.observe(message);
+        mapper.accept(message);
+      }
+      // Context grows with every model call; show it during a long turn, not only once the turn ends.
+      if (
+        message.type === 'assistant' &&
+        !refresh &&
+        !run.signal.aborted &&
+        Date.now() - refreshedAt >= 5000
+      ) {
+        refreshedAt = Date.now();
+        // The quota comes as the service holds it, which reads it anew only when due (see `Quotas`).
+        refresh = nativeMetrics(session, undefined, {
+          quota: quotaOf(login),
+          previous: metrics?.usage,
+        })
+          .then(
+            (payload) => {
+              if (payload?.type !== 'native.metrics' || !payload.context || run.signal.aborted)
+                return;
+              metrics = payload;
+              run.emit(payload);
+            },
+            () => {},
+          )
+          .finally(() => {
+            refresh = undefined;
+          });
+      }
+      if (message.type === 'result') {
+        const endedAt = Date.now();
+        await refresh;
+        const done = run.input.endTurn(message, background > 0);
+        const outputTotal = Object.values(message.modelUsage ?? {}).reduce(
+          (sum, model) => sum + model.outputTokens,
+          0,
+        );
+        const turnOutput =
+          outputSoFar === undefined || outputTotal < outputSoFar
+            ? (message.usage?.output_tokens ?? 0)
+            : outputTotal - outputSoFar;
+        outputSoFar = outputTotal;
+        if (!run.signal.aborted) {
+          // A turn that merged several messages answers them all; the last one is where the reply is shown.
+          const answered = message.user_message_uuids ?? [message.user_message_uuid];
+          const question = tally({
+            messageId: answered.filter((id) => id).at(-1),
+            startedAt: turnStartedAt,
+            requests: mapper.requests,
+            outputTokens: turnOutput,
+            promptIds,
+          });
+          run.turnEnded({ ...question, endedAt, background: background > 0 });
+        }
+        turnStartedAt = endedAt;
+        mapper.requests = 0;
+        promptIds = [];
+        if (!run.signal.aborted) {
+          try {
+            const payload = await nativeMetrics(session, message, { quota: quotaOf(login) });
+            if (payload.type === 'native.metrics') metrics = payload;
+            run.emit(payload);
+          } catch {
+            run.emit({ type: 'native.notice', text: '本轮原生状态未能读取；任务结果不受影响。' });
+          }
+        }
+        if (done || run.signal.aborted) break;
+        idle = true;
+        if (background) {
+          told = true;
+          run.waiting(true);
+        }
+      }
+    }
+  } catch (error) {
+    if (!settled)
+      failure = error instanceof Error ? error : new Error('Native SDK process failed.');
+  } finally {
+    clearTimeout(settle);
+    run.controls.refresh = undefined;
+    run.controls.stopTask = undefined;
+    run.controls.backgroundTask = undefined;
+    try {
+      try {
+        run.input.close();
+      } finally {
+        session?.close();
+      }
+    } finally {
+      run.signal.removeEventListener('abort', stop);
+      if (scopedSettings) {
+        try {
+          rmSync(scopedSettings, { force: true });
+        } catch (error) {
+          console.warn('Session SSH settings cleanup failed', {
+            sessionId: run.sessionId,
+            path: scopedSettings,
+            code: (error as NodeJS.ErrnoException).code,
+          });
+        }
+      }
+    }
+  }
+  const context = await getSessionInfo(run.sessionId, { dir: cwd });
+  run.emit({
+    type: 'native.context',
+    nativeSessionId: run.sessionId,
+    persisted: !!context,
+    updatedAt: context ? new Date(context.lastModified).toISOString() : undefined,
+  });
+  if (context?.summary?.trim())
+    run.emit({ type: 'native.title', title: context.summary.trim().slice(0, 120) });
+  for (const tool of mapper.tools.values())
+    if (!tool.finished) {
+      run.emit({
+        type: 'tool.result',
+        toolId: tool.id,
+        status: 'unknown',
+        output:
+          '运行结束；该工具最终执行结果未确认。已发出的 SSH 命令可能继续执行，副作用未撤销，不能自动重放。',
+        exitCode: null,
+      });
+    }
+  if (run.signal.aborted) return 'cancelled';
+  if (failure || !mapper.result) {
+    run.emit({
+      type: 'run.error',
+      code: 'cli_process_failed',
+      message: failure?.message ?? (stderr.trim() || 'Claude Code exited without a result.'),
+    });
+    return 'failed';
+  }
+  return mapper.result.failed ? 'failed' : 'completed';
+}
+
+export async function readNativeStatus(
+  options: ClaudeOptions,
+  dataDir: string,
+  nativeRoot: string,
+  sessionId: string,
+  signal: AbortSignal,
+  // The user asked on the account page; `previous` is the session's last totals, kept if no new ones come. Without
+  // `resume` the CLI does not take up the native session, which a terminal may hold.
+  {
+    asked = false,
+    previous = null,
+    resume = true,
+  }: { asked?: boolean; previous?: NativeMetrics['usage']; resume?: boolean } = {},
+) {
+  const cwd = prepareNativeDirectory(options, dataDir, nativeRoot);
+  const saved = resume && (await getSessionInfo(sessionId, { dir: cwd }));
+  let release!: () => void;
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  async function* input(): AsyncGenerator<SDKUserMessage> {
+    await waiting;
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  if (signal.aborted) abort();
+  const timer = setTimeout(abort, 15000);
+  let process: Query | undefined;
+  let drain: Promise<void> | undefined;
+  try {
+    process = query({
+      prompt: input(),
+      options: {
+        cwd,
+        pathToClaudeCodeExecutable: options.executable,
+        ...(saved ? { resume: sessionId } : {}),
+        abortController: controller,
+        settings: options.settingsPath,
+        settingSources: ['user', 'project', 'local'],
+        env: {
+          ...globalThis.process.env,
+          ...options.environment,
+          CLAUDE_CODE_ENTRYPOINT: 'sdk-ts',
+        },
+      },
+    });
+    // Keep draining while control requests are in flight; no model prompt is submitted.
+    const session = process;
+    drain = (async () => {
+      for await (const _message of session) {
+      }
+    })().catch(() => {});
+    const initialized = await process.initializationResult();
+    const login = loginOf(initialized.account);
+    return [
+      nativeCapabilities(
+        initialized.models,
+        initialized.account,
+        initialized.commands,
+        options.model,
+      ),
+      await nativeMetrics(process, undefined, { quota: quotaOf(login, asked), previous }),
+    ];
+  } finally {
+    clearTimeout(timer);
+    release();
+    process?.close();
+    signal.removeEventListener('abort', abort);
+    await drain;
+  }
+}

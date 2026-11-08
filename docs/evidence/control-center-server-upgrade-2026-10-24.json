@@ -1,0 +1,61 @@
+{
+  "phase": "complete",
+  "sourceCommit": "d63607d1401bd84c0d1724488533190913031e64",
+  "backup": "/var/backups/cc-update-service/server-upgrade-ui-20261024T060655Z",
+  "previousRuntime": "/opt/cc-update-service.previous-upgrade-ui-d63607d",
+  "runtimeInventoryFiles": 44,
+  "changedRuntimeFiles": [
+    "apps/update-service/src/http.ts",
+    "apps/update-service/src/server-distribution.ts",
+    "apps/update-service/web/server-download.js",
+    "apps/update-service/web/server-upgrade.cjs",
+    "docs/MANAGED-SERVER-DISTRIBUTION.md"
+  ],
+  "configurationUnchanged": true,
+  "privateLoginUnchanged": true,
+  "moderationPolicyUnchanged": true,
+  "publicationIndexesUnchanged": true,
+  "renewalRegistrationsUnchanged": true,
+  "upgradeTarget": {
+    "build": 3,
+    "sha256": "55bc3834b8f4be34974b203edc360e6b4ea2a17abedf36af6acfba0b9eee713c",
+    "protocol": 20
+  },
+  "upgradeCommandVerified": true,
+  "bootstrapCommandUnchanged": true,
+  "publicAssetsVerified": true,
+  "providerRequests": 0,
+  "ubuntuUpgradeExecutedByThisDeployment": false,
+  "bothRenewalTimersActive": true,
+  "date": "2026-10-24",
+  "validation": {
+    "typescriptPassed": true,
+    "relatedTests": {
+      "total": 15,
+      "passed": 14,
+      "skipped": 1,
+      "skipReason": "POSIX permissions case on Windows"
+    },
+    "realManagedHttpContractScenarios": [
+      "success",
+      "busy",
+      "mismatch",
+      "rollback",
+      "already-installed"
+    ],
+    "realBrowserCopyAndExpiryPassed": true,
+    "mobile390pxNoHorizontalOverflow": true,
+    "publicAssetsVerifiedFromDeveloperMachine": true,
+    "unauthenticatedServerApiStatus": 401,
+    "actualRuntimePackageImportPassed": true
+  },
+  "userNodeFeedback": {
+    "source": "User-provided Ubuntu console output",
+    "linuxBuild": 3,
+    "protocol": 20,
+    "installedAndCommitted": true,
+    "accountNumberAfterReconnectConfirmed": false
+  },
+  "windowsAndLinuxArtifactsRebuilt": false,
+  "githubPushed": false
+}

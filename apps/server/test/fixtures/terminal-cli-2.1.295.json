@@ -1,0 +1,261 @@
+[
+  {
+    "type": "mode",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "permission-mode",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "file-history-snapshot"
+  },
+  {
+    "parentUuid": null,
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "isolated interactive prompt"
+    },
+    "uuid": "41ca3110-4ca4-40a3-b23c-7b5828a5c01f",
+    "timestamp": "2026-11-07T03:15:33.384Z",
+    "origin": {
+      "kind": "human"
+    },
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "41ca3110-4ca4-40a3-b23c-7b5828a5c01f",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "7b326d73-6ef9-419b-bd92-e145ac73e528",
+    "timestamp": "2026-11-07T03:15:33.382Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "7b326d73-6ef9-419b-bd92-e145ac73e528",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "b160b840-5ce4-4c64-aa14-aa2a52057403",
+    "timestamp": "2026-11-07T03:15:33.383Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "b160b840-5ce4-4c64-aa14-aa2a52057403",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "68b41fe2-d439-4953-8364-1495641f2dcd",
+    "timestamp": "2026-11-07T03:15:33.383Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "68b41fe2-d439-4953-8364-1495641f2dcd",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "db7d20d7-59f6-4959-a858-24d84e9ce067",
+    "timestamp": "2026-11-07T03:15:33.383Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "db7d20d7-59f6-4959-a858-24d84e9ce067",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "5fec64f9-7f6f-490a-92aa-cc1e7c701290",
+    "timestamp": "2026-11-07T03:15:33.383Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "5fec64f9-7f6f-490a-92aa-cc1e7c701290",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "78b27d6b-7700-4ea1-888b-1c13348b7fa7",
+    "timestamp": "2026-11-07T03:15:33.383Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "78b27d6b-7700-4ea1-888b-1c13348b7fa7",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "959c859a-9ab2-41b3-ad57-071900d6f92c",
+    "timestamp": "2026-11-07T03:15:33.471Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "959c859a-9ab2-41b3-ad57-071900d6f92c",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "aa12701a-cd18-4d7f-8cf5-a6e5cf11bc77",
+    "timestamp": "2026-11-07T03:15:33.471Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "aa12701a-cd18-4d7f-8cf5-a6e5cf11bc77",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "577c2a16-ae91-4cd8-a26c-9e066723421a",
+    "timestamp": "2026-11-07T03:15:33.476Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "577c2a16-ae91-4cd8-a26c-9e066723421a",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "4c0831dc-fe20-47f9-bb44-2afd6357a24c",
+    "timestamp": "2026-11-07T03:15:33.477Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "4c0831dc-fe20-47f9-bb44-2afd6357a24c",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "informational",
+    "content": "Streaming response ended before any complete data was received. Retrying without streaming. If this keeps happening, check any proxy or gateway between Claude Code and your model provider.",
+    "isMeta": false,
+    "timestamp": "2026-11-07T03:15:33.584Z",
+    "uuid": "6a2c3886-29a7-46c2-807b-91fdfbc52424",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "6a2c3886-29a7-46c2-807b-91fdfbc52424",
+    "isSidechain": false,
+    "message": {
+      "id": "msg_0b7c820d03d9477dadec3fd4033a36b5",
+      "type": "message",
+      "role": "assistant",
+      "model": "claude-sonnet-4-6",
+      "content": [
+        {
+          "type": "text",
+          "text": "isolated CLI acceptance answer"
+        }
+      ],
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "usage": {
+        "input_tokens": 10,
+        "cache_creation_input_tokens": 100,
+        "cache_read_input_tokens": 50000,
+        "output_tokens": 8,
+        "output_tokens_details": {
+          "thinking_tokens": 0
+        },
+        "server_tool_use": {
+          "web_search_requests": 0,
+          "web_fetch_requests": 0
+        },
+        "service_tier": "standard",
+        "cache_creation": {
+          "ephemeral_1h_input_tokens": 0,
+          "ephemeral_5m_input_tokens": 0
+        },
+        "inference_geo": "",
+        "iterations": [],
+        "speed": "standard",
+        "fallback_credit": null
+      }
+    },
+    "type": "assistant",
+    "uuid": "ce1d14cf-b029-4a5f-91a9-ca09dbc4fb10",
+    "timestamp": "2026-11-07T03:15:33.606Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "ce1d14cf-b029-4a5f-91a9-ca09dbc4fb10",
+    "isSidechain": false,
+    "type": "attachment",
+    "uuid": "348011c9-3d71-422a-9d20-b118d773d2d3",
+    "timestamp": "2026-11-07T03:15:33.612Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "348011c9-3d71-422a-9d20-b118d773d2d3",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "stop_hook_summary",
+    "timestamp": "2026-11-07T03:15:33.654Z",
+    "uuid": "8ab4da35-1047-4a29-9e11-8038c422aa81",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "8ab4da35-1047-4a29-9e11-8038c422aa81",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "turn_duration",
+    "timestamp": "2026-11-07T03:15:33.659Z",
+    "uuid": "42101247-ed99-4377-b462-cabde4446430",
+    "isMeta": false,
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "mode",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "permission-mode",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "atis-latch",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "42101247-ed99-4377-b462-cabde4446430",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "local_command",
+    "content": "<command-name>/context</command-name>\n            <command-message>context</command-message>\n            <command-args></command-args>",
+    "timestamp": "2026-11-07T03:15:42.803Z",
+    "uuid": "6e6150bd-5552-498c-9e78-85987e41a2e2",
+    "isMeta": false,
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "6e6150bd-5552-498c-9e78-85987e41a2e2",
+    "isSidechain": false,
+    "type": "system",
+    "subtype": "local_command",
+    "content": "<local-command-stdout> Context Usage\n Context is 689.5k tokens past the 160k-token compaction window — run /compact to reduce usage.\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Sonnet 4.6\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   claude-sonnet-4-6\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   849.5k/160k tokens (531%)\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   Estimated usage by category\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ System prompt: 700k tokens (437.5%)\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ System tools: 98.5k tokens (61.6%)\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ MCP tools: 49.5k tokens (30.9%)\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛁ Skills: 1.5k tokens (0.9%)\n⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁ ⛁   ⛝ Autocompact buffer: 33k tokens (20.6%)\n\nAuto-compact window: 160k tokens\n\nSkills · /skills\n└ 13 skills · 1.5k tokens\n\n/context all to expand</local-command-stdout>",
+    "timestamp": "2026-11-07T03:15:42.803Z",
+    "uuid": "b42056a9-7a59-456b-98c9-ae2fee8c055a",
+    "isMeta": false,
+    "commandRun": {
+      "command": "context",
+      "args": ""
+    },
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "parentUuid": "b42056a9-7a59-456b-98c9-ae2fee8c055a",
+    "isSidechain": false,
+    "type": "user",
+    "message": {
+      "role": "user",
+      "content": "## Context Usage\n\n**Model:** claude-sonnet-4-6  \n**Tokens:** 849.5k / 160k (531%)\n**Over limit:** Context is 689.5k tokens past the 160k-token compaction window — run /compact to reduce usage.\n\n### Estimated usage by category\n\n| Category | Tokens | Percentage |\n|----------|--------|------------|\n| System prompt | 700k | 437.5% |\n| System tools | 98.5k | 61.6% |\n| MCP tools | 49.5k | 30.9% |\n| Skills | 1.5k | 0.9% |\n| Autocompact buffer | 33k | 20.6% |\n\n### Skills\n\n| Skill | Source | Tokens |\n|-------|--------|--------|\n| dataviz | Built-in | ~360 |\n| update-config | Built-in | ~180 |\n| keybindings-help | Built-in | ~60 |\n| code-review | Built-in | ~160 |\n| simplify | Built-in | ~50 |\n| fewer-permission-prompts | Built-in | ~50 |\n| loop | Built-in | ~90 |\n| claude-api | Built-in | ~270 |\n| workflow-authoring | Built-in | ~60 |\n| run | Built-in | ~90 |\n| plugin-authoring | Built-in | ~70 |\n| init | Built-in | < 20 |\n| security-review | Built-in | ~20 |\n\n"
+    },
+    "isMeta": true,
+    "uuid": "dd60d829-209e-4c1d-9883-35168a787fbe",
+    "timestamp": "2026-11-07T03:15:42.803Z",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "cost-state",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "last-prompt",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  },
+  {
+    "type": "cost-state",
+    "sessionId": "9a1114c9-2088-4ee0-9811-75389b381567"
+  }
+]

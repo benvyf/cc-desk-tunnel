@@ -1,0 +1,25 @@
+{
+  "published": true,
+  "release": {
+    "build": 31,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "dd8effed83cf8620429dd3d68d16994e4cc3ce53",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "notes": "CC Space 0.3.10 / Build 31：新增独立终端窗口关闭来源、无响应及渲染进程退出诊断日志，便于定位偶发窗口消失和缩放卡顿；不宣称已修复尚未复现的界面问题。协议 24，保留独立更新检测、签名校验及跨协议完整包获取入口。服务端终端依赖完整性检查须另外安装 Linux Build 17；本客户端不会注入或代替服务端修复。Claude、SDK、账号和模型出口仍在 Ubuntu。",
+    "size": 258602450,
+    "sha256": "fa441d69d08e880c5ca892c2b20570f781be0f31ac094068e8495bf63f805511"
+  },
+  "revision": 46,
+  "expiresAt": "2026-11-09T10:16:06.239Z",
+  "renewalRegistered": true,
+  "realSystemdRunSucceeded": true,
+  "timers": {
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  },
+  "stableUnchanged": true,
+  "linuxUnchanged": true,
+  "managementRuntimeUnchanged": true,
+  "realModelRequests": 0
+}

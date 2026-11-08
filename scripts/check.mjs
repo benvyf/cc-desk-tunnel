@@ -1,0 +1,88 @@
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { modelBoundaryIssues } from './model-boundary.mjs';
+
+const root = fileURLToPath(new URL('..', import.meta.url));
+const errors = [];
+const git = (...args) =>
+  execFileSync('git', args, {
+    cwd: root,
+    encoding: 'utf8',
+    windowsHide: true,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+const files = git('ls-files', '-z').split('\0').filter(Boolean);
+const privatePath =
+  /(^|\/)(?:\.local|node_modules|dist|coverage)(?:\/|$)|(^|\/)\.env(?:\.|$)|\.local\.json$|\.(?:pem|key|p12|pfx)$/i;
+const secretToken = /\bsk-(?:ant-)?[A-Za-z0-9_-]{20,}/;
+const privateKey = /-----BEGIN (?:OPENSSH |RSA |EC )?PRIVATE KEY-----/;
+// Public, test-only keys. Any change requires reviewing the entire fixture and its hash;
+// this does not exempt other files or token-like secrets in the fixture.
+const publicTestKeys = new Map([
+  [
+    'apps/server/test/fixtures/web-certificates.ts',
+    '501efd4fc27c5d3103247d9ef0f44f16fbb683e0645ec5b6152c01d37b27bb48',
+  ],
+]);
+
+for (const file of files) {
+  if (privatePath.test(file) && !file.endsWith('.env.example')) {
+    errors.push('禁止跟踪的文件路径：' + file);
+  }
+  if (!/\.(?:md|[cm]?[jt]sx?|html|css|json|txt|sh|ps1|py)$/.test(file)) continue;
+  const content = git('show', ':' + file);
+  errors.push(...modelBoundaryIssues(file, content.toString('utf8')));
+  const reviewedKeys =
+    publicTestKeys.get(file) === createHash('sha256').update(content).digest('hex');
+  if (secretToken.test(content) || (privateKey.test(content) && !reviewedKeys)) {
+    errors.push('疑似秘密：' + file + '（内容不显示）');
+  }
+  if (file.endsWith('.json')) {
+    try {
+      JSON.parse(content);
+    } catch {
+      errors.push('JSON 无效：' + file);
+    }
+  }
+  if (file.endsWith('.md')) {
+    for (const match of content.matchAll(/\]\(([^\s)]+)\)/g)) {
+      const link = match[1];
+      if (/^(?:[a-z]+:|#)/i.test(link)) continue;
+      const target = decodeURIComponent(link.split('#')[0]);
+      if (!existsSync(resolve(root, dirname(file), target))) {
+        errors.push('本地文档链接失效：' + file + ' → ' + target);
+      }
+    }
+  }
+}
+
+for (const path of ['.local/开发调试凭据.txt', '.env', 'config/runtime.local.json']) {
+  try {
+    git('check-ignore', '--no-index', '--', path);
+  } catch {
+    errors.push('应被忽略的路径未被忽略：' + path);
+  }
+}
+
+const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
+for (const workspace of manifest.workspaces) {
+  const path = resolve(root, workspace, 'package.json');
+  if (!existsSync(path)) errors.push('缺少 workspace 清单：' + workspace);
+  else if (!JSON.parse(readFileSync(path, 'utf8')).private) {
+    errors.push('workspace 应设置 private：' + workspace);
+  }
+}
+
+if (errors.length) {
+  for (const error of errors) console.error(error);
+  process.exitCode = 1;
+} else {
+  console.log(
+    'PASS：检查 ' + files.length + ' 个索引文件、workspace 清单、文档链接及秘密忽略规则。',
+  );
+  console.log('此检查不访问模型或虚拟机，也不代表代理产品已实现或实测。');
+}

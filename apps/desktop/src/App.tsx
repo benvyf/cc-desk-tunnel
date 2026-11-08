@@ -1,0 +1,3100 @@
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from 'react';
+import { BrandMark, productName } from './Brand.tsx';
+import type { CSSProperties } from 'react';
+import {
+  CircleHelp,
+  Download,
+  FileDown,
+  Folder,
+  FolderInput,
+  FolderOpen,
+  FolderSymlink,
+  GitFork,
+  Laptop,
+  LogOut,
+  Pencil,
+  Pin,
+  PinOff,
+  Plus,
+  RefreshCw,
+  ScrollText,
+  Settings,
+  SquareTerminal,
+  Trash2,
+  Unplug,
+  X,
+} from './icons.tsx';
+import { GithubMark, openProject, project } from './project.tsx';
+import type { Effort, PermissionMode, Session } from '@cc-desk-tunnel/protocol';
+import type { NativeCapabilities } from '../../../packages/protocol/src/account-display.ts';
+import { browserSession, browserSocket, watchActivity } from './browser-api.ts';
+import { CertificateWarning } from './WebGate.tsx';
+import { hostCapabilities } from './host-capabilities.ts';
+import AccountPanel from './AccountPanel.tsx';
+import { ProxyClient, RequestInterruptedError } from './client.ts';
+import Composer, { NewSessionComposer } from './Composer.tsx';
+import { isBlank } from './transcript.ts';
+import { useStopShortcut } from './useStopShortcut.ts';
+import SideConversation from './SideConversation.tsx';
+import { latest } from './nativeState.ts';
+import { appendQuote, makeQuote, quoteMessage, splitQuoteMessage, quoteLimit } from './quotes.ts';
+import type { QuoteDestination } from './QuoteActions.tsx';
+import SessionBar from './SessionBar.tsx';
+import { isHere, thisDevice } from './device.ts';
+import { isMac, selfUpdating } from './platform.ts';
+import { useDrafts } from './drafts.ts';
+import { attachmentMessage, messageLimit, splitAttachmentMessage } from './attachments.ts';
+import SchedulePanel from './SchedulePanel.tsx';
+import { taskMessage, useSchedules } from './schedules.ts';
+import type { Scenario } from './Composer.tsx';
+import Conversation from './Conversation.tsx';
+import LoginPage from './LoginPage.tsx';
+import EmailLoginPage from './EmailLoginPage.tsx';
+import ClientUpgradeDialog from './ClientUpgradeDialog.tsx';
+import ManagedServerUpgrade from './ManagedServerUpgrade.tsx';
+import type { ConnectionForm } from './LoginPage.tsx';
+import { exportSession } from './exportSession.ts';
+import { onSharedChange, saveShared, shared, useShared } from './shared.ts';
+import { useNotifications } from './notifications.ts';
+import { folderName, isInside, isNewer, pathKey, withProject } from './paths.ts';
+import { getPrefs, pageMinWidth, setPrefs, toggled, usePrefs } from './prefs.ts';
+import { sessionDefaultOptions } from './modelDefaults.ts';
+import { actions, comboOf, keyFor, show as comboText } from './shortcuts.ts';
+import type { Action } from './shortcuts.ts';
+import Rail from './Rail.tsx';
+import { AccountArea } from './SidebarShell.tsx';
+import type { Page } from './Rail.tsx';
+import {
+  AddProjectDialog,
+  DeleteSessionDialog,
+  RenameProjectDialog,
+  RenameSessionDialog,
+} from './SessionDialogs.tsx';
+import SettingsPage from './SettingsPage.tsx';
+import type { Section } from './SettingsPage.tsx';
+import Sidebar from './Sidebar.tsx';
+import OpenProjectDialog from './OpenProjectDialog.tsx';
+import { useSshTargets } from './useSshTargets.ts';
+import {
+  deviceLabel,
+  newTerminalPermission,
+  projectPreferenceKey,
+  terminalChoices,
+} from './developmentProjects.ts';
+import TitleBar from './TitleBar.tsx';
+import Presence, { useColumnsGliding, useLeaving } from './Presence.tsx';
+import type { BarMenu } from './TitleBar.tsx';
+import { Button, IconButton, Menu, Modal } from './ui.tsx';
+import type { MenuItem, MenuPosition } from './ui.tsx';
+import { managedUpdateNotice, useManagedUpdate } from './managed-update.ts';
+import ManagedUpdateDialog from './ManagedUpdateDialog.tsx';
+import { FollowUps } from './followUps.ts';
+import FollowUpQueue from './FollowUpQueue.tsx';
+import { inputHistory } from './inputHistory.ts';
+import PreviewSidebar from './PreviewSidebar.tsx';
+import { previewSpan, usePreviewWorkspace } from './preview.ts';
+
+import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
+
+const NativeTerminal = lazy(() => import('./TerminalWindow.tsx'));
+// The notes of every version so far are read only when asked for, and stay out of what the window starts with.
+const ReleaseNotes = lazy(() => import('./ReleaseNotes.tsx'));
+
+// Where the window is: a page, the settings section when that page is open, and the session being read.
+type Place = { page: Page; section: Section; sessionId: string | null };
+type TerminalConfiguration = Pick<Session, 'permissionMode' | 'model' | 'effort'>;
+// Which menu is open. Its items are built while rendering, so they follow the state as it changes.
+type OpenMenu = MenuPosition &
+  (
+    | { kind: 'session'; sessionId: string }
+    | { kind: 'project'; path: string; deviceId?: string }
+    | { kind: 'move'; sessionId: string }
+    | { kind: 'settings' }
+    | { kind: 'update' }
+    | { kind: 'bar'; label: string }
+  );
+// A window too narrow for the side column and the room the page keeps folds the column away; opened, it is then
+// laid over the page.
+const overlaid = (sidebarWidth: number) => innerWidth < sidebarWidth + pageMinWidth;
+// The computer's projects, which the windows of its connections share (see shared.ts).
+function savedProjects(value: unknown = shared('projects')): string[] {
+  try {
+    value ??= JSON.parse(localStorage.getItem('proxy-projects') ?? '[]');
+    return Array.isArray(value)
+      ? value.filter((item): item is string => typeof item === 'string')
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+// Owns the connection, the selection and every request; the components below render and report user intent.
+export function App({
+  browser,
+}: { browser?: { selfSigned: boolean; expired: () => void; logout: () => Promise<void> } } = {}) {
+  const host = hostCapabilities(!!browser);
+  const emailLoginAvailable = typeof window.desktop?.access?.login === 'function';
+  const emailOnly = !!window.desktop && !window.desktop.dev;
+  const [client] = useState(() => new ProxyClient());
+  const occupiedSessions = useRef<string[]>([]);
+  const [followUps] = useState(
+    () => new FollowUps(client, (id) => occupiedSessions.current.includes(id)),
+  );
+  const queued = useSyncExternalStore(followUps.subscribe, followUps.getSnapshot);
+  useEffect(() => followUps.start(), [followUps]);
+  useEffect(() => {
+    if (!browser) return;
+    client.connectBrowser(
+      browserSocket(),
+      browser.expired,
+      async () => (await browserSession()).authenticated,
+    );
+    return () => client.disconnect();
+  }, [client, browser?.expired]);
+  const inBrowser = !!browser;
+  useEffect(
+    () => (inBrowser ? watchActivity(() => client.markActive()) : undefined),
+    [client, inBrowser],
+  );
+  const [clock] = useState(() => ({ now: client.serviceNow, activityAt: client.activityAt }));
+  // The version whose notes are shown, over whichever page is up.
+  const [notes, setNotes] = useState<string | null>(null);
+  const notesDialog = (
+    <Presence kind="dialog">
+      {notes ? (
+        <Suspense fallback={null}>
+          <ReleaseNotes version={notes} onClose={() => setNotes(null)} />
+        </Suspense>
+      ) : null}
+    </Presence>
+  );
+  const state = useSyncExternalStore(client.subscribe, client.getSnapshot);
+  const managedUpdate = useManagedUpdate();
+  const [managedUpdateOpen, setManagedUpdateOpen] = useState(false);
+  const [activeWorkspace, setActiveWorkspace] = useState<string | null>(null);
+  const [form, setForm] = useState<ConnectionForm>(() => ({
+    authMethod: emailOnly || emailLoginAvailable ? 'email' : 'manual',
+    url: emailOnly ? '' : (localStorage.getItem('proxy-url') ?? 'ws://127.0.0.1:8787/ws'),
+    token: '',
+    fingerprint: '',
+    mode: window.desktop ? 'remote' : 'local',
+    remember: false,
+    autoLogin: false,
+  }));
+  const changeForm = useCallback(
+    (values: Partial<ConnectionForm>) => setForm((current) => ({ ...current, ...values })),
+    [],
+  );
+  const [proxyConnecting, setProxyConnecting] = useState(false);
+  const [loginWorkspaces, setLoginWorkspaces] = useState<{ id: string; name: string }[] | null>(
+    null,
+  );
+  const [error, setError] = useState<string | RequestInterruptedError | null>(null);
+  // One request at a time from this window; `refreshing` is the slower native status read.
+  const [busy, setBusy] = useState(false);
+  const [serverUpgradeWorking, setServerUpgradeWorking] = useState(false);
+  const [serverUpgradeRequested, setServerUpgradeRequested] = useState(false);
+  const [serverUpgradeOpen, setServerUpgradeOpen] = useState(false);
+  const serverUpgradeWasOpen = useRef(false);
+  useEffect(() => {
+    // The settings control that opened maintenance was unmounted on disconnect.
+    if (serverUpgradeWasOpen.current && !serverUpgradeOpen)
+      document.querySelector<HTMLInputElement>('.login-card input[type="url"]')?.focus();
+    serverUpgradeWasOpen.current = serverUpgradeOpen;
+  }, [serverUpgradeOpen]);
+  const serverUpgradeChecked = useCallback(() => setServerUpgradeRequested(false), []);
+  const [refreshing, setRefreshing] = useState(false);
+  const statusReading = useRef(false);
+  const [findRequest, setFindRequest] = useState(0);
+  // Which of this computer's settings is open on the login page.
+  const [localSettings, setLocalSettings] = useState<Section | null>(null);
+  useEffect(() => {
+    if (state.status !== 'disconnected' && state.status !== 'connecting') setLocalSettings(null);
+  }, [state.status]);
+  const refreshed = useRef(new Set<string>());
+  const [projects, setProjects] = useState(savedProjects);
+  // The folders that hold sessions without a project; new ones are made in the first.
+  const [workspaceRoots, setWorkspaceRoots] = useState<string[]>([]);
+  const [drafts, setDraft, attachmentDrafts, setAttachments, quoteDrafts, setQuotes, draftsReady] =
+    useDrafts();
+  const [focusDraftSession, setFocusDraftSession] = useState<string | null>(null);
+  const [scenario, setScenario] = useState<Scenario>('chat');
+  const [slashOpen, setSlashOpen] = useState(false);
+  // The side column is shown beside the page on a wide window and laid over it on a narrow one: narrower than
+  // the column and the 600px the page keeps (spec §4.3, §6.6).
+  const [overlay, setOverlay] = useState(() => overlaid(getPrefs().sidebarWidth));
+  const overlayNow = useRef(overlay);
+  const [sideOpen, setSideOpen] = useState(() => !overlayNow.current);
+  const closeSide = useCallback(() => {
+    if (overlayNow.current) setSideOpen(false);
+  }, []);
+  // The column laid over the page is put away like a drawer: by Esc or its shade, and the focus goes back to the
+  // button that opens it again instead of falling to the page.
+  const putAwaySide = useCallback(() => {
+    setSideOpen(false);
+    requestAnimationFrame(() => {
+      const open = [
+        ...document.querySelectorAll<HTMLElement>('button[aria-label="展开会话列表"]'),
+      ].find((button) => button.getClientRects().length > 0 && !button.closest('[inert]'));
+      open?.focus({ preventScroll: true });
+    });
+  }, []);
+  // Asked to open the conversations' search (the shortcut, the folded column); the side column says when it has.
+  const [searchAsked, setSearchAsked] = useState(false);
+  const searchDone = useCallback(() => setSearchAsked(false), []);
+  // Crossing between the two layouts starts from each one's usual state: open beside the page, folded over it.
+  useEffect(() => {
+    if (!overlay || !sideOpen) return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return;
+      // Menus, dialogs and the column's own search field answer Esc first.
+      const target = event.target instanceof Element ? event.target : null;
+      if (target?.closest('input, textarea, [role="menu"], dialog')) return;
+      if (document.querySelector('dialog[open], .menu')) return;
+      event.preventDefault();
+      putAwaySide();
+    };
+    // Captured before the double-Esc stop shortcut, which leaves a prevented key alone.
+    window.addEventListener('keydown', escape, true);
+    return () => window.removeEventListener('keydown', escape, true);
+  }, [overlay, sideOpen, putAwaySide]);
+  const sidebarWidth = usePrefs().sidebarWidth;
+  useEffect(() => {
+    const follow = () => {
+      const next = overlaid(sidebarWidth);
+      if (next === overlayNow.current) return;
+      overlayNow.current = next;
+      setOverlay(next);
+      setSideOpen(!next);
+    };
+    follow();
+    window.addEventListener('resize', follow);
+    return () => window.removeEventListener('resize', follow);
+  }, [sidebarWidth]);
+  const [place, setPlace] = useState<Place>({
+    page: 'chat',
+    section: browser ? 'general' : 'account',
+    sessionId: null,
+  });
+  // Places visited, for the title bar's way back and forward.
+  const trail = useRef<{ places: Place[]; at: number }>({ places: [place], at: 0 });
+  const navigation = useRef(0);
+  const [, setTrailAt] = useState(0);
+  const accountOpen = place.page === 'settings' && place.section === 'account';
+  const prefs = usePrefs();
+  const sshTargets = useSshTargets();
+  const projectScope = activeWorkspace ?? form.url;
+  const [version, setVersion] = useState('');
+  useEffect(() => {
+    void window.desktop?.version().then(setVersion);
+  }, []);
+  const [terminalSessionId, setTerminalSessionId] = useState<string | null>(null);
+  const [terminalsActive, setTerminalsActive] = useState(false);
+  const [terminalSessions, setTerminalSessions] = useState<string[]>([]);
+  const readingPositions = useRef(new Map<string, { top: number; following: boolean }>());
+  const remoteCreations = useRef(new Map<string, string>());
+  const localCreations = useRef(new Map<string, string>());
+  // Retries must keep the original settings, not inherit the unfinished session they created.
+  const terminalConfigurations = useRef(new Map<string, TerminalConfiguration>());
+  const trackTerminalSessions = useCallback((ids: string[]) => {
+    occupiedSessions.current = ids;
+    for (const id of ids) followUps.pause(id, '此会话正在终端中使用，确认结束后继续排队');
+    setTerminalSessions((previous) => (previous.join('\n') === ids.join('\n') ? previous : ids));
+  }, []);
+  const terminalOwns = (id: string) =>
+    occupiedSessions.current.includes(id) ||
+    client.state.sessions.find((session) => session.id === id)?.activeRun?.surface === 'terminal';
+  const terminalWorkspace = useRef<TerminalWorkspaceHandle | null>(null);
+  const registerTerminalWorkspace = useCallback((handle: TerminalWorkspaceHandle | null) => {
+    terminalWorkspace.current = handle;
+  }, []);
+  const closeTerminal = useCallback(() => {
+    setTerminalSessionId(null);
+    setTerminalsActive(false);
+    trackTerminalSessions([]);
+  }, [trackTerminalSessions]);
+  const showTerminal = (id: string) => {
+    const session = client.state.sessions.find((item) => item.id === id);
+    if (!session || (session.activeRun && session.activeRun.surface !== 'terminal')) {
+      setError('此会话正在图形界面中运行，结束后再打开终端。');
+      return;
+    }
+    if (terminalWorkspace.current) {
+      terminalWorkspace.current.show(id);
+      return;
+    }
+    trackTerminalSessions([id]);
+    setTerminalsActive(true);
+    setTerminalSessionId(id);
+  };
+  const [menu, setMenu] = useState<OpenMenu | null>(null);
+  const closeMenu = useCallback(() => setMenu(null), []);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [openProjectTarget, setOpenProjectTarget] = useState<{
+    deviceId?: string;
+    path?: string;
+    forceNew?: boolean;
+    fromHome?: boolean;
+    terminal?: boolean;
+    source?: Session;
+    error?: string;
+    opened?: { sessionId: string; created: boolean };
+    creationId?: string;
+  } | null>(null);
+  const [removeProjectTarget, setRemoveProjectTarget] = useState<{
+    path: string;
+    deviceId?: string;
+    key: string;
+  } | null>(null);
+  const [remoteRename, setRemoteRename] = useState<{ deviceId: string; path: string } | null>(null);
+  const [deleteSession, setDeleteSession] = useState<Session | null>(null);
+  const [renameSession, setRenameSession] = useState<Session | null>(null);
+  const [renameProject, setRenameProject] = useState<string | null>(null);
+  const [repointProject, setRepointProject] = useState<string | null>(null);
+
+  const nativeMode = state.adapter === 'claude-code';
+  const connected = state.status === 'connected';
+  const selfSigned = !!browser && (state.browser?.selfSigned ?? browser.selfSigned);
+  const othersBusy = useShared('busy');
+  const selected = state.sessions.find((session) => session.id === state.selectedId);
+  // What is listed and managed here is what is on this computer. Sessions on the user's other computers are
+  // shown apart: they can be read, worked on from here while their computer is connected, and taken over or
+  // forked into a directory here.
+  // Sessions from before computers were told apart name none, and would be listed on every one of the user's
+  // computers. Their folders are looked for here; a session whose folder is not here goes with the other
+  // computers' sessions, from where it can be taken over like any of them.
+  const [absent, setAbsent] = useState<ReadonlySet<string>>(new Set());
+  const unplaced = JSON.stringify(
+    [
+      ...new Set(
+        state.sessions.filter((session) => !session.device).map((session) => session.projectPath),
+      ),
+    ].sort(),
+  );
+  useEffect(() => {
+    const folders: string[] = JSON.parse(unplaced);
+    if (!window.desktop || !folders.length) return;
+    let current = true;
+    void window.desktop.foldersExist(folders).then((found) => {
+      if (current) setAbsent(new Set(folders.filter((_, index) => !found[index]).map(pathKey)));
+    });
+    return () => {
+      current = false;
+    };
+  }, [unplaced]);
+  const onThis = (session: Session) => !browser && isHere(session, state.device, absent);
+  const sessions = state.sessions.filter((session) => onThis(session));
+  const elsewhere = state.sessions.filter((session) => !onThis(session));
+  const away = !!selected && !onThis(selected);
+  const selectedTerminal =
+    !!selected &&
+    (terminalSessions.includes(selected.id) || selected.activeRun?.surface === 'terminal');
+  const preview = usePreviewWorkspace(
+    state.status === 'disconnected' ? null : (activeWorkspace ?? form.url),
+    selected ? `${selected.device?.id ?? ''}:${selected.id}` : undefined,
+    'main',
+    state.sessions
+      .map((session) => `${session.device?.id ?? ''}:${session.id}`)
+      .sort()
+      .join('\n'),
+  );
+  const previewAvailable = !!window.desktop?.preview && !!selected && onThis(selected);
+  const sidebarAvailable =
+    previewAvailable || (!!selected && preview.tabs.some((tab) => tab.kind === 'chat'));
+  const previewShown = sidebarAvailable && preview.expanded && place.page === 'chat';
+  // Put away, the preview slides out before it goes (style.css, .preview-sidebar[data-leaving]).
+  const previewLeaving = useLeaving(previewShown);
+  // The tree, when shown, is a column of its own beside the panes (previewLayout.ts).
+  const previewWidth = previewSpan(
+    preview.width,
+    preview.tree && previewAvailable && !!selected?.projectPath,
+  );
+  // Opening or closing the side column or the preview glides the columns; the window's size moves them at once.
+  useColumnsGliding(`${sideOpen} ${previewShown} ${previewWidth}`);
+  // Another computer's session is worked on from here while that computer is connected and its commands
+  // reach it: what is sent here runs there, as if sent there.
+  const reachable = (session: Session) =>
+    state.devices.some((device) => device.id === session.device?.id && device.ready);
+  const remote = away && reachable(selected);
+  // Two connections may have Claude working in one folder at once, each unaware of the other. A window tells
+  // the others what it has running, and says so when another's session works where the shown one does. A
+  // session this window lists too is the same service's and no other.
+  const running = JSON.stringify(
+    connected
+      ? sessions
+          .filter((session) => session.activeRun)
+          .map((session) => ({ id: session.id, folder: session.projectPath }))
+      : [],
+  );
+  useEffect(() => {
+    void window.desktop?.setBusy(JSON.parse(running));
+  }, [running]);
+  const overlaps = (one: string, other: string) =>
+    pathKey(one) === pathKey(other) || isInside(one, [other]) || isInside(other, [one]);
+  const beside =
+    selected && !away
+      ? othersBusy
+          .filter((entry) =>
+            entry.runs.some(
+              (run) =>
+                !state.sessions.some((session) => session.id === run.id) &&
+                overlaps(run.folder, selected.projectPath),
+            ),
+          )
+          .map((entry) => `“${entry.name}”`)
+      : [];
+  const recorded = selected ? state.events[selected.id] : undefined;
+  const unfinished = selected ? state.live[selected.id] : undefined;
+  const events = useMemo(
+    () => (selected ? client.shown(selected.id) : []),
+    // What is shown changes with these two.
+    [selected?.id, recorded, unfinished],
+  );
+  const history = selected ? state.history[selected.id] : undefined;
+  const queuedInputs = selected ? queued.items[selected.id] : undefined;
+  const recalledInputs = useMemo(() => inputHistory(events, queuedInputs), [events, queuedInputs]);
+  // A session nothing has been said in yet, and the home page with none open, show the new-session layout: the
+  // greeting and the input box together in the upper middle of the page (spec §4.2, §5.10).
+  const blank = useMemo(() => isBlank(events), [events]);
+  const fresh = selected
+    ? !selected.activeRun &&
+      history?.loaded === true &&
+      !history.loading &&
+      !history.hasEarlier &&
+      blank
+    : true;
+  const nativeSession = latest(events, 'native.session');
+  // Each turn's report is a reason to ask for the session's figures again.
+  const turnReports = useMemo(
+    () => events.filter((event) => event.payload.type === 'turn.stats').length,
+    [events],
+  );
+  const capabilities: NativeCapabilities | null =
+    latest(events, 'native.capabilities') ?? state.capabilities;
+  const metrics = latest(events, 'native.metrics');
+  // Quota belongs to the account, so the newest reading from any session wins over the selected session's.
+  const quota = [metrics, state.metrics]
+    .filter((item) => !!item?.rateLimits)
+    .sort((a, b) =>
+      (b!.rateLimits!.measuredAt ?? '').localeCompare(a!.rateLimits!.measuredAt ?? ''),
+    )[0];
+  const accountMetrics =
+    (metrics ?? state.metrics) && quota
+      ? { ...(metrics ?? state.metrics)!, rateLimits: quota.rateLimits }
+      : (metrics ?? state.metrics);
+  const canCompact = !!latest(events, 'native.context')?.persisted;
+  // Chat runs hold shared CLI state; a terminal holds only its own native session.
+  const anyTerminal =
+    terminalsActive || state.sessions.some((session) => session.activeRun?.surface === 'terminal');
+  const anyChat = state.sessions.some(
+    (session) => session.activeRun && session.activeRun.surface !== 'terminal',
+  );
+  const updateBlocked =
+    serverUpgradeWorking ||
+    state.status !== 'disconnected' ||
+    proxyConnecting ||
+    busy ||
+    refreshing ||
+    terminalsActive ||
+    state.sessions.some((session) => !!session.activeRun);
+  const managedNotice = managedUpdateNotice(managedUpdate);
+  const loginUpdateButton = managedNotice && (
+    <button
+      type="button"
+      className="icon-button login-update-button"
+      title={managedNotice}
+      aria-label="更新"
+      aria-haspopup="dialog"
+      onClick={() => setManagedUpdateOpen(true)}
+    >
+      <Download />
+    </button>
+  );
+  const managedUpdateDialog = (
+    <Presence kind="dialog">
+      {managedUpdateOpen && (
+        <ManagedUpdateDialog
+          server={
+            activeWorkspace && window.desktop?.managedServer
+              ? {
+                  version: state.service,
+                  disabled:
+                    busy ||
+                    refreshing ||
+                    terminalsActive ||
+                    proxyConnecting ||
+                    state.sessions.some((session) => !!session.activeRun),
+                  open: openServerUpgrade,
+                }
+              : undefined
+          }
+          state={managedUpdate}
+          blocked={updateBlocked}
+          connected={connected}
+          canDisconnect={
+            !busy &&
+            !refreshing &&
+            !terminalsActive &&
+            !state.sessions.some((session) => !!session.activeRun)
+          }
+          disconnect={() => void disconnect('update')}
+          onClose={() => setManagedUpdateOpen(false)}
+        />
+      )}
+    </Presence>
+  );
+  const clientUpgradeDialog = (
+    <Presence kind="dialog">
+      {state.clientUpgrade && (
+        <ClientUpgradeDialog
+          requiredProtocol={state.clientUpgrade.requiredProtocol}
+          onClose={() => client.update({ clientUpgrade: null, error: null })}
+        />
+      )}
+    </Presence>
+  );
+  useEffect(() => {
+    const report = () => {
+      void window.desktop?.managedUpdate?.activity({ blocked: updateBlocked }).catch(() => {});
+    };
+    report();
+    const timer = setInterval(report, 2000);
+    return () => clearInterval(timer);
+  }, [updateBlocked]);
+  const controlsDisabled =
+    !connected ||
+    busy ||
+    refreshing ||
+    !!selected?.activeRun ||
+    !!history?.loading ||
+    selectedTerminal;
+  // A run is that of the computer its session is on, whichever window of whichever computer started it; any
+  // of them answers and stops it while that computer can be reached.
+  const ownsRun = !!selected?.activeRun && (!away || remote);
+  // A native run accepts follow-up messages from wherever it can be worked on.
+  const inputDisabled =
+    !connected ||
+    selectedTerminal ||
+    busy ||
+    !!history?.loading ||
+    (!!selected?.activeRun && (!nativeMode || !ownsRun)) ||
+    refreshing;
+  const draft = selected ? (drafts[selected.id] ?? '') : '';
+  // The last turn of the session did not reach its end: it can be taken up again from the message box.
+  const lastStatus = selected
+    ? state.events[selected.id]?.findLast((event) => event.payload.type === 'run.status')?.payload
+    : undefined;
+  const stopped =
+    !!selected &&
+    !selected.activeRun &&
+    (!away || remote) &&
+    lastStatus?.type === 'run.status' &&
+    lastStatus.surface !== 'terminal' &&
+    (lastStatus.status === 'cancelled' || lastStatus.status === 'failed');
+  const signedOut = state.account?.loggedIn === false;
+  const actionError = error instanceof RequestInterruptedError ? error.describe(connected) : error;
+  const currentError = state.clientUpgrade ? null : (actionError ?? state.error);
+  // Offered when the service holds a newer installer than the running client.
+  const upgrade =
+    selfUpdating && version && state.release && isNewer(state.release, version)
+      ? state.release
+      : null;
+  // The service refused this client as the older one: its version can also be fetched from the release page,
+  // whether or not the service holds the installer.
+  const direct =
+    selfUpdating &&
+    state.mismatch &&
+    window.desktop &&
+    version &&
+    state.service &&
+    isNewer(state.service, version)
+      ? state.service
+      : null;
+  // Managed builds do not fetch release notes or offer upgrades for a mismatched service.
+  const ahead =
+    selfUpdating && state.mismatch && version && state.service && isNewer(state.service, version)
+      ? state.service
+      : null;
+  // How far an installer being fetched from the release page is, from 0 to 1.
+  const [downloaded, setDownloaded] = useState<number | null>(null);
+  useEffect(
+    () =>
+      window.desktop?.onUpdateProgress(({ received, size }) =>
+        setDownloaded(size ? received / size : 0),
+      ),
+    [],
+  );
+  const install = (version?: string) => {
+    void act(async () => {
+      try {
+        await window.desktop!.installUpdate(version);
+      } finally {
+        setDownloaded(null);
+      }
+    });
+  };
+
+  // A check or an upgrade of the service that failed says why.
+  const update = state.update;
+  useEffect(() => {
+    if (update?.state === 'failed' && update.detail) setError(update.detail);
+  }, [update]);
+  const serviceUpdate =
+    !nativeMode || !selfUpdating
+      ? null
+      : update?.state === 'available'
+        ? {
+            label: `升级服务端到 ${update.latest}`,
+            icon: <Download />,
+            disabled: busy || state.sessions.some((item) => !!item.activeRun),
+            run: () => {
+              if (
+                window.confirm(
+                  `服务端将升级到 ${update.latest} 并重启，需要几分钟，期间不能发送消息；重启后需重新连接。继续？`,
+                )
+              )
+                void act(async () => {
+                  await client.request({ type: 'service.update.install', version: update.latest! });
+                });
+            },
+          }
+        : update?.state === 'manual'
+          ? {
+              label: `服务端 ${update.latest} 需在服务器上升级`,
+              icon: <Download />,
+              disabled: true,
+              run: () => undefined,
+            }
+          : update?.state === 'installing' || update?.state === 'restarting'
+            ? {
+                label: `服务端升级中：${update.detail ?? '重启'}`,
+                icon: <RefreshCw />,
+                disabled: true,
+                run: () => undefined,
+              }
+            : {
+                label:
+                  update?.state === 'checking'
+                    ? '正在检查更新…'
+                    : update?.state === 'idle' && update.checkedAt
+                      ? `已是最新 ${state.service} · 再次检查`
+                      : '检查更新',
+                icon: <RefreshCw />,
+                disabled: busy || update?.state === 'checking',
+                run: () => {
+                  void act(async () => {
+                    await client.request({ type: 'service.update.check' });
+                  });
+                },
+              };
+
+  // A saved sign-in fills the form once per launch and, when asked, connects without a click.
+  const loaded = useRef(false);
+  const loginInteracted = useRef(false);
+  useEffect(() => {
+    if (loaded.current) return;
+    loaded.current = true;
+    if (emailOnly) localStorage.removeItem('proxy-url');
+    void Promise.all([
+      emailOnly ? null : window.desktop?.loadLogin(),
+      emailLoginAvailable ? window.desktop!.access.load() : null,
+    ])
+      .then(([saved, account]) => {
+        // A delayed disk/IPC read must never replace a sign-in the user has already started.
+        if (loginInteracted.current) return;
+        if (account) {
+          const restored: ConnectionForm = {
+            ...form,
+            ...account,
+            password: '',
+            authMethod: 'email',
+          };
+          setForm(restored);
+          if (restored.autoLogin) void login(restored);
+          return;
+        }
+        if (emailOnly || !saved) return;
+        // The installed client has no simulation mode, whatever an earlier version saved.
+        const restored = {
+          ...saved,
+          authMethod: 'manual' as const,
+          mode: window.desktop!.dev ? saved.mode : ('remote' as const),
+        };
+        setForm(restored);
+        if (restored.autoLogin) void login(restored);
+      })
+      .catch((error: unknown) => {
+        if (!loginInteracted.current)
+          setError(
+            `无法读取已保存的登录，请重新输入邮箱和密码。${error instanceof Error ? `\n${error.message}` : ''}`,
+          );
+      });
+  }, []);
+  useEffect(() => {
+    if (connected && form.authMethod !== 'email') void window.desktop?.saveLogin(form);
+  }, [connected, form.remember, form.autoLogin]);
+  useEffect(() => {
+    const close = () => client.disconnect();
+    // The system says the network is back: the attempt that was waiting for its turn is made now.
+    const retry = () => client.retryNow();
+    window.addEventListener('beforeunload', close);
+    window.addEventListener('online', retry);
+    return () => {
+      window.removeEventListener('beforeunload', close);
+      window.removeEventListener('online', retry);
+      client.disconnect();
+    };
+  }, [client, changeForm]);
+  // A connection that breaks is made again by the client, and the window stays where it is. It comes back to
+  // the sign-in page only when the connection is over for good: ended here, or refused by the service.
+  const signedIn = useRef(false);
+  useEffect(
+    () =>
+      window.desktop?.access?.onExpired?.((message) => {
+        loginInteracted.current = true;
+        signedIn.current = false;
+        client.disconnect();
+        setLoginWorkspaces(null);
+        setActiveWorkspace(null);
+        setServerUpgradeOpen(false);
+        setServerUpgradeRequested(false);
+        setProxyConnecting(false);
+        changeForm({ password: '', token: '', remember: false, autoLogin: false });
+        setError(message);
+      }),
+    [client, changeForm],
+  );
+  useEffect(() => {
+    if (state.status === 'connected' || state.status === 'reconnecting') {
+      signedIn.current = true;
+      return;
+    }
+    if (state.status !== 'disconnected' || !signedIn.current) return;
+    signedIn.current = false;
+    void window.desktop?.disconnectProxy();
+    setForm((current) => (current.remember ? current : { ...current, token: '' }));
+    if (client.state.error)
+      notifications.push({
+        kind: 'connection',
+        title: '连接中断',
+        body: client.state.error.split('\n')[0],
+      });
+  }, [state.status]);
+  useEffect(() => {
+    if (!connected) {
+      setMenu(null);
+    }
+  }, [connected]);
+  useEffect(() => {
+    if (connected) void window.desktop?.workspaceRoots().then(setWorkspaceRoots);
+  }, [connected]);
+  useEffect(() => {
+    localStorage.setItem('proxy-projects', JSON.stringify(projects));
+    saveShared('projects', projects);
+  }, [projects]);
+  useEffect(
+    () =>
+      onSharedChange('projects', (value) => {
+        const next = savedProjects(value);
+        setProjects((current) =>
+          JSON.stringify(current) === JSON.stringify(next) ? current : next,
+        );
+      }),
+    [],
+  );
+  // Each session's native state is read once when it is first shown idle.
+  useEffect(() => {
+    if (
+      !nativeMode ||
+      !selected ||
+      !connected ||
+      history?.loading ||
+      selected.activeRun ||
+      refreshing ||
+      anyTerminal ||
+      anyChat ||
+      refreshed.current.has(selected.id)
+    )
+      return;
+    refreshed.current.add(selected.id);
+    void refreshStatus(selected.id);
+  }, [
+    nativeMode,
+    selected?.id,
+    connected,
+    history?.loading,
+    selected?.activeRun,
+    refreshing,
+    anyChat,
+    anyTerminal,
+  ]);
+  useEffect(() => {
+    if (nativeMode && connected) void client.request({ type: 'account.status' }).catch(() => {});
+  }, [nativeMode, connected, accountOpen]);
+  useEffect(() => {
+    if (nativeMode && connected)
+      void client.request({ type: 'quota.watch', active: prefs.quotaReads }).catch(() => {});
+  }, [nativeMode, connected, prefs.quotaReads]);
+  useEffect(() => {
+    if (
+      !accountOpen ||
+      !nativeMode ||
+      !connected ||
+      state.capabilities ||
+      state.account?.loggedIn !== true ||
+      refreshing ||
+      anyChat
+    )
+      return;
+    void refreshStatus();
+  }, [accountOpen, nativeMode, connected, state.capabilities, state.account?.loggedIn, anyChat]);
+
+  async function act(action: () => Promise<void>) {
+    setError(null);
+    setBusy(true);
+    try {
+      await action();
+    } catch (error) {
+      setError(
+        error instanceof RequestInterruptedError
+          ? error
+          : error instanceof Error
+            ? error.message
+            : '操作失败。',
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+  // Remote mode connects through the main process, which opens the tunnel and returns a loopback address.
+  async function login(form: ConnectionForm) {
+    loginInteracted.current = true;
+    setError(null);
+    try {
+      if (emailOnly && !emailLoginAvailable)
+        throw new Error('邮箱登录组件不可用，请重新安装最新客户端。');
+      if (form.authMethod === 'email' && window.desktop?.access) {
+        setProxyConnecting(true);
+        const account = await window.desktop.access.login({
+          email: form.email ?? '',
+          password: form.password ?? '',
+          remember: form.remember,
+          autoLogin: form.autoLogin,
+        });
+        changeForm({ email: account.email, password: '', token: '' });
+        if (account.workspaces.length !== 1) setLoginWorkspaces(account.workspaces);
+        else await connectWorkspace(account.workspaces[0]!.id);
+        return;
+      }
+      if (form.mode === 'remote') {
+        setProxyConnecting(true);
+        // The address here only has to be a loopback one; each attempt gets its own from the bridge it opens.
+        client.connect(
+          'ws://127.0.0.1/ws',
+          form.token,
+          await thisDevice(),
+          true,
+          async () =>
+            (
+              await window.desktop!.connectProxy({
+                url: form.url,
+                fingerprint: form.fingerprint,
+                waits: getPrefs().connection,
+              })
+            ).url,
+        );
+      } else {
+        client.connect(form.url, form.token, await thisDevice());
+      }
+      localStorage.setItem('proxy-url', form.url);
+    } catch (error) {
+      if (form.mode === 'remote') await window.desktop?.disconnectProxy();
+      setError(error instanceof Error ? error.message : '连接失败。');
+    } finally {
+      setProxyConnecting(false);
+    }
+  }
+  async function connectWorkspace(nodeId: string) {
+    if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return;
+    setActiveWorkspace(nodeId);
+    setError(null);
+    setProxyConnecting(true);
+    try {
+      const device = await thisDevice();
+      client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, async () => {
+        const connection = await window.desktop!.access.ticket(nodeId);
+        if ('error' in connection)
+          throw Object.assign(new Error(connection.error), {
+            retryable: connection.retryable,
+            clientUpgrade: connection.clientUpgrade,
+          });
+        const bridge = await window.desktop!.connectProxy({
+          nodeId,
+          url: connection.url,
+          fingerprint: connection.fingerprint,
+          waits: getPrefs().connection,
+        });
+        return { url: bridge.url, token: connection.token };
+      });
+    } catch (error) {
+      setError(error instanceof Error ? error.message : '连接工作空间失败。');
+    } finally {
+      setProxyConnecting(false);
+    }
+  }
+  const stopScope = useRef<HTMLElement>(null);
+  // The input box's slot for approvals and Claude's questions (ApprovalDock.tsx).
+  const [dockSlot, setDockSlot] = useState<HTMLDivElement | null>(null);
+  useStopShortcut(
+    stopScope,
+    `${state.connectionId}:${selected?.id}:${selected?.activeRun?.id}`,
+    place.page === 'chat' &&
+      connected &&
+      !busy &&
+      ownsRun &&
+      !!selected?.activeRun &&
+      selected.activeRun.status !== 'awaiting_approval' &&
+      selected.activeRun.surface !== 'terminal' &&
+      !selectedTerminal,
+    stopRun,
+  );
+  function stopRun() {
+    if (!selected?.activeRun) return;
+    const { id: sessionId, activeRun } = selected;
+    followUps.pause(sessionId);
+    void act(async () => {
+      await client.request({ type: 'run.cancel', sessionId, runId: activeRun.id });
+    });
+  }
+  async function disconnect(reason: 'logout' | 'update' = 'logout') {
+    if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return false;
+    setActiveWorkspace(null);
+    loginInteracted.current = true;
+    setServerUpgradeRequested(false);
+    if (browser) {
+      void act(browser.logout);
+      return true;
+    }
+    client.disconnect();
+    if (form.authMethod === 'email') {
+      setLoginWorkspaces(null);
+      if (reason === 'logout') {
+        changeForm({ password: '', remember: false, autoLogin: false });
+        void window.desktop?.access.logout().catch((error) => setError(error.message));
+      } else changeForm({ password: '', token: '' });
+    }
+    setForm((current) => (current.remember ? current : { ...current, token: '' }));
+    void window.desktop?.disconnectProxy();
+    return true;
+  }
+  async function leaveEmailLogin() {
+    if (!(await disconnect())) return;
+    setError(null);
+    changeForm({ authMethod: 'email', password: '', token: '' });
+  }
+  function openServerUpgrade() {
+    if (
+      connected &&
+      !window.confirm(
+        '检查服务端更新需要先断开当前连接。请结束任务并关闭其他 CC 连接；升级完成后手动连接。继续？',
+      )
+    )
+      return;
+    void act(async () => {
+      if (terminalWorkspace.current && !(await terminalWorkspace.current.closeAll())) return;
+      setManagedUpdateOpen(false);
+      // Keep credentials only in this window for the upgrade. Ordinary disconnect still clears
+      // unremembered credentials; no additional login information is saved to disk here.
+      signedIn.current = false;
+      setServerUpgradeRequested(true);
+      setServerUpgradeOpen(true);
+      client.disconnect();
+      setLocalSettings(null);
+      await window.desktop!.disconnectProxy();
+    });
+  }
+  // Moves the window to a place and remembers it; going back or forward revisits without adding to the trail.
+  function visit(next: Place, record = true) {
+    navigation.current++;
+    setFocusDraftSession(null);
+    if (next.sessionId && next.sessionId !== client.state.selectedId) client.select(next.sessionId);
+    setPlace(next);
+    closeSide();
+    if (!record) return;
+    const { places, at } = trail.current;
+    const last = places[at];
+    if (
+      last.page === next.page &&
+      last.section === next.section &&
+      last.sessionId === next.sessionId
+    )
+      return;
+    trail.current = { places: [...places.slice(0, at + 1), next].slice(-50), at: 0 };
+    trail.current.at = trail.current.places.length - 1;
+    setTrailAt(trail.current.at);
+  }
+  function step(by: number) {
+    const { places } = trail.current;
+    // Sessions deleted since are passed over.
+    for (let at = trail.current.at + by; at >= 0 && at < places.length; at += by) {
+      const target = places[at];
+      if (target.sessionId && !state.sessions.some((item) => item.id === target.sessionId))
+        continue;
+      trail.current.at = at;
+      setTrailAt(at);
+      visit(target, false);
+      return;
+    }
+  }
+  const stepAvailable = (by: number) => {
+    const { places } = trail.current;
+    for (let at = trail.current.at + by; at >= 0 && at < places.length; at += by)
+      if (!places[at].sessionId || state.sessions.some((item) => item.id === places[at].sessionId))
+        return true;
+    return false;
+  };
+  const show = (sessionId: string) => visit({ ...place, page: 'chat', sessionId });
+  const open = (page: Page, section: Section = place.section) => {
+    if (!host.schedules && page === 'schedules') return;
+    if (!host.nativeSettings && (section === 'claude' || section === 'account'))
+      section = 'general';
+    visit({ page, section, sessionId: client.state.selectedId });
+  };
+  async function refreshStatus(sessionId = selected?.id ?? sessions[0]?.id, quota = false) {
+    if (!sessionId || statusReading.current) return;
+    statusReading.current = true;
+    setRefreshing(true);
+    try {
+      await client.request({ type: 'session.status', sessionId, ...(quota ? { quota } : {}) });
+    } catch (error) {
+      setError(
+        error instanceof RequestInterruptedError
+          ? error
+          : error instanceof Error
+            ? error.message
+            : '原生状态读取失败',
+      );
+    } finally {
+      statusReading.current = false;
+      setRefreshing(false);
+    }
+  }
+  async function createSession(
+    projectPath: string,
+    startedAt = navigation.current,
+    generation = client.state.connectionId,
+    creationId?: string,
+    navigate = true,
+    terminalSource?: Session | null,
+  ) {
+    const key = projectPreferenceKey(projectScope, state.device?.id, projectPath);
+    const requestId = creationId ?? localCreations.current.get(key) ?? crypto.randomUUID();
+    localCreations.current.set(key, requestId);
+    if (terminalSource !== undefined && !terminalConfigurations.current.has(requestId))
+      terminalConfigurations.current.set(requestId, terminalOptions(terminalSource ?? undefined));
+    const response = await client.request(
+      { type: 'session.create', title: '新会话', projectPath },
+      requestId,
+    );
+    if (client.state.connectionId !== generation) return;
+    if (response.sessionId) {
+      if (terminalSource !== undefined) {
+        try {
+          await configureTerminal(response.sessionId, terminalSource ?? undefined, requestId);
+        } catch (error) {
+          if (client.state.connectionId !== generation) return;
+          if (openProjectTarget?.terminal) throw error;
+          setOpenProjectTarget({
+            path: projectPath,
+            forceNew: true,
+            terminal: true,
+            source: terminalSource ?? undefined,
+            creationId: requestId,
+            error: error instanceof Error ? error.message : '终端配置失败',
+          });
+          return;
+        }
+      } else await initializeSession(response.sessionId, false);
+      if (navigate && navigation.current === startedAt && client.state.connectionId === generation)
+        show(response.sessionId);
+    }
+    if (client.state.connectionId !== generation) return;
+    localCreations.current.delete(key);
+    terminalConfigurations.current.delete(requestId);
+    return response.sessionId;
+  }
+  function terminalOptions(source?: Session): TerminalConfiguration {
+    return {
+      permissionMode: source?.permissionMode ?? newTerminalPermission,
+      ...(source
+        ? { model: source.model, effort: source.effort }
+        : sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models)),
+    };
+  }
+  async function configureTerminal(sessionId: string, source?: Session, creationId?: string) {
+    const configuration = creationId ? terminalConfigurations.current.get(creationId) : undefined;
+    await client.request({
+      type: 'session.configure',
+      sessionId,
+      ...(configuration ?? terminalOptions(source)),
+    });
+  }
+  function terminalSource(path: string, deviceId = state.device?.id) {
+    return terminalChoices({
+      sessions: state.sessions,
+      targets: sshTargets,
+      localPaths: projects,
+      localDeviceId: state.device?.id,
+      workspaceRoots,
+      scope: projectScope,
+    }).find((choice) => choice.deviceId === deviceId && pathKey(choice.path) === pathKey(path))
+      ?.source;
+  }
+  async function createProjectTerminal(path: string, deviceId?: string) {
+    if (terminalWorkspace.current) {
+      terminalWorkspace.current.create({ deviceId, path });
+      return;
+    }
+    if (deviceId) {
+      const id = await createRemoteProject(deviceId, path, true);
+      if (id) showTerminal(id);
+    } else
+      await act(async () => {
+        const id = await createSession(
+          path,
+          navigation.current,
+          client.state.connectionId,
+          undefined,
+          false,
+          terminalSource(path) ?? null,
+        );
+        if (id) showTerminal(id);
+      });
+  }
+  async function initializeSession(sessionId: string, navigate = true) {
+    const generation = client.state.connectionId;
+    const options = sessionDefaultOptions(getPrefs().sessionDefaults, capabilities?.models);
+    if (options.model || options.effort) {
+      try {
+        await client.request({
+          type: 'session.configure',
+          sessionId,
+          permissionMode:
+            client.state.sessions.find((session) => session.id === sessionId)?.permissionMode ??
+            'default',
+          ...options,
+        });
+      } catch (error) {
+        // Creation succeeded: keep its workspace even if applying defaults fails.
+        setError(
+          `新会话已创建，但默认模型与推理强度未能应用，请在会话中重新选择。${error instanceof Error ? error.message : ''}`,
+        );
+      }
+    }
+    if (navigate && client.state.connectionId === generation) show(sessionId);
+  }
+  async function createInProject(path: string) {
+    let created: string | undefined;
+    await act(async () => {
+      created = await createSession(path);
+    });
+    return created;
+  }
+  async function createRemoteProject(
+    deviceId: string,
+    path: string,
+    terminal = false,
+  ): Promise<string | undefined> {
+    const target = sshTargets.find((entry) => entry.id === deviceId && entry.available);
+    if (!target) {
+      setError('此 SSH 项目不属于当前工作空间。');
+      return;
+    }
+    const key = projectPreferenceKey(projectScope, deviceId, path);
+    const creationId = remoteCreations.current.get(key) ?? crypto.randomUUID();
+    remoteCreations.current.set(key, creationId);
+    const source = terminal ? terminalSource(path, deviceId) : undefined;
+    if (terminal && !terminalConfigurations.current.has(creationId))
+      terminalConfigurations.current.set(creationId, terminalOptions(source));
+    if (target.status !== 'connected') {
+      setOpenProjectTarget({
+        deviceId,
+        path,
+        forceNew: true,
+        creationId,
+        terminal,
+        source,
+      });
+      return;
+    }
+    const startedAt = navigation.current;
+    const generation = client.state.connectionId;
+    let created: string | undefined;
+    await act(async () => {
+      const result = await window.desktop!.ssh!.openProject(deviceId, path, true, creationId);
+      if (client.state.connectionId !== generation) return;
+      const samePlace = navigation.current === startedAt;
+      if (terminal && result.created) {
+        try {
+          await configureTerminal(result.sessionId, source, creationId);
+        } catch (error) {
+          if (client.state.connectionId === generation)
+            setOpenProjectTarget({
+              deviceId,
+              path,
+              forceNew: true,
+              terminal: true,
+              source,
+              creationId,
+              opened: result,
+              error: error instanceof Error ? error.message : '终端配置失败',
+            });
+          return;
+        }
+      } else if (!terminal) await initializeSession(result.sessionId, false);
+      if (client.state.connectionId !== generation) return;
+      remoteCreations.current.delete(key);
+      terminalConfigurations.current.delete(creationId);
+      if (!terminal && samePlace && navigation.current === startedAt) show(result.sessionId);
+      created = result.sessionId;
+    });
+    return created;
+  }
+  async function addProject() {
+    if (window.desktop?.ssh) {
+      setOpenProjectTarget({});
+      return;
+    }
+    if (!window.desktop?.chooseProject) {
+      setCreateOpen(true);
+      return;
+    }
+    await act(async () => {
+      const path = await window.desktop!.chooseProject();
+      if (path) {
+        restoreProject(path);
+        setProjects((value) => withProject(value, path));
+      }
+    });
+  }
+  // The desktop gives an ordinary session a local directory; the browser creates one on the server.
+  // Makes a session where a new one goes, and tells which, once it is made and open.
+  async function newSession(): Promise<string | undefined> {
+    if (!connected || busy || refreshing) return;
+    let created: string | undefined;
+    const startedAt = navigation.current;
+    const generation = client.state.connectionId;
+    if (browser) {
+      await act(async () => {
+        const response = await client.request({ type: 'server.session.create', title: '新会话' });
+        if (response.sessionId) await initializeSession(response.sessionId);
+        created = response.sessionId;
+      });
+      return created;
+    }
+    if (window.desktop) {
+      await act(async () => {
+        const directory = await window.desktop!.createWorkspace();
+        try {
+          created = await createSession(directory, startedAt, generation);
+        } catch (error) {
+          await window.desktop!.removeWorkspace(directory);
+          throw error;
+        }
+      });
+      return created;
+    }
+    const path =
+      (away ? undefined : selected?.projectPath) ?? projects[0] ?? sessions[0]?.projectPath;
+    if (path) return createInProject(path);
+    await addProject();
+  }
+  // The home page is a new session not yet made (spec §5.11): its first message makes it, then goes to it. The
+  // words stay in the box until the session exists, so nothing written is lost if making it fails.
+  const [homeDraft, setHomeDraft] = useState('');
+  async function startSession(text: string) {
+    const sessionId = await newSession();
+    if (!sessionId) return;
+    setHomeDraft('');
+    setFocusDraftSession(sessionId);
+    await act(async () => {
+      await client.request({ type: 'message.send', sessionId, text, scenario });
+    });
+  }
+  // A due task is an ordinary message: to its session once that is idle, or to a session made for it. It is
+  // never queued into a run; only its own target session can hold it up.
+  const notifications = useNotifications(client, () =>
+    place.page === 'chat' ? client.state.selectedId : null,
+  );
+  useEffect(() => window.desktop?.onNotifyClicked((sessionId) => sessionId && show(sessionId)));
+  const schedules = useSchedules(
+    async (task, due) => {
+      const { status, sessions, selectedId, device } = client.state;
+      if (status !== 'connected') return false;
+      let session: Session | undefined;
+      if (task.target.type === 'session') {
+        const { sessionId } = task.target;
+        session = sessions.find((item) => item.id === sessionId);
+        if (!session) throw new Error('目标会话已不存在');
+        if (session.activeRun || terminalOwns(session.id)) return false;
+      } else {
+        const created = await client.request({
+          type: 'session.create',
+          title: task.name,
+          projectPath: task.target.projectPath,
+        });
+        session = client.state.sessions.find((item) => item.id === created.sessionId);
+        if (!session) throw new Error('新会话创建失败');
+        // Creating a session moved the live stream to it; the session being read takes it back.
+        if (selectedId) client.select(selectedId);
+      }
+      if (
+        (task.model && task.model !== session.model) ||
+        (task.effort && task.effort !== session.effort)
+      )
+        await client.request({
+          type: 'session.configure',
+          sessionId: session.id,
+          permissionMode: session.permissionMode,
+          model: task.model ?? session.model,
+          effort: task.effort ?? session.effort,
+        });
+      await client.request({
+        type: 'message.send',
+        sessionId: session.id,
+        text: taskMessage(task, due),
+        scenario: 'chat',
+      });
+      return true;
+    },
+    (task, outcome) =>
+      notifications.push({
+        kind: 'schedule',
+        title: '定时任务未发出',
+        body: `${task.name}：${outcome.text}`,
+      }),
+    host.schedules,
+  );
+  // Where a session of another computer is to be on this one; null when the user gives none.
+  async function placeHere(session: Session) {
+    const path = window.desktop
+      ? await window.desktop.chooseProject()
+      : window.prompt('这台电脑上的项目目录', session.projectPath);
+    return path?.trim() || null;
+  }
+  // Moves a session to a directory chosen here, on this computer, which also takes it over from the computer
+  // it was on: from the next message Claude works there.
+  async function takeOver(session: Session) {
+    if (terminalOwns(session.id) || session.activeRun) return;
+    await act(async () => {
+      const projectPath = await placeHere(session);
+      if (!projectPath) return;
+      await client.request({ type: 'session.move', sessionId: session.id, projectPath });
+      restoreProject(projectPath);
+      setProjects((value) => withProject(value, projectPath));
+    });
+  }
+  // A fork continues from the same context in a session of its own. Forking before a message brings that
+  // message back as a draft, which is how an earlier message is edited and sent again.
+  async function fork(session: Session, before?: { id: string; text: string }) {
+    if (terminalOwns(session.id) || session.activeRun) return;
+    const startedAt = navigation.current;
+    await act(async () => {
+      // The copy of a session that is on another computer needs a directory on this one.
+      const projectPath =
+        onThis(session) || session.device?.viaSsh ? undefined : await placeHere(session);
+      if (projectPath === null) return;
+      const response = session.device?.viaSsh
+        ? {
+            sessionId: await window.desktop!.ssh!.forkSession(
+              session.device.id,
+              session.id,
+              before?.id,
+            ),
+          }
+        : await client.request({
+            type: 'session.fork',
+            sessionId: session.id,
+            ...(before ? { beforeMessageId: before.id } : {}),
+            ...(projectPath ? { projectPath } : {}),
+          });
+      if (!response.sessionId) return;
+      if (before) {
+        const attached = splitAttachmentMessage(before.text);
+        const referenced = splitQuoteMessage(attached.text);
+        setDraft(response.sessionId, referenced.text);
+        setQuotes(response.sessionId, () => referenced.quotes);
+        setAttachments(response.sessionId, () => attached.files);
+      }
+      // A slow fork must not take the reader away from a page they have since chosen.
+      if (navigation.current === startedAt) {
+        show(response.sessionId);
+        if (before) setFocusDraftSession(response.sessionId);
+      }
+    });
+  }
+  async function referenceAnswer(
+    source: Session,
+    messageId: string,
+    text: string,
+    destination: QuoteDestination,
+  ) {
+    try {
+      const reference = makeQuote(source.id, messageId, text);
+      if (destination === 'main') {
+        const existing = quoteDrafts[source.id] ?? [];
+        if (
+          existing.length >= quoteLimit &&
+          !existing.some((q) => q.messageId === messageId && q.text === text)
+        )
+          throw new Error('最多同时引用 8 条内容，请先移除部分引用。');
+        setQuotes(source.id, (current) => appendQuote(current, reference));
+        setFocusDraftSession(source.id);
+        return;
+      }
+      if (client.state.status !== 'connected' || !client.state.sideConversations)
+        throw new Error('当前节点需要更新以支持侧边会话。');
+      const connection = client.state.connectionId;
+      const title = `追问 · ${text.replace(/\s+/g, ' ').slice(0, 28)}`;
+      const response = await client.request({
+        type: 'session.side.create',
+        sessionId: source.id,
+        title,
+      });
+      if (
+        !response.sessionId ||
+        client.state.connectionId !== connection ||
+        client.state.status !== 'connected'
+      )
+        return;
+      setQuotes(response.sessionId, (current) => appendQuote(current, reference));
+      preview.openChat(response.sessionId, title);
+      setFocusDraftSession(response.sessionId);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '无法添加引用。');
+    }
+  }
+  async function send(override?: string, mode = prefs.busyEnter) {
+    const attached = selected ? (attachmentDrafts[selected.id] ?? []) : [];
+    if (override === undefined && attached.some((item) => item.status !== 'ready')) return;
+    const refs = selected ? (quoteDrafts[selected.id] ?? []) : [];
+    if (override === undefined && refs.length && !draft.trim()) return;
+    const text = override ?? attachmentMessage(quoteMessage(draft, refs), attached);
+    if (!selected || !text.trim() || inputDisabled || terminalOwns(selected.id)) return;
+    if (text.trim().length > messageLimit) {
+      setError(`消息过长（含附件），请缩短正文或移除部分附件（最多 ${messageLimit} 字符）。`);
+      return;
+    }
+    const sessionId = selected.id;
+    setSlashOpen(false);
+    await act(async () => {
+      if (selected.activeRun && mode === 'queue') followUps.enqueue(sessionId, text, scenario);
+      else await client.request({ type: 'message.send', sessionId, text, scenario });
+      setDraft(sessionId, '', draft);
+      if (override === undefined) {
+        const sentReferences = new Set(refs.map((quote) => quote.id));
+        setQuotes(sessionId, (current) => current.filter((quote) => !sentReferences.has(quote.id)));
+        const sent = new Set(attached.map((item) => item.id));
+        const sentPaths = new Set(attached.map((item) => item.path));
+        setAttachments(sessionId, (current) =>
+          current.filter((item) => !sent.has(item.id) && !sentPaths.has(item.path)),
+        );
+      }
+    });
+  }
+  // Takes up the last turn, which was stopped or cut off, without the user writing anything.
+  function resume() {
+    if (!selected || inputDisabled || terminalOwns(selected.id)) return;
+    const sessionId = selected.id;
+    void act(async () => {
+      await client.request({ type: 'run.continue', sessionId });
+    });
+  }
+  async function compact() {
+    if (!selected || controlsDisabled || !canCompact) return;
+    setSlashOpen(false);
+    setDraft(selected.id, '');
+    await act(async () => {
+      await client.request({ type: 'session.compact', sessionId: selected.id });
+    });
+  }
+  async function configure(values: {
+    model?: string | null;
+    effort?: Effort | null;
+    permissionMode?: PermissionMode;
+  }) {
+    if (!selected || controlsDisabled || terminalOwns(selected.id)) return;
+    await act(async () => {
+      await client.request({
+        type: 'session.configure',
+        sessionId: selected.id,
+        permissionMode: selected.permissionMode,
+        ...values,
+      });
+    });
+  }
+  function sessionMenu(session: Session): MenuItem[] {
+    const idle = connected && !busy && !terminalOwns(session.id);
+    const pinned = prefs.pinnedSessions.includes(session.id);
+    return [
+      {
+        label: pinned ? '取消置顶' : '置顶',
+        icon: pinned ? <PinOff /> : <Pin />,
+        run: () =>
+          setPrefs((value) => ({
+            ...value,
+            pinnedSessions: toggled(value.pinnedSessions, session.id),
+          })),
+      },
+      {
+        label: '重命名',
+        icon: <Pencil />,
+        disabled: !idle || !!session.activeRun,
+        run: () => {
+          setError(null);
+          closeSide();
+          setRenameSession(session);
+        },
+      },
+      ...(host.localProjects
+        ? [
+            {
+              label: '分叉会话',
+              icon: <GitFork />,
+              disabled: !idle || !!session.activeRun,
+              run: () => {
+                void fork(session);
+              },
+            },
+          ]
+        : []),
+      {
+        label: '导出为 Markdown',
+        icon: <FileDown />,
+        disabled: !connected,
+        run: () => {
+          void act(async () => {
+            await exportSession(client, session);
+          });
+        },
+      },
+      // A session on another computer is taken over first, with a directory here.
+      ...(onThis(session)
+        ? [
+            {
+              label: '移到其他项目…',
+              icon: <FolderSymlink />,
+              disabled: !idle || !!session.activeRun,
+              run: () => {
+                if (menu) setMenu({ ...menu, kind: 'move', sessionId: session.id });
+              },
+            },
+          ]
+        : []),
+      ...(nativeMode
+        ? [
+            {
+              label: '原生终端',
+              icon: <SquareTerminal />,
+              detail: refreshing ? '正在读取会话状态，完成后可打开终端' : undefined,
+              // A terminal takes only its own session; others may be running.
+              disabled:
+                !connected ||
+                busy ||
+                refreshing ||
+                (!!session.activeRun && !terminalOwns(session.id)),
+              run: () => {
+                if (statusReading.current) return;
+                show(session.id);
+                showTerminal(session.id);
+              },
+            },
+            {
+              label: '刷新状态',
+              icon: <RefreshCw />,
+              disabled: !idle || anyChat || anyTerminal || refreshing || !!history?.loading,
+              run: () => {
+                void refreshStatus(session.id);
+              },
+            },
+          ]
+        : []),
+      {
+        label: '删除',
+        icon: <Trash2 />,
+        danger: true,
+        separated: true,
+        disabled: !connected || !!session.activeRun || terminalOwns(session.id),
+        run: () => {
+          setError(null);
+          closeSide();
+          setDeleteSession(session);
+        },
+      },
+    ];
+  }
+  function restoreProject(path: string, deviceId?: string) {
+    const key = projectPreferenceKey(projectScope, deviceId, path);
+    if (getPrefs().hiddenProjects.includes(key))
+      setPrefs((value) => ({
+        ...value,
+        hiddenProjects: value.hiddenProjects.filter((item) => item !== key),
+      }));
+  }
+  function projectMenu(path: string, deviceId?: string): MenuItem[] {
+    const key = projectPreferenceKey(projectScope, deviceId, path);
+    const pinned = prefs.pinnedProjects.includes(key);
+    return [
+      {
+        label: '新建会话',
+        icon: <Plus />,
+        disabled: !connected || busy || refreshing,
+        run: () => {
+          if (deviceId) void createRemoteProject(deviceId, path);
+          else void createInProject(path);
+        },
+      },
+      {
+        label: '新建终端',
+        icon: <SquareTerminal />,
+        disabled: !connected || !nativeMode || busy || refreshing,
+        run: () => {
+          void createProjectTerminal(path, deviceId);
+        },
+      },
+      {
+        label: pinned ? '取消置顶' : '置顶',
+        icon: pinned ? <PinOff /> : <Pin />,
+        run: () =>
+          setPrefs((value) => ({ ...value, pinnedProjects: toggled(value.pinnedProjects, key) })),
+      },
+      {
+        label: '修改显示名称',
+        icon: <Pencil />,
+        run: () => (deviceId ? setRemoteRename({ deviceId, path }) : setRenameProject(path)),
+      },
+      {
+        label: '更改文件夹…',
+        icon: <FolderInput />,
+        disabled:
+          !!deviceId ||
+          !connected ||
+          busy ||
+          state.sessions.some(
+            (session) =>
+              onThis(session) &&
+              pathKey(session.projectPath) === pathKey(path) &&
+              (!!session.activeRun || terminalOwns(session.id)),
+          ),
+        run: () => {
+          if (!window.desktop) return setRepointProject(path);
+          void act(async () => {
+            const chosen = await window.desktop!.chooseProject();
+            if (chosen) await repoint(path, chosen);
+          });
+        },
+      },
+      ...(window.desktop && !deviceId
+        ? [
+            {
+              label: isMac ? '在访达中打开' : '在资源管理器中打开',
+              icon: <FolderOpen />,
+              separated: true,
+              run: () => {
+                void act(() => window.desktop!.openFolder(path));
+              },
+            },
+          ]
+        : []),
+      {
+        label: '移除项目',
+        icon: <Trash2 />,
+        separated: true,
+        run: () => setRemoveProjectTarget({ path, deviceId, key }),
+      },
+    ];
+  }
+  const projectLabel = (path: string) => prefs.projectNames[pathKey(path)] || folderName(path);
+  // The projects of this computer: the ones listed here and the folders its sessions are in.
+  function herePaths() {
+    const paths = [...projects];
+    for (const item of sessions)
+      if (
+        !isInside(item.projectPath, workspaceRoots) &&
+        !paths.some((path) => pathKey(path) === pathKey(item.projectPath))
+      )
+        paths.push(item.projectPath);
+    return paths;
+  }
+  // Every project the session could belong to, the one it is in marked. A session of another computer is in
+  // none of them, also when a folder here has the same path: moving it into one takes it over.
+  function moveMenu(session: Session): MenuItem[] {
+    const here = onThis(session);
+    return [
+      ...herePaths().map((path) => ({
+        label: projectLabel(path),
+        detail: path,
+        checked: here && pathKey(path) === pathKey(session.projectPath),
+        run: () => {
+          if (!here || pathKey(path) !== pathKey(session.projectPath))
+            void act(async () => {
+              await client.request({
+                type: 'session.move',
+                sessionId: session.id,
+                projectPath: path,
+              });
+            });
+        },
+      })),
+      // A folder that is no project yet becomes one with the move.
+      {
+        label: '选择其他文件夹…',
+        icon: <FolderOpen />,
+        separated: true,
+        run: () => {
+          void takeOver(session);
+        },
+      },
+    ];
+  }
+  // Points a project at another folder: the service moves its sessions there with what Claude Code keeps of
+  // the project, and what this computer keeps about it (its place in the list, its name, its pin) follows.
+  async function repoint(from: string, to: string) {
+    const key = pathKey(from);
+    const next = pathKey(to);
+    if (key === next) return;
+    await client.request({ type: 'project.move', from, to });
+    setProjects((value) => [
+      ...new Map(
+        value
+          .map((path) => (pathKey(path) === key ? to : path))
+          .map((path) => [pathKey(path), path]),
+      ).values(),
+    ]);
+    setPrefs((value) => {
+      const projectNames = { ...value.projectNames };
+      if (projectNames[key] && !projectNames[next]) projectNames[next] = projectNames[key];
+      delete projectNames[key];
+      return {
+        ...value,
+        projectNames,
+        hiddenProjects: value.hiddenProjects.filter((item) => item !== next),
+        pinnedProjects: [
+          ...new Set(value.pinnedProjects.map((item) => (item === key ? next : item))),
+        ],
+      };
+    });
+  }
+  const adapterName = nativeMode ? 'Claude Code' : 'Simulation';
+  const accountName = signedOut
+    ? '未登录'
+    : (state.account?.accountNumber ??
+      capabilities?.account.accountNumber ??
+      (nativeMode ? '账号' : '离线模拟'));
+  const upgradeItem: MenuItem | null = upgrade
+    ? {
+        label: `升级客户端到 ${upgrade}`,
+        icon: <Download />,
+        disabled: busy || state.sessions.some((item) => !!item.activeRun),
+        run: () => {
+          void act(() => window.desktop!.installUpdate());
+        },
+      }
+    : null;
+  // What an upgrade would bring is read where the upgrade is offered, before it is taken.
+  const newer =
+    upgrade ??
+    ahead ??
+    (update && ['available', 'manual'].includes(update.state) ? (update.latest ?? null) : null);
+  const updates = [
+    ...(newer
+      ? [
+          {
+            label: `查看 ${newer} 的更新内容`,
+            icon: <ScrollText />,
+            run: () => setNotes(newer),
+          },
+        ]
+      : []),
+    ...(upgradeItem ? [upgradeItem] : []),
+    ...(serviceUpdate ? [serviceUpdate] : []),
+  ];
+  const managedServerUpdate: MenuItem | undefined =
+    window.desktop?.managedServer &&
+    form.mode === 'remote' &&
+    (nativeMode || state.status === 'disconnected')
+      ? {
+          label: '检查服务端更新',
+          icon: <Download />,
+          disabled:
+            (form.authMethod === 'email' && !activeWorkspace) ||
+            (!connected && state.status !== 'disconnected') ||
+            proxyConnecting ||
+            busy ||
+            refreshing ||
+            terminalsActive ||
+            (connected && state.sessions.some((item) => !!item.activeRun)),
+          run: openServerUpgrade,
+        }
+      : undefined;
+  // The update button shows only for an update that exists, not for the standing offer to look for one.
+  const pendingUpdate = upgrade
+    ? `客户端可升级到 ${upgrade}`
+    : update && ['available', 'manual', 'installing', 'restarting'].includes(update.state)
+      ? (serviceUpdate?.label ?? null)
+      : null;
+  const updateLabel = host.serviceManagement ? (managedNotice ?? pendingUpdate) : null;
+  const openUpdate = (position: MenuPosition) =>
+    managedNotice ? setManagedUpdateOpen(true) : setMenu({ kind: 'update', ...position });
+  const openAccount = (position: MenuPosition) => setMenu({ kind: 'settings', ...position });
+  // What a menu shows beside an item that has a shortcut.
+  const hint = (action: Action) =>
+    (prefs.shortcuts.enabled && comboText(keyFor(prefs, action))) || undefined;
+  const settingsMenu: MenuItem[] = [
+    ...(host.accountManagement
+      ? [
+          {
+            // The account as at the column's foot: the S mark, the account number, the plan.
+            label: accountName,
+            name: accountName === '账号' ? '账号' : `账号 ${accountName}`,
+            icon: (
+              <span className="side-avatar menu-avatar">
+                <BrandMark className="account-mark" />
+              </span>
+            ),
+            detail: signedOut
+              ? '请在 Ubuntu 服务端登录 Claude Code'
+              : (state.account?.subscriptionType ??
+                capabilities?.account.subscriptionType ??
+                '账号与额度'),
+            run: () => open('settings', 'account'),
+          },
+        ]
+      : []),
+    {
+      label: '设置',
+      icon: <Settings />,
+      hint: hint('settings'),
+      separated: true,
+      run: () => open('settings', nativeMode && host.nativeSettings ? 'claude' : 'general'),
+    },
+    { label: '帮助', icon: <CircleHelp />, run: () => open('settings', 'help') },
+    ...(window.desktop?.managedUpdate
+      ? [{ label: '检查更新', icon: <Download />, run: () => setManagedUpdateOpen(true) }]
+      : []),
+    ...(managedServerUpdate ? [managedServerUpdate] : []),
+    {
+      label: browser ? '退出登录' : '断开连接',
+      icon: <LogOut />,
+      separated: true,
+      run: disconnect,
+    },
+  ];
+  const toggleSide = () => setSideOpen((value) => !value);
+  // The search lives in the conversations' side column: go there, open the column, then the field.
+  const openSearch = () => {
+    if (place.page !== 'chat') open('chat');
+    setSideOpen(true);
+    setSearchAsked(true);
+  };
+  const openTerminal = () => {
+    if (!selected) {
+      terminalWorkspace.current?.show();
+      return;
+    }
+    if (
+      !connected ||
+      !nativeMode ||
+      busy ||
+      statusReading.current ||
+      (selected.activeRun && selected.activeRun.surface !== 'terminal')
+    )
+      return;
+    showTerminal(selected.id);
+  };
+  const terminalAvailable =
+    connected &&
+    nativeMode &&
+    !busy &&
+    !refreshing &&
+    (!!selected ? !selected.activeRun || terminalOwns(selected.id) : !!terminalSessionId);
+  const canCreate = connected && !busy && !refreshing;
+  const barMenus: BarMenu[] = [
+    {
+      label: '文件',
+      items: [
+        {
+          label: '新建会话',
+          hint: hint('newSession'),
+          disabled: !canCreate,
+          run: () => {
+            void newSession();
+          },
+        },
+        ...(host.localProjects
+          ? [
+              {
+                label: '添加项目…',
+                disabled: !connected || busy,
+                run: () => {
+                  void addProject();
+                },
+              },
+            ]
+          : []),
+        {
+          label: '导出当前会话…',
+          disabled: !selected || !connected,
+          separated: true,
+          run: () => {
+            void act(async () => {
+              await exportSession(client, selected!);
+            });
+          },
+        },
+        { label: browser ? '退出登录' : '断开连接', separated: true, run: disconnect },
+        ...(window.desktop ? [{ label: '退出', run: () => void window.desktop!.quit() }] : []),
+      ],
+    },
+    {
+      label: '视图',
+      items: [
+        {
+          label: '查找对话内容',
+          hint: hint('find'),
+          disabled: !selected || place.page !== 'chat',
+          run: () => setFindRequest((value) => value + 1),
+        },
+        { label: sideOpen ? '收起侧栏' : '展开侧栏', hint: hint('toggleSide'), run: toggleSide },
+        { label: '会话', separated: true, checked: place.page === 'chat', run: () => open('chat') },
+        ...(host.schedules
+          ? [
+              {
+                label: '定时任务',
+                checked: place.page === 'schedules',
+                run: () => open('schedules'),
+              },
+            ]
+          : []),
+        {
+          label: '设置',
+          hint: hint('settings'),
+          checked: place.page === 'settings',
+          run: () => open('settings'),
+        },
+        ...(window.desktop
+          ? [
+              {
+                label: '放大',
+                hint: hint('zoomIn'),
+                separated: true,
+                run: () => window.desktop!.zoom(1),
+              },
+              { label: '缩小', hint: hint('zoomOut'), run: () => window.desktop!.zoom(-1) },
+              { label: '实际大小', hint: hint('zoomReset'), run: () => window.desktop!.zoom(0) },
+            ]
+          : []),
+      ],
+    },
+    {
+      label: '帮助',
+      items: [
+        { label: '使用说明', run: () => open('settings', 'help') },
+        {
+          label: '快捷键',
+          run: () => open('settings', 'shortcuts'),
+        },
+        ...(project.url ? [{ label: '项目主页', separated: true, run: openProject }] : []),
+        { label: '检查更新与版本信息', run: () => open('settings', 'about') },
+      ],
+    },
+  ];
+  // The shortcuts, as the user set them. A key press that something else already took, or that belongs to the
+  // native terminal or an open dialog, is left alone.
+  const keys = useRef<(event: KeyboardEvent) => void>(() => {});
+  keys.current = (event) => {
+    if (event.defaultPrevented || !prefs.shortcuts.enabled) return;
+    if (
+      (event.target as Element | null)?.closest?.('.native-terminal') ||
+      document.querySelector('dialog[open]')
+    )
+      return;
+    const combo = comboOf(event);
+    const action = combo && actions.find((item) => keyFor(prefs, item.id) === combo)?.id;
+    if (!action) return;
+    if (!connected && state.status !== 'reconnecting') {
+      if (!browser && action === 'settings') {
+        event.preventDefault();
+        setLocalSettings('general');
+      }
+      return;
+    }
+    const run: Record<Action, (() => void) | false | undefined> = {
+      back: () => step(-1),
+      forward: () => step(1),
+      toggleSide,
+      newSession: canCreate && (() => void newSession()),
+      search: openSearch,
+      settings: () => open('settings'),
+      find: !!selected && place.page === 'chat' && (() => setFindRequest((value) => value + 1)),
+      zoomIn: window.desktop && (() => window.desktop!.zoom(1)),
+      zoomOut: window.desktop && (() => window.desktop!.zoom(-1)),
+      zoomReset: window.desktop && (() => window.desktop!.zoom(0)),
+    };
+    const act = run[action];
+    if (!act) return;
+    event.preventDefault();
+    act();
+  };
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => keys.current(event);
+    window.addEventListener('keydown', listener);
+    return () => window.removeEventListener('keydown', listener);
+  }, []);
+
+  if (browser && (state.status === 'disconnected' || state.status === 'connecting'))
+    return (
+      <main className="web-login">
+        <section className="web-login-body">
+          <h1>连接服务端工作台</h1>
+          {browser.selfSigned && <CertificateWarning />}
+          <p role="status">{currentError ?? '正在连接…'}</p>
+          {state.status === 'disconnected' && (
+            <button
+              className="button"
+              onClick={() =>
+                client.connectBrowser(
+                  browserSocket(),
+                  browser.expired,
+                  async () => (await browserSession()).authenticated,
+                )
+              }
+            >
+              重新连接
+            </button>
+          )}
+          <button className="button" onClick={() => void disconnect()}>
+            退出登录
+          </button>
+        </section>
+      </main>
+    );
+
+  if (managedUpdate.phase === 'preparing' || managedUpdate.phase === 'installing')
+    return (
+      <main className="workspace">
+        <section className="page">
+          <div className="page-body">
+            <h1>正在准备安装更新</h1>
+            <p role="status">正在协调此安装的所有连接窗口退出。</p>
+            {managedUpdate.phase === 'preparing' && (
+              <button
+                className="button"
+                onClick={() => void window.desktop?.managedUpdate.cancel().catch(() => {})}
+              >
+                取消更新
+              </button>
+            )}
+          </div>
+        </section>
+      </main>
+    );
+
+  if ((state.status === 'disconnected' || state.status === 'connecting') && !terminalSessionId)
+    return localSettings ? (
+      <div className="settings-only">
+        <div className="window-drag" />
+        <SettingsPage
+          client={client}
+          section={localSettings}
+          go={setLocalSettings}
+          back={() => setLocalSettings(null)}
+          native={false}
+          account={null}
+          form={form}
+          changeForm={changeForm}
+          workspaceRoot={workspaceRoots[0] ?? ''}
+          chooseWorkspace={(reset) => {
+            void act(async () => {
+              setWorkspaceRoots(await window.desktop!.chooseWorkspace(reset));
+            });
+          }}
+          version={version}
+          service={null}
+        />
+        {notesDialog}
+        {managedUpdateDialog}
+        {loginUpdateButton}
+        {clientUpgradeDialog}
+      </div>
+    ) : (
+      <>
+        {notesDialog}
+        {managedUpdateDialog}
+        {loginUpdateButton}
+        {clientUpgradeDialog}
+        {serverUpgradeOpen && window.desktop?.managedServer && (
+          <Modal
+            title="配套服务端更新"
+            onClose={() => {
+              setServerUpgradeOpen(false);
+              setServerUpgradeRequested(false);
+            }}
+          >
+            <ManagedServerUpgrade
+              nodeId={form.authMethod === 'email' ? (activeWorkspace ?? undefined) : undefined}
+              reconnect={
+                activeWorkspace
+                  ? () => {
+                      setServerUpgradeOpen(false);
+                      void connectWorkspace(activeWorkspace);
+                    }
+                  : undefined
+              }
+              form={form}
+              disabled={state.status === 'connecting' || proxyConnecting || busy}
+              activity={setServerUpgradeWorking}
+              autoCheck={serverUpgradeRequested}
+              checked={serverUpgradeChecked}
+            />
+          </Modal>
+        )}
+        {emailOnly || (form.authMethod === 'email' && emailLoginAvailable) ? (
+          <EmailLoginPage
+            form={form}
+            change={(values) => {
+              loginInteracted.current = true;
+              changeForm(values);
+            }}
+            submit={() => void login(form)}
+            connecting={state.status === 'connecting' || proxyConnecting}
+            error={currentError}
+            workspaces={loginWorkspaces}
+            choose={(id) => void connectWorkspace(id)}
+            back={leaveEmailLogin}
+            recover={
+              state.mismatch && activeWorkspace && window.desktop?.managedServer
+                ? openServerUpgrade
+                : undefined
+            }
+          />
+        ) : (
+          <LoginPage
+            recover={
+              state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
+                ? openServerUpgrade
+                : undefined
+            }
+            showNotes={setNotes}
+            newer={upgrade ?? ahead}
+            form={form}
+            change={changeForm}
+            error={
+              currentError && state.mismatch && !window.desktop
+                ? `${currentError}请联系管理员安装匹配的定制版。`
+                : currentError
+            }
+            upgrade={state.mismatch && window.desktop ? upgrade : null}
+            older={
+              selfUpdating &&
+              form.mode === 'remote' &&
+              state.mismatch &&
+              state.service &&
+              isNewer(version, state.service)
+                ? state.service
+                : null
+            }
+            direct={direct}
+            downloaded={downloaded}
+            install={install}
+            connecting={
+              state.status === 'connecting' || proxyConnecting || busy || serverUpgradeWorking
+            }
+            submit={() => {
+              void login(form);
+            }}
+          />
+        )}
+      </>
+    );
+  const menuSession =
+    menu?.kind === 'session' ? state.sessions.find((item) => item.id === menu.sessionId) : null;
+  const moved =
+    menu?.kind === 'move' ? state.sessions.find((item) => item.id === menu.sessionId) : null;
+  const menuAway = !!moved && !onThis(moved);
+  const openMenu =
+    !menu || (menu.kind === 'session' && !menuSession)
+      ? null
+      : menu.kind === 'session'
+        ? { label: `会话操作 · ${menuSession!.title}`, items: sessionMenu(menuSession!) }
+        : menu.kind === 'project'
+          ? { label: `项目操作 · ${menu.path}`, items: projectMenu(menu.path, menu.deviceId) }
+          : menu.kind === 'move'
+            ? {
+                label: '移动当前会话到其他项目',
+                heading: menuAway
+                  ? '选这个会话在这台电脑上的项目；下一条消息会告诉 Claude 换了电脑'
+                  : '把会话移到另一个项目；下一条消息会告诉 Claude，聊过的会话仍沿用原项目的记忆',
+                items: moved ? moveMenu(moved) : [],
+              }
+            : menu.kind === 'settings'
+              ? { label: '设置与账号', items: settingsMenu }
+              : menu.kind === 'update'
+                ? { label: '更新', items: updates }
+                : {
+                    label: menu.label,
+                    items: barMenus.find((item) => item.label === menu.label)?.items ?? [],
+                  };
+  // The account at the foot of every page's side column; it also tells whether the connection holds.
+  const accountArea = (
+    <AccountArea
+      name={accountName}
+      plan={
+        signedOut
+          ? undefined
+          : (state.account?.subscriptionType ?? capabilities?.account.subscriptionType)
+      }
+      connected={connected}
+      adapter={adapterName}
+      current={place.page === 'settings'}
+      openMenu={openAccount}
+      update={updateLabel}
+      updatePopup={managedNotice ? 'dialog' : 'menu'}
+      openUpdate={openUpdate}
+    />
+  );
+  const sectionNames: Record<Section, string> = {
+    account: '账号与额度',
+    claude: 'Claude Code 设置',
+    general: '常规设置',
+    connections: '连接',
+    shell: 'Shell 设置',
+    notifications: '通知设置',
+    shortcuts: '快捷键',
+    help: '帮助',
+    about: '关于与更新',
+  };
+  return (
+    <div
+      className={`shell ${sideOpen ? '' : 'side-closed'} ${overlay ? 'side-overlay' : ''} ${selfSigned ? 'web-self-signed' : ''} ${terminalSessionId ? 'has-terminal-workspace' : ''} ${previewShown ? 'has-preview' : ''}`}
+      style={
+        {
+          '--sidebar-width': `${prefs.sidebarWidth}px`,
+          '--preview-width': `${previewWidth}px`,
+        } as CSSProperties
+      }
+    >
+      {selfSigned && <CertificateWarning />}
+      <TitleBar
+        title={
+          place.page === 'chat'
+            ? (selected?.title ?? productName)
+            : place.page === 'schedules'
+              ? '定时任务'
+              : sectionNames[place.section]
+        }
+        back={stepAvailable(-1) ? () => step(-1) : undefined}
+        forward={stepAvailable(1) ? () => step(1) : undefined}
+        sideOpen={sideOpen}
+        toggleSide={toggleSide}
+        menus={barMenus}
+        openTerminal={openTerminal}
+        terminalAvailable={terminalAvailable}
+        terminalOpen={terminalsActive}
+        terminalRefreshing={refreshing}
+        openMenu={(item, position) => setMenu({ kind: 'bar', label: item.label, ...position })}
+        togglePreview={sidebarAvailable && place.page === 'chat' ? preview.toggle : undefined}
+        previewOpen={previewShown}
+      />
+      {terminalSessionId && (
+        <div className="terminal-workspace-slot">
+          <Suspense
+            fallback={
+              <div className="history-status" role="status">
+                加载原生终端
+              </div>
+            }
+          >
+            <NativeTerminal
+              client={client}
+              sessionId={terminalSessionId}
+              onClose={closeTerminal}
+              onActivity={setTerminalsActive}
+              onSessions={trackTerminalSessions}
+              projectScope={projectScope}
+              workspaceRoots={workspaceRoots}
+              register={registerTerminalWorkspace}
+              nodeName={
+                loginWorkspaces?.find((workspace) => workspace.id === activeWorkspace)?.name
+              }
+            />
+          </Suspense>
+        </div>
+      )}
+      <Rail
+        page={place.page}
+        go={(page) => open(page)}
+        schedules={host.schedules}
+        newSession={() => {
+          void newSession();
+        }}
+        canCreate={canCreate}
+        search={openSearch}
+        connected={connected}
+        update={updateLabel}
+        updatePopup={managedNotice ? 'dialog' : 'menu'}
+        openUpdate={openUpdate}
+        openAccount={openAccount}
+      />
+      <Presence kind="shade">
+        {overlay && sideOpen && (
+          <button className="sidebar-shade" aria-label="收起侧栏" onClick={putAwaySide} />
+        )}
+      </Presence>
+      {place.page === 'settings' ? (
+        <SettingsPage
+          openSshSession={async (id, created) => {
+            if (created) await initializeSession(id);
+            else show(id);
+          }}
+          sideOpen={sideOpen}
+          checkUpdate={window.desktop?.managedUpdate ? () => setManagedUpdateOpen(true) : undefined}
+          client={client}
+          capabilities={signedOut ? null : capabilities}
+          browser={!!browser}
+          section={place.section}
+          go={(section) => open('settings', section)}
+          native={nativeMode}
+          form={form}
+          changeForm={changeForm}
+          workspaceRoot={workspaceRoots[0] ?? ''}
+          chooseWorkspace={(reset) => {
+            void act(async () => {
+              setWorkspaceRoots(await window.desktop!.chooseWorkspace(reset));
+            });
+          }}
+          version={version}
+          service={state.service}
+          backToChat={() => open('chat')}
+          footer={accountArea}
+          account={
+            <AccountPanel
+              client={client}
+              account={nativeMode ? state.account : null}
+              capabilities={signedOut ? null : capabilities}
+              metrics={signedOut ? null : accountMetrics}
+              refreshing={refreshing}
+              disabled={!state.sessions.length || !connected || refreshing}
+              error={currentError}
+              refresh={() => {
+                void refreshStatus(undefined, true);
+              }}
+            />
+          }
+        />
+      ) : place.page === 'schedules' ? (
+        <SchedulePanel
+          sideOpen={sideOpen}
+          schedules={schedules}
+          sessions={sessions}
+          projects={projects}
+          capabilities={capabilities}
+          back={() => open('chat')}
+          footer={accountArea}
+        />
+      ) : (
+        <>
+          <Sidebar
+            sideOpen={sideOpen}
+            sessions={sessions}
+            elsewhere={elsewhere}
+            devices={state.devices}
+            selectedId={selected?.id}
+            sshTargets={sshTargets}
+            projectScope={projectScope}
+            createRemoteProject={(deviceId, path) => void createRemoteProject(deviceId, path)}
+            remoteProjectMenu={(deviceId, path, position) =>
+              setMenu({ kind: 'project', deviceId, path, ...position })
+            }
+            projects={host.localProjects ? projects : []}
+            localProjects={host.localProjects}
+            workspaceRoots={workspaceRoots}
+            connected={connected}
+            busy={busy}
+            refreshing={refreshing}
+            notifications={notifications}
+            select={show}
+            newSession={() => {
+              void newSession();
+            }}
+            addProject={() => {
+              void addProject();
+            }}
+            createInProject={(path) => {
+              void createInProject(path);
+            }}
+            sessionMenu={(session, position) =>
+              setMenu({ kind: 'session', sessionId: session.id, ...position })
+            }
+            projectMenu={(path, position) => setMenu({ kind: 'project', path, ...position })}
+            schedules={host.schedules}
+            openSchedules={() => open('schedules')}
+            searchHint={hint('search')}
+            searchAsked={searchAsked}
+            searchDone={searchDone}
+            footer={accountArea}
+          />
+          <main
+            className={`workspace chat-workspace${fresh && !selectedTerminal ? ' new-session' : ''}`}
+            ref={stopScope}
+          >
+            {currentError && (
+              <div className="error-banner" role="alert">
+                <span>{currentError}</span>
+                <IconButton
+                  title="关闭错误提示"
+                  onClick={() => {
+                    setError(null);
+                    client.update({ error: null });
+                  }}
+                >
+                  <X />
+                </IconButton>
+              </div>
+            )}
+            {!connected && (
+              <div className="connection-banner" role="status">
+                <Unplug />
+                {state.status === 'disconnected'
+                  ? '连接已结束，关闭终端后可重新登录'
+                  : '连接中断，等待恢复'}
+              </div>
+            )}
+            <Conversation
+              dock={dockSlot}
+              adjustableWidth={true}
+              readingPositions={readingPositions.current}
+              projectControl={
+                selected && (
+                  <button
+                    type="button"
+                    className="chip quiet session-project"
+                    aria-label="会话所在的项目"
+                    aria-haspopup="menu"
+                    aria-expanded={
+                      (menu?.kind === 'move' && menu.sessionId === selected.id) ||
+                      (menu?.kind === 'project' &&
+                        menu.deviceId === selected.device?.id &&
+                        menu.path === selected.projectPath)
+                    }
+                    title={
+                      selected.device?.viaSsh
+                        ? `${selected.device.name} · ${selected.projectPath}`
+                        : `${selected.projectPath} · 移动当前会话到其他项目`
+                    }
+                    disabled={controlsDisabled || (away && !selected.device?.viaSsh)}
+                    onClick={(event) => {
+                      const box = event.currentTarget.getBoundingClientRect();
+                      setMenu({
+                        ...(selected.device?.viaSsh
+                          ? {
+                              kind: 'project' as const,
+                              deviceId: selected.device.id,
+                              path: selected.projectPath,
+                            }
+                          : { kind: 'move' as const, sessionId: selected.id }),
+                        x: box.left,
+                        y: box.bottom + 6,
+                      });
+                    }}
+                  >
+                    <Folder />
+                    <span>
+                      {state.devices.some(
+                        (device) => device.server && device.id === selected.device?.id,
+                      ) ||
+                      (onThis(selected) && isInside(selected.projectPath, workspaceRoots))
+                        ? '普通会话'
+                        : selected.device?.viaSsh
+                          ? (prefs.projectNames[
+                              projectPreferenceKey(
+                                projectScope,
+                                selected.device.id,
+                                selected.projectPath,
+                              )
+                            ] ?? folderName(selected.projectPath))
+                          : projectLabel(selected.projectPath)}
+                      {deviceLabel(selected.device, state.device?.id) &&
+                        ` · ${deviceLabel(selected.device, state.device?.id)}`}
+                    </span>
+                  </button>
+                )
+              }
+              findRequest={findRequest}
+              session={selected}
+              here={!!selected && onThis(selected)}
+              preview={
+                previewAvailable ? (link) => preview.follow(link, selected?.projectPath) : undefined
+              }
+              onQuote={
+                selected
+                  ? (id, text, destination) => {
+                      void referenceAnswer(selected, id, text, destination);
+                    }
+                  : undefined
+              }
+              sideQuoteAvailable={connected && state.sideConversations}
+              resume={
+                stopped && !inputDisabled && !selectedTerminal ? () => void resume() : undefined
+              }
+              events={events}
+              history={history}
+              connected={connected}
+              native={nativeMode}
+              ownsRun={ownsRun}
+              clock={clock}
+              progress={selected ? state.progress[selected.id] : undefined}
+              busy={busy}
+              fresh={fresh}
+              loadEarlier={() => client.loadEarlier(selected!.id)}
+              edit={
+                controlsDisabled ||
+                (away && !(selected?.device?.viaSsh && window.desktop?.ssh && remote))
+                  ? undefined
+                  : (id, text) => {
+                      void fork(selected!, { id, text });
+                    }
+              }
+              stopTask={(taskId) => {
+                void act(async () => {
+                  await client.request({
+                    type: 'run.task.stop',
+                    sessionId: selected!.id,
+                    runId: selected!.activeRun!.id,
+                    taskId,
+                  });
+                });
+              }}
+              backgroundTask={(toolId) => {
+                void act(async () => {
+                  await client.request({
+                    type: 'run.task.background',
+                    sessionId: selected!.id,
+                    runId: selected!.activeRun!.id,
+                    toolId,
+                  });
+                });
+              }}
+              stop={stopRun}
+              replyApproval={async (runId, approvalId, allowed, answers) => {
+                let sent = false;
+                await act(async () => {
+                  await client.request({
+                    type: 'approval.reply',
+                    sessionId: selected!.id,
+                    runId,
+                    approvalId,
+                    allowed,
+                    ...(answers ? { answers } : {}),
+                  });
+                  sent = true;
+                });
+                return sent;
+              }}
+            />
+            {state.status === 'reconnecting' && (
+              <div className="elsewhere-bar" role="status">
+                <Unplug />
+                <p>
+                  与服务端的连接断开了，正在重新连接。运行中的任务仍在服务端继续，连上之后这里会补上期间的内容；
+                  {state.error ? `原因：${state.error.split('\n')[0]}` : '不需要做什么。'}
+                </p>
+                <button type="button" className="button" onClick={() => void disconnect()}>
+                  断开并回到登录页
+                </button>
+              </div>
+            )}
+            {beside.length > 0 && (
+              <div className="elsewhere-bar" role="status">
+                <Laptop />
+                <p>
+                  连接{beside.join('、')}
+                  里有会话正在这个文件夹里运行。两边同时改动文件可能互相覆盖，建议等一边做完，或让它们在不同的文件夹里工作。
+                </p>
+              </div>
+            )}
+            {selected && away && host.localProjects && (!selected.device?.viaSsh || !remote) && (
+              <div className="elsewhere-bar" role="status">
+                <Laptop />
+                {selected.device?.viaSsh ? (
+                  <p>
+                    SSH 项目：<code>{selected.projectPath}</code> · {selected.device.name}。
+                    {remote
+                      ? '文件和命令在目标设备执行，Claude 仍在 Ubuntu 运行。'
+                      : '执行设备未连接，请在设置 → 连接中重新连接。'}
+                  </p>
+                ) : remote ? (
+                  <p>
+                    这个会话在设备“{selected.device?.name}”上，项目目录是{' '}
+                    <code>{selected.projectPath}</code>
+                    。在这里发的消息、审批和停止都作用于那台电脑上的会话，命令也在那里执行。要换到这台电脑上做，选它在这里的项目目录或分叉到本机。
+                  </p>
+                ) : (
+                  <p>
+                    这个会话在设备“{selected.device?.name ?? '未知设备'}”上，项目目录是{' '}
+                    <code>{selected.projectPath}</code>
+                    。那台电脑目前不在线，这里只能查看；它连上服务后可以直接在这里操作。要在这台电脑上接着做，先选它在这里的项目目录；下一条消息会告诉
+                    Claude 换了电脑。
+                  </p>
+                )}
+                {!selected.device?.viaSsh && (
+                  <>
+                    <button
+                      type="button"
+                      className="button primary"
+                      disabled={controlsDisabled}
+                      onClick={(event) => {
+                        // With projects here the session goes into one of them, or into a folder chosen there.
+                        if (!herePaths().length) return void takeOver(selected);
+                        const box = event.currentTarget.getBoundingClientRect();
+                        setMenu({
+                          kind: 'move',
+                          sessionId: selected.id,
+                          x: box.left,
+                          y: box.top - 6,
+                          above: true,
+                        });
+                      }}
+                    >
+                      在本机继续…
+                    </button>
+                    <button
+                      type="button"
+                      className="button secondary"
+                      disabled={controlsDisabled}
+                      onClick={() => {
+                        void fork(selected);
+                      }}
+                    >
+                      分叉到本机…
+                    </button>
+                  </>
+                )}
+              </div>
+            )}
+            {browser && selected && away && !remote && (
+              <div className="elsewhere-bar" role="status">
+                <Laptop />
+                <p>设备“{selected.device?.name ?? '未知设备'}”未连接，当前只能查看会话。</p>
+              </div>
+            )}
+
+            {selectedTerminal && (
+              <div className="elsewhere-bar" role="status">
+                <SquareTerminal />
+                <p>
+                  {terminalSessions.includes(selected!.id)
+                    ? '正在终端里运行'
+                    : '此会话正在另一个窗口的终端中使用'}
+                </p>
+                {terminalSessions.includes(selected!.id) && (
+                  <button type="button" className="button secondary" onClick={openTerminal}>
+                    返回终端
+                  </button>
+                )}
+              </div>
+            )}
+            {selected && (!away || remote || selectedTerminal) && (
+              <Composer
+                dockSlot={setDockSlot}
+                mascot={prefs.mascot}
+                queuedMessages={
+                  <FollowUpQueue
+                    key={selected.id}
+                    items={queued.items[selected.id] ?? []}
+                    paused={queued.paused[selected.id]}
+                    sending={queued.sending[selected.id]}
+                    disabled={inputDisabled}
+                    running={!!selected.activeRun}
+                    remove={(id) => followUps.remove(selected.id, id)}
+                    edit={(id, text) => followUps.edit(selected.id, id, text)}
+                    beginEdit={() => followUps.pause(selected.id)}
+                    sendNow={(id) => {
+                      void followUps.sendNow(selected.id, id);
+                    }}
+                    resume={() => followUps.resume(selected.id)}
+                  />
+                }
+                openAccount={() => open('settings', 'account')}
+                session={selected}
+                draft={draft}
+                history={recalledInputs}
+                historyReady={draftsReady}
+                focusDraft={focusDraftSession === selected.id}
+                onDraftFocusHandled={() => setFocusDraftSession(null)}
+                setDraft={(text, expectedText) => setDraft(selected.id, text, expectedText)}
+                quotes={quoteDrafts[selected.id] ?? []}
+                setQuotes={setQuotes}
+                attachments={attachmentDrafts[selected.id] ?? []}
+                setAttachments={setAttachments}
+                native={nativeMode}
+                connected={connected}
+                busy={busy}
+                refreshing={refreshing}
+                canRefreshModels={!state.sessions.some((session) => session.activeRun)}
+                ownsRun={ownsRun}
+                inputDisabled={inputDisabled}
+                controlsDisabled={controlsDisabled}
+                slashOpen={slashOpen}
+                setSlashOpen={setSlashOpen}
+                canCompact={canCompact}
+                scenario={scenario}
+                setScenario={setScenario}
+                capabilities={capabilities}
+                nativeSession={nativeSession}
+                metrics={metrics}
+                send={(text, mode) => {
+                  void send(text, mode);
+                }}
+                resume={stopped && !inputDisabled ? resume : undefined}
+                compact={() => {
+                  void compact();
+                }}
+                refresh={() => {
+                  if (anyTerminal) {
+                    setError('终端运行时暂不读取原生状态，关闭终端后再试');
+                    return;
+                  }
+                  void refreshStatus();
+                }}
+                configure={configure}
+                stop={stopRun}
+              />
+            )}
+            {!selected && (
+              <NewSessionComposer
+                target={browser ? '服务端 · 普通会话' : '本机 · 普通会话'}
+                chooseTarget={
+                  window.desktop?.ssh
+                    ? () => setOpenProjectTarget({ forceNew: true, fromHome: true })
+                    : undefined
+                }
+                draft={homeDraft}
+                setDraft={setHomeDraft}
+                disabled={!canCreate}
+                start={(text) => {
+                  void startSession(text);
+                }}
+              />
+            )}
+            {selected && !fresh && (!away || (browser && remote)) && !selectedTerminal && (
+              <SessionBar
+                client={client}
+                sessionId={selected.id}
+                refresh={turnReports}
+                metrics={metrics}
+                native={nativeMode}
+              />
+            )}
+          </main>
+        </>
+      )}
+      <Presence>
+        {menu && openMenu && (
+          <Menu
+            // One menu may give way to another in the same place, which is then laid out anew.
+            key={menu.kind}
+            label={openMenu.label}
+            heading={'heading' in openMenu ? openMenu.heading : undefined}
+            x={menu.x}
+            y={menu.y}
+            above={menu.above}
+            width={menu.width}
+            onClose={closeMenu}
+            items={openMenu.items}
+          />
+        )}
+      </Presence>
+      {(previewShown || previewLeaving) && (
+        <PreviewSidebar
+          leaving={!previewShown}
+          workspace={preview}
+          filesAvailable={previewAvailable}
+          root={previewAvailable ? selected?.projectPath : undefined}
+          renderChat={(tab) => {
+            const side = state.sessions.find((session) => session.id === tab.target);
+            return (
+              <SideConversation
+                key={tab.target}
+                client={client}
+                capabilities={capabilities}
+                sessionId={tab.target}
+                draftsReady={draftsReady}
+                terminalOccupied={terminalSessions.includes(tab.target)}
+                draft={drafts[tab.target] ?? ''}
+                setDraft={(text, expectedText) => setDraft(tab.target, text, expectedText)}
+                quotes={quoteDrafts[tab.target] ?? []}
+                setQuotes={setQuotes}
+                attachments={attachmentDrafts[tab.target] ?? []}
+                setAttachments={setAttachments}
+                followUps={followUps}
+                focusDraft={focusDraftSession === tab.target}
+                onDraftFocusHandled={() => setFocusDraftSession(null)}
+                openAccount={() => open('settings', 'account')}
+                onQuote={(id, text, destination) => {
+                  if (side) void referenceAnswer(side, id, text, destination);
+                }}
+              />
+            );
+          }}
+        />
+      )}
+      <Presence kind="dialog">
+        {repointProject && (
+          <AddProjectDialog
+            title="更改项目文件夹"
+            action="更改"
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setRepointProject(null)}
+            add={(written) => {
+              void act(async () => {
+                if (!written) return;
+                const path = (await window.desktop?.asOnDisk(written)) ?? written;
+                await repoint(repointProject, path);
+                setRepointProject(null);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {openProjectTarget && (
+          <OpenProjectDialog
+            client={client}
+            initial={openProjectTarget}
+            forceNew={openProjectTarget.forceNew}
+            onClose={() => setOpenProjectTarget(null)}
+            onLocal={async (written, creationId) => {
+              const generation = client.state.connectionId;
+              const startedAt = navigation.current;
+              const path = (await window.desktop?.asOnDisk(written)) ?? written;
+              if (client.state.connectionId !== generation) return;
+              restoreProject(path);
+              setProjects((value) => withProject(value, path));
+              if (openProjectTarget.forceNew) {
+                const id = await createSession(
+                  path,
+                  startedAt,
+                  generation,
+                  creationId,
+                  !openProjectTarget.terminal,
+                  openProjectTarget.terminal
+                    ? openProjectTarget.source &&
+                      openProjectTarget.source.device?.id === state.device?.id &&
+                      pathKey(openProjectTarget.source.projectPath) === pathKey(path)
+                      ? openProjectTarget.source
+                      : null
+                    : undefined,
+                );
+                if (id && openProjectTarget.terminal) showTerminal(id);
+                if (!id) throw new Error('连接已变化，请检查原会话的创建结果。');
+                if (openProjectTarget.fromHome) {
+                  setDraft(id, homeDraft);
+                  setHomeDraft('');
+                }
+              }
+            }}
+            onRemote={async (id, created) => {
+              const session = client.state.sessions.find((item) => item.id === id);
+              if (session?.device?.viaSsh) restoreProject(session.projectPath, session.device.id);
+              const key = session?.device
+                ? projectPreferenceKey(projectScope, session.device.id, session.projectPath)
+                : undefined;
+              const creationId =
+                session &&
+                session.device?.id === openProjectTarget.deviceId &&
+                pathKey(session.projectPath) === pathKey(openProjectTarget.path ?? '')
+                  ? openProjectTarget.creationId
+                  : undefined;
+              if (openProjectTarget.fromHome) {
+                setDraft(id, homeDraft);
+                setHomeDraft('');
+              }
+              if (openProjectTarget.terminal) {
+                const source = openProjectTarget.source;
+                const inherited =
+                  source &&
+                  session &&
+                  source.device?.id === session.device?.id &&
+                  pathKey(source.projectPath) === pathKey(session.projectPath)
+                    ? source
+                    : undefined;
+                if (created) await configureTerminal(id, inherited, creationId);
+                showTerminal(id);
+              } else if (created) await initializeSession(id);
+              else show(id);
+              if (key && remoteCreations.current.get(key) === openProjectTarget.creationId)
+                remoteCreations.current.delete(key);
+              if (creationId) terminalConfigurations.current.delete(creationId);
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {removeProjectTarget && (
+          <Modal title="移除项目？" onClose={() => setRemoveProjectTarget(null)}>
+            <p>仅从侧栏移除项目分组。会话和磁盘文件均保留，重新打开该目录可恢复分组。</p>
+            <p className="muted">{removeProjectTarget.path}</p>
+            <div className="dialog-actions">
+              <Button onClick={() => setRemoveProjectTarget(null)}>取消</Button>
+              <Button
+                variant="primary"
+                onClick={() => {
+                  const { path, deviceId, key } = removeProjectTarget;
+                  if (!deviceId)
+                    setProjects((value) => value.filter((item) => pathKey(item) !== pathKey(path)));
+                  setPrefs((value) => ({
+                    ...value,
+                    hiddenProjects: [...new Set([...value.hiddenProjects, key])],
+                    pinnedProjects: value.pinnedProjects.filter((item) => item !== key),
+                    collapsedProjects: value.collapsedProjects.filter((item) => item !== key),
+                    collapsedElsewhere: deviceId
+                      ? value.collapsedElsewhere.filter(
+                          (item) => item !== `${deviceId}\n${pathKey(path)}`,
+                        )
+                      : value.collapsedElsewhere,
+                  }));
+                  setRemoveProjectTarget(null);
+                }}
+              >
+                移除项目
+              </Button>
+            </div>
+          </Modal>
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {remoteRename && (
+          <RenameProjectDialog
+            path={remoteRename.path}
+            name={
+              prefs.projectNames[
+                projectPreferenceKey(projectScope, remoteRename.deviceId, remoteRename.path)
+              ] ?? ''
+            }
+            close={() => setRemoteRename(null)}
+            rename={(name) => {
+              const key = projectPreferenceKey(
+                projectScope,
+                remoteRename.deviceId,
+                remoteRename.path,
+              );
+              setPrefs((value) => {
+                const projectNames = { ...value.projectNames };
+                if (name) projectNames[key] = name;
+                else delete projectNames[key];
+                return { ...value, projectNames };
+              });
+              setRemoteRename(null);
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {createOpen && (
+          <AddProjectDialog
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setCreateOpen(false)}
+            add={(written) => {
+              void act(async () => {
+                if (!written) return;
+                const path = (await window.desktop?.asOnDisk(written)) ?? written;
+                restoreProject(path);
+                setProjects((value) => withProject(value, path));
+                setCreateOpen(false);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {deleteSession && (
+          <DeleteSessionDialog
+            session={deleteSession}
+            native={nativeMode}
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setDeleteSession(null)}
+            confirm={() => {
+              void act(async () => {
+                await client.request({ type: 'session.delete', sessionId: deleteSession.id });
+                setDraft(deleteSession.id, '');
+                setAttachments(deleteSession.id, () => []);
+                // A plain session's directory goes with it when the session left nothing there.
+                if (isInside(deleteSession.projectPath, workspaceRoots))
+                  void window.desktop?.removeWorkspace(deleteSession.projectPath);
+                setDeleteSession(null);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {renameProject && (
+          <RenameProjectDialog
+            path={renameProject}
+            name={prefs.projectNames[pathKey(renameProject)] ?? ''}
+            close={() => setRenameProject(null)}
+            rename={(name) => {
+              setPrefs((value) => {
+                const projectNames = { ...value.projectNames };
+                if (name) projectNames[pathKey(renameProject)] = name;
+                else delete projectNames[pathKey(renameProject)];
+                return { ...value, projectNames };
+              });
+              setRenameProject(null);
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {renameSession && (
+          <RenameSessionDialog
+            session={renameSession}
+            busy={busy}
+            connected={connected}
+            error={actionError}
+            close={() => setRenameSession(null)}
+            rename={(title) => {
+              void act(async () => {
+                await client.request({
+                  type: 'session.rename',
+                  sessionId: renameSession.id,
+                  title,
+                });
+                setRenameSession(null);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      {notesDialog}
+      {managedUpdateDialog}
+      {clientUpgradeDialog}
+    </div>
+  );
+}

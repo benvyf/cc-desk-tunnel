@@ -1,0 +1,11 @@
+[Unit]
+Description=Check CC pilot index renewal every six hours
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:20:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+Unit=cc-update-renew.service
+
+[Install]
+WantedBy=timers.target

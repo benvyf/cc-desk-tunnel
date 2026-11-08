@@ -1,0 +1,137 @@
+{
+  "date": "2026-11-05",
+  "published": true,
+  "backup": "/var/backups/cc-update-service/server12-publication-20261105T010840Z",
+  "release": {
+    "build": 12,
+    "appVersion": "0.3.7",
+    "protocol": 24,
+    "sourceCommit": "936609cd2e594374113e1c106a1224962ec98950",
+    "size": 8077670,
+    "sha256": "2d682a06b1109c5bbce5757e60b98742f6148ec29bbefefc49c5565b340353eb",
+    "descriptorSha256": "1207a4ab33542466f951fc48cc4f76f1ca9b5c5991423535c8d2b1b048912b2d",
+    "packageLockSha256": "09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7",
+    "runtimeLevel": "node24-cli2.1.295-v2",
+    "compatibility": {
+      "apps/server/src/store.ts": "bf60cbbabea5e563e5dc5d19320055dfa0f68cc1952d5c134d0866e672316d44",
+      "apps/server/src/usage.ts": "4bde92f9f877e4c579eead3fe4994f863a501663417403f0c8b9c42aaa9990dc",
+      "apps/server/src/web-access.ts": "18e480b94c4c29569ad27a4bf57c7838ea584ae20b812f68030cf7676cb571f6",
+      "apps/server/src/native-settings.ts": "7eb0a58a361bf47eab0e6338f0c8dd8df803e10f1bd7f346a9649752a877b20f",
+      "apps/server/src/native-onboarding.ts": "6777362622817745be87480d79aa443811f231dc2dc576e1950dec4658d313f7",
+      "apps/server/src/native-instructions.ts": "31b01bd3c65476408b1618dcb00a1e0bf59c9e2a058179f788c5ab1ef9d2a048",
+      "apps/server/src/native-moderation-hook.ts": "197640b3b3d1c0b2a5b3646e6065da035d87425eef7047fd2a2eb180290947fb",
+      "apps/server/src/moderation.ts": "b849be7a7f2fc994a7a316e8bddf500f1ff72738745ea34f1700f0edd9169f3a",
+      "apps/server/src/errors.ts": "2f39eeba21699f498d251507cc70110cb2455b161d2cb075679703fa8448c721",
+      "apps/server/src/native-deployment.ts": "a1793be4327430c599cf5477d579ff2fbd3367fa4c9bc2f8b43758ede9c3bf3e",
+      "apps/server/src/native-terminal-policy.ts": "fab3f14ae6a063b4539b615feae19ef72d4e12b25800f30b040ef6ccc395ca68",
+      "apps/server/src/web-certificate.ts": "56e372003ce90535250e1f7706f24e19b07497e68f678580bc04a5243de97162",
+      "apps/server/src/web-totp.ts": "a0eaf188fecc7970cdba3f54b568bdd04b34e52c69f2d5796c837d56448e25d0",
+      "apps/server/src/device-terms.ts": "e97fb92596524334470cdc3075b5ad00cdf5363ad8c82002f49b2e80963db25f",
+      "apps/server/src/claude.ts": "5864d16780578b2285ee5f7ea0621fbabfe9e8ee5f5c7a384dccac331e17610c",
+      "apps/server/src/legacy.ts": "6849c4c27678c8308e1c2456c091047071d0a7502425b757cb2eda489b2addee",
+      "apps/server/src/native-account.ts": "f73433400fde0147491d6ca355ba1024e06a54dfe7bbec53c6b8f2474e13c17c",
+      "packages/protocol/src/index.ts": "c4bcf09e3f7ffb173fd68a08a40d646b7e739e5945b43624d4cdb21f7e011510",
+      "packages/protocol/src/web.ts": "27011dd28fcaff36afed63bc3a6c75a274ce0ad9493479e314d494ad32cd628c",
+      "packages/protocol/src/web-certificate.ts": "e958aa1226b10101ca91da23e161afd2db7972ba5764245a8f25749dbebd55ff"
+    }
+  },
+  "revision": 18,
+  "signatureVerified": true,
+  "fullPublicDownloadVerified": true,
+  "renewalVerified": true,
+  "windowsIndexesUnchanged": true,
+  "managementRuntimeChanged": false,
+  "ubuntuInstallJobsCreated": false,
+  "completedAt": "2026-11-05T01:08:42.513Z",
+  "nodes": {
+    "ubuntu-cc": {
+      "enrolled": true,
+      "online": true,
+      "current": {
+        "build": 10,
+        "protocol": 23,
+        "phase": "idle"
+      },
+      "available": {
+        "build": 12,
+        "protocol": 24,
+        "sha256": "2d682a06b1109c5bbce5757e60b98742f6148ec29bbefefc49c5565b340353eb"
+      },
+      "jobUnchanged": true
+    },
+    "ubuntu-cc-02": {
+      "enrolled": true,
+      "online": true,
+      "current": {
+        "build": 10,
+        "protocol": 23,
+        "phase": "idle"
+      },
+      "available": {
+        "build": 12,
+        "protocol": 24,
+        "sha256": "2d682a06b1109c5bbce5757e60b98742f6148ec29bbefefc49c5565b340353eb"
+      },
+      "jobUnchanged": true
+    },
+    "ubuntu-cc-03": {
+      "enrolled": true,
+      "online": true,
+      "current": {
+        "build": 10,
+        "protocol": 23,
+        "phase": "idle"
+      },
+      "available": {
+        "build": 12,
+        "protocol": 24,
+        "sha256": "2d682a06b1109c5bbce5757e60b98742f6148ec29bbefefc49c5565b340353eb"
+      },
+      "jobUnchanged": true
+    }
+  },
+  "linuxMockTests": {
+    "migration": 10,
+    "policy": 11,
+    "productionDockerExecuted": false
+  },
+  "coreTests": {
+    "passed": 843,
+    "skipped": 61,
+    "failed": 0
+  },
+  "agentRouting": {
+    "nodes": {
+      "ubuntu-cc": {
+        "currentBuild": 10,
+        "targetBuild": 12,
+        "targetProtocol": 24,
+        "signedMigrationSelected": true
+      },
+      "ubuntu-cc-02": {
+        "currentBuild": 10,
+        "targetBuild": 12,
+        "targetProtocol": 24,
+        "signedMigrationSelected": true
+      },
+      "ubuntu-cc-03": {
+        "currentBuild": 10,
+        "targetBuild": 12,
+        "targetProtocol": 24,
+        "signedMigrationSelected": true
+      }
+    },
+    "liveAgentSha256": "df87831fe1aa22a94e45164e138d821a94ae38a7e1460b345790a1e54a371a1d",
+    "signedArchiveVerified": true,
+    "installExecuted": false,
+    "dockerExecuted": false
+  },
+  "hostJobsUnchanged": true,
+  "windowsPilotSha256": "b7e38fd45c116b2f226c223d29d2824118bca566922843ba2ebd5e90980cc93a",
+  "windowsStableSha256": "e6d2cec42177281ec53d7d970096f08334a7a9ab9812e7228998913d0ebf179e",
+  "linuxRenewalSystemdResult": "success",
+  "linuxRenewalTimerActive": true,
+  "windowsRenewalTimerActive": true,
+  "managementSource": "cac8006e45d6d36ed0a6227130f27f0e040bae28",
+  "realModelRequests": 0
+}

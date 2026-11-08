@@ -1,0 +1,93 @@
+import { ArrowLeft, ArrowRight, PanelLeft } from './icons.tsx';
+import { IconButton } from './ui.tsx';
+import type { MenuItem, MenuPosition } from './ui.tsx';
+
+export type BarMenu = { label: string; items: MenuItem[] };
+
+// The window's own top edge: it is the drag handle of the frameless desktop window, and carries the way back,
+// the side column's switch and the menus. The state of the connection is told by the account at the foot of the
+// side column.
+export default function TitleBar({
+  title,
+  back,
+  forward,
+  sideOpen,
+  toggleSide,
+  menus,
+  openMenu,
+  openTerminal,
+  terminalAvailable = false,
+  terminalOpen = false,
+  terminalRefreshing = false,
+  togglePreview,
+  previewOpen = false,
+}: {
+  title: string;
+  // Absent while there is nowhere to go.
+  back?: () => void;
+  forward?: () => void;
+  sideOpen: boolean;
+  toggleSide: () => void;
+  menus: BarMenu[];
+  openMenu: (menu: BarMenu, position: MenuPosition) => void;
+  openTerminal?: () => void;
+  terminalAvailable?: boolean;
+  terminalOpen?: boolean;
+  terminalRefreshing?: boolean;
+  togglePreview?: () => void;
+  previewOpen?: boolean;
+}) {
+  return (
+    <header className="titlebar">
+      <IconButton title="后退" disabled={!back} onClick={back}>
+        <ArrowLeft />
+      </IconButton>
+      <IconButton title="前进" disabled={!forward} onClick={forward}>
+        <ArrowRight />
+      </IconButton>
+      <IconButton title={sideOpen ? '收起侧栏' : '展开会话列表'} onClick={toggleSide}>
+        <PanelLeft />
+      </IconButton>
+      <nav className="titlebar-menus" aria-label="菜单">
+        {menus.map((menu) => (
+          <button
+            type="button"
+            key={menu.label}
+            aria-haspopup="menu"
+            onClick={(event) => {
+              const box = event.currentTarget.getBoundingClientRect();
+              openMenu(menu, { x: box.left, y: box.bottom + 4 });
+            }}
+          >
+            {menu.label}
+          </button>
+        ))}
+        <button
+          type="button"
+          disabled={!terminalAvailable}
+          onClick={openTerminal}
+          title={
+            terminalOpen
+              ? '显示已打开的终端'
+              : terminalRefreshing
+                ? '正在读取会话状态，完成后可打开终端'
+                : '打开当前会话的原生终端'
+          }
+        >
+          终端
+        </button>
+      </nav>
+      {togglePreview && (
+        <IconButton
+          title={previewOpen ? '收起预览侧栏' : '打开预览侧栏'}
+          data-preview-toggle
+          aria-expanded={previewOpen}
+          onClick={togglePreview}
+        >
+          <PanelLeft style={{ transform: 'scaleX(-1)' }} />
+        </IconButton>
+      )}
+      <h1>{title}</h1>
+    </header>
+  );
+}

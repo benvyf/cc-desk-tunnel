@@ -1,0 +1,217 @@
+{
+  "date": "2026-11-05",
+  "timezone": "Asia/Hong_Kong",
+  "baseline": "12ac488cef9ca6abead7468caee17054a0891cf7",
+  "scope": "source implementation and isolated verification; no release or production deployment",
+  "remote": {
+    "system": "Ubuntu 24.04.4 LTS x86_64 VPS",
+    "node": "24.19.0",
+    "realPty": true,
+    "tests": 137,
+    "passed": 126,
+    "skipped": 11,
+    "failed": 0,
+    "skipReason": "Windows-only full desktop tunnel tests; covered on local Windows",
+    "runtimeSha256": {
+      "apps/server/src/native-terminal.ts": "514d36ace2d44773bdaadeb54bd696265d7d4f07a15c90d417720dda3122a9b3",
+      "apps/server/src/server.ts": "c9a087c590d72765e609733b8f7af5a75cbe467cfe293a84914f68741932ecdb",
+      "apps/desktop/electron/tunnel-channels.mjs": "0f7408ae1e1c4b57403ce84de7f19aa0d4aa98423599b0f0cf16c6e01107a6bd"
+    },
+    "hashesMatchLocal": true,
+    "workspaceRemoved": true,
+    "probeStopped": true,
+    "testPortClosed": true,
+    "buildContainerRemoved": true,
+    "hashVerificationScope": "initial implementation verification; latest history fixes verified under review"
+  },
+  "benchmark": {
+    "node": "v24.19.0",
+    "platform": "linux",
+    "measurements": {
+      "baseline": {
+        "fragmented": {
+          "writes": 800,
+          "frames": 800,
+          "bytes": 16200,
+          "deliveryMs": {
+            "p50": 0.001,
+            "p95": 0.014
+          },
+          "elapsedMs": 370.02
+        },
+        "realPty": {
+          "frames": 90,
+          "bytes": 19420,
+          "elapsedMs": 437.76,
+          "tailIntact": true
+        }
+      },
+      "current": {
+        "fragmented": {
+          "writes": 800,
+          "frames": 40,
+          "bytes": 16200,
+          "deliveryMs": {
+            "p50": 5.299,
+            "p95": 6.386
+          },
+          "elapsedMs": 350.1
+        },
+        "realPty": {
+          "frames": 40,
+          "bytes": 19420,
+          "elapsedMs": 427.71,
+          "tailIntact": true
+        }
+      }
+    }
+  },
+  "crossMachineElectron": {
+    "remoteUbuntu": true,
+    "realPty": true,
+    "electron": true,
+    "controlledProducer": true,
+    "echoDelayMs": 200,
+    "inputs": ["a", "b", "c"],
+    "timings": [
+      {
+        "key": "a",
+        "predictionObservedMs": 14,
+        "echoObservedMs": 379
+      },
+      {
+        "key": "b",
+        "predictionObservedMs": 9,
+        "echoObservedMs": 370
+      },
+      {
+        "key": "c",
+        "predictionObservedMs": 6,
+        "echoObservedMs": 367
+      }
+    ]
+  },
+  "liveSignedUpdate": {
+    "verifiedBuild": 29,
+    "protocol": 24,
+    "download": "https://api.ghostapi.org/cc-updates/v1/artifacts/29/win32-x64/CC-Space-Setup-0.3.10-x64.exe",
+    "automaticDownloadRejected": true,
+    "noticeRetained": true
+  },
+  "local": {
+    "node": "24.22.1",
+    "relatedCore": {
+      "passed": 136,
+      "failed": 0
+    },
+    "finalModifiedCore": {
+      "passed": 10,
+      "failed": 0
+    },
+    "contextAndManagedController": {
+      "passed": 34,
+      "failed": 0
+    },
+    "terminalUiAndElectron": {
+      "passed": 48,
+      "failed": 0
+    },
+    "compactUiPassed": 1,
+    "updateUiPassed": 2,
+    "typecheck": "passed",
+    "frontendBuild": "passed",
+    "diffCheck": "passed",
+    "performanceUiPassed": 2
+  },
+  "limits": [
+    "Real PTY uses controlled producer, not a real Claude account or full production authentication path",
+    "Electron probe observation times include test scheduling and artificial 200ms echo delay",
+    "No physical IME, cross-monitor, GPU fault or production account acceptance",
+    "WebGL and later cache features not introduced under this first-round plan",
+    "No installer, new signed Build, release, or deployment"
+  ],
+  "xtermProcessing": [
+    {
+      "grouped": false,
+      "writes": 400,
+      "samples": 400,
+      "processingP50Ms": 4.899999998509884,
+      "processingP95Ms": 8.5,
+      "animationFrameP95Ms": 13.800000000000182,
+      "line": "❯ render-399 "
+    },
+    {
+      "grouped": true,
+      "writes": 20,
+      "samples": 20,
+      "processingP50Ms": 4.600000001490116,
+      "processingP95Ms": 6.199999999254942,
+      "animationFrameP95Ms": 7,
+      "line": "❯ render-399 "
+    }
+  ],
+  "predictionLatency": {
+    "samples": 100,
+    "p95DomMilliseconds": 0.6999999992549419,
+    "maximumDomMilliseconds": 1.3999999985098839,
+    "simulatedEchoMilliseconds": 200
+  },
+  "review": {
+    "date": "2026-11-05",
+    "findingsFixed": [
+      "P2: title preview cap incorrectly blocks large-record compaction and resume",
+      "P2: stale update error hides current full-package lookup error"
+    ],
+    "localCorePassed": 13,
+    "uiPassed": 3,
+    "remoteUbuntuPassed": 4,
+    "failed": 0,
+    "runtimeSha256": {
+      "apps/server/src/server.ts": "d36bda3df047ee3b4e38724a1bc90c34de6300323aa18f812d80188416408749",
+      "apps/server/src/terminal-history.ts": "ff2855778c68480e82850d4f6e4e13d664fd8ec1a685d9302e10ea03d41de04e"
+    },
+    "hashesMatchLocal": true,
+    "typecheck": "passed",
+    "frontendBuild": "passed",
+    "formatter": "passed",
+    "remoteWorkspaceRemoved": true,
+    "productionDeployed": false
+  },
+  "boundaryReview": {
+    "date": "2026-11-05",
+    "tests": 81,
+    "passed": 81,
+    "failed": 0,
+    "skipped": 0,
+    "desktopModelBoundary": "passed",
+    "newRuntimeCodeChanges": false,
+    "officialSources": [
+      {
+        "url": "https://code.claude.com/docs/en/legal-and-compliance.md",
+        "snapshot": ".local/claude-review-legal.md",
+        "sha256": "1a7c59468a71304f19e6ce74c8d23b7d71382b81daa5d1c7afe524cc644d6e16"
+      },
+      {
+        "url": "https://code.claude.com/docs/en/agent-sdk/overview.md",
+        "snapshot": ".local/claude-review-sdk-code.md",
+        "sha256": "6bf994e5897cbf228f19e17b177036fe23cdbd02b790944f72a090f07e80258d"
+      },
+      {
+        "url": "https://code.claude.com/docs/en/network-config.md",
+        "snapshot": ".local/claude-review-network.md",
+        "sha256": "348db66ed5138aad4e5ddffd5904f67b833dc004af8c9a4dec713bdf6f2dd81b"
+      },
+      {
+        "url": "https://code.claude.com/docs/en/authentication.md",
+        "snapshot": ".local/claude-review-auth.md",
+        "sha256": "86c28d9f9a994974ca6ad7bd6050fd0d9bc7fc5e7172ac79af7ca98bc7b92278"
+      }
+    ],
+    "observedNewBoundaryViolation": false,
+    "productionCredentialModeVerified": false,
+    "productionEgressVerified": false,
+    "blanketComplianceConfirmed": false,
+    "modelRequestsSent": false,
+    "productionConfigChanged": false
+  }
+}

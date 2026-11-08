@@ -1,0 +1,52 @@
+{
+  "build": 6,
+  "protocol": 22,
+  "sourceCommit": "f52c765bf746251924bd3efc4fb39a47b5ce1296",
+  "sha256": "4be6ae3cb034e5fb62360cf25a7b4f8d1486fb23e0318dcc2da6c33c5c461f84",
+  "adminCommandTargetVerified": true,
+  "commandDetectsLocalContainer": true,
+  "management": {
+    "status": "DEPLOYED",
+    "sourceCommit": "f8608d51bb2ea359c56f54a53cc07170e64e95ba",
+    "baseSourceCommit": "ee6d3fe8522f20c18da8d5565737129a1c862745",
+    "changed": [
+      "apps/update-service/src/server-distribution.ts",
+      "apps/update-service/web/server-download.js"
+    ],
+    "backup": "/var/backups/cc-update-service/terminal-upgrade-20261028T164951Z",
+    "previous": "/opt/cc-update-service.before-terminal-f8608d5",
+    "indexesUnchanged": true
+  },
+  "publication": {
+    "status": "PUBLISHED",
+    "backup": "/var/backups/cc-update-service/terminal-server6-20261028T165102Z",
+    "build": 6,
+    "protocol": 22,
+    "revision": 9,
+    "expiresAt": "2026-11-11T16:51:04.191Z",
+    "sha256": "4be6ae3cb034e5fb62360cf25a7b4f8d1486fb23e0318dcc2da6c33c5c461f84",
+    "windowsAndStableUnchanged": true,
+    "renewalRegistered": true
+  },
+  "tests": {
+    "localServerAndProtocol": 59,
+    "localTerminalUI": 3,
+    "linuxTargeted": 12,
+    "linuxBaselineIssue": "Existing disconnect-during-review test fails on unchanged Build 5 too; excluded from targeted release run.",
+    "dockerDiscoveryScenarios": 5,
+    "managementUpgradeHTTPScenarios": 5,
+    "managementUI": 1
+  },
+  "archiveChangedFiles": [
+    "SERVER-RELEASE.json",
+    "apps/server/src/server.ts",
+    "deploy/managed-server.json"
+  ],
+  "independentPublicVerification": {
+    "signature": true,
+    "fullArchive": true,
+    "sha256": "4be6ae3cb034e5fb62360cf25a7b4f8d1486fb23e0318dcc2da6c33c5c461f84",
+    "size": 1602798,
+    "revision": 9
+  }
+}

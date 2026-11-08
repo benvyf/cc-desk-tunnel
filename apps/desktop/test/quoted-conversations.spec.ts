@@ -1,0 +1,1489 @@
+import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { randomUUID } from 'node:crypto';
+import type { EventPayload, Session, SessionEvent } from '@cc-desk-tunnel/protocol';
+import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
+import { splitQuoteMessage } from '../src/quotes.ts';
+
+async function fixture(
+  page: Page,
+  {
+    capable = true,
+    busy = false,
+    holdSide = false,
+    foreignChild = false,
+    delaySideCreation = false,
+    longAnswer = false,
+    delaySendAck = false,
+    failCancelOnce = false,
+    ssh = false,
+  } = {},
+) {
+  const now = new Date().toISOString(),
+    connectionId = randomUUID(),
+    parentRun = randomUUID();
+  const parent: Session = {
+    id: randomUUID(),
+    title: '主引用会话',
+    projectPath: 'D:\\工作\\引用',
+    autoTitle: false,
+    permissionMode: 'auto',
+    model: 'sonnet',
+    effort: 'medium',
+    createdAt: now,
+    updatedAt: now,
+    activeRun: busy ? { id: parentRun, status: 'running', connectionId } : null,
+  };
+  const sessions = [parent],
+    events = new Map<string, SessionEvent[]>([[parent.id, []]]);
+  if (ssh) {
+    parent.device = { id: randomUUID(), name: 'SSH fixture', platform: 'linux', viaSsh: true };
+    parent.projectPath = '/home/dev/project';
+    await page.addInitScript(() => {
+      const noOp = () => {};
+      const api: Record<string, unknown> = {
+        dev: true,
+        platform: 'win32',
+        boot: { connection: '', shared: { connections: [], busy: [] } },
+        preview: undefined,
+        access: undefined,
+        managedUpdate: undefined,
+        managedServer: undefined,
+        version: async () => '0.3.7',
+        windowSettings: async () => ({ closeToTray: false }),
+        connections: async () => [],
+        workspaceRoots: async () => [],
+        foldersExist: async (paths: string[]) => paths.map(() => true),
+        device: async () => ({
+          id: 'e04aef32-195f-48c0-a45a-34ebd8b0aa94',
+          name: 'fixture desktop',
+        }),
+        loadLogin: async () => null,
+        loadDrafts: async () => ({}),
+        loadSchedules: async () => ({ path: '', text: '' }),
+        ssh: {
+          forkSession: async () => {
+            throw Error('offline SSH edit must not be called');
+          },
+        },
+      };
+      Object.defineProperty(window, 'desktop', {
+        value: new Proxy(api, {
+          get: (target, key) =>
+            String(key) in target
+              ? target[String(key)]
+              : String(key).startsWith('on')
+                ? () => noOp
+                : async () => undefined,
+        }),
+      });
+    });
+  }
+  const calls: Record<string, any>[] = [],
+    created: string[] = [];
+  let send = (value: unknown) => {};
+  let finishSide = () => {};
+  let finishSend = () => {};
+  let cancelAttempts = 0;
+  function add(sessionId: string, payload: EventPayload, runId: string = parentRun) {
+    const list = events.get(sessionId) ?? [];
+    const event = { sessionId, runId, sequence: list.length + 1, createdAt: now, payload };
+    list.push(event);
+    events.set(sessionId, list);
+    return event;
+  }
+  const models = ['sonnet', 'opus'].map((value) => ({
+    value,
+    displayName: value === 'sonnet' ? 'Sonnet' : 'Opus',
+    description: '',
+    source: 'native' as const,
+    supportedEffortLevels: ['low', 'medium', 'high'] as const,
+  }));
+  add(parent.id, {
+    type: 'native.capabilities',
+    account: {},
+    commands: [],
+    models: models.map((m) => ({ ...m, supportedEffortLevels: [...m.supportedEffortLevels] })),
+  });
+  add(parent.id, {
+    type: 'message.user',
+    messageId: randomUUID(),
+    text: '请解释这些功能',
+    scenario: 'chat',
+  });
+  const answer =
+    '# 引用交互\n\n自动刷新只更新当前文件。侧边会话独立保存。\n\n请由用户输入问题后再发送。' +
+    (longAnswer ? '\n\n长回答里的引用片段。'.repeat(80) : '');
+  add(parent.id, { type: 'text.delta', messageId: randomUUID(), text: answer });
+  add(parent.id, { type: 'run.status', status: busy ? 'running' : 'completed', connectionId });
+  await page.routeWebSocket('ws://127.0.0.1:18903/ws', (route) => {
+    send = (value) => route.send(JSON.stringify(value));
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      calls.push(message);
+      const respond = (id?: string) =>
+        send({ type: 'response', requestId: message.requestId, ok: true, sessionId: id });
+      if (message.type === 'device') return;
+      if (message.type === 'auth') {
+        send({
+          type: 'ready',
+          protocolVersion: PROTOCOL_VERSION,
+          version: '0.3.7',
+          connectionId,
+          adapter: 'claude-code',
+          sessions,
+          ...(capable ? { sideConversations: true } : {}),
+        });
+        if (ssh) send({ type: 'devices', devices: [{ ...parent.device, ready: false }] });
+        return;
+      }
+      if (message.type === 'session.subscribe') {
+        const session = sessions.find((s) => s.id === message.sessionId)!;
+        const list = events.get(session.id) ?? [];
+        send({
+          type: 'session.snapshot',
+          requestId: message.requestId,
+          session,
+          mode: 'replace',
+          firstSequence: list[0]?.sequence ?? 0,
+          lastSequence: list.at(-1)?.sequence ?? 0,
+          hasEarlier: false,
+          events: list,
+        });
+        respond(session.id);
+        return;
+      }
+      if (message.type === 'session.side.create') {
+        const source = sessions.find((s) => s.id === message.sessionId)!;
+        const child: Session = {
+          ...source,
+          id: randomUUID(),
+          title: message.title,
+          activeRun: null,
+          sideConversation: {
+            parentSessionId: source.id,
+            throughSequence: events.get(source.id)?.length ?? 0,
+            createdAt: now,
+          },
+        };
+        sessions.push(child);
+        created.push(child.id);
+        events.set(child.id, []);
+        send({ type: 'session.updated', session: child });
+        finishSide = () => respond(child.id);
+        if (!delaySideCreation) finishSide();
+        return;
+      }
+      if (message.type === 'session.configure') {
+        const session = sessions.find((s) => s.id === message.sessionId)!;
+        for (const key of ['model', 'effort', 'permissionMode'] as const)
+          if (key in message) (session as any)[key] = message[key];
+        send({ type: 'session.updated', session });
+        respond(session.id);
+        return;
+      }
+      if (message.type === 'message.send') {
+        const session = sessions.find((s) => s.id === message.sessionId)!,
+          runId = randomUUID();
+        session.activeRun = {
+          id: runId,
+          status: 'running',
+          connectionId: foreignChild && session.id !== parent.id ? randomUUID() : connectionId,
+        };
+        send({ type: 'session.updated', session });
+        send({
+          type: 'session.event',
+          event: add(
+            session.id,
+            {
+              type: 'message.user',
+              messageId: message.requestId,
+              text: message.text,
+              scenario: 'chat',
+            },
+            runId,
+          ),
+        });
+        send({
+          type: 'session.event',
+          event: add(
+            session.id,
+            {
+              type: 'text.delta',
+              messageId: randomUUID(),
+              text: session.id === parent.id ? '主会话继续回答' : '侧边会话独立回答',
+            },
+            runId,
+          ),
+        });
+        if (!holdSide || session.id === parent.id) {
+          session.activeRun = null;
+          send({
+            type: 'session.event',
+            event: add(
+              session.id,
+              { type: 'run.status', status: 'completed', connectionId },
+              runId,
+            ),
+          });
+          send({ type: 'session.updated', session });
+        }
+        finishSend = () => respond(session.id);
+        if (!delaySendAck) finishSend();
+        return;
+      }
+      if (message.type === 'run.cancel') {
+        if (failCancelOnce && cancelAttempts++ === 0) {
+          send({
+            type: 'response',
+            requestId: message.requestId,
+            ok: false,
+            code: 'cancel_failed',
+            message: '模拟停止失败，请重试',
+          });
+          return;
+        }
+        const session = sessions.find((s) => s.id === message.sessionId)!;
+        const runId = session.activeRun!.id;
+        session.activeRun = null;
+        send({
+          type: 'session.event',
+          event: add(session.id, { type: 'run.status', status: 'cancelled', connectionId }, runId),
+        });
+        send({ type: 'session.updated', session });
+        respond(session.id);
+        return;
+      }
+      respond(message.sessionId);
+    });
+  });
+  await page.goto('/');
+  const localMode = page.getByRole('button', { name: '本地模拟', exact: true });
+  if (ssh && (await localMode.isVisible())) await localMode.click();
+  await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18903/ws');
+  await page
+    .getByLabel('服务凭据', { exact: true })
+    .fill('quote-fixture-token-with-enough-characters');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  if (ssh) await page.getByRole('button', { name: '展开其他设备的会话', exact: true }).click();
+  await page
+    .locator('.session-row')
+    .filter({ hasText: parent.title })
+    .locator('.session-select')
+    .click();
+  await expect(page.locator('.workspace .message.assistant')).toContainText('自动刷新');
+  return {
+    parent,
+    sessions,
+    events,
+    calls,
+    created,
+    answer,
+    updateSshReady: (ready: boolean) =>
+      send({ type: 'devices', devices: [{ ...parent.device, ready }] }),
+    finishSide: () => finishSide(),
+    finishSend: () => finishSend(),
+    updateRun: (sessionId: string, run: Session['activeRun']) => {
+      const session = sessions.find((item) => item.id === sessionId)!;
+      session.activeRun = run;
+      send({ type: 'session.updated', session });
+    },
+    messages: () => calls.filter((c) => c.type === 'message.send'),
+  };
+}
+
+test('SSH edit-resend follows target readiness without attempting an offline fork', async ({
+  page,
+}) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  const f = await fixture(page, { ssh: true });
+  const edit = page.getByRole('button', { name: '编辑重发', exact: true });
+  await expect(edit).toHaveCount(0);
+  f.updateSshReady(true);
+  await expect(edit).toBeVisible();
+  f.updateSshReady(false);
+  await expect(edit).toHaveCount(0);
+  expect(errors).toEqual([]);
+});
+async function selectAnswer(page: Page, text: string) {
+  const content = page.locator('.workspace .message.assistant [data-copy-text]').last();
+  await content.scrollIntoViewIfNeeded();
+  await content.evaluate((element, text) => {
+    const doc = element.ownerDocument,
+      walker = doc.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const at = node.textContent?.indexOf(text) ?? -1;
+      if (at >= 0) {
+        const range = doc.createRange();
+        range.setStart(node, at);
+        range.setEnd(node, at + text.length);
+        const selection = doc.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        break;
+      }
+    }
+  }, text);
+  await expect(page.getByRole('toolbar', { name: '引用选中文字' })).toBeVisible();
+}
+
+test('mouse drag selection offers both quote destinations and preserves exactly the selected text', async ({
+  page,
+}) => {
+  const f = await fixture(page),
+    main = page.locator('.workspace');
+  for (const destination of ['main', 'side']) {
+    const paragraph = main.locator('.message.assistant [data-copy-text] p').first();
+    await paragraph.scrollIntoViewIfNeeded();
+    const points = await paragraph.evaluate((el) => {
+      const node = el.firstChild!,
+        text = node.textContent!,
+        end = text.indexOf('。');
+      const first = el.ownerDocument.createRange(),
+        last = el.ownerDocument.createRange();
+      first.setStart(node, 0);
+      first.setEnd(node, 1);
+      last.setStart(node, end - 1);
+      last.setEnd(node, end);
+      const a = first.getBoundingClientRect(),
+        b = last.getBoundingClientRect();
+      return {
+        from: { x: a.left + 1, y: a.top + a.height / 2 },
+        to: { x: b.right - 1, y: b.top + b.height / 2 },
+      };
+    });
+    await page.mouse.move(points.from.x, points.from.y);
+    await page.mouse.down();
+    await page.mouse.move(points.to.x, points.to.y, { steps: 12 });
+    await page.mouse.up();
+    const toolbar = page.getByRole('toolbar', { name: '引用选中文字', exact: true });
+    await expect(toolbar).toBeVisible();
+    const selected = await page.evaluate(() => getSelection()?.toString() ?? '');
+    expect(selected).toContain('自动刷新');
+    await expect(toolbar.getByRole('button', { name: '添加到对话', exact: true })).toBeVisible();
+    await expect(
+      toolbar.getByRole('button', { name: '在侧边聊天中提问', exact: true }),
+    ).toBeEnabled();
+    await toolbar
+      .getByRole('button', {
+        name: destination === 'main' ? '添加到对话' : '在侧边聊天中提问',
+        exact: true,
+      })
+      .click();
+    const target =
+      destination === 'main' ? main : page.getByRole('region', { name: '侧边会话', exact: true });
+    await target.getByRole('button', { name: '查看引用内容', exact: true }).click();
+    await expect(target.locator('.composer-input .quote-reference-item blockquote')).toHaveText(
+      selected,
+    );
+    await expect(target.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+    await expect(target.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
+    expect(f.messages()).toHaveLength(0);
+  }
+});
+
+test('main quote is an atomic editable reference and sends only the explicit question in the original session', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('保留原有草稿');
+  await main.getByRole('button', { name: '引用回答', exact: true }).last().click();
+  await expect(box).toHaveValue('保留原有草稿');
+  await expect(box).toBeFocused();
+  await expect(main.locator('.composer-input')).toContainText('1 条引用');
+  await expect(
+    main.getByRole('button', { name: '查看引用内容', exact: true }),
+  ).toHaveAccessibleDescription('1 条引用');
+  expect(f.messages()).toHaveLength(0);
+  await main.getByRole('button', { name: '查看引用内容', exact: true }).click();
+  await expect(main.locator('.quote-reference-list')).toContainText('自动刷新只更新当前文件');
+  await main.getByRole('button', { name: '移除引用', exact: true }).click();
+  await expect(box).toHaveValue('保留原有草稿');
+  await main.getByRole('button', { name: '引用回答', exact: true }).last().click();
+  await box.fill('解释引用中的这句话');
+  await main.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect.poll(() => f.messages().length).toBe(1);
+  expect(f.messages()[0].sessionId).toBe(f.parent.id);
+  expect(splitQuoteMessage(f.messages()[0].text)).toMatchObject({
+    text: '解释引用中的这句话',
+    quotes: [{ sessionId: f.parent.id, text: f.answer }],
+  });
+  await expect(main.locator('.message.user').last()).toContainText('解释引用中的这句话');
+  await expect(main.locator('.message.user').last()).not.toContainText(
+    /CC (?:SPACE|Space) 引用消息/,
+  );
+});
+
+test('selected quote opens an independent side conversation with explicit send and isolated model settings', async ({
+  page,
+}) => {
+  const f = await fixture(page),
+    main = page.locator('.workspace'),
+    mainBox = main.getByRole('textbox', { name: '消息', exact: true });
+  await mainBox.fill('主会话草稿保持原样');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await expect(side).toBeVisible();
+  expect(f.messages()).toHaveLength(0);
+  expect(f.created).toHaveLength(1);
+  await expect(mainBox).toHaveValue('主会话草稿保持原样');
+  await expect(page.locator('.session-row.selected')).toContainText(f.parent.title);
+  await expect(side.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
+  await side.getByRole('button', { name: '模型与推理强度', exact: true }).click();
+  await side.locator('.model-current').click();
+  await side.getByRole('option', { name: 'Opus', exact: true }).click();
+  await expect.poll(() => f.sessions[1].model).toBe('opus');
+  expect(f.parent.model).toBe('sonnet');
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('解释这个概念');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect.poll(() => f.messages().length).toBe(1);
+  expect(f.messages()[0].sessionId).toBe(f.created[0]);
+  expect(splitQuoteMessage(f.messages()[0].text)).toMatchObject({
+    text: '解释这个概念',
+    quotes: [{ text: '自动刷新' }],
+  });
+  await expect(side).toContainText('侧边会话独立回答');
+  await expect(mainBox).toHaveValue('主会话草稿保持原样');
+});
+
+test('side input history recalls only its own question and preserves main draft and quote state', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const mainBox = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await mainBox.fill('main unsent draft');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  const sideBox = side.getByRole('textbox', { name: '消息', exact: true });
+  await sideBox.fill('side question');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(sideBox).toHaveValue('');
+  await expect(side.getByRole('button', { name: '发送消息', exact: true })).toBeDisabled();
+  await sideBox.press('ArrowUp');
+  await expect(sideBox).toHaveValue('side question');
+  await expect(side.locator('.quote-reference-list')).toHaveCount(0);
+  await expect(mainBox).toHaveValue('main unsent draft');
+  expect(f.messages()).toHaveLength(1);
+  expect(f.messages()[0].sessionId).toBe(f.created[0]);
+  await sideBox.press('ArrowDown');
+  await expect(sideBox).toHaveValue('');
+});
+
+test('a side conversation names its source in one line that also holds its find button', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  const source = side.locator('.side-conversation-source');
+  await expect(source).toContainText(`继承“${f.parent.title}”的上下文`);
+  await expect(source).toHaveAttribute('title', /已保存的上下文.*未保存的选区随问题发送/);
+  await expect(source).toHaveAttribute('title', /后续追问独立保存/);
+  const line = (await source.boundingBox())!;
+  expect(line.height).toBeLessThanOrEqual(40);
+  const find = (await side
+    .getByRole('button', { name: '打开对话查找', exact: true })
+    .boundingBox())!;
+  expect(find.y).toBeGreaterThanOrEqual(line.y);
+  expect(find.y + find.height).toBeLessThanOrEqual(line.y + line.height);
+  // The conversation starts right under that line.
+  const conversation = (await side.locator('.conversation').boundingBox())!;
+  expect(Math.round(conversation.y)).toBe(Math.round(line.y + line.height));
+});
+
+test('Clawd stands on the session box, follows its run and stays off the side conversation', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  const box = page.locator('.workspace form.composer');
+  const clawd = page.locator('.workspace .composer-stack > svg.clawd');
+  await expect(clawd).toHaveCount(1);
+  await expect(clawd).toHaveAttribute('data-state', 'idle');
+  const [c, b] = [(await clawd.boundingBox())!, (await box.boundingBox())!];
+  // Feet on the box's top edge, at its right.
+  expect(Math.abs(c.y + c.height - b.y)).toBeLessThan(1.5);
+  expect(c.x + c.width).toBeLessThanOrEqual(b.x + b.width);
+  expect(c.x).toBeGreaterThan(b.x + b.width / 2);
+  const run = randomUUID();
+  f.updateRun(f.parent.id, { id: run, status: 'running', connectionId: randomUUID() });
+  await expect(clawd).toHaveAttribute('data-state', 'working');
+  f.updateRun(f.parent.id, {
+    id: run,
+    status: 'awaiting_approval',
+    connectionId: randomUUID(),
+    waiting: 'approval',
+  });
+  await expect(clawd).toHaveAttribute('data-state', 'waiting');
+  f.updateRun(f.parent.id, null);
+  await expect(clawd).toHaveAttribute('data-state', 'idle');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await expect(side.locator('form.composer')).toBeVisible();
+  await expect(side.locator('svg.clawd')).toHaveCount(0);
+});
+
+test('with the setting off there is no Clawd on the session box', async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('proxy-prefs', JSON.stringify({ mascot: false })),
+  );
+  await fixture(page);
+  await expect(page.locator('.workspace form.composer')).toBeVisible();
+  await expect(page.locator('svg.clawd')).toHaveCount(0);
+});
+
+test('a running main conversation is not stopped or sent to when stopping a side answer', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true, holdSide: true }),
+    main = page.locator('.workspace');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('只在侧边回答');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(side.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+  const parentRun = f.parent.activeRun!.id;
+  await side.getByRole('button', { name: '停止运行', exact: true }).click();
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(f.created[0]);
+  expect(f.parent.activeRun!.id).toBe(parentRun);
+  expect(f.messages().every((c) => c.sessionId !== f.parent.id)).toBe(true);
+  await expect(main.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+});
+
+test('old nodes keep main quote available and disable side creation without a local fallback', async ({
+  page,
+}) => {
+  const f = await fixture(page, { capable: false });
+  await expect(page.getByRole('button', { name: '引用回答', exact: true }).last()).toBeEnabled();
+  await expect(
+    page
+      .locator('.workspace')
+      .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+      .last(),
+  ).toBeDisabled();
+  expect(f.created).toHaveLength(0);
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('multiple side tabs keep separate drafts and quote chips after switching', async ({
+  page,
+}) => {
+  const f = await fixture(page),
+    main = page.locator('.workspace');
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('第一份侧栏草稿');
+  await selectAnswer(page, '侧边会话独立保存');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  await expect.poll(() => f.created.length).toBe(2);
+  await expect(side.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('第二份侧栏草稿');
+  await page.getByRole('tab', { name: '追问 · 自动刷新', exact: true }).click();
+  await expect(side.getByRole('textbox', { name: '消息', exact: true })).toHaveValue(
+    '第一份侧栏草稿',
+  );
+  await side.getByRole('button', { name: '查看引用内容', exact: true }).click();
+  await expect(side.locator('.quote-reference-list')).toHaveText(/自动刷新/);
+  await page.getByRole('tab', { name: '追问 · 侧边会话独立保存', exact: true }).click();
+  await expect(side.getByRole('textbox', { name: '消息', exact: true })).toHaveValue(
+    '第二份侧栏草稿',
+  );
+  await expect(main.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('queued quote editing exposes the question and preserves its reference', async ({ page }) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '添加到对话', exact: true })
+    .click();
+  await box.fill('等待中的问题');
+  await main.getByRole('button', { name: '排队发送', exact: true }).click();
+  const queue = main.getByRole('region', { name: '待发送消息', exact: true });
+  await expect(queue).toContainText('等待中的问题');
+  expect(f.messages()).toHaveLength(0);
+  await queue.getByRole('button', { name: '编辑排队消息', exact: true }).click();
+  const editor = queue.getByRole('textbox', { name: '编辑排队消息', exact: true });
+  await expect(editor).toHaveValue('等待中的问题');
+  await editor.fill('');
+  await expect(queue.getByRole('button', { name: '保存排队消息', exact: true })).toBeDisabled();
+  await editor.fill('修改后的问题');
+  await queue.getByRole('button', { name: '保存排队消息', exact: true }).click();
+  await expect(queue).toContainText('1 条引用');
+  await queue.getByRole('button', { name: '插话发送此消息', exact: true }).click();
+  await expect.poll(() => f.messages().length).toBe(1);
+  expect(splitQuoteMessage(f.messages()[0].text)).toMatchObject({
+    text: '修改后的问题',
+    quotes: [{ text: '自动刷新' }],
+  });
+});
+
+test('quote drafts restore after reload without sending', async ({ page }) => {
+  const f = await fixture(page),
+    main = page.locator('.workspace');
+  await main.getByRole('button', { name: '引用回答', exact: true }).last().click();
+  await main.getByRole('textbox', { name: '消息', exact: true }).fill('保留到下次打开');
+  await expect
+    .poll(() => page.evaluate(() => JSON.parse(localStorage.getItem('proxy-drafts') ?? '{}')))
+    .toHaveProperty(f.parent.id);
+  await page.reload();
+  await page
+    .getByLabel('服务凭据', { exact: true })
+    .fill('quote-fixture-token-with-enough-characters');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page
+    .locator('.session-row')
+    .filter({ hasText: f.parent.title })
+    .locator('.session-select')
+    .click();
+  await expect(main.getByRole('textbox', { name: '消息', exact: true })).toHaveValue(
+    '保留到下次打开',
+  );
+  await expect(main.locator('.composer-input')).toContainText('1 条引用');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('user text and selections spanning messages never become quote actions', async ({ page }) => {
+  const f = await fixture(page);
+  for (const cross of [false, true]) {
+    await page.locator('.workspace .conversation').evaluate((root, cross) => {
+      const doc = root.ownerDocument,
+        user = root.querySelector('.message.user [data-copy-text]')!,
+        answer = root.querySelector('.message.assistant [data-copy-text]')!;
+      const range = doc.createRange();
+      range.selectNodeContents(user);
+      if (cross) range.setEndAfter(answer);
+      const selection = doc.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }, cross);
+    await expect(page.getByRole('toolbar', { name: '引用选中文字' })).toHaveCount(0);
+    await page
+      .locator('.workspace .message.user')
+      .dispatchEvent('contextmenu', { clientX: 450, clientY: 200 });
+    const menu = page.getByRole('menu', { name: '对话文字操作' });
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole('menuitem', { name: '添加到对话', exact: true })).toHaveCount(0);
+    await menu.press('Escape');
+  }
+  expect(f.messages()).toHaveLength(0);
+  expect(f.created).toHaveLength(0);
+});
+
+test('context menu quotes the captured selection even after focus clears the browser selection', async ({
+  page,
+}) => {
+  const f = await fixture(page);
+  await selectAnswer(page, '自动刷新');
+  await page
+    .locator('.workspace .message.assistant')
+    .dispatchEvent('contextmenu', { clientX: 450, clientY: 200 });
+  const menu = page.getByRole('menu', { name: '对话文字操作' });
+  await expect(menu).toBeVisible();
+  await page.evaluate(() => getSelection()?.removeAllRanges());
+  await menu.getByRole('menuitem', { name: '添加到对话', exact: true }).click();
+  await expect(page.locator('.workspace .composer-input')).toContainText('1 条引用');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('side runs remain controllable after their original peer changes', async ({ page }) => {
+  const f = await fixture(page, { holdSide: true, foreignChild: true });
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('继续独立追问');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(side.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+  await side.getByRole('button', { name: '停止运行', exact: true }).click();
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('side permission and model menus remain usable across themes and narrow layouts', async ({
+  page,
+}, info) => {
+  const f = await fixture(page);
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  for (const [width, height, theme, font] of [
+    [1280, 800, 'light', 16],
+    [900, 650, 'dark', 20],
+    [390, 800, 'light', 18],
+  ] as const) {
+    await page.setViewportSize({ width, height });
+    await page.evaluate(
+      ({ theme, font }) => {
+        document.documentElement.dataset.theme = theme;
+        document.documentElement.style.setProperty('--font-body', `${font}px`);
+      },
+      { theme, font },
+    );
+    await side.getByRole('button', { name: '审批模式', exact: true }).click();
+    await side.getByRole('menuitemradio', { name: '手动审批', exact: true }).click();
+    await expect.poll(() => f.sessions[1].permissionMode).toBe('default');
+    await side.getByRole('button', { name: '审批模式', exact: true }).click();
+    await side.getByRole('menuitemradio', { name: '自动审批', exact: true }).click();
+    await side.getByRole('button', { name: '模型与推理强度', exact: true }).click();
+    await side.locator('.model-current').click();
+    await side.getByRole('option', { name: 'Opus', exact: true }).click();
+    await expect(side.getByRole('dialog', { name: '模型与推理强度', exact: true })).toHaveCount(0);
+    await expect(side.getByRole('menu', { name: '审批模式', exact: true })).toHaveCount(0);
+    await expect(side.locator('.motion-presence[data-state="exit"]')).toHaveCount(0);
+    await side.getByRole('textbox', { name: '消息', exact: true }).fill('布局检查中的问题');
+    await page.screenshot({
+      path: info.outputPath(`quote-${width}-${theme}.png`),
+      animations: 'disabled',
+    });
+  }
+  expect(f.parent.permissionMode).toBe('auto');
+  expect(f.parent.model).toBe('sonnet');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('delayed side creation stays on its originating board after main navigation', async ({
+  page,
+}) => {
+  const f = await fixture(page, { delaySideCreation: true });
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  await expect.poll(() => f.created.length).toBe(1);
+  const child = f.sessions[1];
+  await page
+    .locator('.session-row')
+    .filter({ hasText: child.title })
+    .locator('.session-select')
+    .click();
+  await page
+    .locator('.workspace')
+    .getByRole('textbox', { name: '消息', exact: true })
+    .fill('切换后的草稿');
+  f.finishSide();
+  await expect(page.locator('.session-row.selected')).toContainText(child.title);
+  await expect(page.getByRole('region', { name: '侧边会话', exact: true })).toHaveCount(0);
+  await page
+    .locator('.session-row')
+    .filter({ hasText: f.parent.title })
+    .locator('.session-select')
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await expect(side).toBeVisible();
+  await expect(side.getByRole('textbox', { name: '消息', exact: true })).toHaveValue(
+    '切换后的草稿',
+  );
+  await expect(side.locator('.composer-input')).toContainText('1 条引用');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('floating side chats keep their composer and permission menu reachable at minimum size', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('proxy-prefs', JSON.stringify({ fontSizes: { interface: 20, code: 13 } })),
+  );
+  await fixture(page);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  await page.getByRole('button', { name: '浮动预览', exact: true }).click();
+  const floating = page.locator('.preview-pane-floating'),
+    handle = floating.getByRole('separator', { name: '调整浮窗大小', exact: true });
+  await handle.focus();
+  for (let i = 0; i < 30; i++) await handle.press('ArrowUp');
+  const side = floating.getByRole('region', { name: '侧边会话', exact: true });
+  await expect
+    .poll(() =>
+      side.evaluate((el) => {
+        const bounds = el.getBoundingClientRect();
+        return [...el.querySelectorAll('textarea,.composer-toolbar')].every((item) => {
+          const box = item.getBoundingClientRect();
+          return box.top >= bounds.top && box.bottom <= bounds.bottom && box.height >= 40;
+        });
+      }),
+    )
+    .toBe(true);
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('最小浮窗仍能输入');
+  await side.getByRole('button', { name: '审批模式', exact: true }).click();
+  await side.getByRole('menuitemradio', { name: '手动审批', exact: true }).click();
+  await expect(side.getByRole('button', { name: '发送消息', exact: true })).toBeEnabled();
+});
+
+test('long selections keep both quote actions inside the viewport at maximum font size', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem('proxy-prefs', JSON.stringify({ fontSizes: { interface: 20, code: 13 } })),
+  );
+  await fixture(page, { longAnswer: true });
+  for (const width of [1280, 390]) {
+    await page.setViewportSize({ width, height: 700 });
+    await page.locator('.workspace .conversation').evaluate(async (root) => {
+      root.scrollTop = (root.scrollHeight - root.clientHeight) / 2;
+      await new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      );
+      const doc = root.ownerDocument,
+        content = root.querySelector('.message.assistant [data-copy-text]')!,
+        range = doc.createRange();
+      range.selectNodeContents(content);
+      const selection = doc.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    const toolbar = page.getByRole('toolbar', { name: '引用选中文字', exact: true });
+    await expect(toolbar).toBeVisible();
+    await expect
+      .poll(() =>
+        toolbar.evaluate((el) => {
+          const bounds = el.getBoundingClientRect();
+          return (
+            bounds.left >= 8 &&
+            bounds.top >= 8 &&
+            bounds.right <= innerWidth - 8 &&
+            bounds.bottom <= innerHeight - 8 &&
+            el.scrollWidth <= el.clientWidth
+          );
+        }),
+      )
+      .toBe(true);
+  }
+});
+
+test('short split chats let users scroll to the composer without automatic locator scrolling', async ({
+  page,
+}) => {
+  await fixture(page);
+  await page.setViewportSize({ width: 1280, height: 600 });
+  for (let i = 0; i < 2; i++)
+    await page
+      .locator('.workspace')
+      .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+      .last()
+      .click();
+  await page.getByRole('button', { name: '分栏预览', exact: true }).click();
+  const sides = page.getByRole('region', { name: '侧边会话', exact: true });
+  await expect(sides).toHaveCount(2);
+  for (const side of await sides.all()) {
+    await side.locator('.side-conversation-source').hover();
+    await page.mouse.wheel(0, 500);
+    await expect
+      .poll(() =>
+        side.evaluate((el) => {
+          const bounds = el.getBoundingClientRect(),
+            box = el.querySelector('textarea')!.getBoundingClientRect();
+          return box.top >= bounds.top && box.bottom <= bounds.bottom;
+        }),
+      )
+      .toBe(true);
+    await side.getByRole('button', { name: '审批模式', exact: true }).click();
+    const menu = side.getByRole('menu', { name: '审批模式', exact: true });
+    await expect(menu).toBeVisible();
+    await side.evaluate((el) => {
+      el.scrollTop = 0;
+    });
+    await expect
+      .poll(() =>
+        menu.evaluate((el) => {
+          const bounds = el.closest('.side-conversation')!.getBoundingClientRect(),
+            box = el.getBoundingClientRect();
+          return box.top >= bounds.top && box.bottom <= bounds.bottom;
+        }),
+      )
+      .toBe(true);
+    await menu.press('Escape');
+  }
+});
+
+test('selection tools dismiss when another workspace control is used', async ({ page }) => {
+  await fixture(page);
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  await selectAnswer(page, '自动刷新');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('toolbar', { name: '引用选中文字', exact: true })).toHaveCount(0);
+  await selectAnswer(page, '自动刷新');
+  await page.getByRole('button', { name: '浮动预览', exact: true }).click();
+  await expect(page.getByRole('toolbar', { name: '引用选中文字', exact: true })).toHaveCount(0);
+});
+
+test('a delayed side send cannot erase a newer draft when its chat moves into main', async ({
+  page,
+}) => {
+  const f = await fixture(page, { delaySendAck: true });
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('第一条已发送问题');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect.poll(() => f.messages().length).toBe(1);
+  await page
+    .locator('.session-row')
+    .filter({ hasText: f.sessions[1].title })
+    .locator('.session-select')
+    .click();
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('确认返回之前新写的草稿');
+  f.finishSend();
+  await expect(page.locator('.workspace .composer-input .quote-reference-chip')).toHaveCount(0);
+  await expect(box).toHaveValue('确认返回之前新写的草稿');
+  expect(f.messages()).toHaveLength(1);
+});
+
+test('a delayed main send preserves newer edits made after returning to its side pane', async ({
+  page,
+}) => {
+  const f = await fixture(page, { delaySendAck: true });
+  const main = page.locator('.workspace');
+  await main.getByRole('button', { name: '在侧边聊天中提问', exact: true }).last().click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true });
+  await side.getByRole('textbox', { name: '消息', exact: true }).fill('建立侧会话记录');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect.poll(() => f.messages().length).toBe(1);
+  f.finishSend();
+  await expect(side.locator('.composer-input .quote-reference-chip')).toHaveCount(0);
+  await page
+    .locator('.session-row')
+    .filter({ hasText: f.sessions[1].title })
+    .locator('.session-select')
+    .click();
+  await main.getByRole('textbox', { name: '消息', exact: true }).fill('从主窗口发送的问题');
+  await main.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect.poll(() => f.messages().length).toBe(2);
+  await page
+    .locator('.session-row')
+    .filter({ hasText: f.parent.title })
+    .locator('.session-select')
+    .click();
+  const box = side.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('等待期间在侧栏写的新草稿');
+  f.finishSend();
+  await expect(main.getByRole('textbox', { name: '消息', exact: true })).toBeEnabled();
+  await expect(box).toHaveValue('等待期间在侧栏写的新草稿');
+  expect(f.messages()).toHaveLength(2);
+});
+
+test('typing with quote controls does not reinstall document selection listeners', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const probe = { added: 0, removed: 0 };
+    (window as any).selectionListenerProbe = probe;
+    const add = EventTarget.prototype.addEventListener,
+      remove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function (type, ...args) {
+      if (this === document && type === 'selectionchange') probe.added++;
+      return add.call(this, type, ...args);
+    };
+    EventTarget.prototype.removeEventListener = function (type, ...args) {
+      if (this === document && type === 'selectionchange') probe.removed++;
+      return remove.call(this, type, ...args);
+    };
+  });
+  await fixture(page);
+  await page
+    .locator('.workspace')
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .last()
+    .click();
+  await expect(page.getByRole('region', { name: '侧边会话', exact: true })).toBeVisible();
+  const before = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  await page
+    .locator('.workspace')
+    .getByRole('textbox', { name: '消息', exact: true })
+    .pressSequentially('typing should keep listeners stable');
+  const after = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  console.log(
+    'selection listener installs during typing',
+    after.added - before.added,
+    'removals',
+    after.removed - before.removed,
+  );
+  expect(after.added - before.added).toBeLessThanOrEqual(2);
+  expect(after.removed - before.removed).toBeLessThanOrEqual(2);
+  await page.getByRole('button', { name: '收起预览', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).selectionListenerProbe.removed))
+    .toBe(after.removed + 1);
+  const collapsed = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  await page
+    .locator('.workspace')
+    .getByRole('textbox', { name: '消息', exact: true })
+    .pressSequentially('after collapse');
+  const final = await page.evaluate(() => ({ ...(window as any).selectionListenerProbe }));
+  expect(final).toEqual(collapsed);
+});
+
+test('double Escape stops the main answer only after the second press', async ({ page }) => {
+  const f = await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('停止时保留的草稿');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(f.parent.id);
+  await expect(box).toHaveValue('停止时保留的草稿');
+});
+
+test('double Escape in the side composer cancels only the side run', async ({ page }) => {
+  const f = await fixture(page, { busy: true, holdSide: true });
+  await selectAnswer(page, '自动刷新');
+  await page
+    .getByRole('toolbar', { name: '引用选中文字' })
+    .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+    .click();
+  const side = page.getByRole('region', { name: '侧边会话', exact: true }),
+    box = side.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('侧边问题');
+  await side.getByRole('button', { name: '发送消息', exact: true }).click();
+  await expect(side.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+  const mainBox = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await mainBox.focus();
+  await mainBox.press('Escape');
+  await box.focus();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(f.created[0]);
+  expect(f.parent.activeRun).not.toBeNull();
+});
+
+test('Escape consumed by slash or quote tools never arms a stop', async ({ page }) => {
+  const f = await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('/');
+  await expect(page.getByRole('listbox', { name: '会话命令' })).toBeVisible();
+  await box.press('Escape');
+  await expect(page.getByRole('listbox', { name: '会话命令' })).toHaveCount(0);
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.click();
+  await selectAnswer(page, '自动刷新');
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('toolbar', { name: '引用选中文字' })).toHaveCount(0);
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('modified repeated composing locally consumed and unrelated keys reset Escape pairs', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  for (const interaction of [
+    'modified',
+    'repeat',
+    'composition',
+    'prevented',
+    'stopped',
+    'other',
+    'pointer',
+    'blur',
+  ]) {
+    const run = {
+      id: randomUUID(),
+      status: 'running' as const,
+      connectionId: f.parent.activeRun?.connectionId ?? randomUUID(),
+    };
+    f.updateRun(f.parent.id, run);
+    await expect(box).toBeEnabled();
+    await box.click();
+    if (interaction !== 'repeat') await box.press('Escape');
+    if (interaction === 'modified') await box.press('Shift+Escape');
+    if (interaction === 'repeat') {
+      await page.keyboard.down('Escape');
+      await page.keyboard.down('Escape');
+      await page.keyboard.up('Escape');
+    }
+    if (interaction === 'composition') {
+      await box.evaluate((el) => {
+        el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+        el.dispatchEvent(
+          new KeyboardEvent('keydown', {
+            key: 'Escape',
+            code: 'Escape',
+            bubbles: true,
+            isComposing: true,
+          }),
+        );
+        el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+      });
+      // Fresh shortcut presses belong after the composition-closing guard.
+      await page.evaluate(
+        () =>
+          new Promise<void>((resolve) =>
+            requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+          ),
+      );
+    }
+    if (interaction === 'prevented' || interaction === 'stopped') {
+      await box.evaluate(
+        (el, method) =>
+          el.addEventListener(
+            'keydown',
+            (event) => {
+              if (method === 'prevented') event.preventDefault();
+              else event.stopPropagation();
+            },
+            { once: true },
+          ),
+        interaction,
+      );
+      await box.press('Escape');
+    }
+    if (interaction === 'other') await box.press('ArrowLeft');
+    if (interaction === 'pointer') await box.click();
+    if (interaction === 'blur') await page.evaluate(() => window.dispatchEvent(new Event('blur')));
+    const previous = f.calls.filter((c) => c.type === 'run.cancel').length;
+    await box.press('Escape');
+    expect(f.calls.filter((c) => c.type === 'run.cancel').length, interaction).toBe(previous);
+    await box.press('Escape');
+    await expect
+      .poll(() => f.calls.filter((c) => c.type === 'run.cancel').length, interaction)
+      .toBe(previous + 1);
+  }
+});
+
+test('Escape pairs expire and never cross runs approval state terminal state or focus regions', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await page.clock.install();
+  await box.focus();
+  await box.press('Escape');
+  await page.clock.runFor(501);
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, id: randomUUID() });
+  await expect(main.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, status: 'awaiting_approval' });
+  await expect(main).toContainText('等待');
+  expect(
+    await main
+      .getByRole('button', { name: '停止运行', exact: true })
+      .getAttribute('aria-description'),
+  ).toBeNull();
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, status: 'running', surface: 'terminal' });
+  await page.clock.runFor(1);
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  f.updateRun(f.parent.id, { ...f.parent.activeRun!, surface: undefined });
+  await page.clock.runFor(1);
+  await box.focus();
+  await box.press('Escape');
+  await main.locator('.conversation').focus();
+  await page.keyboard.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await page.keyboard.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('shortcut toggle disables double Escape while the stop button keeps working', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      'proxy-prefs',
+      JSON.stringify({ shortcuts: { enabled: false, keys: {} } }),
+    ),
+  );
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  expect(
+    await main
+      .getByRole('button', { name: '停止运行', exact: true })
+      .getAttribute('aria-description'),
+  ).toBeNull();
+  await main.getByRole('button', { name: '停止运行', exact: true }).click();
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('double Escape pauses queued follow-ups and does not send them after cancellation', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('停止后不要自动发送');
+  await main.getByRole('button', { name: '排队发送', exact: true }).click();
+  const queue = main.getByRole('region', { name: '待发送消息', exact: true });
+  await expect(queue).toContainText('停止后不要自动发送');
+  await box.focus();
+  await box.press('Escape');
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+  await expect(queue).toContainText('排队已暂停');
+  expect(f.messages()).toHaveLength(0);
+});
+
+test('double Escape fixed shortcut is explained with the existing settings controls', async ({
+  page,
+}, info) => {
+  await fixture(page);
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  await page.getByRole('button', { name: '快捷键', exact: true }).click();
+  const settings = page.getByRole('region', { name: '快捷键', exact: true });
+  await expect(settings).toContainText('停止当前回答');
+  // Two keycaps since phase 3l.
+  await expect(settings.locator('.key-combo kbd')).toHaveText(['Esc', 'Esc']);
+  await page.screenshot({
+    path: info.outputPath('double-escape-shortcut-settings.png'),
+    animations: 'disabled',
+  });
+});
+
+test('terminal approval and queue editor targets keep their own Escape handling', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  for (const owner of [
+    'native-terminal',
+    'xterm',
+    'approval-actions',
+    'approval-dock',
+    'queued-editor',
+  ]) {
+    await box.focus();
+    await box.press('Escape');
+    await main.evaluate((root, owner) => {
+      const node = root.ownerDocument.createElement('div');
+      node.className = owner;
+      node.dataset.fixtureStopOwner = '';
+      const input = root.ownerDocument.createElement('input');
+      input.setAttribute('aria-label', '局部输入');
+      node.append(input);
+      root.append(node);
+    }, owner);
+    const local = page.getByRole('textbox', { name: '局部输入', exact: true });
+    await local.focus();
+    await local.press('Escape');
+    await local.press('Escape');
+    expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+    await main.locator('[data-fixture-stop-owner]').evaluate((el) => el.remove());
+  }
+  await box.focus();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+test('active stop keyboard handlers remain stable while typing a follow-up', async ({ page }) => {
+  await page.addInitScript(() => {
+    const probe = { add: 0, remove: 0 };
+    (window as any).stopKeyProbe = probe;
+    const add = EventTarget.prototype.addEventListener,
+      remove = EventTarget.prototype.removeEventListener;
+    EventTarget.prototype.addEventListener = function (type, ...args) {
+      if (type === 'keydown' && (this === document || this === window)) probe.add++;
+      return add.call(this, type, ...args);
+    };
+    EventTarget.prototype.removeEventListener = function (type, ...args) {
+      if (type === 'keydown' && (this === document || this === window)) probe.remove++;
+      return remove.call(this, type, ...args);
+    };
+  });
+  await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  const before = await page.evaluate(() => ({ ...(window as any).stopKeyProbe }));
+  await box.pressSequentially('keyboard subscriptions remain stable');
+  const after = await page.evaluate(() => ({ ...(window as any).stopKeyProbe }));
+  expect(after).toEqual(before);
+});
+
+test('a late IME-closing Escape cannot arm the global double-Escape stop shortcut', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true });
+  const box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  await box.evaluate((element) => {
+    const now = performance.now();
+    Object.defineProperty(performance, 'now', { configurable: true, value: () => now });
+    element.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    element.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    element.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Escape',
+        code: 'Escape',
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    delete (performance as any).now;
+  });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await box.press('Escape');
+  expect(f.calls.filter((call) => call.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((call) => call.type === 'run.cancel').length).toBe(1);
+});
+
+test('IME composition owns Escape even when an event omits its composing flag', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true }),
+    box = page.locator('.workspace').getByRole('textbox', { name: '消息', exact: true });
+  await box.focus();
+  await box.dispatchEvent('compositionstart');
+  await box.press('Escape');
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.dispatchEvent('compositionend');
+  await box.evaluate((el) => {
+    el.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 229, bubbles: true }),
+    );
+  });
+  await page.evaluate(
+    () =>
+      new Promise<void>((resolve) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+      ),
+  );
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+});
+
+for (const ownerPane of ['main', 'side'])
+  for (const tool of ['find', 'slash', 'context'])
+    test(`an unrelated ${ownerPane} ${tool} panel does not block the other conversation Escape`, async ({
+      page,
+    }) => {
+      const f = await fixture(page, { busy: true, holdSide: true }),
+        main = page.locator('.workspace');
+      await selectAnswer(page, '自动刷新');
+      await page
+        .getByRole('toolbar', { name: '引用选中文字' })
+        .getByRole('button', { name: '在侧边聊天中提问', exact: true })
+        .click();
+      const side = page.getByRole('region', { name: '侧边会话', exact: true }),
+        box = side.getByRole('textbox', { name: '消息', exact: true });
+      await box.fill('侧边追问');
+      await side.getByRole('button', { name: '发送消息', exact: true }).click();
+      await expect(side.getByRole('button', { name: '停止运行', exact: true })).toBeEnabled();
+      const owner = ownerPane === 'main' ? main : side;
+      const target = ownerPane === 'main' ? side : main;
+      const targetBox = target.getByRole('textbox', { name: '消息', exact: true });
+      if (tool === 'find')
+        await owner.getByRole('button', { name: '打开对话查找', exact: true }).click();
+      else if (tool === 'context')
+        await owner.locator('.message.assistant').last().click({ button: 'right' });
+      else await owner.getByRole('textbox', { name: '消息', exact: true }).fill('/');
+      const local =
+        tool === 'find'
+          ? owner.getByRole('search', { name: '对话内查找', exact: true })
+          : tool === 'context'
+            ? owner.getByRole('menu', { name: '对话文字操作', exact: true })
+            : owner.getByRole('listbox', { name: '会话命令', exact: true });
+      await expect(local).toBeVisible();
+      await targetBox.focus();
+      await targetBox.press('Escape');
+      expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(0);
+      await targetBox.press('Escape');
+      await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(1);
+      expect(f.calls.find((c) => c.type === 'run.cancel')!.sessionId).toBe(
+        ownerPane === 'main' ? f.created[0] : f.parent.id,
+      );
+      expect(ownerPane === 'main' ? f.parent.activeRun : f.sessions[1].activeRun).not.toBeNull();
+      await expect(local).toBeVisible();
+    });
+
+test('a failed Escape cancellation shows the existing error and requires a fresh pair to retry', async ({
+  page,
+}) => {
+  const f = await fixture(page, { busy: true, failCancelOnce: true }),
+    main = page.locator('.workspace'),
+    box = main.getByRole('textbox', { name: '消息', exact: true });
+  await box.fill('失败后保留草稿');
+  await box.press('Escape');
+  await box.press('Escape');
+  await expect(main.getByRole('alert')).toContainText('模拟停止失败');
+  expect(f.parent.activeRun).not.toBeNull();
+  await expect(box).toBeEnabled();
+  await box.press('Escape');
+  expect(f.calls.filter((c) => c.type === 'run.cancel')).toHaveLength(1);
+  await box.press('Escape');
+  await expect.poll(() => f.calls.filter((c) => c.type === 'run.cancel').length).toBe(2);
+  await expect(box).toHaveValue('失败后保留草稿');
+  expect(f.parent.activeRun).toBeNull();
+});

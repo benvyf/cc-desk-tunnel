@@ -1,0 +1,28 @@
+{
+  "sourceCommit": "0fcc03ecd2954720e647bbedf2cd995ebbc0bc50",
+  "previousSourceCommit": "9ab5f49f8155076ae5d7eacb33d9e369da4e2199",
+  "backup": "/var/backups/cc-update-service/bootstrap-policy-0fcc03e-20261024T022330Z",
+  "previousRuntime": "/opt/cc-update-service.previous-bootstrap-policy-0fcc03e",
+  "changedRuntimeFiles": [
+    "apps/update-service/web/server-bootstrap.py",
+    "docs/ACCOUNT-MONITOR.md",
+    "docs/ACCOUNT-MONITOR-DEPLOYMENT.md"
+  ],
+  "bootstrapSha256": "270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0",
+  "phase": "complete",
+  "linuxBootstrapTests": {
+    "total": 16,
+    "passed": 16,
+    "skipped": 0
+  },
+  "runtimeInventoryFiles": 42,
+  "indexesUnchanged": true,
+  "configAndReleaseRecordUnchanged": true,
+  "commandHashUpdated": true,
+  "units": {
+    "cc-update-service": "active",
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  },
+  "ubuntuBootstrapExecuted": false
+}

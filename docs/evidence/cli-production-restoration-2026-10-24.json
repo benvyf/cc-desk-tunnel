@@ -1,0 +1,14 @@
+{
+  "source": "User-provided successful restoration output from ubuntu-cc; no direct administrative SSH access to this node",
+  "container": "cc-desk-tunnel-ba938975-proxy-1",
+  "version": "2.1.295",
+  "sha256": "4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358",
+  "backup": "/var/lib/cc-cli-official-restore/20261024T025442Z-hi6k94xg",
+  "officialHashAndRoot0755Verified": true,
+  "containerUnpaused": true,
+  "containerRunning": true,
+  "claudeInvoked": false,
+  "providerRequestsMadeByRepairScript": false,
+  "managedBootstrapCompleted": false,
+  "originalByteDifferenceCause": "Unknown"
+}

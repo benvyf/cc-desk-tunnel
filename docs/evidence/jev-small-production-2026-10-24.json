@@ -1,0 +1,46 @@
+{
+  "phase": "complete",
+  "sourceCommit": "e2b5fdfddb90acf5f9a43e57d0a5e55916bd13bc",
+  "backup": "/var/backups/cc-update-service/jev-small-20261024T091422Z",
+  "previousRuntime": "/opt/cc-update-service.previous-jev-small-e2b5fdf",
+  "runtimeInventoryFiles": 48,
+  "changedRuntimeFiles": [
+    "apps/update-service/src/moderation-nodes.ts",
+    "docs/MODERATION-NODE-GATE.md"
+  ],
+  "configurationUnchanged": true,
+  "privateLoginUnchanged": true,
+  "moderationPolicyUnchanged": true,
+  "publicationIndexesUnchanged": true,
+  "renewalRegistrationsUnchanged": true,
+  "existingNodeListUnchanged": true,
+  "publicAssetsVerified": true,
+  "freshEndpointAuthVerified": true,
+  "productionInstallationGrantsCreated": 0,
+  "ubuntuNodesChanged": false,
+  "providerRequests": 0,
+  "fullFreshVmInstallVerified": false,
+  "bothRenewalTimersActive": true,
+  "runtimeArchiveSha256": "7e8fe1c2c4d4554d00942d55f8e93503006a5dfa669dabb976f1287d542c88e2",
+  "validation": {
+    "dedupAndHookTestsPassed": 9,
+    "httpAndModerationTestsPassed": 27,
+    "packagePublicationAndCompatibilityTestsPassed": 18,
+    "platformOrBrowserTestsSkipped": 2,
+    "cleanCheckoutTypecheckPassed": true,
+    "actualPackagedRuntimeImportPassed": true,
+    "syntheticProviderOnly": true,
+    "exactCrossEntryAndConcurrentReusePassed": true,
+    "earlierContentReuseAndCapacityEvictionPassed": true,
+    "newHistoryAndPermissionFeedbackStillReviewed": true
+  },
+  "hookRepair": {
+    "sourceImplementedAndTested": true,
+    "ubuntuDeployed": false,
+    "reason": "native-moderation-hook.ts is in COMPATIBILITY_PATHS; administrator image maintenance required",
+    "compatibilityProtectionUnchanged": true,
+    "onlyChangedProtectedFileAgainstPublishedBuild3": "apps/server/src/native-moderation-hook.ts"
+  },
+  "publishedBuildsUnchanged": { "windows": 7, "linux": 3 },
+  "naturalUseSavingsNotYetMeasured": true
+}

@@ -1,0 +1,83 @@
+{
+  "checkedAt": "2026-10-30T06:57:18.214493+00:00",
+  "windows": {
+    "verifiedAt": "2026-10-30T06:56:21.868Z",
+    "windowsBuild": 24,
+    "sourceCommit": "4d55cd20b9f13d3d21d9799766f5a4c28884ab11",
+    "release": {
+      "build": 24,
+      "appVersion": "0.3.7",
+      "protocol": 22,
+      "sourceCommit": "4d55cd20b9f13d3d21d9799766f5a4c28884ab11",
+      "filename": "CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+      "notes": "Build 24：跨电脑登录前确认切换；统一消息发送下拉框样式、修正调用日志标题对齐；同步上游 Windows SSH 临时目录权限修复。兼容服务端 Build 8 / 协议 22。",
+      "size": 201199466,
+      "sha256": "465b43e8570c8f16a813e6d9af1492c68781ae5a7f0a9c1d5d0c892254a50726"
+    },
+    "revision": 28,
+    "expiresAt": "2026-11-02T06:56:14.763Z",
+    "stableUnchanged": true,
+    "linuxUnchanged": true,
+    "candidates": 0,
+    "automaticRenewalVerified": true,
+    "artifactUrl": "https://api.ghostapi.org/cc-updates/v1/artifacts/24/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+    "backup": "/var/backups/cc-update-service/build24-publish-2026-10-30T06-56-05-263Z"
+  },
+  "controlCenter": {
+    "sourceCommit": "baa6fa5ffca0f8b5a06e3103f04bca62737f4402",
+    "changedRuntimeFiles": ["apps/update-service/src/desktop-access.ts"],
+    "backup": "/var/backups/cc-update-service/build24-login-20261030T065438Z",
+    "previousRuntime": "/opt/cc-update-service.previous-build24-login",
+    "existingAccountsAndGrantsPreserved": true,
+    "existingSessionsPreserved": true,
+    "indexesUnchanged": true,
+    "configurationAndRenewalUnchanged": true,
+    "anonymousRejected": true
+  },
+  "publicVerification": {
+    "build": 24,
+    "signature": true,
+    "independentLocalHeadAndThreeRanges": true,
+    "sha256": "465b43e8570c8f16a813e6d9af1492c68781ae5a7f0a9c1d5d0c892254a50726",
+    "size": 201199466,
+    "sourceCommit": "4d55cd20b9f13d3d21d9799766f5a4c28884ab11",
+    "revision": 28,
+    "expiresAt": "2026-11-02T06:56:14.763Z",
+    "url": "https://api.ghostapi.org/cc-updates/v1/artifacts/24/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe"
+  },
+  "packageVerification": {
+    "packagedExeSmokePassed": true,
+    "modulesVerified": 26,
+    "installerBytes": 201199466,
+    "installerSha256": "465b43e8570c8f16a813e6d9af1492c68781ae5a7f0a9c1d5d0c892254a50726"
+  },
+  "cleanup": {
+    "completedAt": "2026-10-30T06:57:18.214493+00:00",
+    "build": 24,
+    "deleted": [
+      {
+        "path": "/srv/cc-update-service/public/artifacts/23/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+        "bytes": 201197745,
+        "sha256": "2567333156926e5b04edf4b3db6c4c9a61a65e78967b99b58ce72b9bdda25349"
+      },
+      {
+        "path": "/root/.cc-update-admin/release-build24/CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+        "bytes": 201199466,
+        "sha256": "465b43e8570c8f16a813e6d9af1492c68781ae5a7f0a9c1d5d0c892254a50726"
+      }
+    ],
+    "removedBytes": 402397211,
+    "obsoleteInstallerBytes": 201197745,
+    "temporaryUploadBytes": 201199466,
+    "freeBefore": 7596412928,
+    "freeAfter": 7998820352,
+    "remainingPublicInstallers": [
+      "/srv/cc-update-service/public/artifacts/24/win32-x64/CC-Desk-Tunnel-Setup-0.3.7-x64.exe"
+    ],
+    "oldDownloadStatus": 404,
+    "newArtifactHashVerified": true
+  },
+  "ubuntuNodesChanged": false,
+  "claudeInvocations": 0,
+  "verificationLimit": "Windows SSH tests ran under an administrator token; native confirmation responses were automated; no two-physical-computer manual validation."
+}

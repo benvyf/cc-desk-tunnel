@@ -1,0 +1,80 @@
+{
+  "published": true,
+  "release": {
+    "build": 17,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "44993b808606859c9ccd0b35ada6bbd6c799e523",
+    "size": 8109611,
+    "sha256": "7dc49e600c6e565ff230f971fd141195dacef1d61dc15294c2be537364857d6f",
+    "descriptorSha256": "54a8309223a14b744f62bb8d2a5e6e1c44192396df0b581d7510499a693eb791",
+    "packageLockSha256": "71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c",
+    "runtimeLevel": "node24-cli2.1.295-v2",
+    "compatibility": {
+      "apps/server/src/store.ts": "bf60cbbabea5e563e5dc5d19320055dfa0f68cc1952d5c134d0866e672316d44",
+      "apps/server/src/usage.ts": "4bde92f9f877e4c579eead3fe4994f863a501663417403f0c8b9c42aaa9990dc",
+      "apps/server/src/web-access.ts": "18e480b94c4c29569ad27a4bf57c7838ea584ae20b812f68030cf7676cb571f6",
+      "apps/server/src/native-settings.ts": "7eb0a58a361bf47eab0e6338f0c8dd8df803e10f1bd7f346a9649752a877b20f",
+      "apps/server/src/native-onboarding.ts": "6777362622817745be87480d79aa443811f231dc2dc576e1950dec4658d313f7",
+      "apps/server/src/native-instructions.ts": "31b01bd3c65476408b1618dcb00a1e0bf59c9e2a058179f788c5ab1ef9d2a048",
+      "apps/server/src/native-moderation-hook.ts": "197640b3b3d1c0b2a5b3646e6065da035d87425eef7047fd2a2eb180290947fb",
+      "apps/server/src/moderation.ts": "b849be7a7f2fc994a7a316e8bddf500f1ff72738745ea34f1700f0edd9169f3a",
+      "apps/server/src/errors.ts": "2f39eeba21699f498d251507cc70110cb2455b161d2cb075679703fa8448c721",
+      "apps/server/src/native-deployment.ts": "a1793be4327430c599cf5477d579ff2fbd3367fa4c9bc2f8b43758ede9c3bf3e",
+      "apps/server/src/native-terminal-policy.ts": "fab3f14ae6a063b4539b615feae19ef72d4e12b25800f30b040ef6ccc395ca68",
+      "apps/server/src/web-certificate.ts": "56e372003ce90535250e1f7706f24e19b07497e68f678580bc04a5243de97162",
+      "apps/server/src/web-totp.ts": "a0eaf188fecc7970cdba3f54b568bdd04b34e52c69f2d5796c837d56448e25d0",
+      "apps/server/src/device-terms.ts": "e97fb92596524334470cdc3075b5ad00cdf5363ad8c82002f49b2e80963db25f",
+      "apps/server/src/claude.ts": "5864d16780578b2285ee5f7ea0621fbabfe9e8ee5f5c7a384dccac331e17610c",
+      "apps/server/src/legacy.ts": "6849c4c27678c8308e1c2456c091047071d0a7502425b757cb2eda489b2addee",
+      "apps/server/src/native-account.ts": "f73433400fde0147491d6ca355ba1024e06a54dfe7bbec53c6b8f2474e13c17c",
+      "packages/protocol/src/index.ts": "b1886997f7e38e78f1c3b68b4de5df4f66e2b8e4db0a1e30a0317d9b97bad2a2",
+      "packages/protocol/src/web.ts": "27011dd28fcaff36afed63bc3a6c75a274ce0ad9493479e314d494ad32cd628c",
+      "packages/protocol/src/web-certificate.ts": "e958aa1226b10101ca91da23e161afd2db7972ba5764245a8f25749dbebd55ff"
+    }
+  },
+  "linuxTestsPassed": 40,
+  "freshInstallTestsPassed": 7,
+  "realLinuxPtySmokePassed": true,
+  "singleByteCorruptionRejected": true,
+  "signedAgentRoutingVerified": true,
+  "realSystemdRenewalPassed": true,
+  "timers": {
+    "cc-server-index-renew.timer": "active",
+    "cc-update-renew.timer": "active"
+  },
+  "nodes": {
+    "ubuntu-cc": {
+      "current": {
+        "build": 16,
+        "protocol": 24,
+        "phase": "idle"
+      },
+      "availableBuild": 17,
+      "jobUnchanged": true
+    },
+    "ubuntu-cc-02": {
+      "current": {
+        "build": 16,
+        "protocol": 24,
+        "phase": "idle"
+      },
+      "availableBuild": 17,
+      "jobUnchanged": true
+    },
+    "ubuntu-cc-03": {
+      "current": {
+        "build": 16,
+        "protocol": 24,
+        "phase": "failed"
+      },
+      "availableBuild": 17,
+      "jobUnchanged": true
+    }
+  },
+  "nodeInstallJobsCreated": false,
+  "modelRequests": 0,
+  "installationAdmissionPassed": false,
+  "supersededBy": 18,
+  "reason": "Published metadata advertised runtime v2 while the signed migration requires v3. The migration safely refuses this release; archive is retained unchanged."
+}

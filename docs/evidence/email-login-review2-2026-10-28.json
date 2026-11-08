@@ -1,0 +1,56 @@
+{
+  "phase": "second-review-fixed-and-management-deployed",
+  "managementSourceCommit": "f5f69048e36ece8b9027c41dfefce4deb21b3f46",
+  "protocolMetadataCommit": "03702dfb828d6c01e9e37b61e425103ea69390fb",
+  "windowsBuildUnchanged": 12,
+  "serverBuildUnchanged": 5,
+  "protocol": 22,
+  "pullRequest": "https://github.com/benvyf/cc-desk-tunnel/pull/2",
+  "fix": {
+    "priority": "P1",
+    "problem": "An in-flight password reset could overwrite a newer account disable or node grant revocation",
+    "resolution": "Compare authentication state and sorted grants after scrypt; reject concurrent changes with 409",
+    "reproducedBeforeFix": true
+  },
+  "checks": {
+    "newAuthenticationBoundaryTestsPassed": 8,
+    "typecheck": "passed after final test edits",
+    "changedProtocolFilesFormatting": "passed",
+    "fullSuiteBeforeProtocolExpectationFixes": {
+      "tests": 571,
+      "passed": 534,
+      "failed": 2,
+      "skipped": 35,
+      "failures": [
+        "Server archive test expected obsolete protocol 20 instead of current protocol 22",
+        "Upstream application-version history was incorrectly expected to describe the custom protocol 22 build"
+      ]
+    },
+    "affectedSuitesAfterFix": { "tests": 8, "passed": 8, "failed": 0 },
+    "fullSuiteRerunAfterFix": false,
+    "protectedProtocolRuntimeModified": false,
+    "actualProductionClaudeOrJevRequests": 0
+  },
+  "managementArtifact": {
+    "filename": "cc-update-service-email-review2.tar.gz",
+    "size": 136181,
+    "sha256": "ef380aa13668cb670d4f23ec7a4f75f2f270c009e22473b3eb69ca52b64273ce"
+  },
+  "production": {
+    "deployedAt": "2026-10-28T02:28:21Z",
+    "backup": "/var/backups/cc-update-service/email-review2-20261028T022821Z",
+    "previousRuntime": "/opt/cc-update-service.before-email-review2-20261028T022821Z",
+    "configurationAndNginxUnchanged": true,
+    "publicIndexesUnchanged": true,
+    "publicManagementAssetBytesVerified": true,
+    "unauthenticatedUserApi": 401,
+    "managementAndBothRenewalTimers": "active",
+    "userCountAtDeployment": 0
+  },
+  "pendingUserAcceptance": [
+    "Ubuntu Build 5 install confirmation",
+    "Windows Build 12 install",
+    "Private email user setup",
+    "Real client email login"
+  ]
+}

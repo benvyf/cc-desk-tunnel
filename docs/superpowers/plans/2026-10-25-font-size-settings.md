@@ -1,0 +1,20 @@
+# Font size settings
+
+**Goal:** Add independent, persistent interface and code font sizes to General → Appearance, with immediate feedback and a reset control.
+
+**Design:** Reuse shared local preferences and the root appearance subscription. Keep the current defaults (interface 14px, fenced code 13px). Accept integer interface sizes 12–20px and code sizes 10–24px. Reject corrupt stored values independently. Numeric fields allow an unfinished empty edit without saving it; invalid input reverts on blur. Existing typography proportions scale with the interface base using rem; layout dimensions and icons remain in pixels. Chat code and tool input/output use the independent code size. The embedded terminal retains its own terminal sizing.
+
+- [x] Verify persisted font validation with a failing unit test.
+- [x] Add preferences, root CSS properties, numeric settings and typography scaling.
+- [x] Verify real rendered interface/code independence, reload persistence, invalid edits, reset, both themes and narrow screens; run relevant existing UI regressions.
+- [x] Run typecheck, formatting, repository validation, build and diff checks.
+
+Validation: one focused Node test passed, including independent invalid-field fallback and size boundaries. Both new browser tests failed before the settings existed, then passed. Fourteen font/settings/message-footer UI tests and 24 code-block/theme/layout regressions passed, including the Electron layout smoke test. Typecheck, formatting, repository checks and production build passed (existing chunk-size advisory). The 320px light/dark large-size screenshots were visually inspected; the in-app browser preview also showed the desktop controls without console errors. Settings reuse the existing shared-preference transport; this change does not add a separate cross-window synchronization mechanism.
+
+Detail review: independent review found that a shared interface-font update left a mounted composer's measured draft height stale. A regression reproduced this (font changed to 20px while the input height remained 90px). Composer now subscribes to the interface size and includes it in its draft-sizing layout effect, with no refit for code-only changes. The regression verifies both growth and shrinkage without typing/resizing. Follow-up static review confirmed root appearance updates run before the composer's layout measurement. Added keyboard stepping/focus, Escape/Enter invalid edits, independently corrupt saved fields, maximum-size narrow code copy controls, and actual Electron two-window interface/code/reset synchronization coverage. Four focused/shared-window tests, 11 final font/theme/composer tests and five related unit tests passed; latest typecheck and build passed. Electron logged cache-access warnings while its test passed. No additional actionable findings remain from this review.
+
+Second review: a fresh independent static audit found no additional actionable defects in preferences, numeric draft synchronization, root update ordering, code selectors, fixed-size controls, generic menus, segmented controls, popup bounds, or third-party KaTeX/xterm styling. Extended the existing popup and short-window regressions to cover both 14px and 20px interface sizes: approval/model/context popups stay bounded down to 320×260; long drafts, attachment access, and send/stop actions remain usable down to 320×280. The real Electron two-window test now verifies incoming changes replace focused empty/out-of-range drafts, preserve focus, and survive blur. All 12 font/theme/shared-window UI tests passed (1.4m), as did three focused font/model-default unit tests, typecheck, repository validation, formatting and diff checks. Inspected the 320px and 390px maximum-size short-window screenshots; the smaller viewport scrolls input content internally to keep actions reachable. No production changes were needed in this second review.
+
+The second-review production build also passed; Vite retains its existing chunk-size advisory.
+
+The prior user-bubble background-only change stays intact. Commit/push and packaging require a user request.

@@ -1,0 +1,23 @@
+{
+  "source": "User-provided ubuntu-cc installation output; no direct administrative SSH access to this node",
+  "reportedOn": "2026-10-24",
+  "node": "ubuntu-cc",
+  "container": "cc-desk-tunnel-ba938975-proxy-1",
+  "appVersion": "0.3.6",
+  "build": 2,
+  "protocol": 20,
+  "releaseSha256": "19f4a60538b1fea67a9f4438d13c4cf75a821bed0b9973d93af7d5c69d852f11",
+  "bootstrapSha256": "270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0",
+  "successMessage": "Managed server installed. Local readiness passed; no Claude/provider queries made.",
+  "managedBootstrapCompleted": true,
+  "localReadinessPassed": true,
+  "shellPromptReturned": true,
+  "lastObservedProgressSeconds": 135,
+  "backup": "/var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3",
+  "manualOfflineRollback": "sudo python3 /var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3/rollback.py --rollback /var/lib/cc-server-bootstrap/backup-20261024T030534Z-878b97a3",
+  "claudeOrProviderQueriesMadeByInstaller": false,
+  "naturalAccountReportingVerified": false,
+  "desktopConnectionVerified": false,
+  "hostRebootVerified": false,
+  "postInstallationUpgradeRollbackVerified": false
+}

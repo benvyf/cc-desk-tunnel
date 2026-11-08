@@ -1,0 +1,73 @@
+{
+  "date": "2026-10-28",
+  "scope": "Review of email-only client sign-in",
+  "sourceCommit": "981f7312db6d60a73c33c2b670ec27025ec9485a",
+  "windowsBuild": 16,
+  "protocol": 22,
+  "fixedFindings": [
+    {
+      "priority": "P2",
+      "issue": "Password visibility persisted after session expiry",
+      "fix": "Reset visibility when the password is cleared"
+    },
+    {
+      "priority": "P2",
+      "issue": "A delayed saved-login read overwrote typed credentials and could start the previous account auto-login",
+      "fix": "Ignore restoration after input, sign-in, disconnect or expiry"
+    },
+    {
+      "priority": "P2",
+      "issue": "Saved-login read rejection was unhandled with no user diagnostic",
+      "fix": "Show actionable error while preserving fresh email sign-in"
+    }
+  ],
+  "validation": {
+    "beforeFix": "All 3 regression tests reproduced the issues",
+    "emailUi": {
+      "passed": 9,
+      "failed": 0,
+      "runs": ["8 tests including 3 regressions", "1 single assigned workspace test"]
+    },
+    "authorization": {
+      "passed": 17,
+      "failed": 0,
+      "realLocalWebSocketEviction": true
+    },
+    "typescript": "passed",
+    "repositoryCheck": "passed: 592 indexed files, manifests and document links",
+    "packagedStartup": "passed; legacy config removal, email-only UI and unrelated settings retention",
+    "packagedSources": {
+      "mainModules": ["main.cjs", "desktop-access.cjs", "preload.cjs"],
+      "rendererFiles": 71,
+      "matches": true
+    }
+  },
+  "package": {
+    "identity": {
+      "product": "cc-desk-tunnel-managed",
+      "build": 16,
+      "channel": "pilot",
+      "origin": "https://api.ghostapi.org",
+      "trustedKeys": {
+        "managed-vps-2026-10-23": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n"
+      },
+      "appVersion": "0.3.7",
+      "protocol": 22,
+      "sourceCommit": "981f7312db6d60a73c33c2b670ec27025ec9485a",
+      "platform": "win32",
+      "arch": "x64"
+    },
+    "installer": "D:\\cc-desk-tunnel\\artifacts\\cc-space-email-only-build16\\CC-Desk-Tunnel-Setup-0.3.7-x64.exe",
+    "bytes": 201164545,
+    "sha256": "9ca5c204e4258b066c95ca3a297ccfe772d9030a6283221ccfc7f548256df699",
+    "packagedSourceMatches": ["main.cjs", "desktop-access.cjs", "preload.cjs"],
+    "rendererFiles": 71
+  },
+  "boundaries": {
+    "productionModelRequests": 0,
+    "managementServiceRedeployed": false,
+    "publicUpdateIndexesChanged": false,
+    "ubuntuEmailOnlyModeVerified": false,
+    "twoPhysicalComputersVerified": false
+  }
+}

@@ -1,0 +1,45 @@
+{
+  "name": "@cc-desk-tunnel/desktop",
+  "version": "0.3.10",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "prebuild": "node ../../scripts/check-model-boundary.mjs",
+    "build": "vite build",
+    "setup": "install-electron",
+    "start": "electron ."
+  },
+  "dependencies": {
+    "@cc-desk-tunnel/protocol": "0.0.0",
+    "@deepseek-ai/libreoffice-kit": "0.2.3",
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-search": "0.16.0",
+    "@xterm/xterm": "6.0.0",
+    "katex": "0.19.0",
+    "pdfjs-dist": "5.4.624",
+    "qrcode": "1.5.4",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-markdown": "10.1.0",
+    "rehype-katex": "7.0.1",
+    "remark-gfm": "4.0.1",
+    "remark-math": "6.0.0",
+    "ssh2": "1.17.0",
+    "ws": "8.22.0",
+    "xterm-zerolag-input": "0.4.2"
+  },
+  "devDependencies": {
+    "@phosphor-icons/react": "2.1.10",
+    "@rolldown/plugin-babel": "0.2.4",
+    "@types/qrcode": "1.5.6",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.1.1",
+    "babel-plugin-react-compiler": "1.0.0",
+    "electron": "44.10.1",
+    "vite": "8.3.3"
+  }
+}
