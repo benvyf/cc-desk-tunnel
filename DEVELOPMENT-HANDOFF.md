@@ -1,5 +1,11 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-08 b2768de 尾部追加缺口修复（源码，未发行）
+
+按审查新增“复审 b2768de”处理：persistHistory 的追加分支现在比较完整内存与 historyWindow 尾部中 sequence > 当前 persistedLast 的事件数量；数量不同说明裁剪排除了尚未持久化的上一轮事件，改用 replace(value)。判断在排队写入实际执行时进行，共用于 snapshot append 与 flushHistoryCache，不改变原有 owner/连接代次和 synced 保护。
+
+两个新增真实 JSONL 回归先失败后通过：X 1..100 已落盘，新增 X 101..115 与 Y 116..118 后都调用 replace、零 append，磁盘仅完整保留 Y 116..118 并标记 hasEarlier=true，不再留下 1..100 + 116..118 缺口；内存仍含全部 118 条。全量 992 通过/63 条件跳过/0 失败，专项 73/73，UI 最后完整 84/84；此前两项既有鼠标输入偶发失败各原样重复两次通过，未修改测试。2000 条 select→state 15.7 ms，主进程最长同步回调 1.392 ms。说明与当前结果继续收敛于[统一文档](docs/LOCAL-HISTORY-CACHE.md#验证)和[统一证据](docs/evidence/local-history-cache-2026-11-08.json)。可选 prepend 去重未加入；本轮无服务端/协议/三项基线修复或 ui/motion 变更，未 push、合并、打包或发布。
+
 ### 2026-11-08 元数据与协议切换复核（源码，未发行）
 
 从 `474e35e` 再次复核，修正两项存储边界：meta.json 的 EBUSY/EPERM 等临时读取错误不再误清空 owner；协议切换先等待此前已提交的操作结束，再校验/清理，避免旧写入恢复旧格式数据。三项故障/并发回归先失败后通过，独立复核额外六种 open/write/clear/read 交错均正常收尾。客户端未发现新的可复现问题，维持最新审查要求的失败恢复、停止、最新 run 和扫描限频行为。

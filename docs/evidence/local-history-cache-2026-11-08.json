@@ -2,9 +2,9 @@
   "current": {
     "date": "2026-11-08",
     "timezone": "Asia/Hong_Kong",
-    "review": "34-review-4fe343a.md",
-    "reviewBase": "474e35e",
-    "productHead": "29b379817b7a9caddf1cccb5979bafdc2b748936",
+    "review": "34-review-4fe343a.md, 复审 b2768de（第二轮）",
+    "reviewBase": "b2768de",
+    "productHead": "d812a133b03ddeecef692f73c38053ed10fe8e12",
     "validationStatus": "passed",
     "protocolVersion": 24,
     "requirements": {
@@ -22,16 +22,17 @@
     "tests": {
       "full": {
         "command": "npm test",
-        "tests": 1053,
-        "pass": 990,
+        "tests": 1055,
+        "pass": 992,
         "fail": 0,
         "skipped": 63,
-        "cancelled": 0
+        "cancelled": 0,
+        "exitCode": 0
       },
       "focused": {
         "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-window.test.ts apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
-        "tests": 71,
-        "pass": 71,
+        "tests": 73,
+        "pass": 73,
         "fail": 0,
         "skipped": 0,
         "cancelled": 0
@@ -42,19 +43,27 @@
         "fail": 0,
         "exitCode": 0
       },
-      "repeatedIsolation": {
-        "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/conversation-follow.spec.ts -g 'never-selected session terminal|complete preserves frame position · reading history' --repeat-each=2",
-        "pass": 4,
+      "browserChannel": "msedge",
+      "existingDragSelectionRepeat": {
+        "pass": 2,
         "fail": 0,
-        "exitCode": 0
+        "exitCode": 0,
+        "command": "playwright test apps/desktop/test/quoted-conversations.spec.ts -g 'mouse drag selection offers' --repeat-each=2",
+        "note": "first full UI run had83pass/1failure because drag selected heading instead of target paragraph; unchanged test repeated successfully, final full run passes"
       },
-      "browserChannel": "msedge"
+      "existingScrollRepeat": {
+        "pass": 2,
+        "fail": 0,
+        "exitCode": 0,
+        "command": "playwright test apps/desktop/test/conversation-follow.spec.ts -g 'scrolling while earlier history is pending' --repeat-each=2",
+        "note": "second full UI run had83pass/1failure because initial wheel did not trigger earlier-history request; unchanged test repeated successfully, final full run passes"
+      }
     },
     "performance": {
       "hydration": {
-        "utc": "2026-11-07T20:24:44.461Z",
+        "utc": "2026-11-08T01:32:30.182Z",
         "events": 2000,
-        "selectToStateMs": 16.8
+        "selectToStateMs": 15.7
       },
       "mainProcess": {
         "node": "v24.21.0",
@@ -63,8 +72,8 @@
         "iterations": 10,
         "fixtureBytes": 819794,
         "callbacks": 7009,
-        "maxSynchronousCallbackMs": 1.403,
-        "maxReplaceReadAppendWallMs": 28.52,
+        "maxSynchronousCallbackMs": 1.392,
+        "maxReplaceReadAppendWallMs": 28.369,
         "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
       }
     },
@@ -112,6 +121,26 @@
         "dedicated Windows Electron launcher process tree is terminated at final fixture cleanup; graceful restart close remains tested",
         "reading anchor is centered before upward wheel; original position assertions unchanged"
       ]
+    },
+    "tailGapFix": {
+      "cause": "tail window can exclude new events from the previous run while retaining a newer run",
+      "guard": "compare complete-memory and bounded-window counts of events with sequence > current persistedLast inside the queued write; mismatch replaces the tail",
+      "paths": ["session.snapshot mode append", "flushHistoryCache streamed events"],
+      "regression": {
+        "oldImplementation": "both tests failed: append called once instead of zero",
+        "initialRunX": [1, 100],
+        "initialApproxBytes": 900000,
+        "newRunX": [101, 115],
+        "newRunY": [116, 118],
+        "appendCalls": 0,
+        "replaceCalls": 1,
+        "finalFileSequences": [116, 117, 118],
+        "firstSequence": 116,
+        "hasEarlier": true,
+        "memoryEventCount": 118,
+        "actualJsonlReadback": true
+      },
+      "optionalPrependWriteElision": "not implemented in this focused correctness fix"
     }
   },
   "history": {
@@ -516,6 +545,88 @@
         "merged": false,
         "published": false,
         "modelCalls": 0
+      }
+    },
+    "metadataLifecycleReviewSummary": {
+      "productHead": "29b379817b7a9caddf1cccb5979bafdc2b748936",
+      "tests": {
+        "full": {
+          "command": "npm test",
+          "tests": 1055,
+          "pass": 992,
+          "fail": 0,
+          "skipped": 63,
+          "cancelled": 0,
+          "exitCode": 0
+        },
+        "focused": {
+          "command": "node --test apps/desktop/test-main/history-cache.test.mjs apps/desktop/test-main/history-window.test.ts apps/desktop/test-main/history-owner.test.ts apps/desktop/test-main/local-history-client.test.mjs",
+          "tests": 73,
+          "pass": 73,
+          "fail": 0,
+          "skipped": 0,
+          "cancelled": 0
+        },
+        "ui": {
+          "command": "npm run test:ui -- apps/desktop/test/local-history-cache.spec.ts apps/desktop/test/side-history-stop.spec.ts apps/desktop/test/email-login.spec.ts apps/desktop/test/conversation-follow.spec.ts apps/desktop/test/quoted-conversations.spec.ts apps/desktop/test/terminal-status.spec.ts",
+          "pass": 84,
+          "fail": 0,
+          "exitCode": 0
+        },
+        "browserChannel": "msedge",
+        "existingDragSelectionRepeat": {
+          "pass": 2,
+          "fail": 0,
+          "exitCode": 0,
+          "command": "playwright test apps/desktop/test/quoted-conversations.spec.ts -g 'mouse drag selection offers' --repeat-each=2",
+          "note": "first full UI run had83pass/1failure because drag selected heading instead of target paragraph; unchanged test repeated successfully, final full run passes"
+        },
+        "existingScrollRepeat": {
+          "pass": 2,
+          "fail": 0,
+          "exitCode": 0,
+          "command": "playwright test apps/desktop/test/conversation-follow.spec.ts -g 'scrolling while earlier history is pending' --repeat-each=2",
+          "note": "second full UI run had83pass/1failure because initial wheel did not trigger earlier-history request; unchanged test repeated successfully, final full run passes"
+        }
+      },
+      "performance": {
+        "hydration": {
+          "utc": "2026-11-07T20:24:44.461Z",
+          "events": 2000,
+          "selectToStateMs": 16.8
+        },
+        "mainProcess": {
+          "node": "v24.21.0",
+          "platform": "win32",
+          "events": 2000,
+          "iterations": 10,
+          "fixtureBytes": 819794,
+          "callbacks": 7009,
+          "maxSynchronousCallbackMs": 1.403,
+          "maxReplaceReadAppendWallMs": 28.52,
+          "method": "async_hooks before/after measures uninterrupted JavaScript callback wall time; asynchronous filesystem waits excluded"
+        }
+      },
+      "additionalReview": {
+        "fixes": [
+          "transient metadata reads preserve the entire owner and reject cache opening",
+          "protocol invalidation drains earlier submitted operations before clearing"
+        ],
+        "newRegressionCases": [
+          "metadata EBUSY",
+          "metadata EPERM",
+          "old write paused during protocol invalidation"
+        ],
+        "independentRecheck": {
+          "storageTestsPassed": 28,
+          "clientBrowserSideTestsPassed": 87,
+          "overlappingLifecycleCasesSettled": 6,
+          "remainingReportedMaterialIssues": 0
+        },
+        "fixtureCorrections": [
+          "dedicated Windows Electron launcher process tree is terminated at final fixture cleanup; graceful restart close remains tested",
+          "reading anchor is centered before upward wheel; original position assertions unchanged"
+        ]
       }
     }
   }
