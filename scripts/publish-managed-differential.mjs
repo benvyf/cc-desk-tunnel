@@ -329,8 +329,12 @@ export async function publishDifferential(args) {
     ]) {
       const directory = path === dirname(installer) || path === dirname(dirname(installer));
       await safePath(path, directory ? 'directory' : 'file');
-      if (process.getuid() === 0) await chown(path, owner.uid, owner.gid);
-      await chmod(path, directory ? 0o755 : 0o644);
+      const info = await lstat(path);
+      if (process.getuid() === 0 && (info.uid !== owner.uid || info.gid !== owner.gid))
+        await chown(path, owner.uid, owner.gid);
+      const mode = directory ? 0o755 : 0o644;
+      // Renewal runs in a read-only sandbox: correct public assets need no writes.
+      if ((info.mode & 0o7777) !== mode) await chmod(path, mode);
     }
   }
   return {

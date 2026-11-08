@@ -137,6 +137,7 @@ test('root publication inherits service ownership and public permissions', async
   const previous = process.umask(0o077);
   try {
     await publishDifferential(f.args);
+    const unchanged = [];
     for (const [file, mode] of [
       [join(f.publicRoot, 'artifacts/34'), 0o755],
       [join(f.publicRoot, 'artifacts/34/win32-x64'), 0o755],
@@ -148,7 +149,11 @@ test('root publication inherits service ownership and public permissions', async
       assert.equal(info.uid, 65534);
       assert.equal(info.gid, 65534);
       assert.equal(info.mode & 0o777, mode);
+      unchanged.push([file, (await stat(file, { bigint: true })).ctimeNs]);
     }
+    await publishDifferential(f.args);
+    for (const [file, ctime] of unchanged)
+      assert.equal((await stat(file, { bigint: true })).ctimeNs, ctime);
   } finally {
     process.umask(previous);
   }
