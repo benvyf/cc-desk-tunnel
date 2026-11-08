@@ -26,9 +26,11 @@ export default function PreviewSpreadsheet({ data, format }: { data: string; for
     let timer: ReturnType<typeof setTimeout>;
     let disposed = false;
     const fail = (error: string) => {
+      if (disposed) return;
+      disposed = true;
       clearTimeout(timer);
       worker?.terminate();
-      if (!disposed) setLoaded({ source: data, format, error });
+      setLoaded({ source: data, format, error });
     };
     try {
       if (data.length > 28 * 1024 * 1024) throw new Error('表格超过 20 MiB 预览大小限制。');
@@ -36,6 +38,7 @@ export default function PreviewSpreadsheet({ data, format }: { data: string; for
       worker = new Worker(new URL('./spreadsheet.worker.ts', import.meta.url), { type: 'module' });
       worker.onmessage = (event: MessageEvent<{ book?: Spreadsheet; error?: string }>) => {
         if (disposed) return;
+        disposed = true;
         clearTimeout(timer);
         worker?.terminate();
         setActive(0);

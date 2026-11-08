@@ -92,6 +92,36 @@ test('delimited text preserves internal empty rows and rejects broken quotes', (
   assert.deepEqual(parseSpreadsheet(new Uint8Array(), 'csv').sheets[0].rows, []);
 });
 
+test('trailing empty records and quoted empty fields are data, not a synthetic final record', () => {
+  for (const format of ['csv', 'tsv']) {
+    for (const newline of ['\n', '\r\n', '\r']) {
+      for (const [text, expected] of [
+        ['a' + newline + newline, [['a'], ['']]],
+        ['a' + newline + '""' + newline, [['a'], ['']]],
+        ['""' + newline, [['']]],
+        [newline, [['']]],
+        ['a' + newline + newline + newline, [['a'], [''], ['']]],
+        ['a' + newline, [['a']]],
+      ] as [string, string[][]][]) {
+        assert.deepEqual(
+          parseSpreadsheet(new TextEncoder().encode(text), format).sheets[0].rows,
+          expected,
+          `${format}: ${JSON.stringify(text)}`,
+        );
+      }
+    }
+  }
+});
+
+test('empty records count toward the CSV row limit without counting the synthetic final record', () => {
+  const text = 'value\n'.repeat(10000);
+  assert.equal(
+    parseSpreadsheet(new TextEncoder().encode(text), 'csv').sheets[0].rows.length,
+    10000,
+  );
+  assert.throws(() => parseSpreadsheet(new TextEncoder().encode(text + '\n'), 'csv'), /过大|限制/);
+});
+
 test('UTF-16 delimited documents preserve Chinese and leading zeroes', () => {
   const text = '\ufeff编号\t值\r\n00123\t中文';
   const bytes = new Uint8Array(Buffer.from(text, 'utf16le'));

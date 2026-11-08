@@ -30,16 +30,19 @@ export function parseSpreadsheet(bytes: Uint8Array, format: string): Spreadsheet
     if (text.includes('\0')) throw new Error('不是有效的文本表格。');
     const rows: string[][] = [];
     let columns = 0;
+    let cursor = 0;
     let failure: Error | undefined;
     Papa.parse<string[]>(text, {
       delimiter: format === 'csv' ? ',' : '\t',
       skipEmptyLines: false,
       step(result, parser) {
+        const start = cursor;
+        cursor = result.meta.cursor;
         if (
           result.data.length === 1 &&
           result.data[0] === '' &&
-          result.meta.cursor === text.length &&
-          (!text || /[\r\n]$/.test(text))
+          cursor === start &&
+          cursor === text.length
         )
           return;
         columns = Math.max(columns, result.data.length);

@@ -143,4 +143,26 @@ test('stalled workers are terminated on timeout and stale callbacks cannot repla
   await page.clock.fastForward(15000);
   await expect(page.getByRole('alert')).toContainText('超时');
   expect(await page.evaluate(() => (window as any).previewWorkers[1].stopped)).toBe(true);
+  await page.evaluate(() =>
+    (window as any).previewWorkers[1].onmessage({
+      data: {
+        book: { sheets: [{ name: '超时结果', rows: [['迟到的数据']], columns: 1 }] },
+      },
+    }),
+  );
+  await expect(page.getByRole('alert')).toContainText('超时');
+  await expect(page.getByRole('table')).toHaveCount(0);
+});
+
+test('CSV row headers retain quoted and physical empty records at the end of a file', async ({
+  page,
+}) => {
+  await page.evaluate(() => {
+    (window as any).spreadsheetFixtures.csv = btoa('a\r\n""\r\n\r\n');
+  });
+  await page.getByRole('button', { name: '打开 csv', exact: true }).click();
+  const table = page.getByRole('table', { name: '工作表 CSV' });
+  await expect(table).toHaveAttribute('aria-rowcount', '4');
+  await expect(table.getByRole('rowheader')).toHaveText(['1', '2', '3']);
+  await expect(table.getByRole('cell')).toHaveCount(3);
 });
