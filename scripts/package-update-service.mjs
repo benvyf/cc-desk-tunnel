@@ -46,6 +46,7 @@ export const runtimeFiles = [
   'apps/update-service/web/fresh-nodes.js',
   'apps/update-service/web/fresh-install.py',
   'apps/update-service/web/fresh-install-v3.py',
+  'apps/update-service/web/fresh-install-v5.py',
   'apps/update-service/web/style.css',
   'packages/managed-updates/src/index.ts',
   'packages/protocol/src/account-monitor.ts',
