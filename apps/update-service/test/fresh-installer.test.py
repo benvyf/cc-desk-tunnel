@@ -168,6 +168,7 @@ class InstallerTests(unittest.TestCase):
              patch.object(fresh, 'verify_index', return_value=release), \
              patch.object(fresh, 'support_module', return_value=helper), \
              patch.object(fresh, 'provision_runtime', side_effect=runtime), \
+             patch.object(fresh, 'complete_host_channel'), \
              patch.object(fresh, 'run', side_effect=run), \
              patch.object(fresh.shutil, 'disk_usage', return_value=types.SimpleNamespace(free=10 * 1024 ** 3)), \
              contextlib.redirect_stdout(io.StringIO()):
