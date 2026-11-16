@@ -150,16 +150,16 @@ class MigrationTests(unittest.TestCase):
         baseline['lock'] = m.PREVIOUS_LOCK
         with self.assertRaises(RuntimeError): m.check_baseline(baseline, self.release())
 
-    def test_runtime_is_inherited_without_downloading_or_executing_claude(self):
-        recipe=m.dockerfile('sha256:'+'c'*64)
-        self.assertTrue(recipe.startswith('FROM sha256:'))
+    def test_runtime_is_built_from_a_clean_pinned_base_without_executing_claude(self):
+        recipe=m.dockerfile()
+        self.assertTrue(recipe.startswith('FROM ' + m.BASE_IMAGE))
         self.assertNotIn('rm -rf /app /opt/runtime/node',recipe)
         self.assertIn('COPY --chown=root:root runtime/',recipe)
         self.assertIn('program/deploy/docker/entrypoint.sh',recipe)
         self.assertNotIn('claude --',recipe)
 
     def test_retention_uses_current_container_and_does_not_fail_upgrade_when_cleanup_is_uncertain(self):
-        retire = SimpleNamespace(retire=lambda *args, **kwargs: None)
+        retire = SimpleNamespace(retire=lambda *args, **kwargs: None, rotate=lambda *args, **kwargs: None)
         with patch.object(m, 'load', return_value=retire), patch.object(retire, 'retire') as call:
             m.retain_previous_backup('fixture-container')
             call.assert_called_once_with(m.ROOT, container_name='fixture-container', apply=True)
@@ -229,14 +229,14 @@ class MigrationTests(unittest.TestCase):
                     raise RuntimeError('Insufficient backup/recovery space')
             legacy=SimpleNamespace(check_idle=idle,check_space=space,install=install_fake)
             def load(name,path):
-                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify,provision_runtime=lambda work,*_: (work/'runtime').mkdir()),'runtime_cutover':legacy}.get(name) or real_load(name,path)
+                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_image_retirement':SimpleNamespace(rotate=lambda *_args,**_kwargs:None),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify,provision_runtime=lambda work,*_: (work/'runtime').mkdir()),'runtime_cutover':legacy}.get(name) or real_load(name,path)
             def run(args,**kwargs):
                 if args==['docker','builder','prune','--all','--force']:
                     calls.append('cleanup')
                     return SimpleNamespace(returncode=0)
                 if args[:3]==['docker','image','inspect']:
                     if len(args)==4:return SimpleNamespace(returncode=1)
-                    return SimpleNamespace(returncode=0,stdout=json.dumps([dict(Id='candidate',RootFS=dict(Layers=['wrong' if failure=='layers' else 'base','new'])),dict(RootFS=dict(Layers=['base']))]).encode())
+                    return SimpleNamespace(returncode=0,stdout=json.dumps([dict(Id='candidate',Size=2*1024**3,RootFS=dict(Layers=['wrong' if failure=='layers' else 'base','new'])),dict(RootFS=dict(Layers=['base']))]).encode())
                 return SimpleNamespace(returncode=0)
             def build(*_):
                 calls.append('build')

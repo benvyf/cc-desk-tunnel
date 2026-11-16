@@ -35,9 +35,11 @@ CLI = '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'
 BASE_IMAGE = 'ubuntu:24.04@sha256:77eb101c607d6e3d4f5ad0c8a02c2136c689b98aba1f359e6502ba517e5c57ec'
 BUILD_SPACE = 5 * 1024**3
 OPERATING_RESERVE = 512 * 1024**2
+IMAGE_SIZE_LIMIT = 3 * 1024**3
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'c9109f50c70eb1d97aabaac203a1c932908a99288fde6f19f93d668d8285310a': (25, 24),
     '61fcf69f563ba4dbc7b2f777706a52c491154e4d54d7be61770a05af5cff2af7': (24, 24),
     'd786e79c64fb81136a5a6a9fd67081783016786ed9032bcf4af0894ffcd4845f': (23, 24),
     '4a821373e1bb9d310d50f91a3742a8f93d3ffefcdb701b7decb9ff608c0e6667': (22, 24),
@@ -135,12 +137,14 @@ def finish_preparation(legacy):
     legacy.check_space()
 
 
-def retain_previous_backup(container):
+def retain_previous_backup(container, keep_image=None):
     # Already under upgrade.lock. Failure to validate retention preserves backups;
     # it must not misreport a healthy installed service as a failed cutover.
     try:
         retirement = load('host_backup_retirement', PROGRAM / 'scripts/retire-ubuntu-cc-backups.py')
         retirement.retire(ROOT, container_name=container, apply=True)
+        images = load('host_image_retirement', PROGRAM / 'deploy/host-update/images.py')
+        images.rotate(retirement, ROOT, container, keep_image)
     except Exception as error:
         print('RETENTION_PENDING: retirement not completed; required rollback left untouched; inspect audit/records: ' +
               str(error) + '; current service is not stopped.', flush=True)
@@ -199,7 +203,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] in (23,24) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23,24,25) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -419,8 +423,8 @@ def record_candidate_create(core,data,config,original,policy):
     return tx['candidateConfigurationSha256']
 
 
-def dockerfile(base):
-    return f'''FROM {base}
+def dockerfile():
+    return f'''FROM {BASE_IMAGE}
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl wget openssl openssh-client git rsync bash tini tar xz-utils unzip zip jq ripgrep file less vim-tiny python3 python3-pip python3-venv build-essential pkg-config procps lsof iproute2 dnsutils netcat-openbsd sqlite3 && rm -rf /var/lib/apt/lists/*
 RUN userdel -r ubuntu && useradd --uid 1000 --create-home --shell /bin/bash ccdesktunnel && install -d -o ccdesktunnel -g ccdesktunnel /app
@@ -440,6 +444,13 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 CMD ["nod
 ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/proxy-entrypoint"]
 CMD ["server"]
 '''
+
+
+def validate_candidate_image(candidate, base):
+    layers = base['RootFS']['Layers']
+    need(layers and candidate['RootFS']['Layers'][:len(layers)] == layers, 'Candidate pinned Ubuntu base layers changed')
+    need(candidate['Size'] <= IMAGE_SIZE_LIMIT,
+         f'Candidate image exceeds reviewed size budget: actual={candidate["Size"]}; limit={IMAGE_SIZE_LIMIT}; no cutover')
 
 
 def candidate_check(image, release):
@@ -534,7 +545,7 @@ def main():
         b = load('runtime_bootstrap_support', ROOT / 'helper.py')
         fresh = load('runtime_signed_release', PROGRAM / 'apps/update-service/web/fresh-install.py')
         fresh.ROOT = ROOT
-        # Node and the previous runtime stay inherited; only the authenticated candidate gets the new CLI.
+        # Provision a complete pinned runtime from a clean base, never the old service image.
         for module in (b, fresh):
             original_download = module.download
             module.download = lambda *a, _download=original_download, **kw: retry_download(_download, *a, **kw)
@@ -556,11 +567,11 @@ def main():
             return
         legacy = load('runtime_cutover', PROGRAM / 'scripts/install-cc-space-037.py')
         legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
-        if baseline['build'] >= 14:
-            retain_previous_backup(b.CONTAINER)
         # All entrypoints, including the management-center host updater, must
         # reclaim safe cache without relying on callers to pass --cleanup.
         keep_image = f'cc-space-runtime:build{BUILD}-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
+        if baseline['build'] >= 14:
+            retain_previous_backup(b.CONTAINER, keep_image)
         cleanup = load('host_update_cleanup', PROGRAM / 'deploy/host-update/cleanup.py')
         cleanup.clean(ROOT, PROGRAM, keep_image)
         legacy.check_space(reserve=2 * 1024**3)
@@ -608,7 +619,7 @@ def main():
         inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True)
         if inspected.returncode:
             check_docker_storage()
-            (work / 'Dockerfile').write_text(dockerfile(BASE_IMAGE))
+            (work / 'Dockerfile').write_text(dockerfile())
             (work / '.dockerignore').write_text('*\n!Dockerfile\n!program/\n!program/**\n!runtime/\n!runtime/**\n')
             try:
                 with (work/'pull.log').open('wb') as pull_log:
@@ -621,8 +632,7 @@ def main():
                 raise
         candidate, old = json.loads(subprocess.run(['docker', 'image', 'inspect', image, BASE_IMAGE],
             check=True, capture_output=True).stdout)
-        layers = old['RootFS']['Layers']
-        need(layers and candidate['RootFS']['Layers'][:len(layers)] == layers, 'Candidate pinned Ubuntu base layers changed')
+        validate_candidate_image(candidate, old)
         image = candidate['Id']
         candidate_check(image, release)
         shutil.rmtree(work/'runtime')
@@ -638,6 +648,7 @@ def main():
             return
         legacy.ROOT, legacy.NODE, legacy.BASE, legacy.IMAGE = ROOT, node, original['Image'], image
         legacy.DESCRIPTOR, legacy.TARGET = release['descriptorSha256'], {'build': BUILD, 'protocol': PROTOCOL}
+        legacy.CLI_SHA256 = CLI
         clone = b.clone_config
         def validate_cutover(current):
             verify_frozen_sources(baseline,selected,current,b.DATA)
@@ -670,7 +681,7 @@ def main():
                 core._write(HOST_DATA/'agent-platform'/'image-transaction.json',core._canonical(reference))
             legacy.save=save_owned
         legacy.install(b, disconnect_clients=True)
-        retain_previous_backup(b.CONTAINER)
+        retain_previous_backup(b.CONTAINER, keep_image)
         print(f'CC_HOST_STAGE: verify; 4/4 SUCCESS: {node} / Build {BUILD} / protocol {PROTOCOL} / Node {NODE_VERSION}.',flush=True)
 
 

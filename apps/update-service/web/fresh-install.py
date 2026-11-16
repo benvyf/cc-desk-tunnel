@@ -46,8 +46,8 @@ KEYS = {'managed-vps-2026-10-23': '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH
 BUILD_SPACE = 6 * 1024 ** 3
 OPERATING_RESERVE = 512 * 1024 ** 2
 RECOVERY_SUPPORT = {
-    'scripts/install-cc-space-037.py': '30fac9186307a804a61353582413b76402afcda5a14506b033559ca56d80bd52',
-    'scripts/retire-ubuntu-cc-backups.py': 'e6be3d622b0825cf00a7419b0eac565bf04c9c4d66834704f458e5c6856e0d24',
+    'scripts/install-cc-space-037.py': 'd80995ef81964d2a81797deb2f2713f1251701a6a13f77a7e318c1dd5980f027',
+    'scripts/retire-ubuntu-cc-backups.py': 'c0749c3eb209e2e16a496a6bf7a16736e2274f10e22e079fba409c3aab2002d2',
 }
 RECOVERY_MODULE_SHA = '6234b2b59e9d762f7f8c6f500b255a8d93d12bb16786ecf858c0268a4310a11d'
 
@@ -287,7 +287,7 @@ def verify_index(index):
 
 # A fresh machine provisions pinned runtimes directly; it does not call legacy install-linux.sh,
 # whose post-install version command would execute Claude. The signed application tree stays intact.
-DOCKERFILE = '''FROM ubuntu:24.04
+DOCKERFILE = '''FROM ubuntu:24.04@sha256:77eb101c607d6e3d4f5ad0c8a02c2136c689b98aba1f359e6502ba517e5c57ec
 ARG DEBIAN_FRONTEND=noninteractive
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl wget openssl openssh-client git rsync bash tini tar xz-utils unzip zip jq ripgrep file less vim-tiny python3 python3-pip python3-venv build-essential pkg-config procps lsof iproute2 dnsutils netcat-openbsd sqlite3 && rm -rf /var/lib/apt/lists/*
 RUN userdel -r ubuntu && useradd --uid 1000 --create-home --shell /bin/bash ccdesktunnel && install -d -o ccdesktunnel -g ccdesktunnel /app
@@ -295,13 +295,10 @@ COPY --chown=root:root runtime/ /opt/runtime/
 ENV PATH=/opt/runtime/node/bin:/opt/runtime/cli/bin:$PATH
 COPY --chown=ccdesktunnel:ccdesktunnel program/ /app/
 WORKDIR /app
-USER ccdesktunnel
-RUN npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol && npm cache clean --force
-USER root
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
-RUN if [ -f /app/deploy/docker/terminal-runtime.mjs ]; then /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record; fi && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
+RUN su -s /bin/sh ccdesktunnel -c 'PATH=/opt/runtime/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_cache=/tmp/cc-npm-cache npm_config_nodedir=/opt/runtime/node npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol --no-audit --no-fund' && rm -rf /tmp/cc-npm-cache && /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app && chmod -R go-w /app && mkdir -p /data/workspace && chown -R 1000:1000 /data
 ENV HOME=/data/home
 USER ccdesktunnel
 WORKDIR /data/workspace

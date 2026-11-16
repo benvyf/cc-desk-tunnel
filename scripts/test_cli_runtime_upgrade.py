@@ -77,12 +77,33 @@ class CliUpgradeTests(unittest.TestCase):
             upgrade.check_baseline({**target, 'cli': upgrade.BASE_CLI}, release)
 
     def test_candidate_uses_pinned_lean_base_and_complete_authenticated_runtime(self):
-        recipe = upgrade.dockerfile(upgrade.BASE_IMAGE)
+        recipe = upgrade.dockerfile()
         self.assertTrue(recipe.startswith('FROM ubuntu:24.04@sha256:'))
         self.assertIn('COPY --chown=root:root runtime/ /opt/runtime/', recipe)
         self.assertNotIn('cc-space-runtime-base:', recipe)
         self.assertNotIn('claude --', recipe)
         self.assertEqual(fresh.CLI_RUNTIMES[upgrade.RUNTIME][2], upgrade.CLI)
+        self.assertEqual(recipe, fresh.DOCKERFILE)
+
+    def test_new_installer_pins_the_actual_recovery_helper(self):
+        installer = load('cli_fresh_v6', 'apps/update-service/web/fresh-install-v6.py')
+        self.assertEqual(installer.DOCKERFILE, upgrade.dockerfile())
+        for relative, expected in installer.RECOVERY_SUPPORT.items():
+            self.assertEqual(hashlib.sha256((ROOT/relative).read_bytes()).hexdigest(), expected)
+
+    def test_future_build_cannot_inherit_a_previous_application_image(self):
+        with self.assertRaises(TypeError):
+            upgrade.dockerfile('cc-space-runtime:old-application')
+        self.assertNotIn('chown -R root:root /app /opt/runtime', upgrade.dockerfile())
+
+    def test_layer_or_size_regression_blocks_cutover(self):
+        base={'RootFS':{'Layers':['pinned-ubuntu']}}
+        candidate={'Size':2*1024**3,'RootFS':{'Layers':['pinned-ubuntu','new-runtime']}}
+        upgrade.validate_candidate_image(candidate,base)
+        with self.assertRaisesRegex(RuntimeError,'size budget'):
+            upgrade.validate_candidate_image({**candidate,'Size':upgrade.IMAGE_SIZE_LIMIT+1},base)
+        with self.assertRaisesRegex(RuntimeError,'base layers changed'):
+            upgrade.validate_candidate_image({**candidate,'RootFS':{'Layers':['different-base']}},base)
 
 
 if __name__ == '__main__':
