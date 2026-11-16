@@ -197,7 +197,7 @@ class MigrationTests(unittest.TestCase):
             bundle=buffer.getvalue();release=self.release()
             release.update(sourceCommit='f'*40,size=len(bundle),sha256=hashlib.sha256(bundle).hexdigest(),descriptorSha256=hashlib.sha256(db).hexdigest())
             confirmed=root/'release.json';confirmed.write_text(json.dumps(release))
-            calls=[];source=dict(Id='original',Image='sha256:'+'c'*64,Mounts=[],Config={},HostConfig={})
+            calls=[];source=dict(Id='original',Image='sha256:'+'c'*64,State={'Health':{'Status':'healthy'}},Mounts=[],Config={},HostConfig={})
             real_load=m.load;real_helper=real_load('real_helper',ROOT/'apps/update-service/web/server-bootstrap.py')
             def verify(_):
                 if failure=='signature':raise RuntimeError('bad signature')
@@ -229,7 +229,7 @@ class MigrationTests(unittest.TestCase):
                     raise RuntimeError('Insufficient backup/recovery space')
             legacy=SimpleNamespace(check_idle=idle,check_space=space,install=install_fake)
             def load(name,path):
-                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
+                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify,provision_cli=lambda *_:calls.append('cli-download')),'runtime_cutover':legacy}.get(name) or real_load(name,path)
             def run(args,**kwargs):
                 if args==['docker','builder','prune','--all','--force']:
                     calls.append('cleanup')
@@ -238,7 +238,7 @@ class MigrationTests(unittest.TestCase):
                     if len(args)==4:return SimpleNamespace(returncode=1)
                     return SimpleNamespace(returncode=0,stdout=json.dumps([dict(Id='candidate',RootFS=dict(Layers=['wrong' if failure=='layers' else 'base','new'])),dict(RootFS=dict(Layers=['base']))]).encode())
                 return SimpleNamespace(returncode=0)
-            with patch.object(m,'ROOT',root/'private'),patch.object(m,'load',side_effect=load),patch.object(m,'verify_runtime',return_value=self.baseline()),patch.object(m,'candidate_check'),patch.object(m,'check_docker_storage'),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=20*1024**3)),patch.object(m.os,'geteuid',return_value=0),patch.object(m.socket,'gethostname',return_value=node),patch.object(m.subprocess,'run',side_effect=run),patch('sys.argv',['apply','--release',str(confirmed),*(['--install'] if install else [])]):
+            with patch.object(m,'HOST_DATA',root/'host-state'),patch.object(m,'live_probe',return_value={}),patch.object(m,'authenticate_selected',return_value={}),patch.object(m,'host_preflight'),patch.object(m,'verify_frozen_sources'),patch.object(m,'ROOT',root/'private'),patch.object(m,'load',side_effect=load),patch.object(m,'verify_runtime',return_value={**self.baseline(),'journal':{}}),patch.object(m,'candidate_check'),patch.object(m,'check_docker_storage'),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=20*1024**3)),patch.object(m.os,'geteuid',return_value=0),patch.object(m.socket,'gethostname',return_value=node),patch.object(m.subprocess,'run',side_effect=run),patch('sys.argv',['apply','--release',str(confirmed),*(['--install'] if install else [])]):
                 if failure:
                     with self.assertRaises(RuntimeError):m.main()
                 else:m.main()
