@@ -105,6 +105,19 @@ class CliUpgradeTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError,'base layers changed'):
             upgrade.validate_candidate_image({**candidate,'RootFS':{'Layers':['different-base']}},base)
 
+    def test_target_verifier_uses_cli_matching_signed_runtime_identity(self):
+        ops=load('cli_target_ops','apps/update-service/web/host-operations.py')
+        for runtime,expected in [('node24-cli2.1.295-v4',upgrade.BASE_CLI),
+                                 ('node24-cli2.1.325-v4',upgrade.CLI),
+                                 (upgrade.RUNTIME,upgrade.CLI)]:
+            with self.subTest(runtime=runtime),patch.object(ops,'output',return_value='authenticated-target') as output:
+                self.assertTrue(ops.inspect_target('fixture',{'runtimeLevel':runtime}))
+                import json
+                self.assertEqual(json.loads(output.call_args.args[0][-1])['cliSha256'],expected)
+        with patch.object(ops,'output') as output:
+            with self.assertRaises(KeyError):ops.inspect_target('fixture',{'runtimeLevel':'unknown'})
+            output.assert_not_called()
+
 
 if __name__ == '__main__':
     unittest.main()

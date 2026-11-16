@@ -38,11 +38,14 @@ class ProcessReaderTests(unittest.TestCase):
         for damaged in ['reader','other','inventory','active']:
             with self.subTest(damaged=damaged):self.exercise('ubuntu-cc-03',False,damaged)
 
-    def exercise(self,node,repaired,damaged=None):
+    def test_build25_target_verifier_is_migrated_before_initial_activation(self):
+        self.exercise('ubuntu-cc',False,original_ref='67a7a91280aaa0a899471e9bf4a123cbbc928930')
+
+    def exercise(self,node,repaired,damaged=None,original_ref='d671527e'):
         digest=lambda raw:hashlib.sha256(raw).hexdigest()
         sources={name:(ROOT/'apps/update-service/web'/name).read_bytes()for name in boot.SOURCE_FILES}
         hashes={name:digest(raw)for name,raw in sources.items()};keys={'fixture':'public'}
-        original=subprocess.check_output(['git','show','d671527e:apps/update-service/web/host-operations.py'],cwd=ROOT)
+        original=subprocess.check_output(['git','show',original_ref+':apps/update-service/web/host-operations.py'],cwd=ROOT)
         with tempfile.TemporaryDirectory()as directory:
             root=Path(directory);program=root/'program';program.mkdir();data=root/'data';(data/'agent-platform').mkdir(parents=True)
             for name,raw in sources.items():(program/name).write_bytes(raw)

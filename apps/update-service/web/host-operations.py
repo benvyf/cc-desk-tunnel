@@ -272,10 +272,15 @@ TARGET_INVENTORY = SOURCE_GUARD + r"""const f=require('fs'),c=require('crypto'),
 const expected=JSON.parse(process.argv[1]);a.equal(process.versions.node,'24.22.2');
 const raw=sourceRegular('/app','SERVER-RELEASE.json',[0]);a.equal(hash(raw),expected.descriptorSha256);const d=JSON.parse(raw);a.equal(d.build,expected.build);a.equal(d.protocol,expected.protocol);
 for(const[p,v]of Object.entries(d.files)){a(/^[A-Za-z0-9_.@/+-]{1,200}$/.test(p)&&!p.split('/').some(x=>['','..','.','node_modules'].includes(x)));const path='/app/'+p;a.equal(f.realpathSync(path),path);const s=f.statSync(path);a(s.isFile()&&s.uid===0&&!(s.mode&18));const b=sourceRegular('/app',p,[0]);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
-a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358');a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.286');a.equal(hash(f.readFileSync('/app/package-lock.json')),expected.packageLockSha256);
+a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),expected.cliSha256);a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.286');a.equal(hash(f.readFileSync('/app/package-lock.json')),expected.packageLockSha256);
 for(const p of ['/opt/runtime/node/bin/node','/opt/runtime/cli/bin/claude','/etc/claude-code/managed-settings.json','/etc/claude-code/moderation-node.json']){const s=f.statSync(p);a(s.isFile()&&s.uid===0&&!(s.mode&18))}
 a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/docker/entrypoint.sh'].sha256);a.equal(f.readFileSync('/opt/runtime/level','utf8').trim(),'4');console.log('authenticated-target');"""
 
 
 def inspect_target(container,release):
-    return output(['docker','exec',container,'/opt/runtime/node/bin/node','-e',TARGET_INVENTORY,json.dumps(release)],timeout=90).strip()=='authenticated-target'
+    cli = {'node24-cli2.1.295-v3':'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358',
+           'node24-cli2.1.295-v4':'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358',
+           'node24-cli2.1.325-v4':'0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf',
+           'node24-cli2.1.325-v5':'0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'}
+    expected=dict(release,cliSha256=cli[release['runtimeLevel']])
+    return output(['docker','exec',container,'/opt/runtime/node/bin/node','-e',TARGET_INVENTORY,json.dumps(expected)],timeout=90).strip()=='authenticated-target'

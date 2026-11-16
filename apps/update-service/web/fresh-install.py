@@ -35,11 +35,14 @@ NODE_RUNTIMES = {
     'node24-cli2.1.295-v3': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
     'node24-cli2.1.295-v4': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
     'node24-cli2.1.325-v4': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
+    'node24-cli2.1.325-v5': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
 }
 CLI_ARCHIVE_SHA = 'd45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95'
 CLI_SHA = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 CLI_RUNTIMES = {
     'node24-cli2.1.325-v4': ('2.1.325', 'e8735d37521f49c31d65c3dcd8c0c8babe6d1f5f72c2066346b3ae88d32ac31d',
+                           '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'),
+    'node24-cli2.1.325-v5': ('2.1.325', 'e8735d37521f49c31d65c3dcd8c0c8babe6d1f5f72c2066346b3ae88d32ac31d',
                            '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'),
 }
 KEYS = {'managed-vps-2026-10-23': '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n'}

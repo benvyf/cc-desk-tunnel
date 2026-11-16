@@ -227,7 +227,7 @@ def authenticate_selected(core,boot,keys,baseline,journal,status):
     current=status.get('current') or {}
     need(all(current.get(k)==selected[k] for k in ('build','protocol','sha256')) and status.get('phase')==journal['phase'],'Live program differs from authenticated selection')
     if journal['current'] is not None:
-        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4', RUNTIME) and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
+        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4', 'node24-cli2.1.325-v4', RUNTIME) and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
         installed = selected['runtimeLevel']==RUNTIME and (selected['descriptorSha256'],selected['build'],selected['protocol'])==(baseline['descriptor'],BUILD,PROTOCOL)
         need(known or installed,'Unsupported selected program identity')
     return selected
@@ -281,7 +281,8 @@ def repair_process_reader(core,boot,program,data,sources,hashes,keys):
     path=program/'host-operations.py'
     if not path.exists():return
     core._protect(path)
-    previous='19e58afde09b05889ebe85e3e8997d4da105b13c2225e3cdc077a6746da0500b'
+    previous=('19e58afde09b05889ebe85e3e8997d4da105b13c2225e3cdc077a6746da0500b',
+              '1e1a73624aa2d500bd6040d40f2d46d013a6e648cc97111c24c84decccd05f1a')
     current=core._digest(path.read_bytes());target=hashes['host-operations.py']
     receipt=program/'source-hashes.json'
     core._protect(receipt)
@@ -289,9 +290,9 @@ def repair_process_reader(core,boot,program,data,sources,hashes,keys):
     if current==target and recorded==hashes:return
     state=core._state(data)
     need(not state.get('current') and not state.get('floor'),'Cannot repair an activated stable platform')
-    need(current in (previous,target),'Unknown stable process reader; no repair requested')
-    expected=dict(hashes);expected['host-operations.py']=previous
-    need(recorded in (expected,hashes),'Stable source inventory differs; no repair requested')
+    need(current in (*previous,target),'Unknown stable process reader; no repair requested')
+    expected=[dict(hashes, **{'host-operations.py':digest}) for digest in previous]
+    need(recorded in (*expected,hashes),'Stable source inventory differs; no repair requested')
     boot.validate_sources(sources,hashes,keys)
     for name,raw in sources.items():
         p=program/name;core._protect(p)
@@ -305,7 +306,7 @@ def repair_process_reader(core,boot,program,data,sources,hashes,keys):
         if not saved.exists():core._write(saved,(program/name).read_bytes())
     core._write(path,sources['host-operations.py'])
     core._write(receipt,core._canonical(hashes))
-    print('REPAIR: authenticated Docker process reader and source inventory aligned; original files retained.',flush=True)
+    print('REPAIR: authenticated Docker process reader/target verifier and source inventory aligned; original files retained.',flush=True)
 
 
 def prepare_adoption(core,boot,source,descriptor,config,old,release,response,program=HOST_PROGRAM,data=HOST_DATA,units=HOST_UNITS,original_context=None):
