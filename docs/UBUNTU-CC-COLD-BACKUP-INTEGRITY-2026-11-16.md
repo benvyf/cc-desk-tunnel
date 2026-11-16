@@ -36,3 +36,11 @@ VPS 查明对应旧 Build 3：归档 SHA256 正是目录名 `55bc3834b8f4be34974
 用户在实际宿主机 DESKTOP-MB2PIGK 回传 Get-VM：ubuntu-cc=Running。最近 30 条匹配事件全部为 disk / ID 153，均指向 Disk 0，PDO `\Device\00000043`。香港时间 2026-11-16 16:17:27 的 LBA 为 0xd003738，16:18:15 为 0xd2a7cf8；它们与备份目录时间 16:17:34、失败日志 16:18:43 重合。此前 14:42 至 14:58 也有连续多次 I/O 重试。
 
 这是当前目标宿主机实际发生存储 I/O 异常的证据，而非仅引用旧记录。ID 153 表明 I/O 被重试，不单独证明某次重试导致该字节不一致，也不能仅凭它定位磁盘本体、连接或控制器。当前尚未取得 VHD 所在卷与 Disk 0 的映射，因此不宣称已经证明 VM 的 VHD 位于 Disk 0。下一项只读取得 Get-VMHardDiskDrive 路径、Get-Disk / Get-Partition 映射及 Get-StorageReliabilityCounter。暂不执行 chkdsk /f、重启、驱动升级、磁盘移动或强制停虚拟机；保留现有正常业务数据及失败归档。
+
+## 磁盘映射与存储条件已确认
+
+用户回传 ubuntu-cc 正在使用 `C:\ProgramData\Microsoft\Windows\Virtual Hard Disks\ubuntu-cc_B564C264-4794-4188-A91C-0D1F6EBD8641.avhdx`。宿主机仅有 Disk 0：HS-SSD-C160 1024G / SATA / 1,024,209,543,168 字节；C 盘为该盘分区 3。当前 AVHDX 差分盘因此确认位于发生重试的物理 Disk 0；父链路径尚未盘点，不得单独删/移 AVHDX。
+
+HealthStatus=Healthy、OperationalStatus=Online；可靠性计数温度 50°C、Wear=0、PowerOnHours=4866、ReadErrorsTotal=0，其余不可纠正读/写和总写错误为空。这些计数没有排除已记录的重试或字节不一致；空白不是 0，Wear/原始 SMART 含义与厂商有关，不能据此断言 SSD 健康，也不能仅凭 50°C 断言过热是根因。
+
+用户明确当前没有独立存储。暂不安排迁盘、检查点合并或修复性写入，下一项仅尝试读取原生 WMI SMART 属性 5/187/188/197/198/199，辅助区分接口 CRC、命令超时和介质方向；接口不可用或原始计数为 0 也不构成排除故障的证据。若后续需要关机检查 SATA 连接或内存，须单独安排全部相关虚拟机和宿主机的维护窗口，不能直接强停用户工作；当前软件更新尚未成功安装。
