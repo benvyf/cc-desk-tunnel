@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-16 Build 26 的 v5 旧通道确认修复已上线
+
+Build 26 已发布（镜像独立构建/回退资源轮转/CLI 校验修复），但上轮遗漏实际 UI 的工作流确认接口，用户被中心的 signed v4 bridge 校验拦截。现已基于实际运行中心定点更新 host-updates.ts 与 host-workflows.ts，精确支持 Build 26+ / 协议 24 / node24-cli2.1.325-v5，保留旧 v4 与签名、确认、保留权和普通 failed 状态拒绝。真实签名 26 的原 HTTP 409 已复现，部署后实际模块在隔离 SQLite 的 6 组 HTTP 回归通过；四个签名索引/26 包、六节点版本与旧任务保持，无生产任务创建。用户刷新并按需重新登录后再确认 26。完整现行中心不在此分支，不能直接用本分支整体覆盖它；追溯实际清单与精确 overlay 补丁。见[修复和证据](docs/ADMIN-BUILD26-BRIDGE-RUNTIME-FIX.md)、[Build 26](docs/RELEASE-SERVER-BUILD26-IMAGE-LIFECYCLE.md)。
+
 ### 2026-11-16 Build 24：修复 Build 23 ENOSPC，保留 30 GB 节点容量
 
 用户实机 Docker 29.9.1 展开约 7 GB 旧镜像，npm ENOSPC；原服务 healthy，清理构建缓存后恢复约 5.1 GiB。用户选择不扩容并要求升级默认先清理。已发布 Linux Build 24（源码 `d671527edb61470ecebbdd7b0ca370cf9d41a4ea`，协议24、CLI325/SDK0.3.286不变）：固定精简 Ubuntu 基础层重建、去掉运行时重复层，默认引用保护清理旧 runtime 解包缓存，5 GiB 构建预算及512MiB运行余量监测，失败自动清理。实际 BuildKit 构建最大额外占用约4.71GB，最低剩余902MB，镜像Docker报告约582MB；真实PTY/离线健康、Linux35项、CLI模型/SDK/审核范围、公开完整下载/签名、迁移脚本真实内部HTTP与严格解包、实际systemd/agent选路通过，revision42。Windows35/中心/节点任务不改，原失败23任务保留，Ubuntu仍21；用户须刷新中心创建24新任务，勿重试23。详见[发行与验证](docs/RELEASE-SERVER-BUILD24-LEAN.md)及[证据](docs/evidence/linux-build24-lean-2026-11-16.json)。

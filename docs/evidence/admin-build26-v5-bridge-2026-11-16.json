@@ -1,0 +1,29 @@
+{
+  "fixed": true,
+  "changedFiles": [
+    "apps/update-service/src/host-updates.ts",
+    "apps/update-service/src/host-workflows.ts"
+  ],
+  "sourceCommit": "a77e3efa9097731826adbcef72bbd5370140585c",
+  "backup": "/var/backups/cc-update-service/build26-v5-bridge-20261116T081148Z",
+  "downtimeSeconds": 1.568,
+  "originalHttp409Reproduced": true,
+  "deployedRuntimeHttpRegressionGroups": 6,
+  "realSignedBuild26EnqueueOnlyInIsolatedFixture": true,
+  "signatureTargetAuthOriginGuardsPreserved": true,
+  "reservedPreparationV5Supported": true,
+  "allFourSignedIndexesUnchanged": true,
+  "publicBuild26ArchiveUnchanged": true,
+  "sixNodeVersionsAndJobsUnchanged": true,
+  "liveUbuntuTarget": {
+    "build": 26,
+    "sha256": "e4ff9d10c281758a31a434bc713c74d04bd8c1329b3ffcc6b965a1e55845a5c3"
+  },
+  "services": {
+    "cc-update-service": "active",
+    "cc-update-renew.timer": "active",
+    "cc-server-index-renew.timer": "active"
+  },
+  "realModelRequests": 0,
+  "productionJobsCreated": false
+}
