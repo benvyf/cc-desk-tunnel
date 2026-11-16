@@ -30,3 +30,9 @@ VPS 查明对应旧 Build 3：归档 SHA256 正是目录名 `55bc3834b8f4be34974
 该成员不是硬链接，排除了本文件的硬链接解析错指；gzip CRC 通过只说明压缩流校验自洽，不保证备份内容符合源文件。当前证据优先调查读取、内存、归档压缩和存储链路，仍不足以判断具体硬件部件，也不能仅凭 gzip CRC 推断错误必然发生在压缩前。可用 GNU tar/sha256sum 独立复核 Python 的观察，并读取目标 Hyper-V 宿主机和 Ubuntu 的相关系统事件。
 
 旧维护记录曾观察到目标宿主机 Disk 0 的 disk 153 重试、storahci 129 重置和同一镜像层不同摘要；它们是历史线索，不是本次已取得的当前故障事件。当前执行电脑 hostname=DESKTOP-FG28DJA，不是旧维护记录中的 Hyper-V 宿主机 DESKTOP-MB2PIGK，因此不能读取本机事件后冒充目标机诊断。下一项读取实际 ubuntu-cc 宿主机的 VM/VHD 路径、磁盘状态及最近七天磁盘/控制器/WHEA/NTFS 事件；无事件或 HealthStatus=Healthy 本身也不能排除故障。保留失败归档及正常业务数据，不改写摘要或重复升级绕过保护。
+
+## 当前实际宿主机证据
+
+用户在实际宿主机 DESKTOP-MB2PIGK 回传 Get-VM：ubuntu-cc=Running。最近 30 条匹配事件全部为 disk / ID 153，均指向 Disk 0，PDO `\Device\00000043`。香港时间 2026-11-16 16:17:27 的 LBA 为 0xd003738，16:18:15 为 0xd2a7cf8；它们与备份目录时间 16:17:34、失败日志 16:18:43 重合。此前 14:42 至 14:58 也有连续多次 I/O 重试。
+
+这是当前目标宿主机实际发生存储 I/O 异常的证据，而非仅引用旧记录。ID 153 表明 I/O 被重试，不单独证明某次重试导致该字节不一致，也不能仅凭它定位磁盘本体、连接或控制器。当前尚未取得 VHD 所在卷与 Disk 0 的映射，因此不宣称已经证明 VM 的 VHD 位于 Disk 0。下一项只读取得 Get-VMHardDiskDrive 路径、Get-Disk / Get-Partition 映射及 Get-StorageReliabilityCounter。暂不执行 chkdsk /f、重启、驱动升级、磁盘移动或强制停虚拟机；保留现有正常业务数据及失败归档。
