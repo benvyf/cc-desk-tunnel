@@ -1,0 +1,52 @@
+--- a/apps/update-service/src/host-updates.ts
++++ b/apps/update-service/src/host-updates.ts
+@@ -50,6 +50,15 @@
+   return { build: Number(value.build), protocol: Number(value.protocol), phase: value.phase };
+ }
+ 
++// Only reviewed image runtimes can bridge an already confirmed signed app target.
++export function supportsLegacyBridge(release: ServerRelease | null | undefined): boolean {
++  return !!release && release.build >= 22 && (
++    release.runtimeLevel.endsWith('-v4') ||
++    (release.build >= 26 && release.protocol === 24 &&
++      release.runtimeLevel === 'node24-cli2.1.325-v5')
++  );
++}
++
+ // One row per configured node, one outstanding job. Host credentials never enter the CC container or desktop.
+ export class HostUpdates {
+   private db: DatabaseSync;
+@@ -195,7 +204,7 @@
+         version.phase === 'failed' &&
+         internal?.bridgePreflight &&
+         reserved === internal.reservation &&
+-        release.runtimeLevel?.endsWith('-v4')
++        supportsLegacyBridge(release)
+       )
+     )
+       throw new UpdateError(409, '设备正在处理更新或需要检查，请先处理当前状态。');
+--- a/apps/update-service/src/host-workflows.ts
++++ b/apps/update-service/src/host-workflows.ts
+@@ -4,7 +4,7 @@
+ import { join } from 'node:path';
+ import { DatabaseSync } from 'node:sqlite';
+ import { isDeepStrictEqual } from 'node:util';
+-import { HostUpdates } from './host-updates.ts';
++import { HostUpdates, supportsLegacyBridge } from './host-updates.ts';
+ import { AgentPackages, type SignedAgentIndex } from './agent-packages.ts';
+ import { UpdateError } from './store.ts';
+ import type {
+@@ -572,11 +572,8 @@
+     if (host.job && ['queued', 'running'].includes(host.job.state))
+       fail(409, 'Legacy update is still active.');
+     if (o && wanted.agent.version < o.agent.version) fail(409, 'Agent rollback is prohibited.');
+-    if (
+-      legacy &&
+-      (!publication?.release.runtimeLevel.endsWith('-v4') || publication.release.build < 22)
+-    )
+-      fail(409, 'Legacy adoption requires the signed v4 bridge runtime.');
++    if (legacy && !supportsLegacyBridge(publication?.release))
++      fail(409, 'Legacy adoption requires a supported signed bridge runtime.');
+     if (
+       !legacy &&
+       o?.app &&
