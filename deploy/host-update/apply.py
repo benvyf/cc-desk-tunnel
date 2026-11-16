@@ -397,7 +397,7 @@ WORKDIR /app
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
-RUN su -s /bin/sh ccdesktunnel -c 'npm_config_cache=/tmp/cc-npm-cache npm_config_nodedir=/opt/runtime/node npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol --no-audit --no-fund' && rm -rf /tmp/cc-npm-cache && /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
+RUN su -s /bin/sh ccdesktunnel -c 'PATH=/opt/runtime/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin npm_config_cache=/tmp/cc-npm-cache npm_config_nodedir=/opt/runtime/node npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol --no-audit --no-fund' && rm -rf /tmp/cc-npm-cache && /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
 ENV HOME=/data/home
 USER ccdesktunnel
 WORKDIR /data/workspace
