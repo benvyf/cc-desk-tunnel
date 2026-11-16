@@ -335,7 +335,7 @@ def provision_cli(work, runtime_level):
     cli = download(f'https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-{version}.tgz', 300 * 1024 * 1024)
     if hashlib.sha256(cli).hexdigest() != archive_sha: raise InstallError('Official Claude archive digest mismatch.')
     with tarfile.open(fileobj=io.BytesIO(cli), mode='r:gz') as archive:
-        binary = archive.extractfile('package/claude').read(300 * 1024 * 1024)
+        binary = archive.extractfile('package/claude').read(512 * 1024 * 1024)
     if hashlib.sha256(binary).hexdigest() != binary_sha: raise InstallError('Official Claude binary digest mismatch.')
     runtime = work / 'runtime'
     (runtime / 'cli/bin').mkdir(parents=True, exist_ok=True)
