@@ -39,6 +39,7 @@ IMAGE_SIZE_LIMIT = 3 * 1024**3
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'd952131e9ebab6648fb49682aefd3f7f7b6f4281a2cea5c6d40cf2437a04e2a2': (26, 24),
     'c9109f50c70eb1d97aabaac203a1c932908a99288fde6f19f93d668d8285310a': (25, 24),
     '61fcf69f563ba4dbc7b2f777706a52c491154e4d54d7be61770a05af5cff2af7': (24, 24),
     'd786e79c64fb81136a5a6a9fd67081783016786ed9032bcf4af0894ffcd4845f': (23, 24),
@@ -147,7 +148,7 @@ def retain_previous_backup(container, keep_image=None):
         images.rotate(retirement, ROOT, container, keep_image)
     except Exception as error:
         print('RETENTION_PENDING: retirement not completed; required rollback left untouched; inspect audit/records: ' +
-              str(error) + '; current service is not stopped.', flush=True)
+              type(error).__name__ + ': ' + str(error) + '; current service is not stopped.', flush=True)
 
 
 def check_recovery_records():
@@ -203,7 +204,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] in (23,24,25) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23,24,25,26) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -499,7 +500,7 @@ def selected_container(b,review,node,config):
         info=b.Engine().request('GET','/containers/'+identity+'/json')
         labels=info.get('Config',{}).get('Labels') or {}
         project=labels.get('com.docker.compose.project','')
-        if project=='cc-desk-tunnel' or project.startswith('cc-desk-tunnel-'):found.append(identity)
+        if project=='cc-desk-tunnel' or project.startswith('cc-desk-tunnel-'):found.append(info['Name'].lstrip('/'))
     need(len(found)==1,'Expected exactly one enrolled CC proxy container')
     return found[0]
 
