@@ -1,0 +1,116 @@
+{
+  "published": true,
+  "release": {
+    "build": 26,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "f9922b9a03fbfbc92cc043aed765532f7a51081d",
+    "size": 8182162,
+    "sha256": "e4ff9d10c281758a31a434bc713c74d04bd8c1329b3ffcc6b965a1e55845a5c3",
+    "descriptorSha256": "d952131e9ebab6648fb49682aefd3f7f7b6f4281a2cea5c6d40cf2437a04e2a2",
+    "packageLockSha256": "71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c",
+    "runtimeLevel": "node24-cli2.1.325-v5",
+    "compatibility": {
+      "apps/server/src/store.ts": "95fd2b9100b9009bb4b12c6d33e6e73f62e5c79af1f4a0a18fb8936fc00941c1",
+      "apps/server/src/usage.ts": "4bde92f9f877e4c579eead3fe4994f863a501663417403f0c8b9c42aaa9990dc",
+      "apps/server/src/web-access.ts": "18e480b94c4c29569ad27a4bf57c7838ea584ae20b812f68030cf7676cb571f6",
+      "apps/server/src/native-settings.ts": "3cd46d46dfca8a4f66a70e0e2c57d95b6899c5f17e5647af6569f58a889f1c25",
+      "apps/server/src/native-onboarding.ts": "6777362622817745be87480d79aa443811f231dc2dc576e1950dec4658d313f7",
+      "apps/server/src/native-instructions.ts": "31b01bd3c65476408b1618dcb00a1e0bf59c9e2a058179f788c5ab1ef9d2a048",
+      "apps/server/src/native-moderation-hook.ts": "197640b3b3d1c0b2a5b3646e6065da035d87425eef7047fd2a2eb180290947fb",
+      "apps/server/src/moderation.ts": "b849be7a7f2fc994a7a316e8bddf500f1ff72738745ea34f1700f0edd9169f3a",
+      "apps/server/src/errors.ts": "2f39eeba21699f498d251507cc70110cb2455b161d2cb075679703fa8448c721",
+      "apps/server/src/native-deployment.ts": "a1793be4327430c599cf5477d579ff2fbd3367fa4c9bc2f8b43758ede9c3bf3e",
+      "apps/server/src/native-terminal-policy.ts": "fab3f14ae6a063b4539b615feae19ef72d4e12b25800f30b040ef6ccc395ca68",
+      "apps/server/src/web-certificate.ts": "56e372003ce90535250e1f7706f24e19b07497e68f678580bc04a5243de97162",
+      "apps/server/src/web-totp.ts": "a0eaf188fecc7970cdba3f54b568bdd04b34e52c69f2d5796c837d56448e25d0",
+      "apps/server/src/device-terms.ts": "bb65852f67e6742e4e63894a71f89092effb811b4501a693c7d070630833449e",
+      "apps/server/src/claude.ts": "e36a6fe5ebf0232cd7e92c316b33726d0a90747e41548b67ee1ffd7fc92150cf",
+      "apps/server/src/legacy.ts": "6849c4c27678c8308e1c2456c091047071d0a7502425b757cb2eda489b2addee",
+      "apps/server/src/native-account.ts": "f73433400fde0147491d6ca355ba1024e06a54dfe7bbec53c6b8f2474e13c17c",
+      "packages/protocol/src/index.ts": "0d328e8ba217ee05780be61f43f87e5680e85659f20665550a46a959792a0d81",
+      "packages/protocol/src/web.ts": "27011dd28fcaff36afed63bc3a6c75a274ce0ad9493479e314d494ad32cd628c",
+      "packages/protocol/src/web-certificate.ts": "e958aa1226b10101ca91da23e161afd2db7972ba5764245a8f25749dbebd55ff"
+    }
+  },
+  "revision": 46,
+  "tests": {
+    "linuxCore": 57,
+    "freshInstaller": 7,
+    "coldBackupRecovery": 16,
+    "managedServerContractSupervisorAdmission": 23,
+    "freshEnrollment": 1
+  },
+  "simulation": "Unit tests use synthetic Docker/node state; fresh-installer storage path supplied by fixture adapter.",
+  "lab": {
+    "build": 26,
+    "imageSize": 581776591,
+    "sizeLimit": 3221225472,
+    "baseLayersVerified": true,
+    "descriptorAndAllFilesVerified": true,
+    "realPtyProbe": true,
+    "realCutoverCliAdmission": true,
+    "realHostTargetReadiness": true,
+    "sourceCommit": "f9922b9a03fbfbc92cc043aed765532f7a51081d",
+    "runtimeLevel": "node24-cli2.1.325-v5",
+    "repeatBuildSize": 581776591,
+    "inflatedPreviousSize": 581793513,
+    "previousExtraLayerInherited": false,
+    "serviceCutoverExecuted": false,
+    "realModelRequests": 0
+  },
+  "routing": {
+    "oldV4RejectsOrdinaryProgramInstall": true,
+    "newV5AcceptsFutureSameRuntimeUpdates": true,
+    "protocol": 24,
+    "runtimeLevel": "node24-cli2.1.325-v5"
+  },
+  "labCleanup": {
+    "labResourcesRemoved": true,
+    "originalImageIdsPreserved": [
+      "sha256:09160599abd229764c0fb44cb6be640294e1d360a54b19985ab4843dcf2d90f1",
+      "sha256:15660e93741774e4bd495c07ad10b7a6f11100c9a6de6889aa02cf8f682825d8",
+      "sha256:342e0c36eed7c26cdf195873629b748984f7f681ac1701daab8d5266f8d950f6",
+      "sha256:48bf4f73a995f89c78d359a094bd1852f258b8b7a0f26603afeb384158f31644",
+      "sha256:96d56f7f57c6aacd1fcb908bc83b345ec5f83231ee486dd66a1baadce274db88"
+    ],
+    "productionContainersHealthy": true,
+    "productionContainerCount": 7,
+    "availableBytes": 5569241088
+  },
+  "center": {
+    "deployed": true,
+    "managementInfoSha256": "82fa05ebd02238f01ab675681127104d5d5becb10da13696d259a7c3a91539d1",
+    "backup": "/var/backups/cc-update-service/image26-installer-20261116T075610Z",
+    "changedFiles": [
+      "apps/update-service/src/http.ts",
+      "apps/update-service/src/fresh-nodes.ts",
+      "apps/update-service/web/fresh-install-v6.py"
+    ],
+    "oldPublicScriptsPreserved": true,
+    "configUnchanged": true,
+    "privateColdBackupBytes": 166555,
+    "seconds": 1.607
+  },
+  "realSignedMigrationHttpDownloadUnpack": true,
+  "independentDesktopVerification": {
+    "signatureVerified": true,
+    "fullDownloadVerified": true,
+    "revision": 46
+  },
+  "actualSystemdServiceAndRenewalTimersVerified": true,
+  "exactRenewalRegistrationVerified": true,
+  "windowsPilotAndStableUnchanged": true,
+  "ubuntuNodesAndExistingJobsUnchanged": true,
+  "productionUbuntuInstallExecuted": false,
+  "realModelRequests": 0,
+  "publicationRetry": "First publication attempt used old drop-in filename; index/registration rolled back; original Build25 drop-in restored; versioned Build26 drop-in and renewal verified.",
+  "managementDeviceView": {
+    "nodeId": "ubuntu-cc",
+    "currentBuild": 21,
+    "releaseBuild": 26,
+    "existingJobBuild": 25,
+    "existingJobState": "failed"
+  },
+  "testCount": 104
+}
