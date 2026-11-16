@@ -253,7 +253,12 @@ def inspect_original(core,context,container):
     helper=RUNTIME/'helper.py';protected(helper)
     if hashlib.sha256(helper.read_bytes()).hexdigest()!='270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0':return False
     spec=importlib.util.spec_from_file_location('original_idle_helper',helper);support=importlib.util.module_from_spec(spec);spec.loader.exec_module(support)
-    processes=json.loads(output(['docker','top',container,'-eo','pid,args']))['Processes']
+    rows=output(['docker','top',container,'-eo','pid,args']).splitlines()
+    if not rows or rows[0].split() not in (['PID','COMMAND'],['PID','CMD']):
+        raise ValueError('Unrecognized Docker process table')
+    processes=[row.split(None,1) for row in rows[1:] if row.strip()]
+    if not processes or any(len(row)!=2 or not row[0].isdigit() for row in processes):
+        raise ValueError('Invalid Docker process table')
     if support.busy([[cell.replace('/apps/server/src/managed-server-child.ts','/apps/server/src/managed-server-main.ts') for cell in row] for row in processes]):return False
     database=Path('/srv/cc-desk-tunnel/state/sessions.sqlite')
     if not database.is_file():return False

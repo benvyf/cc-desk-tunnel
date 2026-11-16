@@ -38,6 +38,7 @@ OPERATING_RESERVE = 512 * 1024**2
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    '61fcf69f563ba4dbc7b2f777706a52c491154e4d54d7be61770a05af5cff2af7': (24, 24),
     'd786e79c64fb81136a5a6a9fd67081783016786ed9032bcf4af0894ffcd4845f': (23, 24),
     '4a821373e1bb9d310d50f91a3742a8f93d3ffefcdb701b7decb9ff608c0e6667': (22, 24),
     '42d161514ab4e12dfe0c753e7d4ff0b257f2c68efc6c0ac5f938aa9c7a469c66': (21, 24),
@@ -198,7 +199,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] == 23 else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23,24) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -271,6 +272,38 @@ def operation_gate(data=HOST_DATA):
     finally:os.close(fd)
 
 
+def repair_process_reader(core,boot,program,data,sources,hashes,keys):
+    """One reviewed pre-activation repair; unknown stable changes remain forbidden."""
+    path=program/'host-operations.py'
+    if not path.exists():return
+    core._protect(path)
+    previous='19e58afde09b05889ebe85e3e8997d4da105b13c2225e3cdc077a6746da0500b'
+    current=core._digest(path.read_bytes());target=hashes['host-operations.py']
+    receipt=program/'source-hashes.json'
+    core._protect(receipt)
+    recorded=core._json(receipt.read_bytes())
+    if current==target and recorded==hashes:return
+    state=core._state(data)
+    need(not state.get('current') and not state.get('floor'),'Cannot repair an activated stable platform')
+    need(current in (previous,target),'Unknown stable process reader; no repair requested')
+    expected=dict(hashes);expected['host-operations.py']=previous
+    need(recorded in (expected,hashes),'Stable source inventory differs; no repair requested')
+    boot.validate_sources(sources,hashes,keys)
+    for name,raw in sources.items():
+        p=program/name;core._protect(p)
+        need(name=='host-operations.py' or p.read_bytes()==raw,'Other stable source differs; no repair requested')
+    trusted=program/'trusted-keys.json';core._protect(trusted)
+    need(core._json(trusted.read_bytes())==keys,'Stable publisher keys differ')
+    backup=data/'agent-platform'/'process-reader-repair'
+    core._directory(backup)
+    for name in ('host-operations.py','source-hashes.json'):
+        saved=backup/(name+'.'+core._digest((program/name).read_bytes()))
+        if not saved.exists():core._write(saved,(program/name).read_bytes())
+    core._write(path,sources['host-operations.py'])
+    core._write(receipt,core._canonical(hashes))
+    print('REPAIR: authenticated Docker process reader and source inventory aligned; original files retained.',flush=True)
+
+
 def prepare_adoption(core,boot,source,descriptor,config,old,release,response,program=HOST_PROGRAM,data=HOST_DATA,units=HOST_UNITS,original_context=None):
     """Durable observer, signed worker and timer must precede any app cutover."""
     state=core._state(data)
@@ -283,6 +316,7 @@ def prepare_adoption(core,boot,source,descriptor,config,old,release,response,pro
     web=source/'apps/update-service/web'
     sources={name:(web/name).read_bytes() for name in boot.SOURCE_FILES}
     hashes={name:descriptor['files']['apps/update-service/web/'+name]['sha256'] for name in boot.SOURCE_FILES}
+    repair_process_reader(core,boot,program,data,sources,hashes,config['keys'])
     boot.stage_sources(core,program,data,sources,hashes,config['keys'])
     boot.publish_sources(core,program,data)
     probe=(web/'server-upgrade.cjs').read_bytes()
