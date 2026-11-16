@@ -102,7 +102,7 @@ export async function forkProgram(
       void probe(settings, options.expected.nonce)
         .then((proof) => {
           requireValue(
-            JSON.stringify(proof) === JSON.stringify(message.proof),
+            !ended && child.connected && JSON.stringify(proof) === JSON.stringify(message.proof),
             'IPC and local readiness differ',
           );
           resolveReady(proof);
@@ -134,7 +134,18 @@ export async function forkProgram(
           requireValue(request.input === null, 'Invalid status');
           return backend.status();
         case 'prepare': {
-          const c = strictObject(request.input, ['clientProtocol', 'confirmed', 'build', 'sha256']);
+          const input = strictObject(request.input, ['confirmation', 'operationId']);
+          requireValue(
+            typeof input.operationId === 'string' &&
+              /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(input.operationId),
+            'Invalid operation',
+          );
+          const c = strictObject(input.confirmation, [
+            'clientProtocol',
+            'confirmed',
+            'build',
+            'sha256',
+          ]);
           requireValue(
             c.confirmed === true &&
               Number.isSafeInteger(c.clientProtocol) &&
@@ -145,11 +156,17 @@ export async function forkProgram(
               /^[a-f0-9]{64}$/.test(c.sha256),
             'Invalid confirmation',
           );
-          return backend.prepare(c as Parameters<ManagedBackend['prepare']>[0]);
+          return backend.prepare(c as Parameters<ManagedBackend['prepare']>[0], input.operationId);
         }
         case 'activate':
-          requireValue(request.input === null, 'Invalid activation');
-          backend.activate();
+        case 'cancelPrepared':
+          requireValue(
+            typeof request.input === 'string' &&
+              /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(request.input),
+            'Invalid operation',
+          );
+          if (request.method === 'activate') backend.activate(request.input);
+          else await backend.cancelPrepared?.(request.input);
           return null;
         default:
           throw new Error('Unknown method');
@@ -191,8 +208,8 @@ export async function forkProgram(
     commit() {
       send({ kind: 'cc-managed-commit', nonce: options.expected.nonce });
     },
-    cancelMaintenance() {
-      send({ kind: 'cc-managed-cancel', nonce: options.expected.nonce });
+    cancelMaintenance(operationId) {
+      send({ kind: 'cc-managed-cancel', nonce: options.expected.nonce, operationId });
     },
     stop() {
       stopping ??= (async () => {

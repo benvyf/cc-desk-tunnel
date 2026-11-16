@@ -116,18 +116,39 @@ a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),process.argv[2]);"""
         check=True, capture_output=True, timeout=90)
 
 
-def logged(args, log, timeout=600):
+LOG_ROOT = Path('/var/lib/cc-runtime-upgrade')
+
+
+def build_tail(log):
+    # Only the fixed root-owned build log of this invocation. Never Docker logs.
+    need(log.parent.parent in (LOG_ROOT,ROOT) and re.fullmatch(r'build[0-9]+-[A-Za-z0-9_-]+',log.parent.name) and log.name=='build.log','Unexpected build log path')
+    if os.name=='posix':
+        protected(log.parent.parent,True);protected(log.parent,True);protected(log)
+    with log.open('rb') as stream:
+        size=log.stat().st_size;stream.seek(max(0,size-256*1024));raw=stream.read(256*1024)
+        if size>len(raw):raw=raw.partition(b'\n')[2]
+    ops=load('build_log_redaction',Path(__file__).resolve().parents[1]/'apps/update-service/web/host-operations.py')
+    # Redact complete lines before bounding what reaches v1 outer.log and GUI.
+    return ops.redact(raw.decode('utf8',errors='replace'))[-2400:]
+
+
+def logged(args, log, timeout=600, env=None):
     with log.open('ab') as output:
-        process = subprocess.Popen(args, stdout=output, stderr=output)
+        process = subprocess.Popen(args, stdout=output, stderr=output,env=env)
         started = time.monotonic()
         try:
             while True:
                 try:
-                    need(process.wait(timeout=15) == 0, 'Build failed; inspect ' + str(log))
+                    code=process.wait(timeout=15)
+                    tail=build_tail(log)
+                    if tail:print('BUILD_OUTPUT:\n'+tail,flush=True)
+                    need(code==0,'Build failed; inspect '+str(log))
                     return
                 except subprocess.TimeoutExpired:
                     elapsed = int(time.monotonic() - started)
-                    print('RUNNING: ' + str(elapsed) + 's; log=' + str(log), flush=True)
+                    print('RUNNING: '+str(elapsed)+'s; log='+str(log),flush=True)
+                    tail=build_tail(log)
+                    if tail:print('BUILD_OUTPUT:\n'+tail,flush=True)
                     need(elapsed < timeout, 'Build timed out; inspect the preparation log')
         except BaseException:
             if process.poll() is None:

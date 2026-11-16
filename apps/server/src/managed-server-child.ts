@@ -8,7 +8,7 @@ export function connectManagedSupervisor(nonce: string): {
   ready(proof: ReadyProof): void;
   onCommit(callback: () => void): void;
   onStop(callback: () => void): void;
-  onCancel(callback: () => void): void;
+  onCancel(callback: (operationId: string) => void): void;
 } {
   if (!process.send || !process.connected || !/^[a-f0-9]{64}$/.test(nonce))
     throw new Error('Missing private supervisor IPC');
@@ -18,7 +18,12 @@ export function connectManagedSupervisor(nonce: string): {
   >();
   let commit = () => {},
     stop = () => {},
-    cancel = () => {};
+    cancel = (_operationId: string) => {};
+  let stopRequested = false;
+  const requestStop = () => {
+    stopRequested = true;
+    stop();
+  };
   process.on('message', (raw: unknown) => {
     if (!raw || typeof raw !== 'object') return;
     const message = raw as Record<string, unknown>;
@@ -30,8 +35,13 @@ export function connectManagedSupervisor(nonce: string): {
       if (message.ok === true) request.resolve(message.value);
       else request.reject(new Error('Supervisor rejected request'));
     } else if (message.nonce === nonce && message.kind === 'cc-managed-commit') commit();
-    else if (message.nonce === nonce && message.kind === 'cc-managed-stop') stop();
-    else if (message.nonce === nonce && message.kind === 'cc-managed-cancel') cancel();
+    else if (message.nonce === nonce && message.kind === 'cc-managed-stop') requestStop();
+    else if (
+      message.nonce === nonce &&
+      message.kind === 'cc-managed-cancel' &&
+      typeof message.operationId === 'string'
+    )
+      cancel(message.operationId);
   });
   process.on('disconnect', () => {
     for (const request of pending.values()) {
@@ -39,7 +49,7 @@ export function connectManagedSupervisor(nonce: string): {
       request.reject(new Error('Supervisor disconnected'));
     }
     pending.clear();
-    stop();
+    requestStop();
   });
   const call = (method: string, input: unknown): Promise<unknown> =>
     new Promise((resolve, reject) => {
@@ -70,11 +80,17 @@ export function connectManagedSupervisor(nonce: string): {
     backend: {
       check: async (protocol) => (await call('check', protocol)) as ServerCheck,
       status: async () => (await call('status', null)) as ServerStatus,
-      prepare: async (input) => {
-        await call('prepare', input);
+      prepare: async (confirmation, operationId) => {
+        await call('prepare', { confirmation, operationId });
       },
-      activate: () => {
-        void call('activate', null).catch(() => {});
+      activate: (operationId) => {
+        void call('activate', operationId).catch(() => {
+          // Handoff failure releases only its own gate; never a later owner.
+          if (operationId) cancel(operationId);
+        });
+      },
+      cancelPrepared: async (operationId) => {
+        await call('cancelPrepared', operationId);
       },
     },
     ready: (proof) => process.send!({ kind: 'cc-managed-ready', proof }),
@@ -83,6 +99,7 @@ export function connectManagedSupervisor(nonce: string): {
     },
     onStop: (callback) => {
       stop = callback;
+      if (stopRequested) stop();
     },
     onCancel: (callback) => {
       cancel = callback;
