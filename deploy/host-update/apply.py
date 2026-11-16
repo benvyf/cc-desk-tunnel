@@ -95,6 +95,7 @@ def check_build_space(staged=0):
 
 def build_candidate(args, log):
     started = time.monotonic()
+    reported = started
     with log.open('wb') as output:
         process = subprocess.Popen(args, stdout=output, stderr=subprocess.STDOUT,
                                    env={**os.environ, 'DOCKER_BUILDKIT': '1'})
@@ -103,6 +104,9 @@ def build_candidate(args, log):
                 free = shutil.disk_usage(ROOT).free
                 need(free >= OPERATING_RESERVE, f'Image build cancelled to retain operating space: available={free}; reserve={OPERATING_RESERVE}; inspect {log}; original service left running')
                 need(time.monotonic() - started < 1800, f'Image build timed out; inspect {log}')
+                if time.monotonic() - reported >= 15:
+                    reported = time.monotonic()
+                    print(f'BUILD_RUNNING: elapsed={int(reported-started)}s; available={free}; log={log}; original service remains running', flush=True)
                 time.sleep(1)
             need(process.returncode == 0, f'Build failed; inspect {log}')
         except BaseException:
