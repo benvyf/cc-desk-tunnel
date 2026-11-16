@@ -30,10 +30,12 @@ BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
 LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
 NODE_VERSION = '24.22.2'
-CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
+BASE_CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
+CLI = '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    '4a821373e1bb9d310d50f91a3742a8f93d3ffefcdb701b7decb9ff608c0e6667': (22, 24),
     '42d161514ab4e12dfe0c753e7d4ff0b257f2c68efc6c0ac5f938aa9c7a469c66': (21, 24),
     'c2b0ab967a219cde7d250b1a39a5793ba57177ddfc0c0f43e021d362181dfed3': (20, 24),
     'a8f103b38a5b270f5a301071780cc2ba0ad9394312b01da4dbc3c74a7a76d5c7': (19, 24),
@@ -130,7 +132,7 @@ def verify_release(fresh, data, expected):
 
 SOURCE_GUARD=load('image_source_guard',PROGRAM/'apps/update-service/web/host-operations.py').SOURCE_GUARD
 VERIFY_RUNTIME = SOURCE_GUARD + r"""const f=require('fs'),c=require('crypto'),a=require('assert/strict'),hash=b=>c.createHash('sha256').update(b).digest('hex');
-a.equal(hash(f.readFileSync('/opt/runtime/cli/bin/claude')),process.argv[1]);
+const cli=hash(f.readFileSync('/opt/runtime/cli/bin/claude'));a(JSON.parse(process.argv[1]).includes(cli));
 a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.286');
 const bytes=sourceRegular('/app','SERVER-RELEASE.json',[0]),d=JSON.parse(bytes);
 for(const[p,v]of Object.entries(d.files)){const b=sourceRegular('/app',p,[0]);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
@@ -145,23 +147,23 @@ let root='/app';if(journal.current!==null){const e=journal.current;a(e&&typeof e
 a.equal(f.realpathSync(root),root);const owners=root==='/app'?[0]:[0,1000],selectedBytes=sourceRegular(root,'SERVER-RELEASE.json',owners),selected=JSON.parse(selectedBytes);
 for(const[p,v]of Object.entries(selected.files)){a(/^[A-Za-z0-9_.@/+-]{1,200}$/.test(p)&&!p.split('/').some(x=>['','..','.','node_modules'].includes(x)));const path=root+'/'+p;a.equal(f.realpathSync(path),path);const b=sourceRegular(root,p,owners);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
 a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/docker/entrypoint.sh'].sha256);
-console.log(JSON.stringify({descriptor:hash(bytes),build:d.build,protocol:d.protocol,node:process.versions.node,lock:hash(f.readFileSync('/app/package-lock.json')),journal,selectedDescriptor:hash(selectedBytes),selectedBuild:selected.build,selectedProtocol:selected.protocol,policySha256:hash(Buffer.concat([f.readFileSync('/etc/claude-code/managed-settings.json'),f.readFileSync('/etc/claude-code/moderation-node.json')]))}));"""
+console.log(JSON.stringify({descriptor:hash(bytes),build:d.build,protocol:d.protocol,node:process.versions.node,cli,lock:hash(f.readFileSync('/app/package-lock.json')),journal,selectedDescriptor:hash(selectedBytes),selectedBuild:selected.build,selectedProtocol:selected.protocol,policySha256:hash(Buffer.concat([f.readFileSync('/etc/claude-code/managed-settings.json'),f.readFileSync('/etc/claude-code/moderation-node.json')]))}));"""
 
 
 def verify_runtime(container, node):
     result = subprocess.run(['docker', 'exec', container, '/opt/runtime/node/bin/node',
-        '--env-file=/data/config/service.env', '-e', VERIFY_RUNTIME, CLI, node],
+        '--env-file=/data/config/service.env', '-e', VERIFY_RUNTIME, json.dumps([BASE_CLI, CLI]), node],
         check=True, capture_output=True, timeout=90)
     return json.loads(result.stdout)
 
 
 def check_baseline(baseline, release):
     if baseline['descriptor'] == release['descriptorSha256']:
-        need((baseline['build'], baseline['protocol'], baseline['node'], baseline['lock']) ==
-             (BUILD, PROTOCOL, NODE_VERSION, LOCK), 'Installed candidate runtime differs')
+        need((baseline['build'], baseline['protocol'], baseline['node'], baseline['lock'], baseline['cli']) ==
+             (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == BASE_CLI and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -185,7 +187,9 @@ def authenticate_selected(core,boot,keys,baseline,journal,status):
     current=status.get('current') or {}
     need(all(current.get(k)==selected[k] for k in ('build','protocol','sha256')) and status.get('phase')==journal['phase'],'Live program differs from authenticated selection')
     if journal['current'] is not None:
-        need(selected['runtimeLevel']=='node24-cli2.1.295-v3' and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol']),'Unsupported selected program identity')
+        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4') and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
+        installed = selected['runtimeLevel']==RUNTIME and (selected['descriptorSha256'],selected['build'],selected['protocol'])==(baseline['descriptor'],BUILD,PROTOCOL)
+        need(known or installed,'Unsupported selected program identity')
     return selected
 
 
@@ -356,6 +360,7 @@ WORKDIR /app
 USER ccdesktunnel
 RUN npm_config_nodedir=/opt/runtime/node npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol --no-audit --no-fund && npm cache clean --force
 USER root
+COPY --chown=root:root runtime/cli/ /opt/runtime/cli/
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
@@ -457,8 +462,7 @@ def main():
         b = load('runtime_bootstrap_support', ROOT / 'helper.py')
         fresh = load('runtime_signed_release', PROGRAM / 'apps/update-service/web/fresh-install.py')
         fresh.ROOT = ROOT
-        # Verification only: the runtime binaries are inherited and authenticated.
-        fresh.NODE_RUNTIMES[RUNTIME]=(NODE_VERSION,fresh.NODE_RUNTIMES['node24-cli2.1.295-v3'][1])
+        # Node and the previous runtime stay inherited; only the authenticated candidate gets the new CLI.
         for module in (b, fresh):
             original_download = module.download
             module.download = lambda *a, _download=original_download, **kw: retry_download(_download, *a, **kw)
@@ -490,7 +494,7 @@ def main():
         cleanup = load('host_update_cleanup', PROGRAM / 'deploy/host-update/cleanup.py')
         cleanup.clean(ROOT, PROGRAM, keep_image)
         legacy.check_space(reserve=2 * 1024**3)
-        # The old CLI binary, SDK version and read-only policy were authenticated above. Never execute Claude.
+        # The old CLI binary, SDK version and read-only policy were authenticated above.
         def reauthenticate(container):
             if config_bytes is not None:
                 review.protected(HOST_DATA/'config.json')
@@ -524,6 +528,7 @@ def main():
                 prepare_adoption(core,boot,program,descriptor,config,old,release,response,original_context=original_context)
         # Recheck after extracting the signed program, before a costly build.
         legacy.check_space(reserve=2 * 1024**3)
+        fresh.provision_cli(work, RUNTIME)
         base = 'cc-space-runtime-base:' + original['Image'].split(':')[-1][:12]
         image = f'cc-space-runtime:build{BUILD}-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
         subprocess.run(['docker', 'tag', original['Image'], base], check=True, capture_output=True)
@@ -543,7 +548,7 @@ def main():
         policy = work / 'policy'
         source_hashes = {str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}
         review.policy_copy(source, policy, program)
-        print('2/4 Offline preflight passed; Node 24.22.2 and unchanged official CLI verified.', flush=True)
+        print('2/4 Offline preflight passed; Node 24.22.2 and official CLI 2.1.325 verified.', flush=True)
         host_preflight(ops)
         finish_preparation(legacy)
         if not args.install:

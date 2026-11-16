@@ -51,7 +51,7 @@ class MigrationTests(unittest.TestCase):
         run.assert_called_once_with(['docker','builder','prune','--all','--force'],check=True,timeout=300)
 
     def baseline(self):
-        return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, lock=m.BASE_LOCK)
+        return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, cli=m.BASE_CLI, lock=m.BASE_LOCK)
 
     def release(self):
         return dict(build=m.BUILD, protocol=24, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
@@ -65,7 +65,7 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
 
     def test_installed_exact_target_is_idempotent(self):
-        value=self.baseline();value.update(descriptor='b'*64,build=m.BUILD,protocol=24,lock=m.LOCK)
+        value=self.baseline();value.update(descriptor='b'*64,build=m.BUILD,protocol=24,lock=m.LOCK,cli=m.CLI)
         self.assertTrue(m.check_baseline(value,self.release()))
         value['protocol']=22
         with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())

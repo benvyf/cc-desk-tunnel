@@ -34,9 +34,14 @@ NODE_RUNTIMES = {
     'node24-cli2.1.295-v2': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
     'node24-cli2.1.295-v3': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
     'node24-cli2.1.295-v4': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
+    'node24-cli2.1.325-v4': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
 }
 CLI_ARCHIVE_SHA = 'd45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95'
 CLI_SHA = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
+CLI_RUNTIMES = {
+    'node24-cli2.1.325-v4': ('2.1.325', 'e8735d37521f49c31d65c3dcd8c0c8babe6d1f5f72c2066346b3ae88d32ac31d',
+                           '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'),
+}
 KEYS = {'managed-vps-2026-10-23': '-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n'}
 BUILD_SPACE = 6 * 1024 ** 3
 OPERATING_RESERVE = 512 * 1024 ** 2
@@ -319,14 +324,24 @@ def provision_runtime(work, runtime_level='node24-cli2.1.295-v1'):
         archive.extractall(work / 'node-extract', filter='data')
     shutil.rmtree(runtime / 'node')
     (work / f'node-extract/node-v{version}-linux-x64').rename(runtime / 'node')
-    cli = download('https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.295.tgz', 300 * 1024 * 1024)
-    if hashlib.sha256(cli).hexdigest() != CLI_ARCHIVE_SHA: raise InstallError('Official Claude archive digest mismatch.')
+    provision_cli(work, runtime_level)
+    for directory in [runtime] + [p for p in runtime.rglob('*') if p.is_dir()]:
+        directory.chmod(0o755)
+
+
+def provision_cli(work, runtime_level):
+    if runtime_level not in NODE_RUNTIMES: raise InstallError('Unsupported CLI runtime.')
+    version, archive_sha, binary_sha = CLI_RUNTIMES.get(runtime_level, ('2.1.295', CLI_ARCHIVE_SHA, CLI_SHA))
+    cli = download(f'https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-{version}.tgz', 300 * 1024 * 1024)
+    if hashlib.sha256(cli).hexdigest() != archive_sha: raise InstallError('Official Claude archive digest mismatch.')
     with tarfile.open(fileobj=io.BytesIO(cli), mode='r:gz') as archive:
         binary = archive.extractfile('package/claude').read(300 * 1024 * 1024)
-    if hashlib.sha256(binary).hexdigest() != CLI_SHA: raise InstallError('Official Claude binary digest mismatch.')
+    if hashlib.sha256(binary).hexdigest() != binary_sha: raise InstallError('Official Claude binary digest mismatch.')
+    runtime = work / 'runtime'
+    (runtime / 'cli/bin').mkdir(parents=True, exist_ok=True)
     (runtime / 'cli/bin/claude').write_bytes(binary)
     (runtime / 'cli/bin/claude').chmod(0o755)
-    for directory in [runtime] + [p for p in runtime.rglob('*') if p.is_dir()]:
+    for directory in [runtime, runtime / 'cli', runtime / 'cli/bin']:
         directory.chmod(0o755)
 
 

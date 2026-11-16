@@ -2,7 +2,7 @@
 set -euo pipefail
 
 NODE_VERSION=v24.22.2
-CLAUDE_VERSION=2.1.295
+CLAUDE_VERSION=2.1.325
 RUNTIME="${CC_DESK_TUNNEL_RUNTIME:-$HOME/.local/share/cc-desk-tunnel/runtime}"
 case "$(uname -m)" in
   x86_64) ARCH=x64 ;;
@@ -33,8 +33,8 @@ node --version
 # Install the same official native distribution used by the reviewed terminal pilot.
 # These release-specific SHA512 values are pinned, not fetched from a mutable manifest.
 case "$ARCH" in
-  x64) CLAUDE_INTEGRITY='nC9RZ6ZArEavyAiFdEtGK6/XPhjfE79tP2tCh+PjmRUxSO/6W3IuXv/rmo8c6u2UzHyvgKodRj1z6UcBGlbnyA==' ;;
-  arm64) CLAUDE_INTEGRITY='JgQigCZCbsTnJQMLBjzeIpx001jlw+QlSR08SsAW7p0hjUR73DczX4NpO2lq/+RPm8w48KhM8DxJqhUmAMV5+Q==' ;;
+  x64) CLAUDE_INTEGRITY='BqZzMvP/zgLLL34S+7OzbG+cyoFp7gwWHU5koVwsyMlTAz+0zZAmbY+UkzvtN2RXxp6AcMenbYIjQJxoXfUY3w==' ;;
+  arm64) CLAUDE_INTEGRITY='NCvQcOxr685Y4mkYUjQT8l/Ouzw0k2xWloWeyzfsUtWiOedHosPkaW6XCSpzAl1dMuvDNBF97qpWgVDrSdK2Vw==' ;;
 esac
 STAMP="native-$CLAUDE_VERSION-$ARCH.sha256"
 if ! (cd "$RUNTIME/cli/bin" 2>/dev/null && sha256sum --status -c "../$STAMP") 2>/dev/null; then
