@@ -32,9 +32,13 @@ LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
 NODE_VERSION = '24.22.2'
 BASE_CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 CLI = '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'
+BASE_IMAGE = 'ubuntu:24.04@sha256:77eb101c607d6e3d4f5ad0c8a02c2136c689b98aba1f359e6502ba517e5c57ec'
+BUILD_SPACE = 4 * 1024**3
+OPERATING_RESERVE = 512 * 1024**2
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'd786e79c64fb81136a5a6a9fd67081783016786ed9032bcf4af0894ffcd4845f': (23, 24),
     '4a821373e1bb9d310d50f91a3742a8f93d3ffefcdb701b7decb9ff608c0e6667': (22, 24),
     '42d161514ab4e12dfe0c753e7d4ff0b257f2c68efc6c0ac5f938aa9c7a469c66': (21, 24),
     'c2b0ab967a219cde7d250b1a39a5793ba57177ddfc0c0f43e021d362181dfed3': (20, 24),
@@ -80,6 +84,33 @@ def clean_build_cache():
     print(f'CLEANUP: unused Docker build cache only; available_before={before} bytes.', flush=True)
     subprocess.run(['docker', 'builder', 'prune', '--all', '--force'], check=True, timeout=300)
     print(f'CLEANUP: available_after={shutil.disk_usage(ROOT).free} bytes; images, containers, data and rollback resources retained.', flush=True)
+
+
+def check_build_space(staged=0):
+    required = max(OPERATING_RESERVE, BUILD_SPACE - staged)
+    free = shutil.disk_usage(ROOT).free
+    print(f'SPACE: lean image build; required={required}; available={free}; missing={max(0, required-free)} bytes', flush=True)
+    need(free >= required, f'Insufficient image build space: required={required}; available={free}; missing={required-free}; original service left running')
+
+
+def build_candidate(args, log):
+    started = time.monotonic()
+    with log.open('wb') as output:
+        process = subprocess.Popen(args, stdout=output, stderr=subprocess.STDOUT,
+                                   env={**os.environ, 'DOCKER_BUILDKIT': '1'})
+        try:
+            while process.poll() is None:
+                free = shutil.disk_usage(ROOT).free
+                need(free >= OPERATING_RESERVE, f'Image build cancelled to retain operating space: available={free}; reserve={OPERATING_RESERVE}; inspect {log}; original service left running')
+                need(time.monotonic() - started < 1800, f'Image build timed out; inspect {log}')
+                time.sleep(1)
+            need(process.returncode == 0, f'Build failed; inspect {log}')
+        except BaseException:
+            if process.poll() is None:
+                process.terminate()
+                try: process.wait(timeout=30)
+                except subprocess.TimeoutExpired: process.kill(); process.wait()
+            raise
 
 
 def check_docker_storage():
@@ -163,7 +194,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == BASE_CLI and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] == 23 else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -187,7 +218,7 @@ def authenticate_selected(core,boot,keys,baseline,journal,status):
     current=status.get('current') or {}
     need(all(current.get(k)==selected[k] for k in ('build','protocol','sha256')) and status.get('phase')==journal['phase'],'Live program differs from authenticated selection')
     if journal['current'] is not None:
-        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4') and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
+        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4', RUNTIME) and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
         installed = selected['runtimeLevel']==RUNTIME and (selected['descriptorSha256'],selected['build'],selected['protocol'])==(baseline['descriptor'],BUILD,PROTOCOL)
         need(known or installed,'Unsupported selected program identity')
     return selected
@@ -352,21 +383,24 @@ def record_candidate_create(core,data,config,original,policy):
 
 def dockerfile(base):
     return f'''FROM {base}
-USER root
-RUN rm -rf /app && install -d -o ccdesktunnel -g ccdesktunnel /app
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl wget openssl openssh-client git rsync bash tini tar xz-utils unzip zip jq ripgrep file less vim-tiny python3 python3-pip python3-venv build-essential pkg-config procps lsof iproute2 dnsutils netcat-openbsd sqlite3 && rm -rf /var/lib/apt/lists/*
+RUN userdel -r ubuntu && useradd --uid 1000 --create-home --shell /bin/bash ccdesktunnel && install -d -o ccdesktunnel -g ccdesktunnel /app
+COPY --chown=root:root runtime/ /opt/runtime/
 ENV PATH=/opt/runtime/node/bin:/opt/runtime/cli/bin:$PATH
 COPY --chown=ccdesktunnel:ccdesktunnel program/ /app/
 WORKDIR /app
-USER ccdesktunnel
-RUN npm_config_nodedir=/opt/runtime/node npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol --no-audit --no-fund && npm cache clean --force
-USER root
-COPY --chown=root:root runtime/cli/ /opt/runtime/cli/
 COPY program/deploy/docker/entrypoint.sh /usr/local/bin/proxy-entrypoint
 COPY program/deploy/docker/healthcheck.mjs /app/healthcheck.mjs
 COPY program/deploy/docker/runtime-level /opt/runtime/level
-RUN /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app /opt/runtime/node && chmod -R go-w /app /opt/runtime/node
+RUN su -s /bin/sh ccdesktunnel -c 'npm_config_cache=/tmp/cc-npm-cache npm_config_nodedir=/opt/runtime/node npm ci --omit=dev --workspace=@cc-desk-tunnel/server --workspace=@cc-desk-tunnel/protocol --no-audit --no-fund' && rm -rf /tmp/cc-npm-cache && /opt/runtime/node/bin/node /app/deploy/docker/terminal-runtime.mjs --record && chmod 755 /usr/local/bin/proxy-entrypoint && chown -R root:root /app && chmod -R go-w /app /opt/runtime && mkdir -p /data/workspace && chown -R 1000:1000 /data
+ENV HOME=/data/home
 USER ccdesktunnel
 WORKDIR /data/workspace
+EXPOSE 8787
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 CMD ["node", "--env-file=/data/config/service.env", "/app/healthcheck.mjs"]
+ENTRYPOINT ["/usr/bin/tini", "-g", "--", "/usr/local/bin/proxy-entrypoint"]
+CMD ["server"]
 '''
 
 
@@ -482,10 +516,8 @@ def main():
             b.live_status(b.CONTAINER, release)
             print(f'ALREADY_INSTALLED: Build {BUILD} / protocol {PROTOCOL} / Node {NODE_VERSION}; no change.')
             return
-        host_preflight(ops)
         legacy = load('runtime_cutover', PROGRAM / 'scripts/install-cc-space-037.py')
         legacy.ROOT, legacy.DATA, legacy.NODE = ROOT, b.DATA, node
-        wait_idle(legacy,b,original)
         if baseline['build'] >= 14:
             retain_previous_backup(b.CONTAINER)
         # All entrypoints, including the management-center host updater, must
@@ -494,6 +526,9 @@ def main():
         cleanup = load('host_update_cleanup', PROGRAM / 'deploy/host-update/cleanup.py')
         cleanup.clean(ROOT, PROGRAM, keep_image)
         legacy.check_space(reserve=2 * 1024**3)
+        check_build_space()
+        host_preflight(ops)
+        wait_idle(legacy,b,original)
         # The old CLI binary, SDK version and read-only policy were authenticated above.
         def reauthenticate(container):
             if config_bytes is not None:
@@ -528,22 +563,31 @@ def main():
                 prepare_adoption(core,boot,program,descriptor,config,old,release,response,original_context=original_context)
         # Recheck after extracting the signed program, before a costly build.
         legacy.check_space(reserve=2 * 1024**3)
-        fresh.provision_cli(work, RUNTIME)
-        base = 'cc-space-runtime-base:' + original['Image'].split(':')[-1][:12]
+        fresh.provision_runtime(work, RUNTIME)
+        staged = sum(p.stat().st_size for p in (work/'runtime').rglob('*') if p.is_file())
+        check_build_space(staged)
         image = f'cc-space-runtime:build{BUILD}-' + release['sha256'][:12] + '-' + original['Image'].split(':')[-1][:12]
-        subprocess.run(['docker', 'tag', original['Image'], base], check=True, capture_output=True)
         inspected = subprocess.run(['docker', 'image', 'inspect', image], capture_output=True)
         if inspected.returncode:
             check_docker_storage()
-            (work / 'Dockerfile').write_text(dockerfile(base))
+            (work / 'Dockerfile').write_text(dockerfile(BASE_IMAGE))
             (work / '.dockerignore').write_text('*\n!Dockerfile\n!program/\n!program/**\n!runtime/\n!runtime/**\n')
-            review.logged(['docker','build','--pull=false','-t',image,str(work)],work/'build.log',timeout=1800,env={**os.environ,'DOCKER_BUILDKIT':'1'})
-        candidate, old = json.loads(subprocess.run(['docker', 'image', 'inspect', image, original['Image']],
+            try:
+                with (work/'pull.log').open('wb') as pull_log:
+                    subprocess.run(['docker','pull',BASE_IMAGE], check=True, stdout=pull_log, stderr=subprocess.STDOUT)
+                build_candidate(['docker','build','--pull=false','-t',image,str(work)],work/'build.log')
+            except BaseException:
+                shutil.rmtree(work/'runtime')
+                try: clean_build_cache()
+                except Exception as cleanup_error: print('CLEANUP_PENDING: ' + str(cleanup_error), flush=True)
+                raise
+        candidate, old = json.loads(subprocess.run(['docker', 'image', 'inspect', image, BASE_IMAGE],
             check=True, capture_output=True).stdout)
         layers = old['RootFS']['Layers']
-        need(layers and candidate['RootFS']['Layers'][:len(layers)] == layers, 'Candidate base layers changed')
+        need(layers and candidate['RootFS']['Layers'][:len(layers)] == layers, 'Candidate pinned Ubuntu base layers changed')
         image = candidate['Id']
         candidate_check(image, release)
+        shutil.rmtree(work/'runtime')
         b.offline_preflight(image, work, release, work / 'preflight.log')
         policy = work / 'policy'
         source_hashes = {str(p.relative_to(source)): hashlib.sha256(p.read_bytes()).hexdigest() for p in source.rglob('*') if p.is_file()}

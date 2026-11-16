@@ -6,7 +6,8 @@ from pathlib import Path
 import tarfile
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,6 +24,21 @@ upgrade = load('cli_upgrade', 'deploy/host-update/apply.py')
 
 
 class CliUpgradeTests(unittest.TestCase):
+    def test_build_is_cancelled_before_operating_space_is_exhausted(self):
+        process = Mock()
+        process.poll.return_value = None
+        with tempfile.TemporaryDirectory() as directory, patch.object(upgrade.subprocess, 'Popen', return_value=process), patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=upgrade.OPERATING_RESERVE-1)):
+            with self.assertRaisesRegex(RuntimeError, 'retain operating space'):
+                upgrade.build_candidate(['fixture-builder'], Path(directory)/'build.log')
+        process.terminate.assert_called_once()
+        process.wait.assert_called_once_with(timeout=30)
+
+    def test_build_budget_accounts_for_runtime_already_staged(self):
+        with patch.object(upgrade.shutil, 'disk_usage', return_value=SimpleNamespace(free=upgrade.BUILD_SPACE-1)):
+            with self.assertRaisesRegex(RuntimeError, 'Insufficient image build space'):
+                upgrade.check_build_space()
+            upgrade.check_build_space(staged=1024)
+
     def test_pinned_archive_and_binary_are_both_verified_before_install(self):
         binary = b'fixture-cli'
         buffer = io.BytesIO()
@@ -60,11 +76,11 @@ class CliUpgradeTests(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             upgrade.check_baseline({**target, 'cli': upgrade.BASE_CLI}, release)
 
-    def test_candidate_replaces_cli_while_inheriting_node_and_base_layers(self):
-        recipe = upgrade.dockerfile('sha256:'+'b'*64)
-        self.assertTrue(recipe.startswith('FROM sha256:'))
-        self.assertIn('COPY --chown=root:root runtime/cli/ /opt/runtime/cli/', recipe)
-        self.assertNotIn('COPY --chown=root:root runtime/node/', recipe)
+    def test_candidate_uses_pinned_lean_base_and_complete_authenticated_runtime(self):
+        recipe = upgrade.dockerfile(upgrade.BASE_IMAGE)
+        self.assertTrue(recipe.startswith('FROM ubuntu:24.04@sha256:'))
+        self.assertIn('COPY --chown=root:root runtime/ /opt/runtime/', recipe)
+        self.assertNotIn('cc-space-runtime-base:', recipe)
         self.assertNotIn('claude --', recipe)
         self.assertEqual(fresh.CLI_RUNTIMES[upgrade.RUNTIME][2], upgrade.CLI)
 

@@ -18,6 +18,8 @@ class CleanupTests(unittest.TestCase):
             for name in ['build12-abcdefgh', 'build11-abcdefgh', 'build10-abcdefgh', 'build13-abcdefgh']:
                 work=root/name;(work/'program').mkdir(parents=True)
                 (work/'program/code').write_text('disposable')
+                (work/'runtime').mkdir();(work/'runtime/cli').write_text('disposable')
+                (work/'node-extract').mkdir()
                 (work/'policy').mkdir();(work/'build.log').write_text('keep')
             backup=root/'backup-test';backup.mkdir()
             (backup/'original.json').write_text(json.dumps({'Image':'sha256:backup','Mounts':[{'Source':str(root/'build11-abcdefgh/policy')}]}))
@@ -41,8 +43,11 @@ class CleanupTests(unittest.TestCase):
                 m.clean(root,root/'build13-abcdefgh/program',tags[13])
             self.assertEqual(removed,[tags[12]])
             self.assertFalse((root/'build12-abcdefgh/program').exists())
+            self.assertFalse((root/'build12-abcdefgh/runtime').exists())
+            self.assertFalse((root/'build12-abcdefgh/node-extract').exists())
             for name in ['build10-abcdefgh','build11-abcdefgh','build13-abcdefgh']:
                 self.assertTrue((root/name/'program/code').exists())
+                self.assertTrue((root/name/'runtime/cli').exists())
             self.assertTrue((root/'build12-abcdefgh/build.log').exists())
             self.assertTrue((root/'build12-abcdefgh/policy').is_dir())
             self.assertEqual((backup/'data.tar.gz').read_bytes(),b'backup')

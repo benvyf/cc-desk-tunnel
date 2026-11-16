@@ -70,19 +70,20 @@ def clean(root, program, keep_image):
             command(['docker', 'image', 'rm', value])
             print('CLEANUP: removed unused CC candidate tag ' + value, flush=True)
 
-    # Work folders also carry policies and diagnostic logs. Remove only program/,
+    # Work folders also carry policies and diagnostic logs. Remove reproducible staging only,
     # and only if no live container or recorded rollback references this work tree.
     for work in root.iterdir():
         if not re.fullmatch(r'build\d+-[a-z0-9_]{8}', work.name) or work.is_symlink() or not work.is_dir():
             continue
         if referenced(work, protected_paths):
             continue
-        target = work / 'program'
-        if target.is_symlink() or not target.is_dir():
-            continue
-        if target.resolve().parent != work.resolve() or work.resolve().parent != root:
-            raise RuntimeError('Unexpected build path; cleanup stopped')
-        shutil.rmtree(target)
-        print('CLEANUP: removed old unpacked program ' + str(target) + '; policy and logs retained.', flush=True)
+        for name in ('program', 'runtime', 'node-extract'):
+            target = work / name
+            if target.is_symlink() or not target.is_dir():
+                continue
+            if target.resolve().parent != work.resolve() or work.resolve().parent != root:
+                raise RuntimeError('Unexpected build path; cleanup stopped')
+            shutil.rmtree(target)
+            print('CLEANUP: removed reproducible staging ' + str(target) + '; policy and logs retained.', flush=True)
     after = shutil.disk_usage(root).free
     print(f'CLEANUP: available_before={before}; available_after={after}; reclaimed={after-before} bytes; active services, data and rollback references retained.', flush=True)
