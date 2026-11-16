@@ -1,5 +1,9 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-16 Build 24：修复 Build 23 ENOSPC，保留 30 GB 节点容量
+
+用户实机 Docker 29.9.1 展开约 7 GB 旧镜像，npm ENOSPC；原服务 healthy，清理构建缓存后恢复约 5.1 GiB。用户选择不扩容并要求升级默认先清理。已发布 Linux Build 24（源码 `d671527edb61470ecebbdd7b0ca370cf9d41a4ea`，协议24、CLI325/SDK0.3.286不变）：固定精简 Ubuntu 基础层重建、去掉运行时重复层，默认引用保护清理旧 runtime 解包缓存，5 GiB 构建预算及512MiB运行余量监测，失败自动清理。实际 BuildKit 构建最大额外占用约4.71GB，最低剩余902MB，镜像Docker报告约582MB；真实PTY/离线健康、Linux35项、CLI模型/SDK/审核范围、公开完整下载/签名、迁移脚本真实内部HTTP与严格解包、实际systemd/agent选路通过，revision42。Windows35/中心/节点任务不改，原失败23任务保留，Ubuntu仍21；用户须刷新中心创建24新任务，勿重试23。详见[发行与验证](docs/RELEASE-SERVER-BUILD24-LEAN.md)及[证据](docs/evidence/linux-build24-lean-2026-11-16.json)。
+
 ### 2026-11-16 Linux Build 23 / Claude CLI 2.1.325 已发布
 
 以线上 Build 22 为基线发布 CLI 2.1.325（Fable 5.2），保持 SDK 0.3.286、协议 24、138 个原 Web 资源及更新恢复保护；源码 `a7ffa819a7f030b9435dc093cd91a3376375651f`。新增不可变首次安装入口 v5，旧脚本保持；公开签名、完整下载、真实迁移内部 HTTP 下载/验签/解包、实际 systemd 续期及选路验证通过，Linux revision 40。Windows 35 不变，三台 Ubuntu 仍为 21，未下发节点安装任务。用户须刷新中心生成 Build 23 新指令；不要在宿主机直接更新 CLI。详细真实/模拟范围、测试脚本旧预期、更大原生文件读取上限及清理记录见 [发行记录](docs/RELEASE-SERVER-BUILD23-CLI325.md) 与 [证据](docs/evidence/linux-build23-cli325-2026-11-16.json)。
