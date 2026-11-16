@@ -121,6 +121,18 @@ class ImageRetentionTests(unittest.TestCase):
             self.run_rotation(root,containers,docker)
             self.assertIn(tag,tags)
 
+    def test_unmapped_backup_payload_blocks_resource_deletion(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root, _, _, containers, _, calls, docker = self.fixture(Path(directory).resolve())
+            unknown=root.parent/'legacy/production-backup';unknown.mkdir(parents=True)
+            (unknown/'data.tar').write_bytes(b'unknown rollback payload')
+            with patch.object(r,'inventory',side_effect=lambda:copy.deepcopy(containers)), \
+                 patch.object(r,'docker',side_effect=docker), \
+                 patch.object(r,'LEGACY',[('cc-runtime-upgrade','backup-*'),('legacy','production-backup')]):
+                with self.assertRaisesRegex(RuntimeError,'Unmapped rollback'):
+                    m.rotate(r,root,'production',None,base=root.parent)
+            self.assertEqual(calls,[])
+
     def test_partial_retirement_running_container_and_independent_data_are_preserved(self):
         for reason in ['payload','running','independent-data','outside-home','foreign-name']:
             with self.subTest(reason=reason), tempfile.TemporaryDirectory() as directory:

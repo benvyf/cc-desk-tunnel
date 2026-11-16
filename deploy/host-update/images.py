@@ -38,6 +38,8 @@ def rotate(retirement, root, container_name, keep_image, base=Path('/var/lib'), 
             if not source.exists():
                 source = backup/'production.json'
             if not source.exists():
+                retirement.need(not any((backup/name).exists() for name in retirement.PAYLOADS),
+                                'Unmapped rollback payload reference; image retirement stopped: ' + str(backup))
                 continue
             retirement.physical(source)
             saved = json.loads(source.read_bytes())
