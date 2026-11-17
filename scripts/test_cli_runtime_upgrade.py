@@ -66,10 +66,20 @@ class CliUpgradeTests(unittest.TestCase):
         for build in [21, 22]:
             descriptor = next(k for k, v in upgrade.BASELINES.items() if v == (build, 24))
             before = dict(descriptor=descriptor, build=build, protocol=24, node=upgrade.NODE_VERSION,
-                          lock=upgrade.LOCK, cli=upgrade.BASE_CLI)
+                          lock=upgrade.RUNTIME_LOCK, cli=upgrade.BASE_CLI)
             self.assertFalse(upgrade.check_baseline(before, release))
             with self.assertRaises(RuntimeError):
                 upgrade.check_baseline({**before, 'cli': upgrade.CLI}, release)
+        # Builds 27 and 28 already run the target CLI on the previous dependencies.
+        for build in [27, 28]:
+            descriptor = next(k for k, v in upgrade.BASELINES.items() if v == (build, 24))
+            before = dict(descriptor=descriptor, build=build, protocol=24, node=upgrade.NODE_VERSION,
+                          lock=upgrade.RUNTIME_LOCK, cli=upgrade.CLI)
+            self.assertFalse(upgrade.check_baseline(before, release))
+            with self.assertRaisesRegex(RuntimeError, 'Unknown original'):
+                upgrade.check_baseline({**before, 'cli': upgrade.BASE_CLI}, release)
+            with self.assertRaisesRegex(RuntimeError, 'Unknown original'):
+                upgrade.check_baseline({**before, 'lock': upgrade.LOCK}, release)
         target = dict(descriptor=release['descriptorSha256'], build=upgrade.BUILD, protocol=24,
                       node=upgrade.NODE_VERSION, lock=upgrade.LOCK, cli=upgrade.CLI)
         self.assertTrue(upgrade.check_baseline(target, release))

@@ -28,7 +28,9 @@ RUNTIME = IDENTITY['runtimeLevel']
 RUNTIME_LEVEL = (PROGRAM / 'deploy/docker/runtime-level').read_text().strip()
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
-LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
+# The dependencies of the runtime Builds 15-28 run; Build 29 brings Agent SDK 0.3.325 (LOCK).
+RUNTIME_LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
+LOCK = 'a884b488d89edb4075a507ce49955ea009cc20378555f9d07bcad865469c3bde'
 NODE_VERSION = '24.22.2'
 BASE_CLI = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 CLI = '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf'
@@ -39,6 +41,8 @@ IMAGE_SIZE_LIMIT = 3 * 1024**3
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    '2f7fc483b313d4b196fffc060a7ff035ae7568902a4dba1530820c5c8a2ba353': (28, 24),
+    'be243f2689a4d6c9446dd3869c3eb08cafff623539a77be2d44bbc47f4472c4d': (27, 24),
     'd952131e9ebab6648fb49682aefd3f7f7b6f4281a2cea5c6d40cf2437a04e2a2': (26, 24),
     'c9109f50c70eb1d97aabaac203a1c932908a99288fde6f19f93d668d8285310a': (25, 24),
     '61fcf69f563ba4dbc7b2f777706a52c491154e4d54d7be61770a05af5cff2af7': (24, 24),
@@ -174,7 +178,7 @@ def verify_release(fresh, data, expected):
 SOURCE_GUARD=load('image_source_guard',PROGRAM/'apps/update-service/web/host-operations.py').SOURCE_GUARD
 VERIFY_RUNTIME = SOURCE_GUARD + r"""const f=require('fs'),c=require('crypto'),a=require('assert/strict'),hash=b=>c.createHash('sha256').update(b).digest('hex');
 const cli=hash(f.readFileSync('/opt/runtime/cli/bin/claude'));a(JSON.parse(process.argv[1]).includes(cli));
-a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.286');
+a(['0.3.286','0.3.325'].includes(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version));
 const bytes=sourceRegular('/app','SERVER-RELEASE.json',[0]),d=JSON.parse(bytes);
 for(const[p,v]of Object.entries(d.files)){const b=sourceRegular('/app',p,[0]);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
 for(const p of ['/opt/runtime/node/bin/node','/opt/runtime/cli/bin/claude','/etc/claude-code/managed-settings.json','/etc/claude-code/moderation-node.json']){const s=f.statSync(p);a(s.isFile()&&s.uid===0&&!(s.mode&18))}
@@ -204,7 +208,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] in (23,24,25,26) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -228,7 +232,7 @@ def authenticate_selected(core,boot,keys,baseline,journal,status):
     current=status.get('current') or {}
     need(all(current.get(k)==selected[k] for k in ('build','protocol','sha256')) and status.get('phase')==journal['phase'],'Live program differs from authenticated selection')
     if journal['current'] is not None:
-        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4', 'node24-cli2.1.325-v4', RUNTIME) and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
+        known = selected['runtimeLevel'] in ('node24-cli2.1.295-v3', 'node24-cli2.1.295-v4', 'node24-cli2.1.325-v3', 'node24-cli2.1.325-v4', 'node24-cli2.1.325-v5', RUNTIME) and BASELINES.get(selected['descriptorSha256'])==(selected['build'],selected['protocol'])
         installed = selected['runtimeLevel']==RUNTIME and (selected['descriptorSha256'],selected['build'],selected['protocol'])==(baseline['descriptor'],BUILD,PROTOCOL)
         need(known or installed,'Unsupported selected program identity')
     return selected
@@ -462,7 +466,7 @@ const bytes=f.readFileSync('/app/SERVER-RELEASE.json');a.equal(hash(bytes),proce
 for(const[p,v]of Object.entries(d.files)){const b=sourceRegular('/app',p,[0]);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
 a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/docker/entrypoint.sh'].sha256);
 a.equal(f.readFileSync('/opt/runtime/level','utf8').trim(),process.argv[3]);
-a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.286');"""
+a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-sdk/package.json')).version,'0.3.325');"""
     subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint',
         '/opt/runtime/node/bin/node', image, '-e', script, release['descriptorSha256'], CLI, RUNTIME_LEVEL],
         check=True, capture_output=True, timeout=90)
