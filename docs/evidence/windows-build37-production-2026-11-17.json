@@ -1,0 +1,86 @@
+{
+  "date": "2026-11-17",
+  "release": {
+    "build": 37,
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "sourceCommit": "26aa4142ac34df491333bdb7e5581c0f9a2deb5b",
+    "filename": "CC-Space-Setup-0.3.10-x64.exe",
+    "size": 258893528,
+    "sha256": "b39f6b7f0c6495654cb6ce18b220560773f6dcefc7e4cca4667b39346b41f7a4",
+    "blockmapSha256": "c6ad62c74e24e6f64bf54dfc58f8e9d356eb6468153501e9666a20ae009aa502"
+  },
+  "publishedChannel": "pilot",
+  "publicationRevision": 64,
+  "revision": 65,
+  "expiresAt": "2026-11-20T09:54:53.226Z",
+  "mainPushed": true,
+  "vpsPublished": true,
+  "vpsAddress": "212.50.248.138",
+  "signatureVerified": true,
+  "descriptorVerified": true,
+  "blockmapVerified": true,
+  "publicHttpsRangesVerified": 3,
+  "completePublicInstallerVerifiedOnVps": true,
+  "installerFilesMatched": 2439,
+  "installerAsarMatched": true,
+  "asarSha256": "4cac67b55b69d17c0305d7acbd94f78c2831441c04c6f9e15511f34b33eacfd6",
+  "packageChecks": {
+    "passed": 3,
+    "failed": 0
+  },
+  "controllerChecks": {
+    "compatibleOlderBuildAvailable": true,
+    "currentBuildIdle": true,
+    "crossProtocolMetadataRetained": true,
+    "packagedControllerUsed": true
+  },
+  "verifiedStateUi": {
+    "olderCompatible": {
+      "visible": true,
+      "actions": ["download"]
+    },
+    "current": {
+      "visible": false,
+      "actions": []
+    },
+    "olderProtocol": {
+      "visible": true,
+      "actions": ["manual:24"]
+    }
+  },
+  "renewal": {
+    "forced": true,
+    "revision": 65,
+    "releaseUnchanged": true,
+    "normalCheck": "not-due",
+    "candidates": 0,
+    "firstAttemptRejectedForActivatedCandidate": false
+  },
+  "infrastructure": {
+    "managementServiceNotRestarted": true,
+    "nginxValid": true,
+    "windowsStableUnchanged": true,
+    "linuxPilotUnchanged": true,
+    "windowsTimerActive": true,
+    "linuxTimerActive": true,
+    "forceOverrideRemoved": true
+  },
+  "build": {
+    "node": "24.22.2",
+    "electron": "44.10.1",
+    "manualInstallScripts": ["electron", "koffi", "ssh2"]
+  },
+  "backup": "/var/backups/cc-update-service/client37-publication-20261117T095119Z",
+  "userInstallationChanged": false,
+  "previousBuild36RetainedForDifferential": true,
+  "cleanup": {
+    "freeBefore": "4.1G",
+    "freeAfter": "5.9G",
+    "manifest": "/root/.cc-update-admin/cleanup-20261117/manifest.txt",
+    "archivedGitHistories": 17,
+    "removedPublicInstallers": [34, 35],
+    "publicBlockmapsKept": true,
+    "rollbackInstallerKept": 36
+  }
+}
