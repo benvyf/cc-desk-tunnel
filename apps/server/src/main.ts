@@ -51,6 +51,9 @@ for (const key of Object.keys(process.env))
   if (key.startsWith('CC_MANAGED_')) delete process.env[key];
 if (native) removeFrpLeftovers();
 clearServiceVariables(process.env);
+// The CLI is the version this release was built and tested with. Left to itself, an interactive CLI in a terminal
+// tells of a newer one and tries to install it over the pinned copy; every CLI the service starts inherits this.
+if (native) process.env.DISABLE_AUTOUPDATER = '1';
 // What a process that did not get to close left of its connections and of the doors of their devices.
 if (native)
   for (const name of ['connections', 'devices'])
