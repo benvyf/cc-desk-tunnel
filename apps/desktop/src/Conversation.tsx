@@ -22,7 +22,6 @@ import {
   FileText,
   FoldVertical,
   Globe,
-  Image as ImageIcon,
   ListChecks,
   LoaderCircle,
   Pencil,
@@ -75,7 +74,8 @@ import {
 } from './QuoteActions.tsx';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import ConversationWidthControls from './ConversationWidthControls.tsx';
-import { pictureUrl, toolPictures } from './pictures.ts';
+import { pictureUrl, picturesOf, toolPictures } from './pictures.ts';
+import { PictureStrip } from './PictureStrip.tsx';
 import { Picture } from './Picture.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
 
@@ -266,7 +266,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
           <span className="tool-subject" title={subject}>
             {subject}
           </span>
-          {pictures && <ImageIcon className="tool-picture-mark" aria-label="含图片" />}
+          {pictures && <PictureStrip pictures={pictures.pictures} label="这次调用的图片" />}
           {(added > 0 || removed > 0) && (
             <span className="tool-diff">
               <ins>+{added}</ins>
@@ -410,6 +410,8 @@ function WorkGroup({
     (item): item is Tool => item.kind === 'tool' && !!live.taskControl(item),
   );
   const control = controlled.length === 1 ? live.taskControl(controlled[0]) : undefined;
+  // Folded, the group's line carries its pictures; open, each call's line carries its own.
+  const pictures = useMemo(() => picturesOf(work.items), [work.items]);
   return (
     <Fold
       className="work"
@@ -419,6 +421,7 @@ function WorkGroup({
           {running && <LoaderCircle className="spinning" />}
           <span>{label}</span>
           {!waiting && <small>{duration(started, ended && !running ? ended : live.now)}</small>}
+          {!shown && <PictureStrip pictures={pictures} label="这一步的图片" />}
           {control && !shown && <TaskActions tool={controlled[0]} control={control} live={live} />}
         </span>
       )}
@@ -710,6 +713,11 @@ function TurnView({
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
   // A turn of nothing but a compaction, as /compact makes, has nothing to fold away.
   const folds = turn.steps.some((step) => step.kind === 'work' || step.kind === 'assistant');
+  // A finished turn folds its steps into one line, which still carries every picture they looked at.
+  const pictures = useMemo(
+    () => picturesOf(turn.steps.flatMap((step) => (step.kind === 'work' ? step.items : []))),
+    [turn.steps],
+  );
   const steps = () =>
     turn.steps.map((step, index) => {
       const next = turn.steps[index + 1] ?? turn.answer;
@@ -753,15 +761,18 @@ function TurnView({
         : turn.steps.length > 0 && (
             <Fold
               className="turn-process"
-              summary={
-                <span className={turn.outcome}>
-                  {turn.outcome === 'cancelled' && '已停止 · '}
-                  {turn.outcome === 'failed' && '处理失败 · '}
-                  用时 {spent(turn)}
-                  {turn.tools > 0 && ` · ${turn.tools} 步`}
-                  {notes > 0 && ` · ${notes} 条说明`}
-                </span>
-              }
+              summary={(shown) => (
+                <>
+                  <span className={turn.outcome}>
+                    {turn.outcome === 'cancelled' && '已停止 · '}
+                    {turn.outcome === 'failed' && '处理失败 · '}
+                    用时 {spent(turn)}
+                    {turn.tools > 0 && ` · ${turn.tools} 步`}
+                    {notes > 0 && ` · ${notes} 条说明`}
+                  </span>
+                  {!shown && <PictureStrip pictures={pictures} label="本轮的图片" />}
+                </>
+              )}
             >
               {steps}
             </Fold>

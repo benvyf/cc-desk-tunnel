@@ -163,7 +163,7 @@ test('links are followed by the conversation and pictures from the web are not f
 
 test('a picture a tool looked at is shown, and opens whole', async ({ page }) => {
   await open(page);
-  const tool = page.locator('details.tool').filter({ has: page.locator('.tool-picture-mark') });
+  const tool = page.locator('details.tool').filter({ has: page.locator('.picture-strip') });
   await tool.locator('summary').click();
   await expect(tool.locator('.tool-output')).toHaveText('Read image');
   const picture = tool.locator('.tool-pictures img');

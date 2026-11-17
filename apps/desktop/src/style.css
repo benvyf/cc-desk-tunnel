@@ -3846,10 +3846,98 @@ a.link-elsewhere {
   max-width: 180px;
   max-height: 135px;
 }
-.tool-picture-mark {
-  width: 14px;
-  height: 14px;
-  color: var(--tool-icon);
+/* The pictures a step looked at, at the end of its heading (PictureStrip.tsx): small enough to leave the line
+   its height, with the earlier ones counted before the latest three. */
+.picture-strip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 3px;
+  margin-left: 2px;
+}
+.picture-thumb,
+.picture-more {
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--surface-2);
+}
+.picture-thumb {
+  width: 20px;
+  overflow: hidden;
+  cursor: zoom-in;
+  animation: picture-in 220ms ease-out both;
+  transition:
+    transform 120ms ease-out,
+    border-color 120ms ease-out;
+}
+.picture-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.picture-thumb:hover {
+  transform: scale(1.1);
+  border-color: var(--line-strong);
+}
+.picture-more {
+  min-width: 20px;
+  padding: 0 4px;
+  color: var(--muted);
+  font-size: calc(11rem / 14);
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+}
+.picture-more:hover {
+  color: var(--text);
+  border-color: var(--line-strong);
+}
+@keyframes picture-in {
+  from {
+    opacity: 0;
+    transform: scale(0.8);
+  }
+}
+/* A picture under the pointer, larger beside its line without moving it, as a link's card is. */
+.picture-peek {
+  position: fixed;
+  z-index: var(--z-sidebar);
+  display: flex;
+  justify-content: center;
+  width: max-content;
+  max-width: 320px;
+  padding: 4px;
+  border-radius: var(--radius-lg);
+  background: var(--popover);
+  box-shadow: var(--shadow-popover);
+  pointer-events: none;
+  animation: appear 120ms ease-out;
+}
+.picture-peek img {
+  display: block;
+  max-width: 100%;
+  max-height: 232px;
+  border-radius: var(--radius-md);
+  object-fit: contain;
+}
+.picture-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  font-variant-numeric: tabular-nums;
+}
+@media (prefers-reduced-motion: reduce) {
+  .picture-thumb,
+  .picture-peek {
+    animation: none;
+    transition: none;
+  }
 }
 dialog:has(.picture-view) {
   width: min(1100px, calc(100vw - 32px));

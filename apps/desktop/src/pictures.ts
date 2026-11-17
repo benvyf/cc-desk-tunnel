@@ -3,8 +3,25 @@ export type ToolPicture = { type: string; data: string };
 // A tool that looked at a picture (Read on an image, a screenshot an MCP tool took) answers with content blocks,
 // which the service passes on as their JSON. The pictures are shown as pictures and the words stay text; any
 // other output is left as it is.
-export function toolPictures(output: string) {
+type Pictures = { text: string; pictures: ToolPicture[] } | null;
+// Outputs with pictures are large and are read again each time a turn is drawn, by the tool, its group and the
+// turn: the latest few are kept, by the very string, so each is parsed once.
+const parsed = new Map<string, Pictures>();
+export function toolPictures(output: string): Pictures {
   if (!output.startsWith('[') || !output.includes('"image"')) return null;
+  if (parsed.has(output)) return parsed.get(output)!;
+  const result = parsePictures(output);
+  parsed.set(output, result);
+  if (parsed.size > 64) parsed.delete(parsed.keys().next().value!);
+  return result;
+}
+// Every picture the tools of a step or a turn looked at, in order.
+export function picturesOf(items: readonly { kind: string; output?: string }[]): ToolPicture[] {
+  return items.flatMap((item) =>
+    item.kind === 'tool' && item.output ? (toolPictures(item.output)?.pictures ?? []) : [],
+  );
+}
+function parsePictures(output: string): Pictures {
   let blocks: unknown;
   try {
     blocks = JSON.parse(output);
