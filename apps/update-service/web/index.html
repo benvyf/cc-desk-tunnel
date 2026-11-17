@@ -28,11 +28,14 @@
         <section id="node-update-panel" class="card" aria-labelledby="node-update-heading" hidden>
           <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="node-update-heading"></h3><p class="muted">普通程序和基础镜像均通过宿主机通道更新，只执行已签名发布。</p></div><button id="node-update-close" class="quiet" type="button">关闭更新面板</button></div>
           <p id="node-update-channel"></p><p id="node-update-current"></p><p id="node-update-target" class="digest"></p>
-          <p class="muted">首次使用需在对应 Ubuntu 执行一次接入命令，接入本身不会触发升级。更新前结束任务并关闭原生终端；准备完成后自动断开空闲客户端。旧版服务端若不支持自动断连，会提示先退出客户端。中断或失败时查看实际服务状态、日志与恢复指引，不自动重放。</p>
+          <p class="muted">每台设备单独选择更新时间并确认目标。已接入及旧版设备使用现有通道自动完成内部更新步骤，无需重新接入；仅首次接入提供一次性命令。更新前结束任务并关闭原生终端；准备完成后自动断开空闲客户端。中断或失败时查看实际服务状态、日志与恢复指引，不自动重试。</p>
           <div class="heading-actions"><button id="node-update-refresh" class="quiet" type="button">检查设备状态</button><button id="node-update-enroll" class="quiet" type="button">生成宿主机接入命令</button><button id="node-update-install" type="button" disabled>检查更新</button></div>
           <div id="node-update-enrollment" hidden><label for="node-update-command">一次性接入命令（十分钟有效，仅在对应 Ubuntu 执行）</label><textarea id="node-update-command" rows="6" readonly spellcheck="false"></textarea><button id="node-update-copy" class="quiet" type="button">复制宿主机接入命令</button></div>
           <div id="node-update-confirmation" class="access-editor" hidden><p id="node-update-confirm-text"></p><button id="node-update-confirm" type="button">确认更新此设备</button><button id="node-update-cancel" type="button" class="quiet">取消</button></div>
-          <p id="node-update-error" class="error" role="alert"></p><p id="node-update-job" role="status"></p><details><summary>更新进度与恢复指引</summary><pre id="node-update-progress" class="notes"></pre></details>
+          <p id="node-update-error" class="error" role="alert"></p><p id="node-update-job" role="status"></p><details open><summary>此设备的更新步骤与报告日志</summary><pre id="node-update-progress" class="notes"></pre></details>
+          <details><summary>原始应用结果与恢复诊断</summary><pre id="node-update-app-result" class="notes"></pre></details>
+          <details><summary>旧版组件作业进度（独立于完整更新结果）</summary><pre id="node-update-legacy-progress" class="notes"></pre></details>
+          <details><summary>历史流程与原始失败记录</summary><pre id="node-update-history" class="notes"></pre></details>
         </section>
         <section id="desktop-access-panel" class="card" aria-labelledby="desktop-access-heading" hidden>
           <div class="section-heading"><div><p class="eyebrow">设备管理</p><h3 id="desktop-access-heading"></h3><p class="muted">查看账号详情，管理连接和访问权限。</p></div><button id="desktop-access-close" class="quiet">返回账号监控</button></div>

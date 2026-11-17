@@ -33,6 +33,7 @@ NODE_RUNTIMES = {
     'node24-cli2.1.295-v1': ('24.21.0', NODE_SHA),
     'node24-cli2.1.295-v2': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
     'node24-cli2.1.295-v3': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
+    'node24-cli2.1.295-v4': ('24.22.2', '48cc0e21e048790e54c0cf5749c2725005313d652651c40b7a21feb9697aaf75'),
 }
 CLI_ARCHIVE_SHA = 'd45a2fa14a7ea0b8ab4f56e502de5893c2b816078c71c4d8ab2e4142148f3d95'
 CLI_SHA = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
@@ -589,6 +590,97 @@ def show_connection():
     print('程序部署完成。需要登录自己的 Claude 账号时，请执行：sudo /usr/local/bin/cc-claude-login')
 
 
+HOST_DATA = pathlib.Path('/var/lib/cc-host-updater')
+HOST_PROGRAM = pathlib.Path('/opt/cc-host-platform')
+HOST_SOURCES = ('host-platform.py', 'host-platform-entry.py', 'host-bootstrap.py',
+                'host-bootstrap-entry.py', 'host-operations.py')
+
+
+def check_host_platform(bundle=None):
+    state_path = HOST_DATA / 'agent-platform/state.json'
+    if state_path.is_symlink(): raise InstallError('Linked host platform state.')
+    config_path = HOST_DATA / 'config.json'
+    if config_path.is_symlink(): raise InstallError('Linked host configuration.')
+    if config_path.exists():
+        config = json.loads(config_path.read_text())
+        if bundle and bundle.get('hostToken') and config == {
+                'nodeId': bundle['nodeId'], 'origin': bundle['origin'], 'keys': KEYS, 'token': bundle['hostToken']}:
+            return
+        raise InstallError('Host configuration belongs to another installation; no fresh enrollment requested.')
+    state = json.loads(state_path.read_text()) if state_path.exists() else {}
+    if state.get('current') or state.get('floor'):
+        raise InstallError('Host platform is already active; use its normal update action without re-enrollment.')
+
+
+def cache_host_bootstrap(program, release):
+    # program was extracted only after signed app archive verification. Retain these
+    # exact bytes outside build/temp directories before any application cutover.
+    directory = ROOT / 'host-bootstrap'
+    if directory.is_symlink(): raise InstallError('Linked host bootstrap cache.')
+    directory.mkdir(mode=0o700, exist_ok=True)
+    directory.chmod(0o700)
+    hashes = {}
+    for name in (*HOST_SOURCES, 'host-updater-install.py', 'server-upgrade.cjs'):
+        source = program / 'apps/update-service/web' / name
+        target = directory / name
+        if source.is_symlink() or target.is_symlink(): raise InstallError('Linked host bootstrap source.')
+        raw = source.read_bytes()
+        if len(raw) > 512 * 1024: raise InstallError('Host bootstrap source too large.')
+        hashes[name] = hashlib.sha256(raw).hexdigest()
+        temporary = directory / (name + '.next')
+        if temporary.is_symlink(): raise InstallError('Linked host bootstrap staging.')
+        with temporary.open('wb') as stream:
+            temporary.chmod(0o600); stream.write(raw); stream.flush(); os.fsync(stream.fileno())
+        temporary.replace(target)
+    private_json(directory / 'manifest.json', {'build': release['build'], 'sha256': release['sha256'], 'hashes': hashes})
+
+
+def cached_host_bootstrap(release):
+    directory = ROOT / 'host-bootstrap'
+    if directory.is_symlink(): raise InstallError('Linked host bootstrap cache.')
+    manifest_path = directory / 'manifest.json'
+    if manifest_path.is_symlink(): raise InstallError('Linked host bootstrap manifest.')
+    manifest = json.loads(manifest_path.read_text())
+    if any(manifest.get(key) != release[key] for key in ('build', 'sha256')):
+        raise InstallError('Host bootstrap cache does not match the signed application.')
+    sources = {}
+    for name in (*HOST_SOURCES, 'host-updater-install.py', 'server-upgrade.cjs'):
+        path = directory / name
+        if path.is_symlink(): raise InstallError('Linked host bootstrap source.')
+        raw = path.read_bytes()
+        if len(raw) > 512 * 1024 or hashlib.sha256(raw).hexdigest() != manifest['hashes'].get(name):
+            raise InstallError('Host bootstrap source checksum mismatch.')
+        sources[name] = raw
+    spec = importlib.util.spec_from_file_location('cc_fresh_host_install', directory / 'host-updater-install.py')
+    helper = importlib.util.module_from_spec(spec); spec.loader.exec_module(helper)
+    bundle = {'origin': ORIGIN, 'keys': KEYS,
+              'sources': {name: base64.b64encode(sources[name]).decode() for name in HOST_SOURCES},
+              'hashes': {name: manifest['hashes'][name] for name in HOST_SOURCES},
+              'probe': base64.b64encode(sources['server-upgrade.cjs']).decode(),
+              'probeSha256': manifest['hashes']['server-upgrade.cjs']}
+    return helper, bundle
+
+
+def complete_host_channel(bundle, release):
+    marker = ROOT / 'host-channel.json'
+    if marker.is_symlink(): raise InstallError('Linked host channel marker.')
+    if marker.exists():
+        if json.loads(marker.read_text()) != {'nodeId': bundle['nodeId']}:
+            raise InstallError('Host channel marker belongs to another node.')
+        return
+    if not re.fullmatch('[A-Za-z0-9_-]{43}', bundle.get('hostToken', '')):
+        raise InstallError('Application remains installed; host channel credential missing from legacy enrollment cache.')
+    helper, trusted = cached_host_bootstrap(release)
+    check_host_platform(bundle)
+    if HOST_DATA.is_symlink(): raise InstallError('Linked host channel directory.')
+    HOST_DATA.mkdir(mode=0o700, exist_ok=True)
+    with helper.enrollment_lock(HOST_DATA):
+        helper.install_platform(bundle['nodeId'], None, trusted, HOST_DATA, HOST_PROGRAM,
+                                pathlib.Path('/etc/systemd/system'), pathlib.Path('/opt/cc-host-updater'),
+                                fresh_token=bundle['hostToken'])
+    private_json(marker, {'nodeId': bundle['nodeId']})
+
+
 def install(args):
     if os.geteuid() != 0: raise InstallError('Run this command with sudo.')
     system = platform.freedesktop_os_release()
@@ -608,6 +700,7 @@ def install(args):
         if LOGIN.is_symlink() or (LOGIN.exists() and LOGIN.read_text() != login_source):
             raise InstallError('Login helper already exists or is a symlink; refusing to overwrite it.')
         bundle = cached_enrollment(args)
+        check_host_platform(bundle)
         if bundle is None and not getattr(args, 'code', None):
             raise InstallError('An installation code is required for first enrollment; use --resume only with local cache.')
         reset = prepare_reset(args)
@@ -622,11 +715,12 @@ def install(args):
                 attempt = {'nodeId': args.node, 'installationId': secrets.token_urlsafe(32)}
                 private_json(attempt_path, attempt)
             bundle = json.loads(download(ORIGIN + '/cc-updates/admin/api/fresh-nodes/redeem',
-                                         262144, data=json.dumps({'installationId': attempt['installationId']}).encode(), token=args.code))
+                                         262144, data=json.dumps({'installationId': attempt['installationId'], 'hostChannel': True}).encode(), token=args.code))
             if bundle['nodeId'] != args.node or bundle['origin'] != ORIGIN:
                 raise InstallError('Enrollment identity mismatch.')
             private_json(cached, bundle)
         if (ROOT / 'installed.json').exists():
+            complete_host_channel(bundle, json.loads((ROOT / 'installed.json').read_text()))
             print('Already installed. Use the client for subsequent server updates.')
             show_connection()
             return
@@ -675,6 +769,7 @@ def install(args):
                 raise InstallError('Unexpected managed server trust identity.')
             if hashlib.sha256((program / 'package-lock.json').read_bytes()).hexdigest() != release['packageLockSha256']:
                 raise InstallError('Dependency lockfile mismatch.')
+            if bundle.get('hostToken'): cache_host_bootstrap(program, release)
             provision_runtime(work, release['runtimeLevel'])
             (work / 'Dockerfile').write_text(DOCKERFILE)
             image = 'cc-desk-tunnel:fresh-' + str(release['build'])
@@ -759,6 +854,8 @@ def activate_installation(args, bundle, release, support, image, program, reset,
             except BaseException as error:
                 print('RECOVERY_REQUIRED: automatic recovery did not complete; keep the backup and inspect its rollback command. Error=' + type(error).__name__, flush=True)
         raise
+    # Host-channel failure must never enter the application rollback transaction.
+    complete_host_channel(bundle, release)
 
 
 if __name__ == '__main__':

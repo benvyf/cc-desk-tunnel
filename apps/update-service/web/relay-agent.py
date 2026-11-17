@@ -1,4 +1,5 @@
 """Fixed-purpose relay configuration adoption, called serially by the host updater."""
+from contextlib import contextmanager
 import ipaddress
 import json
 import os
@@ -159,8 +160,34 @@ def apply(desired,state,unit,state_path,control,restart,scan_key):
             try:control('leave',lease)
             except Exception:pass  # Local admission lease expires without agent cooperation.
 
+@contextmanager
+def operation_lock(root):
+    # This file is also held by the v2 worker and stable maintenance supervisor.
+    path=root/'operation.lock'
+    with path.open('a+b') as lock:
+        if os.name=='posix':
+            import fcntl
+            info=os.fstat(lock.fileno())
+            if path.is_symlink() or info.st_uid!=0 or info.st_mode&0o022:raise RuntimeError('Unprotected host operation lock')
+            os.chmod(path,0o600);fcntl.flock(lock,fcntl.LOCK_EX|fcntl.LOCK_NB)
+        else:
+            import msvcrt
+            if not path.stat().st_size:lock.write(b'0');lock.flush()
+            lock.seek(0);msvcrt.locking(lock.fileno(),msvcrt.LK_NBLCK,1)
+        try:yield
+        finally:
+            if os.name=='posix':fcntl.flock(lock,fcntl.LOCK_UN)
+            else:lock.seek(0);msvcrt.locking(lock.fileno(),msvcrt.LK_UNLCK,1)
+
+
 def cycle(config,request,root,program,container):
     if not UNIT.exists():return
+    try:
+        with operation_lock(root):return _cycle_locked(config,request,root,program,container)
+    except (BlockingIOError,PermissionError):return
+
+
+def _cycle_locked(config,request,root,program,container):
     local=inspect()
     identity=container()
     def command(action,lease=None):

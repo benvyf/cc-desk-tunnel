@@ -896,6 +896,17 @@ legend {
   overflow-wrap: anywhere;
   color: #8c96a6;
 }
+#node-update-panel .heading-actions {
+  flex-wrap: wrap;
+}
+#node-update-confirm-text {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+}
+#node-update-panel .notes {
+  max-height: 28rem;
+  overflow: auto;
+}
 details {
   margin-top: 16px;
 }

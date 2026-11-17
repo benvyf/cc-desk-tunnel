@@ -1,5 +1,13 @@
 import { createHash, createHmac, randomBytes } from 'node:crypto';
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  fsyncSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import type { UpdateConfig } from './config.ts';
 import { UpdateError } from './store.ts';
@@ -12,6 +20,7 @@ type NodeRecord = {
   monitorHash?: string;
   moderationHash?: string;
   installationHash?: string;
+  resetAuthorisation?: boolean;
 };
 const hash = (value: string | Buffer) => createHash('sha256').update(value).digest('hex');
 export function readFreshNodes(root: string): Record<string, NodeRecord> {
@@ -25,6 +34,10 @@ export function readFreshNodes(root: string): Record<string, NodeRecord> {
 
 // One process owns the management store. Each synchronous read/change/rename is one transaction.
 export class FreshNodes {
+  private registerHost?: (id: string, token: string, reset: boolean) => () => void;
+  registerHostWith(register: (id: string, token: string, reset: boolean) => () => void) {
+    this.registerHost = register;
+  }
   private failures = 0;
   private window = 0;
   constructor(privateConfig: UpdateConfig) {
@@ -42,8 +55,24 @@ export class FreshNodes {
     const directory = join(this.config.dataDir, 'private');
     mkdirSync(directory, { recursive: true, mode: 0o700 });
     const path = join(directory, 'fresh-nodes.json');
-    writeFileSync(path + '.next', JSON.stringify(nodes), { mode: 0o600 });
+    const file = openSync(path + '.next', 'w', 0o600);
+    try {
+      writeFileSync(file, JSON.stringify(nodes));
+      fsyncSync(file);
+    } finally {
+      closeSync(file);
+    }
     renameSync(path + '.next', path);
+    // Windows cannot open directory handles through node:fs. Production Linux
+    // must persist the rename before a FULL-synchronous host SQL commit follows.
+    if (process.platform !== 'win32') {
+      const parent = openSync(directory, 'r');
+      try {
+        fsyncSync(parent);
+      } finally {
+        closeSync(parent);
+      }
+    }
   }
   issue(input: unknown, distribution: ServerDistribution) {
     const id = (input as { nodeId?: unknown } | null)?.nodeId;
@@ -97,7 +126,7 @@ export class FreshNodes {
     const code = randomBytes(32).toString('base64url');
     const expiresAt = Math.min(Date.now() + 600000, Date.parse(status.payload.expiresAt));
     const index = distribution.index()!.toString('utf8');
-    nodes[id] = { grantHash: hash(code), expiresAt, index };
+    nodes[id] = { grantHash: hash(code), expiresAt, index, resetAuthorisation: reset === true };
     this.save(nodes);
     return {
       nodeId: id,
@@ -107,8 +136,8 @@ export class FreshNodes {
     };
   }
   private command(id: string, reset: boolean, code?: string) {
-    const installer = readFileSync(new URL('../web/fresh-install.py', import.meta.url));
-    const url = this.config.origin + '/cc-updates/admin/fresh-install-v4.py';
+    const installer = readFileSync(new URL('../web/fresh-install-v6.py', import.meta.url));
+    const url = this.config.origin + '/cc-updates/admin/fresh-install-v6.py';
     const args = [
       '--origin',
       this.config.origin,
@@ -122,7 +151,7 @@ export class FreshNodes {
     const program = `import urllib.request,hashlib,sys,tempfile,pathlib,runpy; print("Downloading verified Ubuntu installer...",flush=True); u=${JSON.stringify(url)}; r=urllib.request.urlopen(u,timeout=30); b=r.read(262145); (r.url==u and len(b)<=262144 and hashlib.sha256(b).hexdigest()==${JSON.stringify(hash(installer))}) or sys.exit("Installer verification failed"); t=tempfile.TemporaryDirectory(); p=pathlib.Path(t.name)/"fresh-install.py"; p.write_bytes(b); sys.argv=[str(p),${args}]; runpy.run_path(str(p),run_name="__main__")`;
     return "sudo python3 -c '" + program.replaceAll("'", "'\"'\"'") + "'";
   }
-  redeem(code: string, installationId: unknown) {
+  redeem(code: string, installationId: unknown, hostChannel = false) {
     if (Date.now() - this.window >= 60000) {
       this.window = Date.now();
       this.failures = 0;
@@ -152,10 +181,28 @@ export class FreshNodes {
     const moderationToken = createHmac('sha256', code)
       .update('moderation:' + installationId)
       .digest('base64url');
+    const hostToken = createHmac('sha256', code)
+      .update('host:' + installationId)
+      .digest('base64url');
+    let commitHost: (() => void) | undefined;
+    if (hostChannel) {
+      if (!this.registerHost) throw new UpdateError(503, 'Host channel registration unavailable.');
+      // Eligibility is read-only. Bind this installation durably before mutating
+      // SQLite so a crash cannot let another installation reuse reset authority.
+      commitHost = this.registerHost(nodeId, hostToken, node.resetAuthorisation === true);
+    }
     node.monitorHash = hash(monitorToken);
     node.moderationHash = hash(moderationToken);
     node.installationHash = hash(installationId);
     this.save(nodes);
-    return { nodeId, origin: this.config.origin, index: node.index, monitorToken, moderationToken };
+    commitHost?.();
+    return {
+      nodeId,
+      origin: this.config.origin,
+      index: node.index,
+      monitorToken,
+      moderationToken,
+      ...(hostChannel ? { hostToken } : {}),
+    };
   }
 }

@@ -50,10 +50,56 @@ function current(value: unknown): Current | null {
   return { build: Number(value.build), protocol: Number(value.protocol), phase: value.phase };
 }
 
+// Only reviewed image runtimes can bridge an already confirmed signed app target.
+export function supportsLegacyBridge(release: ServerRelease | null | undefined): boolean {
+  return !!release && release.build >= 22 && (
+    release.runtimeLevel.endsWith('-v4') ||
+    (release.build >= 26 && release.protocol === 24 &&
+      release.runtimeLevel === 'node24-cli2.1.325-v5')
+  );
+}
+
 // One row per configured node, one outstanding job. Host credentials never enter the CC container or desktop.
 export class HostUpdates {
   private db: DatabaseSync;
   private nodes: () => string[];
+  private reservation: (id: string) => string | null = () => null;
+  reserveWith(check: (id: string) => string | null) {
+    this.reservation = check;
+  }
+  // Internal capability handed only to FreshNodes, whose persisted grant establishes
+  // entitlement before this callback. No HTTP enrollment route accepts a root token.
+  freshRegistration() {
+    return (id: string, token: string, resetAuthorisation: boolean) => {
+      const row = this.db.prepare('SELECT * FROM nodes WHERE id=?').get(id) as Row | undefined;
+      const digest = hash(token);
+      if (row?.token === digest) return () => {};
+      if (this.reservation(id)) throw new UpdateError(409, 'Device has a reserved host workflow.');
+      if (row?.job && active(JSON.parse(row.job)))
+        throw new UpdateError(409, '设备仍有未完成更新。');
+      if (row?.token && !resetAuthorisation)
+        throw new UpdateError(
+          409,
+          'Fresh host credential replacement requires explicit reset authorisation.',
+        );
+      // FreshNodes synchronously saves its installation binding before invoking
+      // this commit; no request can interleave between eligibility and commit.
+      return () => {
+        this.db
+          .prepare(
+            `INSERT INTO nodes VALUES(?,?,'',0,0,'','')
+          ON CONFLICT(id) DO UPDATE SET token=excluded.token,code='',expires=0,seen=0,current='',job=''`,
+          )
+          .run(id, digest);
+      };
+    };
+  }
+  observeV2(id: string, version: Current | null, now = Date.now()) {
+    this.node(id, now);
+    this.db
+      .prepare('UPDATE nodes SET seen=?,current=? WHERE id=?')
+      .run(now, version ? JSON.stringify(version) : '', id);
+  }
   constructor(root: string, nodes: () => string[]) {
     this.nodes = nodes;
     const file = join(root, 'private/host-updates.sqlite');
@@ -62,11 +108,11 @@ export class HostUpdates {
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
       CREATE TABLE IF NOT EXISTS nodes(id TEXT PRIMARY KEY,token TEXT NOT NULL,code TEXT NOT NULL,expires INTEGER NOT NULL,seen INTEGER NOT NULL,current TEXT NOT NULL,job TEXT NOT NULL);`);
   }
-  private node(id: string, now: number) {
+  private node(id: string, now: number, readOnly = false) {
     if (!this.nodes().includes(id)) throw new UpdateError(404, '设备不存在。');
     const row = this.db.prepare('SELECT * FROM nodes WHERE id=?').get(id) as Row | undefined;
     const job: Job | null = row?.job ? JSON.parse(row.job) : null;
-    if (row && job?.state === 'queued' && now - Date.parse(job.createdAt) > 600000) {
+    if (!readOnly && row && job?.state === 'queued' && now - Date.parse(job.createdAt) > 600000) {
       job.state = 'failed';
       job.progress = '任务等待超时，未执行，请重新确认更新。';
       job.updatedAt = new Date(now).toISOString();
@@ -75,8 +121,8 @@ export class HostUpdates {
     }
     return row;
   }
-  status(id: string, now = Date.now()) {
-    const row = this.node(id, now);
+  status(id: string, now = Date.now(), options: { readOnly?: boolean } = {}) {
+    const row = this.node(id, now, options.readOnly === true);
     return {
       nodeId: id,
       enrolled: !!row?.token,
@@ -87,6 +133,7 @@ export class HostUpdates {
     };
   }
   issue(id: string, now = Date.now()) {
+    if (this.reservation(id)) throw new UpdateError(409, 'Device has a reserved host workflow.');
     const row = this.node(id, now);
     if (row?.job && active(JSON.parse(row.job)))
       throw new UpdateError(409, '设备有未完成的更新，请先检查更新结果。');
@@ -108,6 +155,8 @@ export class HostUpdates {
     )
       throw new UpdateError(400, '无效接入请求。');
     const row = this.node(input.nodeId, now);
+    if (this.reservation(input.nodeId))
+      throw new UpdateError(409, 'Device has a reserved host workflow.');
     if (
       !row?.code ||
       row.expires <= now ||
@@ -128,7 +177,11 @@ export class HostUpdates {
     release: ServerRelease,
     index: SignedServerIndex,
     now = Date.now(),
+    internal?: { id: string; reservation: string; bridgePreflight?: true },
   ) {
+    const reserved = this.reservation(id);
+    if (reserved && reserved !== internal?.reservation)
+      throw new UpdateError(409, 'Device has a reserved host workflow.');
     object(input);
     if (
       Object.keys(input).length !== 3 ||
@@ -145,10 +198,18 @@ export class HostUpdates {
     const version = JSON.parse(row.current) as Current;
     if (version.build >= release.build)
       throw new UpdateError(409, '设备已是当前或更高版本，无需更新。');
-    if (!['idle', 'committed', 'rolled-back'].includes(version.phase))
+    if (
+      !['idle', 'committed', 'rolled-back'].includes(version.phase) &&
+      !(
+        version.phase === 'failed' &&
+        internal?.bridgePreflight &&
+        reserved === internal.reservation &&
+        supportsLegacyBridge(release)
+      )
+    )
       throw new UpdateError(409, '设备正在处理更新或需要检查，请先处理当前状态。');
     const job: Job = {
-      id: randomUUID(),
+      id: internal?.id ?? randomUUID(),
       build: release.build,
       sha256: release.sha256,
       index,
@@ -165,6 +226,9 @@ export class HostUpdates {
       sha256: job.sha256,
     });
     return this.status(id, now);
+  }
+  credentialVersion(id: string, readOnly = false) {
+    return this.node(id, Date.now(), readOnly)?.token || null;
   }
   authorize(id: string, token: string) {
     const row = this.node(id, Date.now());

@@ -77,13 +77,21 @@ function request(route, body) {
       const check = target.protocol
         ? await request('check', { clientProtocol: target.protocol })
         : null;
-      let descriptorSha256;
-      try {
-        descriptorSha256 = require('node:crypto')
-          .createHash('sha256')
-          .update(fs.readFileSync('/app/SERVER-RELEASE.json'))
-          .digest('hex');
-      } catch {}
+      let descriptorSha256 = status.hostDiagnostics?.program?.descriptorSha256;
+      if (Object.hasOwn(status, 'hostDiagnostics')) {
+        if (
+          status.hostDiagnostics?.schema !== 1 ||
+          typeof descriptorSha256 !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(descriptorSha256)
+        )
+          throw Error('Invalid authoritative program descriptor identity.');
+      } else
+        try {
+          descriptorSha256 = require('node:crypto')
+            .createHash('sha256')
+            .update(fs.readFileSync('/app/SERVER-RELEASE.json'))
+            .digest('hex');
+        } catch {}
       console.log(
         JSON.stringify({
           current: status.current,
@@ -92,6 +100,7 @@ function request(route, body) {
           hostMaintenance: status.hostMaintenance === true,
           retryable: status.retryable === true,
           serving: typeof status.serving === 'boolean' ? status.serving : undefined,
+          hostDiagnostics: status.hostDiagnostics,
           descriptorSha256,
         }),
       );

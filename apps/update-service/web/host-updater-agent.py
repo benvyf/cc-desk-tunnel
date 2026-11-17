@@ -22,6 +22,7 @@ ROOT = Path('/var/lib/cc-host-updater')
 PROGRAM = Path('/opt/cc-host-updater')
 BASE10 = '3098eeced28403a1d465dd53ffc06eeb225bbe45aa7e08dbd051059e778b6c71'
 stopping = False
+NODE_ID = None
 
 
 class NoRedirect(urllib.request.HTTPRedirectHandler):
@@ -86,13 +87,23 @@ def verify_index(envelope, config, work, now=None):
 
 
 def container():
-    ids = subprocess.check_output(['docker','ps','--filter','label=com.docker.compose.service=proxy','--format','{{.ID}}'], text=True, timeout=10).split()
-    candidates = []
+    # NODE_ID comes only from the enrolled private configuration, never a job.
+    selectors=['label=com.docker.compose.service=proxy']
+    bound=isinstance(NODE_ID,str) and re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9_-]{0,127}',NODE_ID)
+    if bound:
+        selectors.append('label=cc.fresh.node='+NODE_ID)
+    ids=set()
+    for selector in selectors:
+        ids.update(subprocess.check_output(['docker','ps','--filter',selector,'--format','{{.ID}}'],text=True,timeout=10).split())
+    candidates=[]
     for identity in ids:
-        info = json.loads(subprocess.check_output(['docker','inspect',identity], timeout=10))[0]
-        project = (info.get('Config',{}).get('Labels') or {}).get('com.docker.compose.project','')
-        if project == 'cc-desk-tunnel' or project.startswith('cc-desk-tunnel-'): candidates.append(identity)
-    if len(candidates) != 1: raise RuntimeError('Expected exactly one local CC service container')
+        info=json.loads(subprocess.check_output(['docker','inspect',identity],timeout=10))[0]
+        labels=info.get('Config',{}).get('Labels') or {}
+        project=labels.get('com.docker.compose.project','')
+        compose=labels.get('com.docker.compose.service')=='proxy' and (project=='cc-desk-tunnel' or project.startswith('cc-desk-tunnel-'))
+        fresh=bool(bound) and info.get('Name')=='/cc-desk-tunnel' and labels.get('cc.fresh.node')==NODE_ID
+        if compose or fresh:candidates.append(identity)
+    if len(candidates)!=1:raise RuntimeError('Expected exactly one local CC service container')
     return candidates[0]
 
 
@@ -192,6 +203,8 @@ def begin_job(state, identity):
 
 
 def run(config):
+    global NODE_ID
+    NODE_ID=config['nodeId']
     relay_path=PROGRAM/'relay-agent.py'
     relay=None
     if relay_path.exists():

@@ -275,7 +275,7 @@ export function baseUpgradeCommand(
   const runtime = release.build === 10 && release.protocol === 23;
   if (!runtime && (![8, 9].includes(release.build) || release.protocol !== 22)) return undefined;
   if ((release.build === 9 || runtime) && !support) return undefined;
-  if (runtime && (!fresh || !previous || release.runtimeLevel !== RUNTIME_LEVEL)) return undefined;
+  if (runtime && (!fresh || !previous || release.runtimeLevel !== 'node24-cli2.1.295-v2')) return undefined;
   const scriptName = runtime
     ? 'upgrade-runtime-base.py'
     : release.build === 9

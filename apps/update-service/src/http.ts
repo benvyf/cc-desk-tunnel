@@ -15,6 +15,8 @@ import { PasswordAuth } from './password-auth.ts';
 import { DesktopAccess } from './desktop-access.ts';
 import { desktopServerUpdate } from './desktop-server-update.ts';
 import { HostUpdates } from './host-updates.ts';
+import { AgentPackages, AGENT_INDEX_PATH } from './agent-packages.ts';
+import { HostWorkflows } from './host-workflows.ts';
 import { RelayConfig } from './relay-config.ts';
 import { probeRelayHost, probeRelayNode } from './relay-probe.ts';
 import { hostInstaller, hostEnrollmentCommand } from './host-updater-package.ts';
@@ -79,6 +81,8 @@ export async function createUpdateServer(
     ['server-download.js', 'text/javascript'],
     ['fresh-install.py', 'text/plain'],
     ['fresh-install-v3.py', 'text/plain'],
+    ['fresh-install-v5.py', 'text/plain'],
+    ['fresh-install-v6.py', 'text/plain'],
     ['fresh-install-recovery.py', 'text/plain'],
     ['fresh-nodes.js', 'text/javascript'],
     ['desktop-access.js', 'text/javascript'],
@@ -100,6 +104,14 @@ export async function createUpdateServer(
   const freshNodes = new FreshNodes(config);
   const nodeHashes = () => ({ ...config.monitorNodes, ...freshNodes.monitorNodes() });
   const hostUpdates = new HostUpdates(config.dataDir, () => Object.keys(nodeHashes()));
+  freshNodes.registerHostWith(hostUpdates.freshRegistration());
+  const agentPackages = new AgentPackages(config.dataDir, config.trustedKeys);
+  const hostWorkflows = new HostWorkflows(config.dataDir, hostUpdates, agentPackages, () => {
+    const p = distribution.status();
+    return p.published && !p.expired
+      ? { release: p.payload.release, index: JSON.parse(distribution.index()!.toString()) }
+      : null;
+  });
   const installer = await hostInstaller(config);
   assets.set(base + '/host-updater-install.py', { bytes: installer, type: 'text/plain' });
   let monitor = Object.keys(nodeHashes()).length
@@ -176,6 +188,43 @@ export async function createUpdateServer(
         const url = new URL(request.url, 'http://localhost');
         if (url.search) throw new UpdateError(404, 'Not found.');
         const path = url.pathname;
+        if (
+          path === AGENT_INDEX_PATH ||
+          /^\/cc-host\/v2\/agent-artifacts\/[a-f0-9]{64}\.tar\.gz$/.test(path)
+        ) {
+          if (request.method !== 'GET' && request.method !== 'HEAD')
+            throw new UpdateError(405, 'Method not allowed.');
+          const bytes =
+            path === AGENT_INDEX_PATH ? agentPackages.index() : agentPackages.artifact(path);
+          if (!bytes) throw new UpdateError(404, 'Not found.');
+          response.writeHead(200, {
+            ...headers,
+            'content-type': path === AGENT_INDEX_PATH ? 'application/json' : 'application/gzip',
+            'content-length': bytes.length,
+          });
+          response.end(request.method === 'HEAD' ? undefined : bytes);
+          return;
+        }
+        if (path === '/cc-host/v2/poll' || path === '/cc-host/v2/adoption') {
+          if (request.method !== 'POST' || request.headers.origin !== undefined)
+            throw new UpdateError(403, 'Host channel request required.');
+          contentType(request, 'application/json');
+          const bytes = await body(request, 65536);
+          let input: unknown;
+          try {
+            input = JSON.parse(bytes.toString());
+          } catch {
+            throw new UpdateError(400, 'Invalid host JSON.');
+          }
+          const token = request.headers.authorization?.replace(/^Bearer /, '') ?? '';
+          const result = path.endsWith('/poll')
+            ? hostWorkflows.poll(token, input)
+            : hostWorkflows.adoption(token, input);
+          if (Buffer.byteLength(JSON.stringify(result)) > 128 * 1024)
+            throw new UpdateError(500, 'Host response exceeds bound.');
+          respond(response, 200, result);
+          return;
+        }
         if (path === '/cc-host/v1/relay') {
           if (request.method !== 'POST' || request.headers.origin !== undefined)
             throw new UpdateError(403, 'Host channel request required.');
@@ -367,7 +416,8 @@ export async function createUpdateServer(
           if (
             !input ||
             Array.isArray(input) ||
-            Object.keys(input).length !== 1 ||
+            Object.keys(input).some((key) => !['installationId', 'hostChannel'].includes(key)) ||
+            (Object.hasOwn(input, 'hostChannel') && input.hostChannel !== true) ||
             !Object.hasOwn(input, 'installationId')
           )
             throw new UpdateError(400, 'Expected installation identity.');
@@ -375,6 +425,7 @@ export async function createUpdateServer(
           const bundle = freshNodes.redeem(
             auth.startsWith('Bearer ') ? auth.slice(7) : '',
             input.installationId,
+            input.hostChannel === true,
           );
           monitor ??= new MonitorStore(config.dataDir, Object.keys(nodeHashes()));
           monitor.addNode(bundle.nodeId);
@@ -529,6 +580,22 @@ export async function createUpdateServer(
           }
           return;
         }
+        const workflowNode = new RegExp(`^${api}/host-workflows/([a-z0-9_-]{1,64})$`).exec(path);
+        if (workflowNode) {
+          if (request.method === 'GET')
+            respond(response, 200, hostWorkflows.status(workflowNode[1]!));
+          else if (request.method === 'POST') {
+            contentType(request, 'application/json');
+            let input: unknown;
+            try {
+              input = JSON.parse((await body(request, 2048)).toString());
+            } catch {
+              throw new UpdateError(400, 'Invalid workflow JSON.');
+            }
+            respond(response, 202, hostWorkflows.confirm(workflowNode[1]!, input));
+          } else throw new UpdateError(405, 'Method not allowed.');
+          return;
+        }
         const hostNode = new RegExp(
           `^${api}/host-updates/([a-z0-9_-]{1,64})(?:/(enrollment|install))?$`,
         ).exec(path);
@@ -563,6 +630,17 @@ export async function createUpdateServer(
                 command: hostEnrollmentCommand(config.origin, installer, id, grant.code),
               });
             } else {
+              const managedHost = hostWorkflows.status(id);
+              if (
+                managedHost.instanceId ||
+                (managedHost.target.agent &&
+                  publication.published &&
+                  publication.payload.release.runtimeLevel.endsWith('-v4'))
+              )
+                throw new UpdateError(
+                  409,
+                  'Confirm both exact agent and application targets through the host workflow.',
+                );
               if (!publication.published || publication.expired)
                 throw new UpdateError(409, '请先发布有效的已签名 Linux 服务端。');
               respond(
@@ -871,6 +949,7 @@ export async function createUpdateServer(
   server.once('close', () => moderation.close());
   server.once('close', () => desktopAccess.close());
   server.once('close', () => hostUpdates.close());
+  server.prependOnceListener('close', () => hostWorkflows.close());
   server.once('close', () => {
     relayClosed = true;
     relayConfig.close();

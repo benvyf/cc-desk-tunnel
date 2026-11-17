@@ -4,28 +4,34 @@ import { deflateSync } from 'node:zlib';
 import type { UpdateConfig } from './config.ts';
 
 export async function hostInstaller(config: UpdateConfig) {
-  const paths = {
-    'agent.py': '../web/host-updater-agent.py',
-    'relay-agent.py': '../web/relay-agent.py',
-    'relay-control.cjs': '../web/relay-control.cjs',
-    'server-upgrade.cjs': '../web/server-upgrade.cjs',
-    'base/upgrade-runtime-base.py': '../../../scripts/upgrade-runtime-base.py',
-    'base/upgrade-message-review.py': '../../../scripts/upgrade-message-review.py',
-    'base/install-cc-space-037.py': '../../../scripts/install-cc-space-037.py',
-    'base/server-bootstrap.py': '../web/server-bootstrap.py',
-    'base/fresh-install.py': '../web/fresh-install-host-base.py',
-  };
+  const names = [
+    'host-platform.py',
+    'host-platform-entry.py',
+    'host-bootstrap.py',
+    'host-bootstrap-entry.py',
+    'host-operations.py',
+  ];
+  // Git exports LF code for the signed application bridge. Keep its fixed
+  // bootstrap hashes identical when this factory runs from a CRLF checkout.
+  const codeBytes = async (name: string) =>
+    Buffer.from(
+      (await readFile(new URL('../web/' + name, import.meta.url), 'utf8')).replaceAll('\r\n', '\n'),
+      'utf8',
+    );
   const entries = await Promise.all(
-    Object.entries(paths).map(async ([name, path]) => [
-      name,
-      (await readFile(new URL(path, import.meta.url))).toString('base64'),
-    ]),
+    names.map(async (name) => [name, await codeBytes(name)] as const),
   );
+  const probe = await codeBytes('server-upgrade.cjs');
   const bundle = deflateSync(
     JSON.stringify({
       origin: config.origin,
       keys: config.trustedKeys,
-      files: Object.fromEntries(entries),
+      sources: Object.fromEntries(entries.map(([name, bytes]) => [name, bytes.toString('base64')])),
+      hashes: Object.fromEntries(
+        entries.map(([name, bytes]) => [name, createHash('sha256').update(bytes).digest('hex')]),
+      ),
+      probe: probe.toString('base64'),
+      probeSha256: createHash('sha256').update(probe).digest('hex'),
     }),
   ).toString('base64');
   const template = await readFile(

@@ -1,6 +1,40 @@
 # Include these locations inside the chosen HTTPS server {} only.
 # Domain, TLS and existing routing must be checked before installation.
 
+location = /cc-host/v2/poll {
+    limit_except POST { deny all; }
+    client_max_body_size 64k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_cache off;
+    proxy_read_timeout 20s;
+}
+
+location = /cc-host/v2/adoption {
+    limit_except POST { deny all; }
+    client_max_body_size 64k;
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_set_header Connection "";
+    proxy_cache off;
+    proxy_read_timeout 20s;
+}
+
+location = /cc-host/v2/agent-index.json {
+    limit_except GET HEAD { deny all; }
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_cache off;
+}
+
+location ~ "^/cc-host/v2/agent-artifacts/[a-f0-9]{64}\.tar\.gz$" {
+    limit_except GET HEAD { deny all; }
+    proxy_pass http://127.0.0.1:8817;
+    proxy_set_header Host $host;
+    proxy_cache off;
+}
+
 location ^~ /cc-host/v1/ {
     limit_except POST { deny all; }
     client_max_body_size 8k;
