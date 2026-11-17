@@ -363,6 +363,8 @@ test('reference file tiles match both themes and forced colors retain readable c
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
 });
 
+const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
 const pasteText = (page: import('@playwright/test').Page, text: string) =>
   page.getByRole('textbox', { name: '消息', exact: true }).evaluate((box, value) => {
     const data = new DataTransfer();
@@ -428,8 +430,10 @@ test('long pasted text becomes a block beside the box, is sent whole and can go 
 
   await input.fill('这是什么意思？\n\n');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
-  expect(await page.locator('main').getAttribute('data-sent')).toBe(
-    `这是什么意思？\n\n\n\n${normalized}`,
+  expect(await page.locator('main').getAttribute('data-sent')).toMatch(
+    new RegExp(
+      `^这是什么意思？\\n\\n\\n\\n<(pasted_text_[a-z0-9]{6})>\\n${escape(normalized)}\\n</\\1>$`,
+    ),
   );
 
   // Back in the box: after the typed text (without piling up blank lines), caret and scroll at its end.
@@ -462,7 +466,11 @@ test('several pasted blocks are told apart, sent in order and survive a short pa
   await expect(page.getByRole('button', { name: '在文本框中显示 第二段日志' })).toBeVisible();
   await expect(page.getByRole('button', { name: '移除粘贴的文本 第二段日志' })).toBeVisible();
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
-  expect(await page.locator('main').getAttribute('data-sent')).toBe(`${first}\n\n${second}`);
+  expect(await page.locator('main').getAttribute('data-sent')).toMatch(
+    new RegExp(
+      `^<(pasted_text_[a-z0-9]{6})>\\n${escape(first)}\\n</\\1>\\n\\n<(pasted_text_[a-z0-9]{6})>\\n${escape(second)}\\n</\\2>$`,
+    ),
+  );
 });
 
 test('a long paste in an SSH project also becomes a block, and a block can be removed', async ({

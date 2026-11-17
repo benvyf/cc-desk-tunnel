@@ -25,7 +25,14 @@ const pasted = [...Array.from({ length: 14 }, () => paragraph), '最后一段里
 );
 const attached = '看看这两个文件\n"C:\\资料\\配置指南.md"\n"C:\\资料\\schema.json"';
 const filesOnly = '"C:\\资料\\只有附件.pdf"';
-const questions = [markdown, middling, pasted, attached, filesOnly];
+// Pasted blocks as the input box sends them (see withPastedText).
+const pastedLog = [
+  'PS C:\\Users\\me> git diff --help',
+  ...Array.from({ length: 40 }, (_, i) => `  --option-${i}`),
+].join('\n');
+const withBlock = `这段输出是什么意思？\n\n<pasted_text_abc123>\n${pastedLog}\n</pasted_text_abc123>\n"C:\\资料\\配置指南.md"`;
+const blockOnly = `<pasted_text_def456>\n${pastedLog}\n</pasted_text_def456>`;
+const questions = [markdown, middling, pasted, attached, filesOnly, withBlock, blockOnly];
 
 async function open(page: Page) {
   const now = new Date().toISOString();
@@ -183,6 +190,57 @@ test('attached files stand above the bubble as small tiles; files alone have no 
   const alone = users.nth(4);
   await expect(alone.locator('.attachment-tile')).toHaveCount(1);
   await expect(alone.locator('.user-bubble')).toHaveCount(0);
+});
+
+test('pasted text sent with a question stands above the bubble as a card that opens the whole text', async ({
+  page,
+}) => {
+  const users = await open(page);
+  const question = users.nth(5);
+  await question.scrollIntoViewIfNeeded();
+  const card = question.locator('.message-attachments .attachment-text');
+  await expect(card).toHaveCount(1);
+  await expect(card.locator('.attachment-kind')).toHaveText('TEXT');
+  await expect(card.locator('.attachment-text-title')).toHaveText(
+    'PS C:\\Users\\me> git diff --help',
+  );
+  await expect(card.locator('.attachment-text-meta')).toContainText('41 行');
+  // The pasted card comes before the file, and the bubble keeps only what was typed: no tags anywhere.
+  await expect(question.locator('.message-attachments [role="listitem"]')).toHaveCount(2);
+  await expect(question.locator('.user-bubble')).toHaveText('这段输出是什么意思？');
+  await expect(question).not.toContainText('pasted_text_');
+  await expect(question.locator('.message-content')).toHaveAttribute(
+    'data-copy-text',
+    `这段输出是什么意思？\n\n${pastedLog}\n"C:\\资料\\配置指南.md"`,
+  );
+  const above = (await question.locator('.message-attachments').boundingBox())!;
+  const bubble = (await question.locator('.user-bubble').boundingBox())!;
+  expect(above.y + above.height).toBeLessThanOrEqual(bubble.y);
+  await card.getByRole('button', { name: /^查看全文/ }).click();
+  const dialog = page.getByRole('dialog', { name: '粘贴的文本' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.pasted-view')).toHaveText(pastedLog);
+  await expect(dialog.getByRole('button', { name: '复制全文' })).toBeVisible();
+  // The text fits the dialog: no part of its box is cut off at the side.
+  const view = (await dialog.locator('.pasted-view').boundingBox())!;
+  const frame = (await dialog.boundingBox())!;
+  expect(view.x + view.width).toBeLessThanOrEqual(frame.x + frame.width - 16);
+
+  await page.screenshot({ path: '.local/sent-paste-dialog.png' });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  // Only pasted text: a card and no empty bubble.
+  const alone = users.nth(6);
+  await alone.scrollIntoViewIfNeeded();
+  await expect(alone.locator('.attachment-text')).toHaveCount(1);
+  await expect(alone.locator('.user-bubble')).toHaveCount(0);
+  await expect(alone).not.toContainText('pasted_text_');
+  await page
+    .locator('.messages, .conversation')
+    .first()
+    .screenshot({ path: '.local/sent-paste.png' })
+    .catch(() => {});
+  await question.screenshot({ path: '.local/sent-paste-card.png' });
 });
 
 test('many pictures wrap into rows of small tiles at the right, and a click opens one whole', async ({

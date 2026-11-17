@@ -1,11 +1,17 @@
 import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
 import type { Turn } from './transcript.ts';
-import { splitAttachmentMessage } from './attachments.ts';
+import { splitAttachmentMessage, splitPastedText } from './attachments.ts';
+import { splitQuoteMessage } from './quotes.ts';
 import { Bookmark } from './icons.tsx';
 import { setPrefs, toggled, usePrefs } from './prefs.ts';
 
 // A fixed-pitch rail beside the transcript; previews never change the scroll position.
+// A question as the list names it: what was typed, else its first pasted text, else that it carried files.
+function questionLabel(text: string) {
+  const pasted = splitPastedText(splitQuoteMessage(splitAttachmentMessage(text).text).text);
+  return pasted.text.trim() || pasted.blocks[0]?.name || '附件消息';
+}
 export default function TurnNavigator({
   turns,
   scroll,
@@ -191,7 +197,7 @@ export default function TurnNavigator({
       {turn && preview && (
         <div className="turn-preview" id={tooltipId} style={{ top: preview.top }}>
           <div className="turn-preview-heading">
-            <strong>{splitAttachmentMessage(turn.question!.text).text || '附件消息'}</strong>
+            <strong>{questionLabel(turn.question!.text)}</strong>
             <button
               type="button"
               className="icon-button"

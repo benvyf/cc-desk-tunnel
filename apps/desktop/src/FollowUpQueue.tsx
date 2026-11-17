@@ -1,7 +1,13 @@
 import { useId, useState } from 'react';
 import { ArrowUp, Check, ListOrdered, Pencil, Trash2, X } from './icons.tsx';
 import { IconButton } from './ui.tsx';
-import { attachmentMessage, messageLimit, splitAttachmentMessage } from './attachments.ts';
+import {
+  attachmentMessage,
+  messageLimit,
+  splitAttachmentMessage,
+  splitPastedText,
+  withPastedText,
+} from './attachments.ts';
 import QuoteChips from './QuoteChips.tsx';
 import { quoteMessage, splitQuoteMessage } from './quotes.ts';
 import type { FollowUp } from './followUps.ts';
@@ -52,7 +58,10 @@ export default function FollowUpQueue({
         {items.map((item) => {
           const attached = splitAttachmentMessage(item.text);
           const quoted = splitQuoteMessage(attached.text);
-          const draft = attachmentMessage(quoteMessage(text, quoted.quotes), attached.files);
+          // Only the typed text is edited here; pasted blocks stay as they were queued.
+          const pasted = splitPastedText(quoted.text);
+          const body = withPastedText(text, pasted.blocks);
+          const draft = attachmentMessage(quoteMessage(body, quoted.quotes), attached.files);
           const tooLong = draft.trim().length > messageLimit;
           const locked = disabled || !!sending;
           return (
@@ -89,8 +98,8 @@ export default function FollowUpQueue({
                     title="保存排队消息"
                     disabled={
                       locked ||
-                      (!text.trim() && !attached.files.length) ||
-                      (!!quoted.quotes.length && !text.trim()) ||
+                      (!body.trim() && !attached.files.length) ||
+                      (!!quoted.quotes.length && !body.trim()) ||
                       tooLong
                     }
                     onClick={() => {
@@ -107,8 +116,14 @@ export default function FollowUpQueue({
               ) : (
                 <>
                   <QuoteChips quotes={quoted.quotes} />
-                  <span className="queued-text" title={quoted.text}>
-                    {quoted.text || '附件消息'}
+                  <span
+                    className="queued-text"
+                    title={pasted.text || pasted.blocks.map((block) => block.name).join('\n')}
+                  >
+                    {pasted.text || pasted.blocks[0]?.name || '附件消息'}
+                    {pasted.blocks.length > 0 && (
+                      <small> · {pasted.blocks.length} 段粘贴文本</small>
+                    )}
                     {attached.files.length > 0 && <small> · {attached.files.length} 个附件</small>}
                   </span>
                   {sending === item.id ? (
@@ -121,7 +136,7 @@ export default function FollowUpQueue({
                         onClick={() => {
                           beginEdit();
                           setEditing(item.id);
-                          setText(quoted.text);
+                          setText(pasted.text);
                         }}
                       >
                         <Pencil />

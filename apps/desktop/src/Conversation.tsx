@@ -54,7 +54,12 @@ import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
 import { MessageAttachments } from './AttachmentTiles.tsx';
-import { attachmentMessage, splitAttachmentMessage } from './attachments.ts';
+import {
+  attachmentMessage,
+  plainPastedText,
+  splitAttachmentMessage,
+  splitPastedText,
+} from './attachments.ts';
 import { LinkPlace, linkTarget } from './links.ts';
 import { FileMentionPaths, producedFiles } from './fileMentions.ts';
 import type { Link } from './links.ts';
@@ -552,9 +557,15 @@ function Message({
   }, [user]);
   const attached = user ? splitAttachmentMessage(item.text) : null;
   const referenced = attached ? splitQuoteMessage(attached.text) : null;
-  const copyBody = referenced?.quotes.length
-    ? attachmentMessage(quoteCopyText(referenced.text, referenced.quotes), attached!.files)
-    : item.text;
+  // Pasted blocks show as cards above the bubble, which keeps the typed text.
+  const pasted = referenced ? splitPastedText(referenced.text) : null;
+  const copyBody =
+    referenced && (referenced.quotes.length || pasted!.blocks.length)
+      ? attachmentMessage(
+          quoteCopyText(plainPastedText(referenced.text), referenced.quotes),
+          attached!.files,
+        )
+      : item.text;
   const stamp = time && (
     <time className="message-time" dateTime={item.at} title={time.full}>
       {user ? time.compact : time.short}
@@ -583,9 +594,9 @@ function Message({
       >
         {attached && referenced ? (
           <>
-            <MessageAttachments items={attached.files} />
-            {(referenced.quotes.length > 0 || referenced.text) && (
-              <Bubble text={referenced.text}>
+            <MessageAttachments items={[...pasted!.blocks, ...attached.files]} />
+            {(referenced.quotes.length > 0 || pasted!.text) && (
+              <Bubble text={pasted!.text}>
                 <QuoteChips quotes={referenced.quotes} />
               </Bubble>
             )}

@@ -1,5 +1,5 @@
 import type { EventPayload } from '@cc-desk-tunnel/protocol';
-import { messageLimit, splitAttachmentMessage } from './attachments.ts';
+import { messageLimit, splitAttachmentMessage, splitPastedText } from './attachments.ts';
 import { splitQuoteMessage } from './quotes.ts';
 
 // Reuse the current session's saved messages and pending queue. This is a view,
@@ -19,7 +19,10 @@ export function inputHistory(
     ...queued.filter(({ id }) => !id || !sent.has(id)).map(({ text }) => text),
   ];
   for (let index = texts.length - 1; index >= 0 && result.length < 200; index--) {
-    const text = splitQuoteMessage(splitAttachmentMessage(texts[index]).text).text;
+    // What was typed: pasted blocks are not brought back into the box as their tags.
+    const text = splitPastedText(
+      splitQuoteMessage(splitAttachmentMessage(texts[index]).text).text,
+    ).text;
     if (text.trim() && text.length <= messageLimit && result.at(-1) !== text) result.push(text);
   }
   return result.reverse();

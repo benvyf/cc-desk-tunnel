@@ -97,3 +97,12 @@ test('only the latest 200 useful entries are offered to keyboard navigation', ()
   assert.equal(result[0], '50');
   assert.equal(result.at(-1), '249');
 });
+
+test('history recalls what was typed, never the tags of pasted blocks', async () => {
+  const { pastedBlock, withPastedText } = await import('../src/attachments.ts');
+  const block = pastedBlock('log\n'.repeat(30));
+  assert.deepEqual(
+    inputHistory([user(withPastedText('看看这个', [block])), user(withPastedText('', [block]))]),
+    ['看看这个'],
+  );
+});

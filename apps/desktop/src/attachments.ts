@@ -37,13 +37,28 @@ export function isPastedBlock(text: string) {
   return text.length >= pastedBlockChars || text.split('\n').length >= pastedBlockLines;
 }
 
-export function pastedBlock(text: string): Attachment {
+// Six lowercase letters or digits: a block's tag in the sent message (see `withPastedText`).
+const tagPattern = /^[a-z0-9]{6}$/;
+function randomTag() {
+  const digits = crypto.getRandomValues(new Uint8Array(6));
+  return Array.from(digits, (value) => (value % 36).toString(36)).join('');
+}
+// A block's tag is the end of its id; ids from elsewhere get one derived from the whole id.
+function tagOf(item: Attachment) {
+  const end = item.id.slice(-6);
+  if (tagPattern.test(end)) return end;
+  let hash = 0;
+  for (const char of item.id) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  return hash.toString(36).padStart(6, '0').slice(-6);
+}
+
+export function pastedBlock(text: string, tag = randomTag()): Attachment {
   const title = text
     .split('\n')
     .map((line) => line.trim())
     .find(Boolean);
   return {
-    id: `text:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+    id: `text:${Date.now().toString(36)}:${tag}`,
     name: (title ?? '粘贴的文本').slice(0, 80),
     text,
     status: 'ready',
@@ -56,13 +71,45 @@ export function pastedSummary(text: string) {
   return `${lines} 行 · ${text.length.toLocaleString('zh-CN')} 字符`;
 }
 
+export function isPastedText(item: Attachment) {
+  return item.text !== undefined && !item.path;
+}
+
 // The question as written: the typed text, then each pasted block, a blank line apart. It is what quotes wrap
-// (see quoteMessage), so blocks belong to the text and not after the quote payload.
+// (see quoteMessage), so blocks belong to the text and not after the quote payload. Each block is wrapped in a
+// tag of its own, which tells Claude it is pasted material and lets a sent message show it as a card again
+// (see `splitPastedText`); the random part keeps a tag in the pasted text itself from ending the block.
 export function withPastedText(text: string, attachments: Attachment[]) {
   const blocks = attachments
-    .filter((item) => item.status === 'ready' && item.text !== undefined && !item.path)
-    .map((item) => item.text!);
+    .filter((item) => item.status === 'ready' && isPastedText(item))
+    .map((item) => {
+      const tag = `pasted_text_${tagOf(item)}`;
+      return `<${tag}>\n${item.text}\n</${tag}>`;
+    });
   return [text, ...blocks].filter(Boolean).join('\n\n');
+}
+
+// The pasted blocks at the end of a sent question, and the typed text before them. Text that only looks like a
+// block somewhere else stays text.
+const trailingBlock = /(?:^|\n\n)<pasted_text_([a-z0-9]{6})>\n([\s\S]*)\n<\/pasted_text_\1>$/;
+export function splitPastedText(text: string) {
+  const blocks: Attachment[] = [];
+  let rest = text;
+  for (let match = trailingBlock.exec(rest); match; match = trailingBlock.exec(rest)) {
+    // The same message gives the same ids on every render; the tag stays the id's end (see `tagOf`).
+    blocks.unshift({
+      ...pastedBlock(match[2], match[1]),
+      id: `text:sent:${match.index}:${match[1]}`,
+    });
+    rest = rest.slice(0, match.index);
+  }
+  return { text: rest, blocks };
+}
+
+// Copy and export: the question with its pasted text in place, without the tags.
+export function plainPastedText(text: string) {
+  const { text: typed, blocks } = splitPastedText(text);
+  return [typed, ...blocks.map((block) => block.text!)].filter(Boolean).join('\n\n');
 }
 
 // Local attachments still reach Claude through the execution channel; previews never enter the message.

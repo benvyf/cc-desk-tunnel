@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronRight, FileCode, FileText, X } from './icons.tsx';
-import { attachmentKind, fileName, pastedSummary } from './attachments.ts';
+import { attachmentKind, fileName, isPastedText, pastedSummary } from './attachments.ts';
 import type { Attachment } from './attachments.ts';
 import { localPicture } from './links.ts';
 import { Modal } from './ui.tsx';
+import { CopyButton } from './copy.tsx';
 
 // A picture's small preview, read by the desktop app; none in the browser or for other files.
 function usePreview(path: string | undefined, kind: string) {
@@ -95,13 +96,58 @@ function SentFile({ item }: { item: Attachment }) {
   );
 }
 
+// A pasted text a sent question carried: the same card as in the input box, opening the whole text to read and copy.
+function SentText({ item }: { item: Attachment }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="attachment-slot attachment-text-slot" role="listitem">
+      <div className="attachment-tile attachment-text" title={item.text!.slice(0, 400)}>
+        <span className="attachment-kind">
+          <FileText />
+          TEXT
+        </span>
+        <span className="attachment-text-title">{item.name}</span>
+        <span className="attachment-text-meta">
+          <span>{pastedSummary(item.text!)}</span>
+          <button
+            type="button"
+            className="attachment-text-expand"
+            aria-label={`查看全文 ${item.name}`}
+            onClick={() => setOpen(true)}
+          >
+            查看全文
+            <ChevronRight />
+          </button>
+        </span>
+      </div>
+      {open &&
+        createPortal(
+          <Modal title="粘贴的文本" onClose={() => setOpen(false)}>
+            <div className="pasted-view-bar">
+              <span>{pastedSummary(item.text!)}</span>
+              <CopyButton text={item.text!} label="复制全文" />
+            </div>
+            <pre className="pasted-view" tabIndex={0}>
+              {item.text}
+            </pre>
+          </Modal>,
+          document.body,
+        )}
+    </div>
+  );
+}
+
 export function MessageAttachments({ items }: { items: Attachment[] }) {
   if (!items.length) return null;
   return (
     <div className="message-attachments" role="list" aria-label="附件">
-      {items.map((item) => (
-        <SentFile key={item.id} item={item} />
-      ))}
+      {items.map((item) =>
+        isPastedText(item) ? (
+          <SentText key={item.id} item={item} />
+        ) : (
+          <SentFile key={item.id} item={item} />
+        ),
+      )}
     </div>
   );
 }
@@ -251,7 +297,7 @@ export default function AttachmentTiles({
       }}
     >
       {items.map((item) =>
-        item.text !== undefined && !item.path ? (
+        isPastedText(item) ? (
           <TextTile
             key={item.id}
             item={item}

@@ -57,6 +57,7 @@ import {
   attachmentMessage,
   messageLimit,
   splitAttachmentMessage,
+  splitPastedText,
   withPastedText,
 } from './attachments.ts';
 import SchedulePanel from './SchedulePanel.tsx';
@@ -1466,9 +1467,11 @@ export function App({
       if (before) {
         const attached = splitAttachmentMessage(before.text);
         const referenced = splitQuoteMessage(attached.text);
-        setDraft(response.sessionId, referenced.text);
+        // Pasted blocks come back as blocks, not as their tags in the box.
+        const pasted = splitPastedText(referenced.text);
+        setDraft(response.sessionId, pasted.text);
         setQuotes(response.sessionId, () => referenced.quotes);
-        setAttachments(response.sessionId, () => attached.files);
+        setAttachments(response.sessionId, () => [...pasted.blocks, ...attached.files]);
       }
       // A slow fork must not take the reader away from a page they have since chosen.
       if (navigation.current === startedAt) {
