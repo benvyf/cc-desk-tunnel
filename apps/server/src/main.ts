@@ -64,7 +64,7 @@ if (supervised && readiness) {
   // A real query proves the expected store opened; /health alone is never a commit signal.
   server.store.database.prepare('SELECT 1').get();
   supervised.onCommit(() => server.managedMaintenance!.release());
-  supervised.onCancel(() => server.managedMaintenance!.release());
+  supervised.onCancel((operationId) => server.managedMaintenance!.release(operationId));
   supervised.ready(readiness);
 }
 // The entry script counts starts of an upgraded program and gives up on it after three that did not get here.

@@ -28,9 +28,10 @@ let supervisor: ManagedServerSupervisor;
 const backend: ManagedBackend = {
   check: (protocol) => supervisor.check(protocol),
   status: () => supervisor.status(),
-  prepare: (confirmation) => supervisor.prepare(confirmation),
-  activate: () => {
-    void supervisor.activate().catch(() => {
+  prepare: (confirmation, operationId) => supervisor.prepare(confirmation, operationId),
+  cancelPrepared: (operationId) => supervisor.cancelPrepared(operationId),
+  activate: (operationId) => {
+    void supervisor.activate(operationId).catch(() => {
       console.error('Managed upgrade failed; administrator attention required.');
       process.exitCode = 1;
     });
@@ -63,7 +64,7 @@ supervisor = new ManagedServerSupervisor({
       process.platform !== 'linux' ||
       process.arch !== 'x64' ||
       process.versions.node.split('.')[0] !== '24' ||
-      readFileSync('/opt/runtime/level', 'utf8').trim() !== '3'
+      readFileSync('/opt/runtime/level', 'utf8').trim() !== '4'
     )
       return false;
     return [

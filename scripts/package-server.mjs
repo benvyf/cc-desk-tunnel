@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import {
   copyFileSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -14,6 +15,7 @@ import { resolve, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import { buildDescriptor, RUNTIME_LEVEL } from '../packages/managed-server/src/index.ts';
+import { extractRelease } from '../apps/server/src/managed-server-files.ts';
 
 const selected = (path) =>
   [
@@ -30,6 +32,13 @@ const selected = (path) =>
     'scripts/retire-ubuntu-cc-backups.py',
     'apps/update-service/web/server-bootstrap.py',
     'apps/update-service/web/fresh-install.py',
+    'apps/update-service/web/host-bootstrap-entry.py',
+    'apps/update-service/web/host-bootstrap.py',
+    'apps/update-service/web/host-operations.py',
+    'apps/update-service/web/host-platform-entry.py',
+    'apps/update-service/web/host-platform.py',
+    'apps/update-service/web/host-updater-install.py',
+    'apps/update-service/web/server-upgrade.cjs',
   ].includes(path) ||
   ['apps/server/src/', 'packages/protocol/src/', 'packages/managed-server/src/', 'deploy/'].some(
     (prefix) => path.startsWith(prefix),
@@ -63,7 +72,7 @@ function normalizeArchiveOwnership(archive) {
   writeFileSync(archive, gzipSync(bytes));
 }
 
-export function packageServer(root, output) {
+export function packageServer(root, output, webBaseline) {
   const git = (...args) =>
     execFileSync('git', args, { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
   if (git('status', '--porcelain', '--untracked-files=normal').toString().trim())
@@ -93,19 +102,27 @@ export function packageServer(root, output) {
       writeFileSync(join(program, path), git('show', `HEAD:${path}`), { mode: 0o644 });
     }
     const web = join(program, 'apps/server/web');
-    execFileSync(
-      process.execPath,
-      [
-        join(root, 'node_modules/vite/bin/vite.js'),
-        'build',
-        '--config',
-        join(root, 'apps/desktop/vite.config.ts'),
-        '--outDir',
-        web,
-        '--emptyOutDir',
-      ],
-      { cwd: root, windowsHide: true, stdio: 'inherit' },
-    );
+    if (webBaseline) {
+      if (webBaseline.release.protocol !== protocol)
+        throw new Error('Preserved Web client must use the target protocol.');
+      const previous = join(staging, 'verified-web-baseline');
+      extractRelease(readFileSync(webBaseline.archive), previous, webBaseline.release);
+      cpSync(join(previous, 'apps/server/web'), web, { recursive: true });
+    } else {
+      execFileSync(
+        process.execPath,
+        [
+          join(root, 'node_modules/vite/bin/vite.js'),
+          'build',
+          '--config',
+          join(root, 'apps/desktop/vite.config.ts'),
+          '--outDir',
+          web,
+          '--emptyOutDir',
+        ],
+        { cwd: root, windowsHide: true, stdio: 'inherit' },
+      );
+    }
     if (!existsSync(join(web, 'index.html'))) throw new Error('Missing Web client build.');
     if (
       git('rev-parse', 'HEAD').toString().trim() !== sourceCommit ||

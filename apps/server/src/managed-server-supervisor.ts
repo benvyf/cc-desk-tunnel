@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import {
   copyFileSync,
   existsSync,
@@ -61,7 +61,7 @@ export type ProgramChild = {
   exited: Promise<void>;
   stop(): Promise<void>;
   commit(): void;
-  cancelMaintenance?(): void;
+  cancelMaintenance?(operationId: string): void;
 };
 type Journal = {
   schema: 1;
@@ -173,13 +173,20 @@ export class ManagedServerSupervisor {
   private transitioning = false;
   private prepared = false;
   private activeOperation?: Promise<void>;
-  private preparing?: { owner: ProgramChild; controller: AbortController; deadline: number };
+  private preparing?: {
+    owner: ProgramChild;
+    controller: AbortController;
+    deadline: number;
+    operationId: string;
+  };
   private preparedOwner?: ProgramChild;
+  private preparedOperation?: string;
   private preparedPrevious: SignedServerIndex | null | undefined;
   private handoffTimer?: NodeJS.Timeout;
   private handoffDeadline = 0;
   private exitedChildren = new WeakSet<ProgramChild>();
   private committedChildren = new WeakSet<ProgramChild>();
+  private readyChildren = new WeakSet<ProgramChild>();
   private missedExit?: ProgramChild;
   private failure?: string;
   private readonly base: CurrentProgram;
@@ -307,20 +314,62 @@ export class ManagedServerSupervisor {
     };
   }
   async status(): Promise<ServerStatus> {
+    const current = this.current();
+    const ready = !!(
+      this.child &&
+      this.readyChildren.has(this.child) &&
+      !this.exitedChildren.has(this.child) &&
+      !this.stopped
+    );
     return {
       schema: 1,
       phase: this.journal.phase,
       current: this.current(),
       target: this.journal.target ? this.verified(this.journal.target).payload.release : null,
       ...(this.failure ? { error: this.failure } : {}),
+      retryable:
+        !this.disabled &&
+        ready &&
+        this.journal.phase === 'failed' &&
+        this.journal.target === null &&
+        !this.transitioning &&
+        !this.prepared &&
+        !this.preparing &&
+        !this.activeOperation &&
+        !this.missedExit,
+      hostDiagnostics: this.disabled
+        ? undefined
+        : {
+            schema: 1,
+            idle: false,
+            serving: false,
+            ready,
+            base: { build: this.base.build, descriptorSha256: this.baseDescriptorHash },
+            program: {
+              build: current.build,
+              protocol: current.protocol,
+              sha256: current.sha256,
+              descriptorSha256: this.journal.current
+                ? this.verified(this.journal.current).payload.release.descriptorSha256
+                : this.baseDescriptorHash,
+            },
+            activity: {
+              tasks: 0,
+              terminals: 0,
+              reviews: 0,
+              pending: 0,
+              registering: 0,
+              connections: 0,
+            },
+          },
     };
   }
-  async prepare(request: InstallConfirmation) {
+  async prepare(request: InstallConfirmation, operationId: string = randomUUID()) {
     requireValue(
       !this.stopped && !this.transitioning && !this.prepared && request.confirmed === true,
       'Upgrade unavailable',
     );
-    const operation = this.prepareRelease(request);
+    const operation = this.prepareRelease(request, operationId);
     this.activeOperation = operation;
     try {
       await operation;
@@ -328,7 +377,7 @@ export class ManagedServerSupervisor {
       if (this.activeOperation === operation) this.activeOperation = undefined;
     }
   }
-  private async prepareRelease(request: InstallConfirmation) {
+  private async prepareRelease(request: InstallConfirmation, operationId: string) {
     requireValue(this.child, 'Missing upgrade owner');
     this.transitioning = true;
     this.failure = undefined;
@@ -337,6 +386,7 @@ export class ManagedServerSupervisor {
       owner = this.child;
     this.preparing = {
       owner,
+      operationId,
       controller,
       deadline: Date.now() + (this.options.prepareTimeoutMs ?? PREPARE_TIMEOUT_MS),
     };
@@ -398,10 +448,11 @@ export class ManagedServerSupervisor {
       checkOwner();
       this.prepared = true;
       this.preparedOwner = owner;
+      this.preparedOperation = operationId;
       this.preparedPrevious = previous;
       this.handoffDeadline = Date.now() + (this.options.handoffTimeoutMs ?? 10000);
       this.handoffTimer = setTimeout(
-        () => this.cancelPrepared('handoff-timeout'),
+        () => this.cancelPrepared(operationId, 'handoff-timeout'),
         this.options.handoffTimeoutMs ?? 10000,
       );
     } catch (error) {
@@ -410,7 +461,7 @@ export class ManagedServerSupervisor {
       this.phase('failed');
       this.failure = 'staging-failed';
       this.transitioning = false;
-      owner.cancelMaintenance?.();
+      owner.cancelMaintenance?.(operationId);
       throw error;
     } finally {
       clearTimeout(timer);
@@ -418,31 +469,41 @@ export class ManagedServerSupervisor {
       if (!this.transitioning && this.missedExit && !this.stopped) this.resumeMissedExit();
     }
   }
-  private cancelPrepared(reason: string) {
-    if (!this.prepared) return;
+  cancelPrepared(operationId: string, reason = 'preparation-canceled') {
+    if (this.preparing?.operationId === operationId) {
+      this.preparing.controller.abort(new Error(reason));
+      return;
+    }
+    if (!this.prepared || this.preparedOperation !== operationId) return;
     clearTimeout(this.handoffTimer);
     this.prepared = false;
     const owner = this.preparedOwner;
     this.preparedOwner = undefined;
+    this.preparedOperation = undefined;
     if (this.preparedPrevious !== undefined) this.journal.previous = this.preparedPrevious;
     this.preparedPrevious = undefined;
     this.journal.target = null;
     this.failure = reason;
     this.phase('failed');
     this.transitioning = false;
-    owner?.cancelMaintenance?.();
+    owner?.cancelMaintenance?.(operationId);
   }
-  async activate() {
+  async activate(operationId = this.preparedOperation) {
+    requireValue(
+      operationId && operationId === this.preparedOperation,
+      'Prepared operation mismatch',
+    );
     if (
       this.prepared &&
       (this.preparedOwner !== this.child ||
         this.exitedChildren.has(this.preparedOwner!) ||
         Date.now() >= this.handoffDeadline)
     )
-      this.cancelPrepared('handoff-expired');
+      this.cancelPrepared(operationId, 'handoff-expired');
     requireValue(this.prepared && !this.stopped && this.journal.target, 'No prepared release');
     clearTimeout(this.handoffTimer);
     this.preparedOwner = undefined;
+    this.preparedOperation = undefined;
     this.preparedPrevious = undefined;
     this.prepared = false;
     const operation = this.switchProgram();
@@ -554,6 +615,11 @@ export class ManagedServerSupervisor {
     };
     const child = await this.options.launch({ root: this.directory(envelope), current, expected });
     this.child = child;
+    // Observe exit immediately, including while the local HTTP readiness probe runs.
+    void child.exited.then(() => {
+      this.exitedChildren.add(child);
+      this.readyChildren.delete(child);
+    });
     let timer: NodeJS.Timeout | undefined;
     try {
       requireValue(!this.stopped, 'Supervisor stopping');
@@ -570,13 +636,17 @@ export class ManagedServerSupervisor {
         }),
       ]);
       requireValue(
-        proof.openedStore === true &&
+        !this.exitedChildren.has(child) &&
+          this.child === child &&
+          !this.stopped &&
+          proof.openedStore === true &&
           proof.effectivePolicy === true &&
           Object.entries(expected).every(
             ([key, value]) => proof[key as keyof ReadyProof] === value,
           ),
         'Readiness proof mismatch',
       );
+      this.readyChildren.add(child);
     } catch (error) {
       await this.stopChild();
       throw error;
@@ -602,7 +672,7 @@ export class ManagedServerSupervisor {
     if (this.stopped || this.child !== child) return;
     this.exitedChildren.add(child);
     this.preparing?.controller.abort(new Error('Preparation owner exited'));
-    if (this.preparedOwner === child) this.cancelPrepared('owner-exited');
+    if (this.preparedOwner === child) this.cancelPrepared(this.preparedOperation!, 'owner-exited');
     if (this.options.onUnexpectedExit && this.committedChildren.has(child)) {
       // PTYs may own separate process groups. Only whole-container teardown can prove all were reaped.
       this.stopped = true;
@@ -656,6 +726,7 @@ export class ManagedServerSupervisor {
   private async stopChild() {
     const child = this.child;
     this.child = undefined;
+    if (child) this.readyChildren.delete(child);
     if (child) {
       await child.stop();
       await child.exited;
@@ -769,7 +840,7 @@ export class ManagedServerSupervisor {
     this.stopped = true;
     this.preparing?.controller.abort(new Error('Supervisor stopping'));
     clearTimeout(this.handoffTimer);
-    this.cancelPrepared('supervisor-stopping');
+    if (this.preparedOperation) this.cancelPrepared(this.preparedOperation, 'supervisor-stopping');
     await this.stopChild();
     await this.activeOperation?.catch(() => {});
   }

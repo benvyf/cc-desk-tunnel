@@ -25,6 +25,7 @@ BASE = 'sha256:365918cb8abf4f4b784502a6bbabeda5704dc928e5c899438199776001b1adb2'
 IMAGE = 'cc-space-preview:0.3.7-build4'
 DESCRIPTOR = '27876f345c2992abf77b925686aedee2af9b151babeef46af2486afb361009ac'
 TARGET = {'build': 4, 'protocol': 21}
+CLI_SHA256 = '4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358'
 NODE = 'ubuntu-cc'
 REBUILT_NODES = {
     'ubuntu-cc-02': {
@@ -355,8 +356,12 @@ def install(b, disconnect_clients=False):
         raise RuntimeError('The confirmed original image changed')
     b.runtime_and_policy(b.CONTAINER)
     candidate = engine.request('GET', '/images/' + b.urllib.parse.quote(IMAGE, safe='') + '/json')['Id']
-    check = "const f=require('fs'),c=require('crypto'),a=require('assert/strict');a.equal(c.createHash('sha256').update(f.readFileSync('/app/SERVER-RELEASE.json')).digest('hex'),process.argv[1]);a.equal(c.createHash('sha256').update(f.readFileSync('/opt/runtime/cli/bin/claude')).digest('hex'),'4503bfe11a6c7fcc1e0b39b5e0d347c04248f750b03b0977b3ad6b531fe6f358');"
-    subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint', '/opt/runtime/node/bin/node', candidate, '-e', check, DESCRIPTOR], check=True, timeout=30, capture_output=True)
+    check = "const f=require('fs'),c=require('crypto'),a=require('assert/strict');a.equal(c.createHash('sha256').update(f.readFileSync('/app/SERVER-RELEASE.json')).digest('hex'),process.argv[1]);a.equal(c.createHash('sha256').update(f.readFileSync('/opt/runtime/cli/bin/claude')).digest('hex'),process.argv[2]);"
+    try:
+        subprocess.run(['docker', 'run', '--rm', '--network=none', '--read-only', '--entrypoint', '/opt/runtime/node/bin/node', candidate, '-e', check, DESCRIPTOR, CLI_SHA256], check=True, timeout=30, capture_output=True)
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError('Candidate descriptor/CLI verification failed before cold backup or service changes; ' +
+                           (error.stderr or b'').decode(errors='replace')) from error
     check_space()
     stamp = time.strftime('%Y%m%dT%H%M%SZ', time.gmtime()) + '-' + os.urandom(4).hex()
     backup = ROOT / ('backup-' + stamp)

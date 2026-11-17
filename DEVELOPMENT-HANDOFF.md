@@ -84,6 +84,18 @@ ubuntu-cc 升级 19 报 Archive hash/size mismatch：签名目标为 19，但迁
 
 历史必要冷备份与记录摘要不一致是另一个未定因问题；不改写摘要、不删除备份，20 增加具体路径及 expected/actual 诊断。此前“签名准入/agent 选路通过”不能代表脚本内部的第二次下载也正确，发布门槛已补齐。详见[Build 20](docs/RELEASE-SERVER-BUILD20.md)及[证据](docs/evidence/server20-download-fix-2026-11-07.json)。续期引用 `/root/.cc-update-admin/linux-build20-preparation/source` 不得清理，下方 19 发行记录为历史。
 
+### 2026-11-16 Build 26 的 v5 旧通道确认修复已上线
+
+Build 26 已发布（镜像独立构建/回退资源轮转/CLI 校验修复），但上轮遗漏实际 UI 的工作流确认接口，用户被中心的 signed v4 bridge 校验拦截。现已基于实际运行中心定点更新 host-updates.ts 与 host-workflows.ts，精确支持 Build 26+ / 协议 24 / node24-cli2.1.325-v5，保留旧 v4 与签名、确认、保留权和普通 failed 状态拒绝。真实签名 26 的原 HTTP 409 已复现，部署后实际模块在隔离 SQLite 的 6 组 HTTP 回归通过；四个签名索引/26 包、六节点版本与旧任务保持，无生产任务创建。用户刷新并按需重新登录后再确认 26。完整现行中心不在此分支，不能直接用本分支整体覆盖它；追溯实际清单与精确 overlay 补丁。见[修复和证据](docs/ADMIN-BUILD26-BRIDGE-RUNTIME-FIX.md)、[Build 26](docs/RELEASE-SERVER-BUILD26-IMAGE-LIFECYCLE.md)。
+
+### 2026-11-16 Build 24：修复 Build 23 ENOSPC，保留 30 GB 节点容量
+
+用户实机 Docker 29.9.1 展开约 7 GB 旧镜像，npm ENOSPC；原服务 healthy，清理构建缓存后恢复约 5.1 GiB。用户选择不扩容并要求升级默认先清理。已发布 Linux Build 24（源码 `d671527edb61470ecebbdd7b0ca370cf9d41a4ea`，协议24、CLI325/SDK0.3.286不变）：固定精简 Ubuntu 基础层重建、去掉运行时重复层，默认引用保护清理旧 runtime 解包缓存，5 GiB 构建预算及512MiB运行余量监测，失败自动清理。实际 BuildKit 构建最大额外占用约4.71GB，最低剩余902MB，镜像Docker报告约582MB；真实PTY/离线健康、Linux35项、CLI模型/SDK/审核范围、公开完整下载/签名、迁移脚本真实内部HTTP与严格解包、实际systemd/agent选路通过，revision42。Windows35/中心/节点任务不改，原失败23任务保留，Ubuntu仍21；用户须刷新中心创建24新任务，勿重试23。详见[发行与验证](docs/RELEASE-SERVER-BUILD24-LEAN.md)及[证据](docs/evidence/linux-build24-lean-2026-11-16.json)。
+
+### 2026-11-16 Linux Build 23 / Claude CLI 2.1.325 已发布
+
+以线上 Build 22 为基线发布 CLI 2.1.325（Fable 5.2），保持 SDK 0.3.286、协议 24、138 个原 Web 资源及更新恢复保护；源码 `a7ffa819a7f030b9435dc093cd91a3376375651f`。新增不可变首次安装入口 v5，旧脚本保持；公开签名、完整下载、真实迁移内部 HTTP 下载/验签/解包、实际 systemd 续期及选路验证通过，Linux revision 40。Windows 35 不变，三台 Ubuntu 仍为 21，未下发节点安装任务。用户须刷新中心生成 Build 23 新指令；不要在宿主机直接更新 CLI。详细真实/模拟范围、测试脚本旧预期、更大原生文件读取上限及清理记录见 [发行记录](docs/RELEASE-SERVER-BUILD23-CLI325.md) 与 [证据](docs/evidence/linux-build23-cli325-2026-11-16.json)。
+
 ### 2026-11-07 Windows Build 32 / Linux Build 19 已发布，Ubuntu 由用户自行升级
 
 发行源码 `86cdb0020eb684e474d6d60d0cb6cea6b14c4b6f`，均为 0.3.10 / 协议 24。管理中心 pilot 已提供客户端 Build 32、服务端 Build 19；旧制品不覆盖，stable 与线上管理中心运行文件保持。新签名服务端入口保留默认空间准备、空闲受控断开、冷备份/恢复及上一套必要回退，精确支持 Build 16 等旧基线和新增 Build 18。先在管理中心刷新并获取 Build 19 新任务/指令，由用户执行，再从客户端内更新到 32；本轮未下发节点安装任务，三台仍上报 16，03 既有 failed phase 未改写，04～06 未新增授权。

@@ -36,6 +36,7 @@ test('server archives contain a fresh Web build without local data or desktop de
     'CHANGELOG.md',
     'apps/server/package.json',
     'apps/server/src',
+    'apps/update-service/web',
     'apps/desktop/package.json',
     'packages/protocol/package.json',
     'packages/protocol/src',
@@ -101,6 +102,16 @@ test('server archives contain a fresh Web build without local data or desktop de
     'release archive only contains regular files',
   );
   assert.ok(entries.includes('packages/managed-server/src/index.ts'));
+  for (const name of [
+    'host-operations.py',
+    'host-platform.py',
+    'host-bootstrap.py',
+    'server-upgrade.cjs',
+  ])
+    assert.ok(
+      entries.includes(`apps/update-service/web/${name}`),
+      `Archive omits migration dependency ${name}`,
+    );
   for (const path of [
     'apps/server/src/account-presentation.ts',
     'packages/protocol/src/account-display.ts',
@@ -152,8 +163,22 @@ test('server archives contain a fresh Web build without local data or desktop de
     'desktop build stays unchanged',
   );
   assert.deepEqual(readdirSync(join(directory, '.local')), ['server.tar.gz']);
-  const previous = readFileSync(output);
   const builder = readFileSync(join(directory, 'node_modules/vite/bin/vite.js'), 'utf8');
+  put('node_modules/vite/bin/vite.js', 'process.exit(91);');
+  packageServer(directory, output, { archive: output, release });
+  assert.equal(
+    execFileSync(tar, ['-xOzf', output, 'apps/server/web/assets/current.js']).toString(),
+    'fresh web build',
+  );
+  assert.throws(
+    () =>
+      packageServer(directory, output, {
+        archive: output,
+        release: { ...release, sha256: '0'.repeat(64) },
+      }),
+    /digest mismatch/i,
+  );
+  const previous = readFileSync(output);
   put('node_modules/vite/bin/vite.js', builder + "\nwriteFileSync('package.json','{}');\n");
   assert.throws(() => packageServer(directory, output), /worktree changed/i);
   assert.deepEqual(readFileSync(output), previous);

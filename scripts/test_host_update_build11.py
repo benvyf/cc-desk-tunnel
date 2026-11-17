@@ -51,7 +51,7 @@ class MigrationTests(unittest.TestCase):
         run.assert_called_once_with(['docker','builder','prune','--all','--force'],check=True,timeout=300)
 
     def baseline(self):
-        return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, lock=m.BASE_LOCK)
+        return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, cli=m.BASE_CLI, lock=m.BASE_LOCK)
 
     def release(self):
         return dict(build=m.BUILD, protocol=24, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
@@ -65,7 +65,7 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
 
     def test_installed_exact_target_is_idempotent(self):
-        value=self.baseline();value.update(descriptor='b'*64,build=m.BUILD,protocol=24,lock=m.LOCK)
+        value=self.baseline();value.update(descriptor='b'*64,build=m.BUILD,protocol=24,lock=m.LOCK,cli=m.CLI)
         self.assertTrue(m.check_baseline(value,self.release()))
         value['protocol']=22
         with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
@@ -150,16 +150,16 @@ class MigrationTests(unittest.TestCase):
         baseline['lock'] = m.PREVIOUS_LOCK
         with self.assertRaises(RuntimeError): m.check_baseline(baseline, self.release())
 
-    def test_runtime_is_inherited_without_downloading_or_executing_claude(self):
-        recipe=m.dockerfile('sha256:'+'c'*64)
-        self.assertTrue(recipe.startswith('FROM sha256:'))
+    def test_runtime_is_built_from_a_clean_pinned_base_without_executing_claude(self):
+        recipe=m.dockerfile()
+        self.assertTrue(recipe.startswith('FROM ' + m.BASE_IMAGE))
         self.assertNotIn('rm -rf /app /opt/runtime/node',recipe)
-        self.assertNotIn('COPY --chown=root:root runtime/node',recipe)
+        self.assertIn('COPY --chown=root:root runtime/',recipe)
         self.assertIn('program/deploy/docker/entrypoint.sh',recipe)
         self.assertNotIn('claude --',recipe)
 
     def test_retention_uses_current_container_and_does_not_fail_upgrade_when_cleanup_is_uncertain(self):
-        retire = SimpleNamespace(retire=lambda *args, **kwargs: None)
+        retire = SimpleNamespace(retire=lambda *args, **kwargs: None, rotate=lambda *args, **kwargs: None)
         with patch.object(m, 'load', return_value=retire), patch.object(retire, 'retire') as call:
             m.retain_previous_backup('fixture-container')
             call.assert_called_once_with(m.ROOT, container_name='fixture-container', apply=True)
@@ -197,7 +197,7 @@ class MigrationTests(unittest.TestCase):
             bundle=buffer.getvalue();release=self.release()
             release.update(sourceCommit='f'*40,size=len(bundle),sha256=hashlib.sha256(bundle).hexdigest(),descriptorSha256=hashlib.sha256(db).hexdigest())
             confirmed=root/'release.json';confirmed.write_text(json.dumps(release))
-            calls=[];source=dict(Id='original',Image='sha256:'+'c'*64,Mounts=[],Config={},HostConfig={})
+            calls=[];source=dict(Id='original',Image='sha256:'+'c'*64,State={'Health':{'Status':'healthy'}},Mounts=[],Config={},HostConfig={})
             real_load=m.load;real_helper=real_load('real_helper',ROOT/'apps/update-service/web/server-bootstrap.py')
             def verify(_):
                 if failure=='signature':raise RuntimeError('bad signature')
@@ -229,16 +229,19 @@ class MigrationTests(unittest.TestCase):
                     raise RuntimeError('Insufficient backup/recovery space')
             legacy=SimpleNamespace(check_idle=idle,check_space=space,install=install_fake)
             def load(name,path):
-                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify),'runtime_cutover':legacy}.get(name) or real_load(name,path)
+                return {'host_backup_retirement':SimpleNamespace(retire=lambda *_args,**_kwargs:calls.append('retention')),'host_image_retirement':SimpleNamespace(rotate=lambda *_args,**_kwargs:None),'host_update_cleanup':SimpleNamespace(clean=lambda *_:calls.append('cleanup')),'message_upgrade_support':review,'runtime_bootstrap_support':helper,'runtime_signed_release':SimpleNamespace(download=lambda *_:None,verify_index=verify,provision_runtime=lambda work,*_: (work/'runtime').mkdir()),'runtime_cutover':legacy}.get(name) or real_load(name,path)
             def run(args,**kwargs):
                 if args==['docker','builder','prune','--all','--force']:
                     calls.append('cleanup')
                     return SimpleNamespace(returncode=0)
                 if args[:3]==['docker','image','inspect']:
                     if len(args)==4:return SimpleNamespace(returncode=1)
-                    return SimpleNamespace(returncode=0,stdout=json.dumps([dict(Id='candidate',RootFS=dict(Layers=['wrong' if failure=='layers' else 'base','new'])),dict(RootFS=dict(Layers=['base']))]).encode())
+                    return SimpleNamespace(returncode=0,stdout=json.dumps([dict(Id='candidate',Size=2*1024**3,RootFS=dict(Layers=['wrong' if failure=='layers' else 'base','new'])),dict(RootFS=dict(Layers=['base']))]).encode())
                 return SimpleNamespace(returncode=0)
-            with patch.object(m,'ROOT',root/'private'),patch.object(m,'load',side_effect=load),patch.object(m,'verify_runtime',return_value=self.baseline()),patch.object(m,'candidate_check'),patch.object(m,'check_docker_storage'),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=20*1024**3)),patch.object(m.os,'geteuid',return_value=0),patch.object(m.socket,'gethostname',return_value=node),patch.object(m.subprocess,'run',side_effect=run),patch('sys.argv',['apply','--release',str(confirmed),*(['--install'] if install else [])]):
+            def build(*_):
+                calls.append('build')
+                if failure=='build':raise RuntimeError('fixture build failure')
+            with patch.object(m,'HOST_DATA',root/'host-state'),patch.object(m,'live_probe',return_value={}),patch.object(m,'authenticate_selected',return_value={}),patch.object(m,'host_preflight'),patch.object(m,'verify_frozen_sources'),patch.object(m,'ROOT',root/'private'),patch.object(m,'load',side_effect=load),patch.object(m,'verify_runtime',return_value={**self.baseline(),'journal':{}}),patch.object(m,'build_candidate',side_effect=build),patch.object(m,'candidate_check'),patch.object(m,'check_docker_storage'),patch.object(m.shutil,'disk_usage',return_value=SimpleNamespace(free=20*1024**3)),patch.object(m.os,'geteuid',return_value=0),patch.object(m.socket,'gethostname',return_value=node),patch.object(m.subprocess,'run',side_effect=run),patch('sys.argv',['apply','--release',str(confirmed),*(['--install'] if install else [])]):
                 if failure:
                     with self.assertRaises(RuntimeError):m.main()
                 else:m.main()
@@ -258,7 +261,7 @@ class MigrationTests(unittest.TestCase):
             with self.subTest(node=node):self.exercise(node=node,install=True)
 
     def test_admission_and_preflight_failures_never_cut_over(self):
-        for failure in ['signature','busy','layers','preflight','space-after-build']:
+        for failure in ['signature','busy','layers','preflight','space-after-build','build']:
             with self.subTest(failure=failure):self.exercise(install=True,failure=failure)
 
 

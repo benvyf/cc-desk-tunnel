@@ -39,6 +39,25 @@ export type ServerStatus = {
   current: CurrentProgram;
   target: ServerRelease | null;
   error?: string;
+  hostMaintenance?: boolean;
+  retryable?: boolean;
+  serving?: boolean;
+  hostDiagnostics?: {
+    schema: 1;
+    idle: boolean;
+    serving: boolean;
+    ready: boolean;
+    base: { build: number; descriptorSha256: string };
+    program: { build: number; protocol: number; sha256: string | null; descriptorSha256: string };
+    activity: {
+      tasks: number;
+      terminals: number;
+      reviews: number;
+      pending: number;
+      registering: number;
+      connections: number;
+    };
+  };
 };
 export type InstallConfirmation = {
   clientProtocol: number;
@@ -49,10 +68,18 @@ export type InstallConfirmation = {
 export type ManagedBackend = {
   check(protocol: number): Promise<ServerCheck>;
   status(): Promise<ServerStatus>;
-  prepare(request: InstallConfirmation): Promise<void>;
-  activate(): void;
+  prepare(request: InstallConfirmation, operationId?: string): Promise<void>;
+  activate(operationId?: string): void;
+  cancelPrepared?(operationId: string): Promise<void> | void;
 };
-export type MaintenanceAdmission = { enter(disconnectClients?: boolean): boolean; recoverRelay?(): boolean; leave(): void; busy?(): boolean; serving?(): boolean };
+export type MaintenanceAdmission = {
+  enter(disconnectClients?: boolean): boolean;
+  recoverRelay?(): boolean;
+  leave(): void;
+  busy?(): boolean;
+  serving?(): boolean;
+  activity?(): NonNullable<ServerStatus['hostDiagnostics']>['activity'];
+};
 const PREFIX = '/cc-managed/server/v1/';
 export function managedServerHandler(options: {
   token: string;
@@ -62,11 +89,19 @@ export function managedServerHandler(options: {
   readiness?: () => unknown;
   nonce?: string;
   authorizeDesktopTicket?: (ticket: string) => Promise<unknown>;
+  onCancel?: (callback: (operationId: string) => void) => void;
 }) {
   requireValue(options.token.length >= 24, 'Managed API requires existing strong service token');
   const expected = createHash('sha256').update(options.token).digest();
   const throttle = new Throttle();
   let relayLease: { id: string; expires: number; timer: ReturnType<typeof setTimeout> } | undefined;
+  let install: { id: string; gated: boolean } | undefined;
+  const releaseInstall = (operationId: string) => {
+    if (install?.id !== operationId) return;
+    if (install.gated) options.admission.leave();
+    install = undefined;
+  };
+  options.onCancel?.(releaseInstall);
   function releaseRelay() {
     if (!relayLease) return;
     clearTimeout(relayLease.timer);
@@ -126,6 +161,10 @@ export function managedServerHandler(options: {
         return;
       }
       throttle.succeed(address);
+      if (route === 'host-install' && !serviceAuthorized) {
+        reply(403);
+        return;
+      }
       if (relayLease && relayLease.expires <= Date.now()) releaseRelay();
       if (route === 'relay-enter' || route === 'relay-leave') {
         if (
@@ -151,6 +190,7 @@ export function managedServerHandler(options: {
         const recovery = request.headers['x-cc-relay-recovery'] === 'disconnected';
         if (
           relayLease ||
+          install ||
           !(recovery ? options.admission.recoverRelay?.() : options.admission.enter(true))
         ) {
           reply(409, { error: 'busy' });
@@ -168,7 +208,26 @@ export function managedServerHandler(options: {
       }
 
       if (request.method === 'GET' && route === 'status') {
-        reply(200, await options.backend.status());
+        const status = await options.backend.status();
+        if (
+          status.hostDiagnostics &&
+          options.admission.activity &&
+          options.admission.serving &&
+          options.admission.busy
+        ) {
+          const serving = options.admission.serving() && status.hostDiagnostics.ready;
+          const idle = serving && !options.admission.busy();
+          status.hostDiagnostics = {
+            ...status.hostDiagnostics,
+            serving,
+            idle,
+            activity: options.admission.activity(),
+          };
+          status.serving = serving;
+          status.hostMaintenance = true;
+          status.retryable = status.retryable === true && serving;
+        }
+        reply(200, status);
         return;
       }
       if (request.method === 'GET' && route === 'ready' && options.readiness && options.nonce) {
@@ -182,7 +241,7 @@ export function managedServerHandler(options: {
         reply(200, options.readiness());
         return;
       }
-      if (request.method !== 'POST' || !['check', 'install'].includes(route)) {
+      if (request.method !== 'POST' || !['check', 'install', 'host-install'].includes(route)) {
         reply(404);
         return;
       }
@@ -212,7 +271,7 @@ export function managedServerHandler(options: {
           Number.isSafeInteger(input.clientProtocol) && (input.clientProtocol as number) > 0,
           'Invalid client protocol',
         );
-        if (route === 'install')
+        if (route !== 'check')
           requireValue(
             input.confirmed === true &&
               Number.isSafeInteger(input.build) &&
@@ -231,26 +290,59 @@ export function managedServerHandler(options: {
         reply(200, await options.backend.check(input.clientProtocol as number));
         return;
       }
-      // enter() is synchronous: close every admission gate, then recheck all activity before any await.
-      if (!options.admission.enter()) {
+      // The typed management reservation spans asynchronous staging and handoff.
+      if (install || relayLease) {
         reply(409, { error: 'busy' });
         return;
       }
+      const operationId = randomUUID();
+      install = { id: operationId, gated: false };
+      const host = route === 'host-install';
+      // Normal installs retain their enter-before-prepare contract.
+      if (!host) {
+        if (!options.admission.enter()) {
+          releaseInstall(operationId);
+          reply(409, { error: 'busy' });
+          return;
+        }
+        install.gated = true;
+      }
+      let cancellationAttempted = false;
+      const cancelAndRelease = async () => {
+        cancellationAttempted = true;
+        try {
+          await options.backend.cancelPrepared?.(operationId);
+        } finally {
+          releaseInstall(operationId);
+        }
+      };
       try {
-        await options.backend.prepare(input as InstallConfirmation);
+        await options.backend.prepare(input as InstallConfirmation, operationId);
+        if (install?.id !== operationId) throw new Error('Preparation canceled');
+        // Host staging leaves business open. Only this synchronous final gate may
+        // disconnect idle clients, after every actual activity collection is checked.
+        if (host) {
+          if (!options.admission.enter(true)) {
+            await cancelAndRelease();
+            reply(409, { error: 'busy' });
+            return;
+          }
+          install.gated = true;
+        }
         let activated = false;
         const activate = () => {
           if (!activated) {
             activated = true;
-            options.backend.activate();
+            options.backend.activate(operationId);
           }
         };
         response.once('finish', activate);
         response.once('close', activate);
         if (response.destroyed) activate();
         reply(202, { accepted: true, build: input.build, sha256: input.sha256 });
-      } catch {
-        options.admission.leave();
+      } catch (error) {
+        if (cancellationAttempted) throw error;
+        await cancelAndRelease();
         reply(409, { error: 'release-not-installable' });
       }
     };

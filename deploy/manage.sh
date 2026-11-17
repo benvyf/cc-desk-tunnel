@@ -138,7 +138,7 @@ summary() {
   echo "  需放行端口 $([[ "$MODE" = nginx ]] && echo "nginx 的 443/TCP" || echo "$CONTROL_PORT/TCP")"
   echo "  数据目录   $DATA_DIR"
   echo "  部署配置   $CONFIG"
-  echo "  默认构建   固定官方 CLI 2.1.295；实际版本以目标镜像为准"
+  echo "  默认构建   固定官方 CLI 2.1.325；实际版本以目标镜像为准"
   echo "  审核配置   ${MANAGED_CONFIG_DIR:-未接入；启动前须导入节点配置}（不显示密钥）"
   id="$(dc ps -q proxy 2>/dev/null || true)"
   echo "  容器状态   $([[ -n "$id" ]] && docker inspect --format '{{.State.Health.Status}}' "$id" || echo 未启动)"

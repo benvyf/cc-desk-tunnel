@@ -114,6 +114,8 @@ type Peer = {
   device?: Device;
   tunnel?: Tunnel;
   registering: boolean;
+  registered: boolean;
+  authenticating: boolean;
   // The client said it was closing the connection: nothing is kept for it to come back to.
   left: boolean;
   // The client keeps the plan quota current on its screen, so the service reads it while runs go on.
@@ -316,26 +318,40 @@ export function createProxyServer(options: ServerOptions) {
   let closing = false;
   let maintenance = options.managed?.initialMaintenance ?? false;
   let webRequests = 0;
-  function maintenanceBusy(disconnectClients: boolean) {
+  let cancelInstall: ((operationId: string) => void) | undefined;
+  function maintenanceActivity() {
+    const bounded = (n: number) => Math.max(0, Math.min(1_000_000, n));
+    let active = 0;
     try {
-      return !!(
-        closing ||
-        runs.size ||
-        terminals.size ||
-        mutations.size ||
-        reviewing.size ||
-        inputQueues.size ||
-        tasks.size ||
-        tunnelTasks.size ||
-        webRequests ||
-        store.list().some((session) => session.activeRun) ||
-        [...peers].some((peer) => peer.registering || (!disconnectClients && peer.authenticated))
-      );
+      active = store.list().filter((session) => session.activeRun).length;
     } catch {
-      return true;
+      active = 1_000_000;
     }
+    return {
+      tasks: bounded(runs.size + active + tasks.size + tunnelTasks.size),
+      terminals: bounded(terminals.size),
+      reviews: bounded(reviewing.size),
+      pending: bounded(mutations.size + inputQueues.size + webRequests),
+      registering: bounded(
+        [...peers].filter((peer) => peer.registering || peer.authenticating).length,
+      ),
+      connections: bounded([...peers].filter((peer) => peer.authenticated).length),
+    };
+  }
+  function maintenanceBusy(disconnectClients: boolean) {
+    const a = maintenanceActivity();
+    return !!(
+      closing ||
+      a.tasks ||
+      a.terminals ||
+      a.reviews ||
+      a.pending ||
+      a.registering ||
+      (!disconnectClients && a.connections)
+    );
   }
   const managedMaintenance = {
+    activity: maintenanceActivity,
     recoverRelay() {
       if (maintenance || closing) return false;
       // The root host controller has confirmed its old SSH transport is disconnected.
@@ -367,8 +383,9 @@ export function createProxyServer(options: ServerOptions) {
     leave() {
       maintenance = false;
     },
-    release() {
-      maintenance = false;
+    release(operationId?: string) {
+      if (operationId) cancelInstall?.(operationId);
+      else maintenance = false; // Verified startup commit releases the initial gate.
     },
   };
   const adapter = options.claude ? 'claude-code' : 'simulation';
@@ -413,6 +430,9 @@ export function createProxyServer(options: ServerOptions) {
         token: options.token,
         backend: options.managed.backend,
         admission: managedMaintenance,
+        onCancel: (callback) => {
+          cancelInstall = callback;
+        },
         address: addressOf,
         readiness: options.managed.readiness,
         nonce: options.managed.nonce,
@@ -2276,7 +2296,8 @@ export function createProxyServer(options: ServerOptions) {
         peer.socket.close(4001, 'Desktop authorization unavailable');
         return false;
       }
-      if (closing || peer.socket.readyState !== WebSocket.OPEN) return false;
+      if (maintenance || closing || peer.left || peer.socket.readyState !== WebSocket.OPEN)
+        return false;
     }
     if (!allowed) refuse(peer.address);
     else throttle.succeed(peer.address);
@@ -2381,11 +2402,17 @@ export function createProxyServer(options: ServerOptions) {
     return true;
   }
   function registerTunnel(peer: Peer, credentials: TunnelCredentials) {
-    if (!peer.tunnel || peer.registering || credentials.connectionId !== peer.id) {
+    if (
+      !peer.tunnel ||
+      peer.registered ||
+      peer.registering ||
+      credentials.connectionId !== peer.id
+    ) {
       peer.socket.close(4002, 'Inactive tunnel registration');
       return;
     }
     peer.registering = true;
+    peer.registered = true;
     track(
       peer.tunnel
         .accept(
@@ -2406,6 +2433,9 @@ export function createProxyServer(options: ServerOptions) {
                 : '服务端经隧道连不上本机的 SSH 服务。\n隧道已经建立，但探测命令没有得到应答：请重新连接；反复出现时在“设置 → 常规”里打开连接日志查看原因。',
           });
           peer.socket.close(4003, 'SSH probe failed');
+        })
+        .finally(() => {
+          peer.registering = false;
         }),
       tunnelTasks,
     );
@@ -2625,6 +2655,8 @@ export function createProxyServer(options: ServerOptions) {
         proxied: context?.proxied,
         name: '',
         registering: false,
+        registered: false,
+        authenticating: false,
         left: false,
         subscriptions: new Set(),
         responses: new Map(),
@@ -2715,6 +2747,7 @@ export function createProxyServer(options: ServerOptions) {
           greeted = true;
           const channel =
             !peer.browser && (value as { type?: unknown } | null)?.type === 'tunnel.attach';
+          peer.authenticating = true;
           void Promise.resolve(channel ? attachChannel(peer, value) : authenticate(peer, value))
             .then((accepted) => {
               if (!accepted) return;
@@ -2724,7 +2757,10 @@ export function createProxyServer(options: ServerOptions) {
               if (pendingIdentity !== undefined && peer.authenticated)
                 socket.emit('message', Buffer.from(JSON.stringify(pendingIdentity)), false);
             })
-            .catch(() => socket.close(4001, 'Authentication failed'));
+            .catch(() => socket.close(4001, 'Authentication failed'))
+            .finally(() => {
+              peer.authenticating = false;
+            });
           return;
         }
         if (peer.access && peer.access.validUntil <= Date.now()) {
