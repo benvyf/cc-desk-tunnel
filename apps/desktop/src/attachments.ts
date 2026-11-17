@@ -51,20 +51,26 @@ export function pastedBlock(text: string): Attachment {
 }
 
 export function pastedSummary(text: string) {
-  return `${text.split('\n').length} 行 · ${text.length.toLocaleString('zh-CN')} 字`;
+  // Text copied from a terminal or an editor usually ends with a line break, which starts no line of its own.
+  const lines = text.replace(/\n$/, '').split('\n').length;
+  return `${lines} 行 · ${text.length.toLocaleString('zh-CN')} 字符`;
 }
 
-// Pasted blocks follow the typed text; local attachments still reach Claude through the execution channel as
-// quoted path lines at the end, and previews never enter the message.
-export function attachmentMessage(text: string, attachments: Attachment[]) {
+// The question as written: the typed text, then each pasted block, a blank line apart. It is what quotes wrap
+// (see quoteMessage), so blocks belong to the text and not after the quote payload.
+export function withPastedText(text: string, attachments: Attachment[]) {
   const blocks = attachments
     .filter((item) => item.status === 'ready' && item.text !== undefined && !item.path)
     .map((item) => item.text!);
-  const body = [text, ...blocks].filter(Boolean).join('\n\n');
+  return [text, ...blocks].filter(Boolean).join('\n\n');
+}
+
+// Local attachments still reach Claude through the execution channel; previews never enter the message.
+export function attachmentMessage(text: string, attachments: Attachment[]) {
   const paths = attachments
     .filter((item) => item.status === 'ready' && item.path)
     .map((item) => `"${item.path}"`);
-  return [body, ...paths].filter(Boolean).join('\n');
+  return [text, ...paths].filter(Boolean).join('\n');
 }
 
 // Only full, quoted path lines at the end of a user message are attachment references. Inline paths,

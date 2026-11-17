@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import Composer from '../../src/Composer.tsx';
 import { useDrafts } from '../../src/drafts.ts';
-import { attachmentMessage } from '../../src/attachments.ts';
+import { attachmentMessage, withPastedText } from '../../src/attachments.ts';
 import type { Session } from '@cc-desk-tunnel/protocol';
 
 export function mount() {
@@ -100,7 +100,12 @@ export function mount() {
           metrics={null}
           openAccount={() => {}}
           send={(text) => {
-            root.dataset.sent = text ?? attachmentMessage(drafts[id] ?? '', attachments[id] ?? []);
+            root.dataset.sent =
+              text ??
+              attachmentMessage(
+                withPastedText(drafts[id] ?? '', attachments[id] ?? []),
+                attachments[id] ?? [],
+              );
           }}
           compact={() => {}}
           refresh={() => {}}

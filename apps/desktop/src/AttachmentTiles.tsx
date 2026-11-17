@@ -143,6 +143,7 @@ function TextTile({
             <button
               type="button"
               className="attachment-text-expand"
+              aria-label={`在文本框中显示 ${item.name}`}
               disabled={disabled}
               onClick={expand}
             >

@@ -53,7 +53,12 @@ import SessionBar from './SessionBar.tsx';
 import { isHere, thisDevice } from './device.ts';
 import { isMac, selfUpdating } from './platform.ts';
 import { useDrafts } from './drafts.ts';
-import { attachmentMessage, messageLimit, splitAttachmentMessage } from './attachments.ts';
+import {
+  attachmentMessage,
+  messageLimit,
+  splitAttachmentMessage,
+  withPastedText,
+} from './attachments.ts';
 import SchedulePanel from './SchedulePanel.tsx';
 import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
@@ -1517,8 +1522,9 @@ export function App({
     const attached = selected ? (attachmentDrafts[selected.id] ?? []) : [];
     if (override === undefined && attached.some((item) => item.status !== 'ready')) return;
     const refs = selected ? (quoteDrafts[selected.id] ?? []) : [];
-    if (override === undefined && refs.length && !draft.trim()) return;
-    const text = override ?? attachmentMessage(quoteMessage(draft, refs), attached);
+    const body = withPastedText(draft, attached);
+    if (override === undefined && refs.length && !body.trim()) return;
+    const text = override ?? attachmentMessage(quoteMessage(body, refs), attached);
     if (!selected || !text.trim() || inputDisabled || terminalOwns(selected.id)) return;
     if (text.trim().length > messageLimit) {
       setError(`消息过长（含附件），请缩短正文或移除部分附件（最多 ${messageLimit} 字符）。`);

@@ -9,6 +9,7 @@ import {
   isPastedBlock,
   messageLimit,
   pastedBlock,
+  withPastedText,
 } from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
@@ -218,14 +219,16 @@ export default function Composer({
   const [dropping, setDropping] = useState(false);
   const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const attachmentBlocked = attachments.some((item) => item.status !== 'ready');
+  // The typed text with its pasted blocks: what quotes wrap and what makes a message worth sending.
+  const body = withPastedText(draft, attachments);
   const messageTooLong =
-    attachmentMessage(quoteMessage(draft, quotes), attachments).trim().length > messageLimit;
+    attachmentMessage(quoteMessage(body, quotes), attachments).trim().length > messageLimit;
   function submit(alternate = false) {
     if (
       !inputDisabled &&
       !attachmentBlocked &&
       !messageTooLong &&
-      (!quotes.length || !!draft.trim()) &&
+      (!quotes.length || !!body.trim()) &&
       (draft.trim() || attachments.length)
     )
       send(
@@ -528,9 +531,16 @@ export default function Composer({
               expand={(id) => {
                 const block = attachments.find((item) => item.id === id);
                 if (block?.text === undefined) return;
-                setDraft(draft ? `${draft}\n${block.text}` : block.text);
+                setDraft(!draft ? block.text : `${draft.replace(/\n+$/, '')}\n${block.text}`);
                 setAttachments?.(session.id, (current) => current.filter((item) => item.id !== id));
-                input.current?.focus();
+                // Show where the text went: the caret and the scroll at its end.
+                requestAnimationFrame(() => {
+                  const box = input.current;
+                  if (!box) return;
+                  box.focus();
+                  box.setSelectionRange(box.value.length, box.value.length);
+                  box.scrollTop = box.scrollHeight;
+                });
               }}
               remove={(id) => {
                 const path = attachments.find((item) => item.id === id)?.path;
@@ -825,7 +835,7 @@ export default function Composer({
                     }
                     disabled={
                       (!draft.trim() && !attachments.length) ||
-                      (!!quotes.length && !draft.trim()) ||
+                      (!!quotes.length && !body.trim()) ||
                       inputDisabled ||
                       attachmentBlocked ||
                       messageTooLong

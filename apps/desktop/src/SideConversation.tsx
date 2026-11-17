@@ -7,7 +7,7 @@ import type { Scenario } from './Composer.tsx';
 import Conversation from './Conversation.tsx';
 import FollowUpQueue from './FollowUpQueue.tsx';
 import type { FollowUps } from './followUps.ts';
-import { attachmentMessage, messageLimit } from './attachments.ts';
+import { attachmentMessage, messageLimit, withPastedText } from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
 import { quoteMessage } from './quotes.ts';
 import type { QuoteReference, SetQuotes } from './quotes.ts';
@@ -114,8 +114,9 @@ export default function SideConversation({
   async function send(override?: string, mode: 'queue' | 'steer' = 'queue') {
     if (!session || disabled) return;
     if (override === undefined && attachments.some((item) => item.status !== 'ready')) return;
-    if (override === undefined && quotes.length && !draft.trim()) return;
-    const text = override ?? attachmentMessage(quoteMessage(draft, quotes), attachments);
+    const body = withPastedText(draft, attachments);
+    if (override === undefined && quotes.length && !body.trim()) return;
+    const text = override ?? attachmentMessage(quoteMessage(body, quotes), attachments);
     if (!text.trim()) return;
     if (text.length > messageLimit) {
       setError('消息过长，请缩短问题或移除部分引用/附件。');

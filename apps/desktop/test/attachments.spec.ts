@@ -396,6 +396,24 @@ test('long pasted text becomes a block beside the box, is sent whole and can go 
     'PS C:\\Users\\me> git diff --help',
   );
   await expect(tile.locator('.attachment-text-meta')).toContainText('41 行');
+  // Settled: the whole tile shows inside its row, and the summary and the button share one line.
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
+  const fits = () =>
+    tile.evaluate((element) => {
+      const row = element.closest('.attachment-tiles')!.getBoundingClientRect();
+      const own = element.getBoundingClientRect();
+      const meta = element.querySelector('.attachment-text-meta')!;
+      const button = meta.querySelector('button')!.getBoundingClientRect();
+      return (
+        own.left >= row.left &&
+        own.right <= row.right &&
+        button.right <= own.right - 8 &&
+        meta.scrollWidth <= meta.clientWidth
+      );
+    });
+  expect(await fits()).toBe(true);
   await page.locator('main').screenshot({ path: '.local/paste-block.png' });
 
   await page.getByRole('button', { name: '切换会话' }).click();
@@ -408,27 +426,67 @@ test('long pasted text becomes a block beside the box, is sent whole and can go 
   await page.reload();
   await expect(tile).toHaveCount(1);
 
-  await input.fill('这是什么意思？');
+  await input.fill('这是什么意思？\n\n');
   await page.getByRole('button', { name: '发送消息', exact: true }).click();
   expect(await page.locator('main').getAttribute('data-sent')).toBe(
-    `这是什么意思？\n\n${normalized}`,
+    `这是什么意思？\n\n\n\n${normalized}`,
   );
 
-  await tile.getByRole('button', { name: '在文本框中显示' }).click();
+  // Back in the box: after the typed text (without piling up blank lines), caret and scroll at its end.
+  await tile.getByRole('button', { name: /^在文本框中显示/ }).click();
   await expect(tile).toHaveCount(0);
   await expect(input).toHaveValue(`这是什么意思？\n${normalized}`);
   await expect(input).toBeFocused();
+  await expect
+    .poll(() =>
+      input.evaluate((box: HTMLTextAreaElement) => [
+        box.selectionStart === box.value.length,
+        box.scrollTop + box.clientHeight >= box.scrollHeight - 2,
+      ]),
+    )
+    .toEqual([true, true]);
   const box = await input.boundingBox();
   expect(box!.height).toBeLessThanOrEqual(272);
+});
+
+test('several pasted blocks are told apart, sent in order and survive a short paste between them', async ({
+  page,
+}) => {
+  const first = ['第一段日志', ...Array.from({ length: 25 }, (_, i) => `a${i}`)].join('\n');
+  const second = ['第二段日志', ...Array.from({ length: 25 }, (_, i) => `b${i}`)].join('\n');
+  expect(await pasteText(page, first)).toBe(true);
+  expect(await pasteText(page, '短文字')).toBe(false);
+  expect(await pasteText(page, second)).toBe(true);
+  await expect(page.locator('.attachment-text')).toHaveCount(2);
+  await expect(page.getByRole('button', { name: '在文本框中显示 第一段日志' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '在文本框中显示 第二段日志' })).toBeVisible();
+  await expect(page.getByRole('button', { name: '移除粘贴的文本 第二段日志' })).toBeVisible();
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  expect(await page.locator('main').getAttribute('data-sent')).toBe(`${first}\n\n${second}`);
 });
 
 test('a long paste in an SSH project also becomes a block, and a block can be removed', async ({
   page,
 }) => {
   await page.goto('/test/fixtures/attachments.html?ssh');
-  expect(await pasteText(page, 'x'.repeat(2400))).toBe(true);
+  expect(await pasteText(page, 'x'.repeat(12345))).toBe(true);
   const tile = page.locator('.attachment-text');
   await expect(tile).toHaveCount(1);
+  await expect(tile.locator('.attachment-text-meta')).toContainText('1 行 · 12,345 字符');
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
+  expect(
+    await tile.evaluate((element) => {
+      const meta = element.querySelector('.attachment-text-meta')!;
+      return (
+        meta.scrollWidth <= meta.clientWidth &&
+        meta.querySelector('button')!.getBoundingClientRect().right <=
+          element.getBoundingClientRect().right - 8
+      );
+    }),
+  ).toBe(true);
+  await expect(page.getByRole('alert')).toHaveCount(0);
   await expect(page.getByRole('alert')).toHaveCount(0);
   await tile.getByRole('button', { name: /^移除粘贴的文本/ }).click();
   await expect(tile).toHaveCount(0);
