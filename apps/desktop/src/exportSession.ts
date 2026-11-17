@@ -3,6 +3,13 @@ import type { ProxyClient } from './client.ts';
 import { conversation } from './transcript.ts';
 import type { Step } from './transcript.ts';
 import { pictureNote, toolPictures } from './pictures.ts';
+import {
+  attachmentMessage,
+  pastedSummary,
+  splitAttachmentMessage,
+  splitPastedText,
+} from './attachments.ts';
+import { quoteCopyText, splitQuoteMessage } from './quotes.ts';
 
 // A fence longer than any run of backticks inside, so the content cannot close it early.
 function fenced(text: string) {
@@ -17,6 +24,24 @@ function toolOutput(output: string) {
   return pictures
     ? [pictures.text, ...pictures.pictures.map(pictureNote)].filter(Boolean).join('\n')
     : output;
+}
+
+// A question as the reader saw it: quotes as copying gives them, and each pasted text fenced and labelled, so a
+// pasted log or code is not read as Markdown. A plain question is written as it was.
+function question(text: string) {
+  const attached = splitAttachmentMessage(text);
+  const quoted = splitQuoteMessage(attached.text);
+  const pasted = splitPastedText(quoted.text);
+  if (!quoted.quotes.length && !pasted.blocks.length) return text;
+  const body = [
+    pasted.text,
+    ...pasted.blocks.map(
+      (block) => `粘贴的文本（${pastedSummary(block.text!)}）：\n\n${fenced(block.text!)}`,
+    ),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
+  return attachmentMessage(quoteCopyText(body, quoted.quotes), attached.files);
 }
 
 // The whole session as one Markdown document: questions, answers, and under each answer what was done to
@@ -44,7 +69,7 @@ export function markdown(session: Session, events: SessionEvent[]) {
     if (turn.question && !turn.question.continued)
       parts.push(
         `## 你 · ${new Date(turn.question.at).toLocaleString('zh-CN')}`,
-        turn.question.text,
+        question(turn.question.text),
       );
     const body = [...turn.steps.flatMap(step), ...(turn.answer ? [turn.answer.text] : [])];
     if (body.length) parts.push('## Claude Code', ...body);
