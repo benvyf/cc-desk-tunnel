@@ -16,6 +16,7 @@ const {
   dialog,
   shell,
   clipboard,
+  ClipboardItem,
   nativeTheme,
   net,
   protocol,
@@ -418,9 +419,20 @@ handle('devtools:open', (event) => {
 handle('git:branch', (_event, directory) => gitBranch(directory));
 handle('clipboard:write', (_event, text) => {
   if (typeof text !== 'string') throw new Error('Expected clipboard text');
-  clipboard.writeText(text);
+  // Electron's clipboard answers once written; a failure reaches the window.
+  return clipboard.writeText(text);
 });
-// The official sign-in page and this project's own page open in the user's browser; nothing else is handed to the
+// A picture from the viewer, as PNG bytes. The window's own clipboard access is refused with every other permission
+// (setPermissionRequestHandler), so pictures go this way, as text does. The bytes must make a picture.
+handle('clipboard:write-image', async (_event, png) => {
+  if (!(png instanceof Uint8Array) || !png.byteLength || png.byteLength > 64 * 1024 * 1024)
+    throw new Error('Expected PNG bytes');
+  const bytes = Buffer.from(png.buffer, png.byteOffset, png.byteLength);
+  if (nativeImage.createFromBuffer(bytes).isEmpty()) throw new Error('Unreadable picture');
+  await clipboard.write([
+    new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) }),
+  ]);
+}); // The official sign-in page and this project's own page open in the user's browser; nothing else is handed to the
 // system.
 handle('external:open', async (event, target) => {
   const url = new URL(String(target));

@@ -41,7 +41,7 @@ const pictures = [
   png(1400, 2000, [244, 244, 240]),
   png(320, 200, [150, 110, 170]),
 ];
-const looked = (index: number) => [
+const looked = (index: number, list = pictures) => [
   {
     type: 'tool.requested',
     toolId: `shot-${index}`,
@@ -55,14 +55,20 @@ const looked = (index: number) => [
     status: 'completed',
     output: JSON.stringify([
       { type: 'text', text: 'Read image' },
-      { type: 'image', source: { type: 'base64', data: pictures[index], media_type: 'image/png' } },
+      { type: 'image', source: { type: 'base64', data: list[index], media_type: 'image/png' } },
     ]),
     exitCode: null,
   },
 ];
 const said = (text: string) => ({ type: 'text.delta', messageId: randomUUID(), text });
 
-async function open(page: Page, finished: boolean) {
+// A finished turn of one step that looked at `list`.
+const oneStep = (list: string[], connectionId: string) => [
+  ...list.flatMap((_, index) => looked(index, list)),
+  said('看完了。'),
+  { type: 'run.status', status: 'completed', connectionId },
+];
+async function open(page: Page, finished: boolean, list?: string[]) {
   const now = new Date().toISOString();
   const connectionId = randomUUID();
   const runId = randomUUID();
@@ -81,18 +87,20 @@ async function open(page: Page, finished: boolean) {
   const payloads = [
     { type: 'message.user', messageId: randomUUID(), text: '改一下界面并截图', scenario: 'chat' },
     { type: 'run.status', status: 'running', connectionId },
-    ...(finished
-      ? [
-          ...looked(0),
-          ...looked(1),
-          ...looked(2),
-          said('先看一下这几张。'),
-          ...looked(3),
-          ...looked(4),
-          said('改好了，截图都在上面。'),
-          { type: 'run.status', status: 'completed', connectionId },
-        ]
-      : []),
+    ...(finished && list
+      ? oneStep(list, connectionId)
+      : finished
+        ? [
+            ...looked(0),
+            ...looked(1),
+            ...looked(2),
+            said('先看一下这几张。'),
+            ...looked(3),
+            ...looked(4),
+            said('改好了，截图都在上面。'),
+            { type: 'run.status', status: 'completed', connectionId },
+          ]
+        : []),
   ];
   let sequence = 0;
   const events = payloads.map((payload) => ({
@@ -275,8 +283,12 @@ test('a finished turn names its pictures on its folded line, and its steps show 
   expect(shot.y + shot.height).toBeLessThanOrEqual(card.y + card.height);
   await page.locator('.conversation').screenshot({ path: resolve(folder, '展开后.png') });
 
-  // However many, one row: in a narrow window the ones that do not fit are counted in a last tile.
+  // However many, one row: in a narrow window the ones that do not fit are counted in a last tile. The focus, on a
+  // thumbnail that goes, moves to one that stays, and the group keeps its one Tab stop.
+  await row.locator('.picture-thumb').last().focus();
   await page.setViewportSize({ width: 320, height: 800 });
+  await expect(row.locator('[tabindex="0"]')).toHaveCount(1);
+  await expect.poll(() => row.evaluate((node) => node.contains(document.activeElement))).toBe(true);
   await expect(row.locator('.picture-row-more')).toBeVisible();
   const shown = await row.locator('.picture-thumb').count();
   await expect(row.locator('.picture-row-more')).toHaveText(`+${3 - shown}`);
@@ -310,6 +322,8 @@ test('the viewer pages the whole turn, reads a document page across its width, z
   await opener.click();
   const dialog = viewer(page);
   await expect(dialog).toBeVisible();
+  // It opens on the picture, not on its first button: Enter copies nothing.
+  await expect(dialog.locator('.viewer-stage')).toBeFocused();
   // The whole window, dark; from the picture clicked, among all of the turn's.
   const box = (await dialog.boundingBox())!;
   expect(box.width).toBe(page.viewportSize()!.width);
@@ -336,11 +350,36 @@ test('the viewer pages the whole turn, reads a document page across its width, z
   await page.mouse.wheel(0, 300);
   await expect.poll(async () => (await image.boundingBox())!.y).toBeLessThan(stage.y - 100);
   // Dragged, it moves with the pointer.
-  const dragged = (await image.boundingBox())!.y;
+  // Once the wheel has settled: the same place read twice.
+  let dragged = NaN;
+  await expect
+    .poll(async () => {
+      const before = dragged;
+      dragged = (await image.boundingBox())!.y;
+      return dragged === before;
+    })
+    .toBe(true);
   await page.mouse.down();
-  await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2 + 120, { steps: 4 });
+  await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2 + 150, { steps: 5 });
   await page.mouse.up();
-  await expect.poll(async () => (await image.boundingBox())!.y).toBeGreaterThan(dragged + 100);
+  await expect.poll(async () => (await image.boundingBox())!.y).toBeGreaterThan(dragged + 120);
+  // A click on the picture, which overflows here, does not close the viewer; a double click shows it at its own
+  // size and another returns to the default.
+  const middle = { x: stage.x + stage.width / 2, y: stage.y + stage.height / 2 };
+  await page.mouse.click(middle.x, middle.y);
+  await expect(dialog).toBeVisible();
+  await page.mouse.dblclick(middle.x, middle.y);
+  await expect(dialog.locator('.viewer-percent')).toHaveText('100%');
+  await page.mouse.dblclick(middle.x, middle.y);
+  await expect(dialog.locator('.viewer-percent')).toHaveText(across);
+  await expect(dialog).toBeVisible();
+  // With Ctrl the wheel zooms, even where it would scroll.
+  await page.mouse.move(middle.x, middle.y);
+  await page.keyboard.down('Control');
+  await page.mouse.wheel(0, -200);
+  await page.keyboard.up('Control');
+  await expect(dialog.locator('.viewer-percent')).not.toHaveText(across);
+  await page.keyboard.press('0');
   // The keys: 1 is the picture's own size, 0 the default, + and − zoom.
   await page.keyboard.press('1');
   await expect(dialog.locator('.viewer-percent')).toHaveText('100%');
@@ -348,7 +387,16 @@ test('the viewer pages the whole turn, reads a document page across its width, z
   await expect(dialog.locator('.viewer-percent')).toHaveText('125%');
   await dialog.getByRole('button', { name: '缩小' }).click();
   await expect(dialog.locator('.viewer-percent')).toHaveText('100%');
+  // With Ctrl a key is the window's, not the viewer's.
+  await page.keyboard.press('Control+0');
+  await expect(dialog.locator('.viewer-percent')).toHaveText('100%');
   await page.keyboard.press('0');
+  await expect(dialog.locator('.viewer-percent')).toHaveText(across);
+  // A zoom chosen for one picture does not carry over to the next.
+  await page.keyboard.press('ArrowLeft');
+  await page.keyboard.press('+');
+  await expect(dialog.locator('.viewer-percent')).toHaveText('125%');
+  await page.keyboard.press('ArrowRight');
   await expect(dialog.locator('.viewer-percent')).toHaveText(across);
   // A screenshot is seen whole.
   await page.keyboard.press('End');
@@ -379,4 +427,81 @@ test('the viewer pages the whole turn, reads a document page across its width, z
   const around = (await dialog.locator('.viewer-stage').boundingBox())!;
   await page.mouse.click(around.x + 60, around.y + around.height - 30);
   await expect(dialog).toHaveCount(0);
+});
+
+test('while a run goes on in a narrow conversation, a step keeps only its latest picture, and nothing fades with reduced motion', async ({
+  page,
+}) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.setViewportSize({ width: 520, height: 800 });
+  const { push } = await open(page, false);
+  // The call arrives before its result, as it does in a run.
+  for (const index of [0, 1, 2, 3]) {
+    const [requested, result] = looked(index);
+    push(requested);
+    await expect(page.locator('details.work').last()).toBeVisible();
+    push(result);
+  }
+  const strip = page.locator('details.work').last().locator('> summary .picture-strip');
+  await expect(strip.locator('.picture-thumb')).toHaveCount(1);
+  await expect(strip.locator('.picture-more')).toHaveText('+3');
+  const thumb = page.locator('.live-pictures .picture-thumb').last();
+  await expect(thumb).toHaveClass(/fresh/);
+  expect(await thumb.evaluate((node) => getComputedStyle(node).animationName)).toBe('none');
+});
+
+test('a picture that cannot be decoded says so, in its thumbnail and in the viewer', async ({
+  page,
+}) => {
+  await open(page, true, [pictures[0], 'AAAA']);
+  const strip = page.locator('details.turn-process > summary .picture-strip');
+  await expect(strip.locator('.picture-thumb')).toHaveCount(2);
+  await expect(strip.locator('.picture-thumb').last()).toHaveClass(/failed/);
+  await expect(strip.locator('.picture-thumb').last().locator('img')).toHaveCount(0);
+  await strip.locator('.picture-thumb').last().click();
+  const dialog = viewer(page);
+  await expect(dialog.getByRole('alert')).toHaveText('图片无法显示');
+  await expect(dialog.getByRole('button', { name: '复制图片' })).toBeDisabled();
+  await page.keyboard.press('ArrowLeft');
+  await expect(dialog.getByRole('alert')).toHaveCount(0);
+  await expect(dialog.locator('.viewer-stage > img')).toBeVisible();
+});
+
+test('only the pictures that are shown are decoded, once each, and a long screenshot keeps a usable copy', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const original = window.createImageBitmap.bind(window);
+    (window as unknown as { decoded: number }).decoded = 0;
+    window.createImageBitmap = ((...args: Parameters<typeof createImageBitmap>) => {
+      (window as unknown as { decoded: number }).decoded++;
+      return original(...args);
+    }) as typeof createImageBitmap;
+  });
+  const many = Array.from({ length: 11 }, (_, index) =>
+    png(320, 200, [40 + index * 18, 120, 200 - index * 12]),
+  );
+  await open(page, true, [...many, png(200, 1600, [210, 210, 200])]);
+  const decoded = () => page.evaluate(() => (window as unknown as { decoded: number }).decoded);
+  // Folded, the turn's line shows its latest three.
+  const strip = page.locator('details.turn-process > summary .picture-strip');
+  await expect(strip.locator('.picture-thumb img')).toHaveCount(3);
+  expect(await decoded()).toBe(3);
+  // The long screenshot's copy is long, not a sliver.
+  const long = strip.locator('.picture-thumb img').last();
+  const size = await long.evaluate((image: HTMLImageElement) => [
+    image.naturalWidth,
+    image.naturalHeight,
+  ]);
+  expect(size[0]).toBeGreaterThanOrEqual(64);
+  expect(size[1]).toBeLessThanOrEqual(768);
+  // Opened, the step's row decodes only the pictures it shows, and none twice.
+  await page.locator('details.turn-process > summary').click();
+  await page.locator('details.work > summary').first().click();
+  const row = page.locator('details.work .picture-row').first();
+  await expect(row.locator('.picture-row-more')).toBeVisible();
+  const shown = await row.locator('.picture-thumb').count();
+  await expect(row.locator('.picture-thumb img')).toHaveCount(shown);
+  expect(shown).toBeLessThan(12);
+  expect(await decoded()).toBe(3 + shown);
 });

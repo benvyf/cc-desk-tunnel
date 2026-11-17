@@ -165,6 +165,8 @@ declare global {
       // The branch a project's working tree is on, or null outside a repository.
       gitBranch: (path: string) => Promise<string | null>;
       copyText: (text: string) => Promise<void>;
+      // A picture as PNG bytes; absent in a window from before it.
+      copyImage?: (png: Uint8Array) => Promise<void>;
       openExternal: (url: string) => Promise<void>;
       openWeb: (url: string) => Promise<void>;
       // A web address a reply links to, in the user's browser.

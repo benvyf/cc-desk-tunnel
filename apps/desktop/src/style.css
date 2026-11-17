@@ -4175,8 +4175,36 @@ dialog.picture-viewer::backdrop {
   height: 100%;
   object-fit: cover;
 }
+.picture-thumb.failed {
+  display: grid;
+  place-items: center;
+  cursor: default;
+}
+.picture-failed {
+  width: 14px;
+  height: 14px;
+  color: var(--faint);
+}
+.picture-strip .picture-failed {
+  width: 11px;
+  height: 11px;
+}
+.viewer-broken {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  margin: 0;
+  color: rgb(242 241 238 / 72%);
+  font-size: calc(14rem / 14);
+}
+.viewer-button:disabled,
+.viewer-percent:disabled {
+  opacity: 0.4;
+}
 @media (prefers-reduced-motion: reduce) {
   .picture-thumb,
+  .picture-thumb.fresh,
   .picture-peek,
   .picture-thumb.pending,
   .live-pictures .picture-thumb.fresh {

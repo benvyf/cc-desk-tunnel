@@ -58,8 +58,10 @@ function closePictures() {
   opened = null;
   emit();
   // Once the modal viewer has left the page: while it is open, everything outside it is inert and takes no focus.
+  // Where the line it was opened from has gone (the live line leaves with the run), the message box has it.
   setTimeout(() => {
     if (opener?.isConnected) opener.focus();
+    else document.querySelector<HTMLElement>('textarea[aria-label="消息"]')?.focus();
   });
 }
 const subscribe = (listener: () => void) => {
@@ -72,30 +74,37 @@ function ViewerOutlet() {
   return state ? <PictureViewer key={state.generation} state={state} /> : null;
 }
 
+// The picture's bytes as PNG, which is what a clipboard takes.
+async function pngOf(picture: ToolPicture) {
+  let blob = pictureBlob(picture);
+  if (blob.type !== 'image/png') {
+    const bitmap = await createImageBitmap(blob);
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
+    bitmap.close();
+    blob = await canvas.convertToBlob({ type: 'image/png' });
+  }
+  return blob;
+}
+// The desktop window copies through its main process, whose clipboard it may use; a browser asks its own.
+async function copyPicture(picture: ToolPicture) {
+  const png = await pngOf(picture);
+  if (window.desktop?.copyImage)
+    await window.desktop.copyImage(new Uint8Array(await png.arrayBuffer()));
+  else await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
+}
+
 const MIN = 0.05;
 const MAX = 8;
 const clampScale = (value: number) => Math.min(MAX, Math.max(MIN, value));
+// `auto` is fit, or across its width for a tall page; `fit` and `width` are those chosen; `actual` is 100%; `scale`
+// is any other zoom. Paging keeps the first three and returns the last two to `auto`.
 type Mode = 'auto' | 'fit' | 'width' | 'actual' | 'scale';
 type Size = { width: number; height: number };
 // A tall page, as a document page is, is read across its width from the top; anything else is seen whole.
 const isPage = (size: Size) => size.height >= size.width * 1.25;
 
-function useThumb(picture: ToolPicture) {
-  const [made, setMade] = useState<Thumbnail | null>(() => madeThumbnail(picture));
-  useEffect(() => {
-    if (made) return;
-    let live = true;
-    thumbnail(picture).then(
-      (value) => live && setMade(value),
-      () => {},
-    );
-    return () => {
-      live = false;
-    };
-  }, [picture, made]);
-  return made;
-}
-
+// A film's thumbnail is made once it scrolls into view: a turn of hundreds of screenshots does not make them all.
 function FilmThumb({
   entry,
   index,
@@ -109,19 +118,41 @@ function FilmThumb({
   stepStart: boolean;
   select: (index: number) => void;
 }) {
-  const made = useThumb(entry.picture);
-  const size = made ?? pictureSize(entry.picture);
-  const ratio = size ? size.width / size.height : 4 / 3;
-  const width = Math.round(Math.min(86, Math.max(32, 48 * ratio)));
   const button = useRef<HTMLButtonElement>(null);
+  const [made, setMade] = useState<Thumbnail | null>(() => madeThumbnail(entry.picture));
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (made) return;
+    const element = button.current!;
+    let live = true;
+    const seen = new IntersectionObserver(
+      (records) => {
+        if (!records.some((record) => record.isIntersecting)) return;
+        seen.disconnect();
+        thumbnail(entry.picture).then(
+          (value) => live && setMade(value),
+          () => live && setFailed(true),
+        );
+      },
+      { root: element.parentElement, rootMargin: '0px 200px' },
+    );
+    seen.observe(element);
+    return () => {
+      live = false;
+      seen.disconnect();
+    };
+  }, [entry.picture, made]);
   useEffect(() => {
     if (current) button.current?.scrollIntoView({ block: 'nearest', inline: 'center' });
   }, [current]);
+  const size = made ?? pictureSize(entry.picture);
+  const ratio = size ? size.width / size.height : 4 / 3;
+  const width = Math.round(Math.min(86, Math.max(32, 48 * ratio)));
   return (
     <button
       ref={button}
       type="button"
-      className={`viewer-film-thumb${stepStart ? ' step-start' : ''}`}
+      className={`viewer-film-thumb${stepStart ? ' step-start' : ''}${failed ? ' failed' : ''}`}
       aria-label={`图片 ${index + 1}，第 ${entry.step} 步`}
       aria-current={current || undefined}
       style={{ width }}
@@ -144,16 +175,25 @@ function PictureViewer({ state }: { state: Opened }) {
   const [offset, setOffset] = useState<{ x: number; y: number } | null>(null);
   const [stageSize, setStageSize] = useState<Size>({ width: 0, height: 0 });
   const [natural, setNatural] = useState<Size | null>(null);
+  const [broken, setBroken] = useState(false);
   const [note, setNote] = useState('');
-  const drag = useRef<{ x: number; y: number; ox: number; oy: number; moved: boolean } | null>(
-    null,
-  );
+  const drag = useRef<{
+    x: number;
+    y: number;
+    ox: number;
+    oy: number;
+    moved: boolean;
+    dark: boolean;
+  } | null>(null);
+  const preloaded = useRef<HTMLImageElement[]>([]);
   const entry = entries[Math.min(index, count - 1)];
   const picture = entry.picture;
   const url = pictureUrl(picture);
 
   useLayoutEffect(() => {
     dialog.current?.showModal();
+    // The viewer opens on the picture, not on its first button: the keys work from here, and Enter copies nothing.
+    stage.current?.focus();
   }, []);
   useLayoutEffect(() => {
     const element = stage.current!;
@@ -167,16 +207,19 @@ function PictureViewer({ state }: { state: Opened }) {
   // A new picture: its size from its header until it loads, and the view from its top.
   useLayoutEffect(() => {
     setNatural(pictureSize(picture));
+    setBroken(false);
     setOffset(null);
   }, [picture]);
-  // The neighbours are decoded ahead, so paging does not wait for them.
+  // The neighbours are decoded ahead, and held until the next page, so paging does not wait for them.
   useEffect(() => {
-    for (const near of [index - 1, index + 1])
-      if (near >= 0 && near < count) {
+    preloaded.current = [index - 1, index + 1]
+      .filter((near) => near >= 0 && near < count)
+      .map((near) => {
         const image = new Image();
         image.src = pictureUrl(entries[near].picture);
         image.decode?.().catch(() => {});
-      }
+        return image;
+      });
   }, [index, count, entries]);
   useEffect(() => {
     if (index >= known) setKnown(count);
@@ -209,12 +252,16 @@ function PictureViewer({ state }: { state: Opened }) {
   const x = bound(offset?.x ?? centred.x, W, stageSize.width, centred.x);
   const y = bound(offset?.y ?? top, H, stageSize.height, centred.y);
   const overflows = W > stageSize.width + 0.5 || H > stageSize.height + 0.5;
+  // Until it loads, a picture whose header gave no size is not drawn at a guessed one.
+  const sized = natural !== null;
 
   const go = (next: number) => {
     const target = Math.min(count - 1, Math.max(0, next));
     if (target === index) return;
     setIndex(target);
-    if (mode === 'scale') setOffset(null);
+    // A zoom chosen for one picture is not right for the next; fit and fit-width are a way of seeing, and stay.
+    if (mode === 'scale' || mode === 'actual') setMode('auto');
+    setOffset(null);
   };
   // Zooms to `next`, keeping the point (px, py) of the stage where it is.
   const zoom = (next: number, px = stageSize.width / 2, py = stageSize.height / 2) => {
@@ -233,11 +280,27 @@ function PictureViewer({ state }: { state: Opened }) {
     zoom(1, px, py);
     setMode('actual');
   };
+  const copy = async () => {
+    try {
+      await copyPicture(picture);
+      setNote('已复制图片');
+    } catch {
+      setNote('复制失败');
+    }
+  };
 
   useEffect(() => {
     const keys = (event: KeyboardEvent) => {
       if (event.altKey || event.metaKey) return;
       const k = event.key;
+      // Ctrl with a key is the window's (Ctrl+= zooms the whole window), but Ctrl+C copies the picture.
+      if (event.ctrlKey) {
+        if (k === 'c' || k === 'C') {
+          event.preventDefault();
+          void copy();
+        }
+        return;
+      }
       if (k === 'ArrowLeft') go(index - 1);
       else if (k === 'ArrowRight') go(index + 1);
       else if (k === 'Home') go(0);
@@ -255,6 +318,8 @@ function PictureViewer({ state }: { state: Opened }) {
     return () => window.removeEventListener('keydown', keys);
   });
 
+  // The wheel zooms about the pointer while the picture fits, and scrolls it once it does not; with Ctrl it always
+  // zooms, which is how a picture zoomed past the window is zoomed back.
   const wheel = (event: ReactWheelEvent) => {
     const box = stage.current!.getBoundingClientRect();
     const px = event.clientX - box.left;
@@ -268,7 +333,16 @@ function PictureViewer({ state }: { state: Opened }) {
   };
   const down = (event: ReactPointerEvent) => {
     if (event.button !== 0) return;
-    drag.current = { x: event.clientX, y: event.clientY, ox: x, oy: y, moved: false };
+    // Where it went down decides whether a click closes: once the pointer is captured, every event lands on the
+    // stage, the picture's as well.
+    drag.current = {
+      x: event.clientX,
+      y: event.clientY,
+      ox: x,
+      oy: y,
+      moved: false,
+      dark: event.target === stage.current,
+    };
     if (overflows) (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
   };
   const move = (event: ReactPointerEvent) => {
@@ -279,35 +353,19 @@ function PictureViewer({ state }: { state: Opened }) {
     if (Math.abs(dx) + Math.abs(dy) > 3) d.moved = true;
     setOffset({ x: d.ox + dx, y: d.oy + dy });
   };
-  const up = (event: ReactPointerEvent) => {
+  const up = () => {
     const d = drag.current;
     drag.current = null;
-    // A click on the dark around the picture closes, a drag does not.
-    if (d && !d.moved && event.target === stage.current) closePictures();
+    // A click on the dark around the picture closes; a drag, or a click on the picture, does not.
+    if (d && !d.moved && d.dark) closePictures();
   };
 
-  const name = `图片-${index + 1}.${picture.type.split('/')[1] === 'jpeg' ? 'jpg' : picture.type.split('/')[1]}`;
+  const extension = picture.type.split('/')[1] === 'jpeg' ? 'jpg' : picture.type.split('/')[1];
   const download = () => {
     const link = document.createElement('a');
     link.href = url;
-    link.download = name;
+    link.download = `图片-${index + 1}.${extension}`;
     link.click();
-  };
-  const copy = async () => {
-    try {
-      let blob = pictureBlob(picture);
-      if (blob.type !== 'image/png') {
-        const bitmap = await createImageBitmap(blob);
-        const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
-        canvas.getContext('2d')!.drawImage(bitmap, 0, 0);
-        bitmap.close();
-        blob = await canvas.convertToBlob({ type: 'image/png' });
-      }
-      await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
-      setNote('已复制图片');
-    } catch {
-      setNote('复制失败');
-    }
   };
   useEffect(() => {
     if (!note) return;
@@ -329,7 +387,7 @@ function PictureViewer({ state }: { state: Opened }) {
     >
       <div className="viewer-top">
         <span className="viewer-count" aria-live="polite">
-          {count > 1 ? `${index + 1} / ${count}` : '1 / 1'}
+          {`${index + 1} / ${count}`}
           {entry.step > 0 && ` · 第 ${entry.step} 步`}
         </span>
         {fresh > 0 && (
@@ -347,7 +405,8 @@ function PictureViewer({ state }: { state: Opened }) {
             type="button"
             className="viewer-button"
             aria-label="复制图片"
-            title="复制图片"
+            title="复制图片 (Ctrl+C)"
+            disabled={broken}
             onClick={copy}
           >
             <Copy />
@@ -375,31 +434,43 @@ function PictureViewer({ state }: { state: Opened }) {
       <div
         ref={stage}
         className={`viewer-stage${overflows ? ' pannable' : ''}`}
-        // The viewer opens on the picture, not on its first button; the keys work from here.
         tabIndex={-1}
-        autoFocus
         onWheel={wheel}
         onPointerDown={down}
         onPointerMove={move}
         onPointerUp={up}
         onPointerCancel={() => (drag.current = null)}
         onDoubleClick={(event) => {
+          if (broken) return;
           const box = stage.current!.getBoundingClientRect();
           if (effective === 'actual' || (effective === 'scale' && s >= 1)) reset();
           else actual(event.clientX - box.left, event.clientY - box.top);
         }}
       >
-        <img
-          src={url}
-          alt={`图片 ${index + 1}`}
-          draggable={false}
-          style={{ left: x, top: y, width: W, height: H }}
-          onLoad={(event) => {
-            const image = event.currentTarget;
-            if (image.naturalWidth && image.naturalHeight)
-              setNatural({ width: image.naturalWidth, height: image.naturalHeight });
-          }}
-        />
+        {broken ? (
+          <p className="viewer-broken" role="alert">
+            图片无法显示
+          </p>
+        ) : (
+          <img
+            src={url}
+            alt={`图片 ${index + 1}`}
+            draggable={false}
+            style={{
+              left: x,
+              top: y,
+              width: W,
+              height: H,
+              visibility: sized ? undefined : 'hidden',
+            }}
+            onLoad={(event) => {
+              const image = event.currentTarget;
+              if (image.naturalWidth && image.naturalHeight)
+                setNatural({ width: image.naturalWidth, height: image.naturalHeight });
+            }}
+            onError={() => setBroken(true)}
+          />
+        )}
         {count > 1 && (
           <>
             <button
@@ -425,22 +496,30 @@ function PictureViewer({ state }: { state: Opened }) {
           </>
         )}
       </div>
-      <div className="viewer-zoom" role="group" aria-label="缩放">
+      <div className="viewer-zoom" role="group" aria-label="缩放" title="Ctrl + 滚轮缩放">
         <button
           type="button"
           className="viewer-button"
           aria-label="缩小"
+          disabled={broken}
           onClick={() => zoom(s / 1.25)}
         >
           <Minus />
         </button>
-        <button type="button" className="viewer-percent" title="恢复默认大小 (0)" onClick={reset}>
+        <button
+          type="button"
+          className="viewer-percent"
+          title="恢复默认大小 (0)"
+          disabled={broken}
+          onClick={reset}
+        >
           {Math.round(s * 100)}%
         </button>
         <button
           type="button"
           className="viewer-button"
           aria-label="放大"
+          disabled={broken}
           onClick={() => zoom(s * 1.25)}
         >
           <Plus />

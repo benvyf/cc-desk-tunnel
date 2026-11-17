@@ -178,8 +178,10 @@ export function summarize(work: Work, active: boolean, latest: boolean) {
     // Calls that only looked at pictures are named by their pictures: what was read was pictures, and what a
     // screenshot tool made was screenshots. Any other call keeps its own words, and its pictures are counted after.
     const pictures = (tool: Tool) => tool.pictures?.pictures.length ?? 0;
-    const viewed = tools.filter((tool) => categoryOf(tool) === 'read' && pictures(tool));
     const shots = tools.filter((tool) => /screenshot/i.test(tool.name) && pictures(tool));
+    const viewed = tools.filter(
+      (tool) => categoryOf(tool) === 'read' && pictures(tool) && !shots.includes(tool),
+    );
     const others = tools.filter((tool) => !viewed.includes(tool) && !shots.includes(tool));
     const counts = new Map<Category, number>();
     for (const tool of others)

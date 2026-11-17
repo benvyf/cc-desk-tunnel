@@ -1,6 +1,15 @@
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { KeyboardEvent, MouseEvent, ReactNode, SyntheticEvent } from 'react';
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react';
+import type { FocusEvent, KeyboardEvent, MouseEvent, ReactNode, SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
+import { Image as ImageIcon } from './icons.tsx';
 import { madeThumbnail, pictureSize, pictureUrl, thumbnail } from './pictures.ts';
 import type { Thumbnail, ToolPicture } from './pictures.ts';
 import { openPictures } from './PictureViewer.tsx';
@@ -24,33 +33,40 @@ function useOpen(pictures: ToolPicture[]) {
   };
 }
 
-// A picture's small copy (pictures.ts), once made; until then its place is kept at its own proportions.
-function useThumbnail(picture: ToolPicture) {
-  const [made, setMade] = useState<Thumbnail | null>(() => madeThumbnail(picture));
+// A picture's small copy (pictures.ts), once made; until then its place is kept at its own proportions. A picture
+// that cannot be decoded shows that it cannot, never the picture's own address.
+function useThumbnail(picture: ToolPicture, made?: (value: Thumbnail) => void) {
+  const [state, setState] = useState<Thumbnail | 'failed' | null>(() => madeThumbnail(picture));
   useEffect(() => {
-    if (made && made === madeThumbnail(picture)) return;
+    const ready = madeThumbnail(picture);
+    if (ready) {
+      setState(ready);
+      return;
+    }
     let live = true;
-    setMade(madeThumbnail(picture));
+    setState(null);
     thumbnail(picture).then(
-      (value) => live && setMade(value),
-      // Where no copy can be made, the picture itself stands in.
-      () =>
-        live &&
-        setMade({ url: pictureUrl(picture), ...(pictureSize(picture) ?? { width: 4, height: 3 }) }),
+      (value) => {
+        if (!live) return;
+        setState(value);
+        made?.(value);
+      },
+      () => live && setState('failed'),
     );
     return () => {
       live = false;
     };
   }, [picture]);
-  return made;
+  return state;
 }
-const ratioOf = (picture: ToolPicture, made: Thumbnail | null) => {
-  const size = made ?? pictureSize(picture);
+const ratioOf = (picture: ToolPicture) => {
+  const size = madeThumbnail(picture) ?? pictureSize(picture);
   return size ? size.width / size.height : 4 / 3;
 };
 // A row's thumbnail is 64px high and as wide as its picture's proportions, within these bounds.
 const rowHeight = 64;
-const rowWidth = (ratio: number) => Math.round(Math.min(114, Math.max(44, rowHeight * ratio)));
+const rowWidth = (picture: ToolPicture) =>
+  Math.round(Math.min(114, Math.max(44, rowHeight * ratioOf(picture))));
 
 // Pictures that have stood in a line already: only one shown for the first time fades in, not every picture of a
 // line that is drawn again, as a step that is folded and unfolded is.
@@ -65,36 +81,69 @@ function useFresh(shown: ToolPicture[]) {
   return (picture: ToolPicture) => firstHere.has(picture);
 }
 
-// A group of thumbnails is one stop of the Tab key; the arrow keys, Home and End move within it.
-function roving(event: KeyboardEvent<HTMLElement>) {
-  const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
-  if (!keys.includes(event.key)) return;
-  const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
-  const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
-  if (at < 0) return;
-  const next =
-    event.key === 'Home'
-      ? 0
-      : event.key === 'End'
-        ? buttons.length - 1
-        : Math.min(buttons.length - 1, Math.max(0, at + (event.key === 'ArrowLeft' ? -1 : 1)));
-  event.preventDefault();
-  event.stopPropagation();
-  buttons[next].focus();
-}
-function rove(event: React.FocusEvent<HTMLElement>) {
-  if (!(event.target instanceof HTMLButtonElement)) return;
-  for (const button of event.currentTarget.querySelectorAll('button'))
-    button.tabIndex = button === event.target ? 0 : -1;
+// A group of thumbnails is one stop of the Tab key, the one last focused; the arrow keys, Home and End move within
+// it. Should the focused one go (a narrower row, a newer picture in the live line), the stop and the focus move to
+// one that stays, so the group is never left without a stop and the focus never drops to the page.
+function useRove(count: number) {
+  const [stop, setStop] = useState(0);
+  const group = useRef<HTMLElement | null>(null);
+  const inside = useRef(false);
+  const at = Math.min(stop, Math.max(0, count - 1));
+  // Stable, so that a group's element is not handed over again on every drawing.
+  const ref = useCallback((element: HTMLElement | null) => {
+    group.current = element;
+  }, []);
+  useLayoutEffect(() => {
+    const element = group.current;
+    if (!element || !inside.current || element.contains(document.activeElement)) return;
+    element.querySelectorAll<HTMLButtonElement>('button[data-rove]')[at]?.focus();
+  });
+  return {
+    tab: (index: number) => (index === at ? 0 : -1),
+    props: {
+      ref,
+      onFocus: (event: FocusEvent<HTMLElement>) => {
+        inside.current = true;
+        const index = Number((event.target as HTMLElement).dataset.rove);
+        if (Number.isInteger(index)) setStop(index);
+      },
+      onBlur: (event: FocusEvent<HTMLElement>) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          inside.current = false;
+      },
+      onKeyDown: (event: KeyboardEvent<HTMLElement>) => {
+        const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+        if (!keys.includes(event.key)) return;
+        const buttons = [
+          ...event.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-rove]'),
+        ];
+        const from = buttons.indexOf(document.activeElement as HTMLButtonElement);
+        if (from < 0) return;
+        const to =
+          event.key === 'Home'
+            ? 0
+            : event.key === 'End'
+              ? buttons.length - 1
+              : Math.min(
+                  buttons.length - 1,
+                  Math.max(0, from + (event.key === 'ArrowLeft' ? -1 : 1)),
+                );
+        event.preventDefault();
+        event.stopPropagation();
+        buttons[to].focus();
+      },
+    },
+  };
 }
 
 function Thumb({
   picture,
   label,
   fresh,
-  height,
   square,
-  first,
+  rove,
+  tabIndex,
+  made,
   onOpen,
   onPointerEnter,
   onPointerLeave,
@@ -102,27 +151,30 @@ function Thumb({
   picture: ToolPicture;
   label: string;
   fresh: boolean;
-  height: number;
   square?: boolean;
-  first: boolean;
+  rove: number;
+  tabIndex: number;
+  made?: (value: Thumbnail) => void;
   onOpen: (event: MouseEvent) => void;
   onPointerEnter?: (event: React.PointerEvent<HTMLButtonElement>) => void;
   onPointerLeave?: () => void;
 }) {
-  const made = useThumbnail(picture);
-  const width = square ? height : rowWidth(ratioOf(picture, made));
+  const state = useThumbnail(picture, made);
+  const ready = state && state !== 'failed' ? state : null;
   return (
     <button
       type="button"
-      className={`picture-thumb${fresh ? ' fresh' : ''}${made ? '' : ' pending'}`}
-      aria-label={label}
-      tabIndex={first ? 0 : -1}
-      style={square ? undefined : { width, height }}
+      className={`picture-thumb${fresh ? ' fresh' : ''}${state ? '' : ' pending'}${state === 'failed' ? ' failed' : ''}`}
+      aria-label={state === 'failed' ? `${label}（无法显示）` : label}
+      data-rove={rove}
+      tabIndex={tabIndex}
+      style={square ? undefined : { width: rowWidth(picture), height: rowHeight }}
       onClick={onOpen}
       onPointerEnter={onPointerEnter}
       onPointerLeave={onPointerLeave}
     >
-      {made && <img src={made.url} alt="" decoding="async" draggable={false} />}
+      {ready && <img src={ready.url} alt="" decoding="async" draggable={false} />}
+      {state === 'failed' && <ImageIcon className="picture-failed" aria-hidden="true" />}
     </button>
   );
 }
@@ -156,16 +208,18 @@ function watchWidth(element: Element, listener: (width: number) => void) {
     }
   };
 }
-function useNarrow(line: React.RefObject<HTMLElement | null>) {
+// Whether the line's conversation is narrow; measured from when the line is first on the page, whenever that is.
+function useNarrow(line: HTMLElement | null) {
   const [narrow, setNarrow] = useState(false);
   useLayoutEffect(() => {
-    const conversation = line.current?.closest('.transcript');
+    const conversation = line?.closest('.transcript');
     if (!conversation) return;
     setNarrow(conversation.clientWidth < narrowWidth);
     return watchWidth(conversation, (width) => setNarrow(width < narrowWidth));
   }, [line]);
   return narrow;
 }
+
 // The larger look's picture at most (style.css), and the room kept around it.
 const peekHeight = 232;
 const margin = 8;
@@ -175,26 +229,36 @@ const keep = (event: SyntheticEvent) => {
 };
 
 // The pictures of a step or a turn, as small thumbnails at the end of its folded line: they take no height of their
-// own, and arrive as the step takes them. A narrow conversation keeps only the latest. Under the pointer one shows
-// larger beside the line; a click opens the viewer. Inside a heading that folds, they never fold or unfold it.
+// own, and arrive as the step takes them. Under the pointer one shows larger beside the line; a click opens the
+// viewer. Inside a heading that folds, they never fold or unfold it.
 export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
   const [peek, setPeek] = useState<{ picture: ToolPicture; box: DOMRect } | null>(null);
   const open = useOpen(pictures);
-  const line = useRef<HTMLSpanElement>(null);
+  const [line, setLine] = useState<HTMLSpanElement | null>(null);
   const narrow = useNarrow(line);
   const offset = Math.max(0, pictures.length - (narrow ? 1 : latest));
   const shown = pictures.slice(offset);
   const fresh = useFresh(shown);
+  const rove = useRove(shown.length + (offset > 0 ? 1 : 0));
+  const roveRef = rove.props.ref;
+  const lineRef = useCallback(
+    (element: HTMLSpanElement | null) => {
+      setLine(element);
+      roveRef(element);
+    },
+    [roveRef],
+  );
   if (!pictures.length) return null;
   return (
     <span
-      ref={line}
+      ref={lineRef}
       className="picture-strip"
       role="group"
       aria-label={`${label}：${pictures.length} 张图片`}
       onClick={keep}
-      onKeyDown={roving}
-      onFocus={rove}
+      onKeyDown={rove.props.onKeyDown}
+      onFocus={rove.props.onFocus}
+      onBlur={rove.props.onBlur}
     >
       {shown.map((picture, at) => (
         <Thumb
@@ -203,9 +267,9 @@ export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; lab
           picture={picture}
           label={`查看图片 ${offset + at + 1} / ${pictures.length}`}
           fresh={fresh(picture)}
-          height={20}
           square
-          first={at === 0}
+          rove={at}
+          tabIndex={rove.tab(at)}
           onOpen={(event) => {
             keep(event);
             setPeek(null);
@@ -223,7 +287,8 @@ export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; lab
           type="button"
           className="picture-more"
           aria-label={`查看全部 ${pictures.length} 张图片`}
-          tabIndex={-1}
+          data-rove={shown.length}
+          tabIndex={rove.tab(shown.length)}
           onClick={(event) => {
             keep(event);
             open(pictures[0]);
@@ -239,7 +304,8 @@ export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; lab
 
 // The larger look under the pointer, as wide as the picture needs up to its limit: centred on the thumbnail,
 // above it where there is room and else on the roomier side, shrunk to fit there, and kept inside the window. It
-// shows once its picture is loaded and its size is known, so no empty frame flashes first.
+// shows once its picture is loaded and its size is known, so no empty frame flashes first. It shows the picture
+// itself, which a thumbnail is too small for, and only while the pointer rests on one.
 function PicturePeek({ picture, box }: { picture: ToolPicture; box: DOMRect }) {
   const card = useRef<HTMLDivElement>(null);
   const image = useRef<HTMLImageElement>(null);
@@ -281,26 +347,32 @@ function PicturePeek({ picture, box }: { picture: ToolPicture; box: DOMRect }) {
 
 // The pictures of an open step or a tool's output, as one row of 64px thumbnails under its line. However many
 // there are, they keep to one row: those that do not fit are counted in a last tile that opens the first of them.
+// Only the pictures that fit are drawn, so only their small copies are made, and none before the row is measured.
 export function PictureRow({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
-  const row = useRef<HTMLDivElement>(null);
+  const row = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
+  // A copy made at other proportions than its header said changes the widths: the row is laid out again.
+  const [, relayout] = useState(0);
   const open = useOpen(pictures);
   useLayoutEffect(() => {
     const element = row.current;
     if (!element) return;
-    const measure = () => setWidth(element.clientWidth);
-    measure();
-    const observer = new ResizeObserver(measure);
+    const content = () => {
+      const style = getComputedStyle(element);
+      return element.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+    };
+    setWidth(content());
+    const observer = new ResizeObserver(() => setWidth(content()));
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
   const gap = 6;
-  const widths = pictures.map((picture) => rowWidth(ratioOf(picture, madeThumbnail(picture))));
-  let fit = pictures.length;
+  let fit = 0;
   if (width) {
+    const widths = pictures.map(rowWidth);
     const total = widths.reduce((sum, value) => sum + value + gap, -gap);
-    if (total > width) {
-      fit = 0;
+    if (total <= width) fit = pictures.length;
+    else {
       let used = 0;
       // Room for the counting tile.
       while (fit < widths.length && used + widths[fit] + gap + rowHeight <= width)
@@ -310,15 +382,26 @@ export function PictureRow({ pictures, label }: { pictures: ToolPicture[]; label
   }
   const shown = pictures.slice(0, fit);
   const fresh = useFresh(shown);
+  const rest = width ? pictures.length - fit : 0;
+  const rove = useRove(shown.length + (rest ? 1 : 0));
+  const roveRef = rove.props.ref;
+  const rowRef = useCallback(
+    (element: HTMLDivElement | null) => {
+      row.current = element;
+      roveRef(element);
+    },
+    [roveRef],
+  );
   if (!pictures.length) return null;
   return (
     <div
-      ref={row}
+      ref={rowRef}
       className="picture-row"
       role="group"
       aria-label={`${label}：${pictures.length} 张图片`}
-      onKeyDown={roving}
-      onFocus={rove}
+      onKeyDown={rove.props.onKeyDown}
+      onFocus={rove.props.onFocus}
+      onBlur={rove.props.onBlur}
     >
       {shown.map((picture, at) => (
         <Thumb
@@ -326,26 +409,28 @@ export function PictureRow({ pictures, label }: { pictures: ToolPicture[]; label
           picture={picture}
           label={`查看图片 ${at + 1} / ${pictures.length}`}
           fresh={fresh(picture)}
-          height={rowHeight}
-          first={at === 0}
+          rove={at}
+          tabIndex={rove.tab(at)}
+          made={() => relayout((value) => value + 1)}
           onOpen={(event) => {
             keep(event);
             open(picture);
           }}
         />
       ))}
-      {fit < pictures.length && (
+      {rest > 0 && (
         <button
           type="button"
           className="picture-row-more"
-          aria-label={`查看其余 ${pictures.length - fit} 张图片`}
-          tabIndex={-1}
+          aria-label={`查看其余 ${rest} 张图片`}
+          data-rove={shown.length}
+          tabIndex={rove.tab(shown.length)}
           onClick={(event) => {
             keep(event);
             open(pictures[fit]);
           }}
         >
-          +{pictures.length - fit}
+          +{rest}
         </button>
       )}
     </div>
@@ -359,6 +444,8 @@ export function LivePictures({ turn, entries }: { turn: string; entries: Picture
   const offset = Math.max(0, pictures.length - 4);
   const shown = pictures.slice(offset);
   const fresh = useFresh(shown);
+  const extra = offset > 0 ? 1 : 0;
+  const rove = useRove(shown.length + extra);
   if (!pictures.length) return null;
   const open = (picture: ToolPicture) =>
     openPictures(
@@ -368,18 +455,21 @@ export function LivePictures({ turn, entries }: { turn: string; entries: Picture
     );
   return (
     <div
+      ref={rove.props.ref}
       className="live-pictures"
       role="group"
       aria-label={`本轮最新图片：共 ${pictures.length} 张`}
-      onKeyDown={roving}
-      onFocus={rove}
+      onKeyDown={rove.props.onKeyDown}
+      onFocus={rove.props.onFocus}
+      onBlur={rove.props.onBlur}
     >
       {offset > 0 && (
         <button
           type="button"
           className="picture-row-more"
           aria-label={`查看本轮全部 ${pictures.length} 张图片`}
-          tabIndex={-1}
+          data-rove={0}
+          tabIndex={rove.tab(0)}
           onClick={() => open(pictures[0])}
         >
           +{offset}
@@ -391,8 +481,8 @@ export function LivePictures({ turn, entries }: { turn: string; entries: Picture
           picture={picture}
           label={`查看图片 ${offset + at + 1} / ${pictures.length}`}
           fresh={fresh(picture)}
-          height={rowHeight}
-          first={at === 0}
+          rove={at + extra}
+          tabIndex={rove.tab(at + extra)}
           onOpen={() => open(picture)}
         />
       ))}

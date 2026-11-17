@@ -127,8 +127,8 @@ export function headerSize(b: Uint8Array): { width: number; height: number } | n
   return null;
 }
 
-// Small copies for every thumbnail: a picture is decoded once, at full size, to make a copy 128px high (at most
-// 512px wide), and every thumbnail of it uses that copy. A thumbnail of the full picture would decode it again,
+// Small copies for every thumbnail: a picture is decoded once, at full size, to make a copy at least 128px on its
+// short side (at most 768px on its long one), and every thumbnail of it uses that copy. A thumbnail of the full picture would decode it again,
 // at full size, for each place it stands: tens of screenshots would hold hundreds of megabytes. Only the viewer
 // decodes the picture itself. Two are made at a time, so a run of screenshots does not stall the window.
 export type Thumbnail = { url: string; width: number; height: number };
@@ -170,12 +170,12 @@ async function makeThumbnail(picture: ToolPicture): Promise<Thumbnail> {
   const bitmap = await createImageBitmap(pictureBlob(picture));
   try {
     const { width, height } = bitmap;
-    let h = Math.min(thumbnailHeight, height);
-    let w = Math.max(1, Math.round((width * h) / height));
-    if (w > 512) {
-      h = Math.max(1, Math.round((h * 512) / w));
-      w = 512;
-    }
+    // The short side at least 128px, so that a cell of any proportions is filled without enlarging the copy (a
+    // long screenshot is not reduced to a sliver); the long side at most 768px. Never larger than the picture.
+    let scale = Math.min(1, thumbnailHeight / Math.min(width, height));
+    if (Math.max(width, height) * scale > 768) scale = 768 / Math.max(width, height);
+    const w = Math.max(1, Math.round(width * scale));
+    const h = Math.max(1, Math.round(height * scale));
     const canvas = new OffscreenCanvas(w, h);
     const context = canvas.getContext('2d')!;
     context.imageSmoothingQuality = 'high';

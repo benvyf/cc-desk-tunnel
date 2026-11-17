@@ -107,6 +107,7 @@ contextBridge.exposeInMainWorld('desktop', {
   openDevTools: () => ipcRenderer.invoke('devtools:open'),
   gitBranch: (directory) => ipcRenderer.invoke('git:branch', directory),
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
+  copyImage: (png) => ipcRenderer.invoke('clipboard:write-image', png),
   openExternal: (url) => ipcRenderer.invoke('external:open', url),
   openWeb: (url) => ipcRenderer.invoke('web:open', url),
   openLink: (url) => ipcRenderer.invoke('link:open', url),

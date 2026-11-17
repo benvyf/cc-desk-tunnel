@@ -164,8 +164,9 @@ test('links are followed by the conversation and pictures from the web are not f
 test('a picture a tool looked at is shown, and opens whole', async ({ page }) => {
   await open(page);
   const tool = page.locator('details.tool').filter({ hasText: 'shot.png' });
-  // Folded, the call's line carries the picture; open, its output does.
-  await expect(tool.locator('> summary .picture-strip .picture-thumb')).toHaveCount(1);
+  // The step's row shows the picture, so the call's line does not show it again; open, its output does.
+  await expect(page.locator('.work-flat > .picture-row .picture-thumb')).toHaveCount(1);
+  await expect(tool.locator('> summary .picture-strip')).toHaveCount(0);
   await tool.locator('summary').click();
   await expect(tool.locator('> summary .picture-strip')).toHaveCount(0);
   await expect(tool.locator('.tool-output')).toHaveText('Read image');

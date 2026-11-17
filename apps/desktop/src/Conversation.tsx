@@ -1,4 +1,5 @@
 import {
+  createContext,
   lazy,
   Suspense,
   useContext,
@@ -235,10 +236,14 @@ function TaskActions({
   );
 }
 
+// Inside an open step whose row shows its pictures, its calls' lines leave them to the row: shown once, and made once.
+const PictureStep = createContext(false);
+
 function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Live }) {
   const { category, verb, subject, added, removed, running, failed } = describe(tool, active);
   const Icon = icons[category];
   const pictures = tool.pictures ?? null;
+  const inPictureStep = useContext(PictureStep);
   const approval = live.canApprove(tool);
   const control = live.taskControl(tool);
   // A question Claude asks is answered, not allowed or denied. With the dock below, the answer is given there and
@@ -267,8 +272,8 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
           <span className="tool-subject" title={subject}>
             {subject}
           </span>
-          {/* Open, the output shows them in a row. */}
-          {pictures && !shown && (
+          {/* Open, the output shows them in a row; inside an open step, the step's row shows them already. */}
+          {pictures && !shown && !inPictureStep && (
             <PictureStrip pictures={pictures.pictures} label="这次调用的图片" />
           )}
           {(added > 0 || removed > 0) && (
@@ -425,10 +430,10 @@ function WorkGroup({
       )}
     >
       {() => (
-        <>
+        <PictureStep.Provider value={pictures.length > 0}>
           {pictures.length > 0 && <PictureRow pictures={pictures} label="这一步的图片" />}
           <WorkItems work={work} active={active} live={live} until={until} />
-        </>
+        </PictureStep.Provider>
       )}
     </Fold>
   );
@@ -758,10 +763,12 @@ function TurnView({
       ) : step.kind === 'work' ? (
         expanded ? (
           <div key={step.id} className="work-flat">
-            {picturesOf(step.items).length > 0 && (
-              <PictureRow pictures={picturesOf(step.items)} label="这一步的图片" />
-            )}
-            <WorkItems work={step} active={active} live={live} until={until} preview />
+            <PictureStep.Provider value={picturesOf(step.items).length > 0}>
+              {picturesOf(step.items).length > 0 && (
+                <PictureRow pictures={picturesOf(step.items)} label="这一步的图片" />
+              )}
+              <WorkItems work={step} active={active} live={live} until={until} preview />
+            </PictureStep.Provider>
           </div>
         ) : (
           <WorkGroup
