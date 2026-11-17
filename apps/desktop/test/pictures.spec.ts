@@ -462,6 +462,14 @@ test('a picture that cannot be decoded says so, in its thumbnail and in the view
   const dialog = viewer(page);
   await expect(dialog.getByRole('alert')).toHaveText('图片无法显示');
   await expect(dialog.getByRole('button', { name: '复制图片' })).toBeDisabled();
+  // Its note covers the stage, and a click there is still a click on the dark, which closes.
+  const stage = (await dialog.locator('.viewer-stage').boundingBox())!;
+  await page.mouse.click(stage.x + stage.width / 2, stage.y + stage.height / 2);
+  await expect(dialog).toHaveCount(0);
+  await strip.locator('.picture-thumb').last().click();
+  await expect(dialog.getByRole('alert')).toHaveText('图片无法显示');
+  // The film marks it as well.
+  await expect(dialog.locator('.viewer-film-thumb.failed .picture-failed')).toHaveCount(1);
   await page.keyboard.press('ArrowLeft');
   await expect(dialog.getByRole('alert')).toHaveCount(0);
   await expect(dialog.locator('.viewer-stage > img')).toBeVisible();

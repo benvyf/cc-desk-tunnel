@@ -432,7 +432,8 @@ handle('clipboard:write-image', async (_event, png) => {
   await clipboard.write([
     new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) }),
   ]);
-}); // The official sign-in page and this project's own page open in the user's browser; nothing else is handed to the
+});
+// The official sign-in page and this project's own page open in the user's browser; nothing else is handed to the
 // system.
 handle('external:open', async (event, target) => {
   const url = new URL(String(target));

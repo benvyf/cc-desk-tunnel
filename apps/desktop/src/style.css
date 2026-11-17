@@ -4169,6 +4169,13 @@ dialog.picture-viewer::backdrop {
 .viewer-film-thumb:hover {
   opacity: 1;
 }
+.viewer-film-thumb.failed {
+  display: grid;
+  place-items: center;
+}
+.viewer-film-thumb .picture-failed {
+  color: rgb(242 241 238 / 55%);
+}
 .viewer-film-thumb img {
   display: block;
   width: 100%;
@@ -4192,6 +4199,8 @@ dialog.picture-viewer::backdrop {
 .viewer-broken {
   position: absolute;
   inset: 0;
+  /* It covers the stage; a click on it is a click on the dark, which closes. */
+  pointer-events: none;
   display: grid;
   place-items: center;
   margin: 0;

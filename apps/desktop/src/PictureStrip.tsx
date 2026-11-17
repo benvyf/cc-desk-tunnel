@@ -96,7 +96,7 @@ function useRove(count: number) {
   useLayoutEffect(() => {
     const element = group.current;
     if (!element || !inside.current || element.contains(document.activeElement)) return;
-    element.querySelectorAll<HTMLButtonElement>('button[data-rove]')[at]?.focus();
+    element.querySelector<HTMLButtonElement>(`button[data-rove="${at}"]`)?.focus();
   });
   return {
     tab: (index: number) => (index === at ? 0 : -1),
@@ -116,7 +116,7 @@ function useRove(count: number) {
         if (!keys.includes(event.key)) return;
         const buttons = [
           ...event.currentTarget.querySelectorAll<HTMLButtonElement>('button[data-rove]'),
-        ];
+        ].sort((a, b) => Number(a.dataset.rove) - Number(b.dataset.rove));
         const from = buttons.indexOf(document.activeElement as HTMLButtonElement);
         if (from < 0) return;
         const to =
@@ -444,8 +444,9 @@ export function LivePictures({ turn, entries }: { turn: string; entries: Picture
   const offset = Math.max(0, pictures.length - 4);
   const shown = pictures.slice(offset);
   const fresh = useFresh(shown);
-  const extra = offset > 0 ? 1 : 0;
-  const rove = useRove(shown.length + extra);
+  // The thumbnails keep their places in the group's order whether or not the counting tile stands before them; it
+  // comes after them, for the keys as well as for the Tab stop.
+  const rove = useRove(shown.length + (offset > 0 ? 1 : 0));
   if (!pictures.length) return null;
   const open = (picture: ToolPicture) =>
     openPictures(
@@ -468,8 +469,8 @@ export function LivePictures({ turn, entries }: { turn: string; entries: Picture
           type="button"
           className="picture-row-more"
           aria-label={`查看本轮全部 ${pictures.length} 张图片`}
-          data-rove={0}
-          tabIndex={rove.tab(0)}
+          data-rove={shown.length}
+          tabIndex={rove.tab(shown.length)}
           onClick={() => open(pictures[0])}
         >
           +{offset}
@@ -481,8 +482,8 @@ export function LivePictures({ turn, entries }: { turn: string; entries: Picture
           picture={picture}
           label={`查看图片 ${offset + at + 1} / ${pictures.length}`}
           fresh={fresh(picture)}
-          rove={at + extra}
-          tabIndex={rove.tab(at + extra)}
+          rove={at}
+          tabIndex={rove.tab(at)}
           onOpen={() => open(picture)}
         />
       ))}

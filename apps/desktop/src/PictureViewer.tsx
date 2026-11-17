@@ -2,7 +2,16 @@ import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } fr
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from 'react';
 import { createRoot } from 'react-dom/client';
 import type { Root } from 'react-dom/client';
-import { ChevronLeft, ChevronRight, Copy, Download, Minus, Plus, X } from './icons.tsx';
+import {
+  ChevronLeft,
+  ChevronRight,
+  Copy,
+  Download,
+  Image as ImageIcon,
+  Minus,
+  Plus,
+  X,
+} from './icons.tsx';
 import { madeThumbnail, pictureBlob, pictureSize, pictureUrl, thumbnail } from './pictures.ts';
 import type { Thumbnail, ToolPicture } from './pictures.ts';
 
@@ -97,9 +106,9 @@ async function copyPicture(picture: ToolPicture) {
 const MIN = 0.05;
 const MAX = 8;
 const clampScale = (value: number) => Math.min(MAX, Math.max(MIN, value));
-// `auto` is fit, or across its width for a tall page; `fit` and `width` are those chosen; `actual` is 100%; `scale`
-// is any other zoom. Paging keeps the first three and returns the last two to `auto`.
-type Mode = 'auto' | 'fit' | 'width' | 'actual' | 'scale';
+// `auto` sees a picture whole, or a tall page across its width from its top; `actual` is its own size; `scale`
+// is any other zoom. A page turned returns to `auto`: a zoom chosen for one picture is not right for the next.
+type Mode = 'auto' | 'actual' | 'scale';
 type Size = { width: number; height: number };
 // A tall page, as a document page is, is read across its width from the top; anything else is seen whole.
 const isPage = (size: Size) => size.height >= size.width * 1.25;
@@ -159,6 +168,7 @@ function FilmThumb({
       onClick={() => select(index)}
     >
       {made && <img src={made.url} alt="" draggable={false} />}
+      {failed && <ImageIcon className="picture-failed" aria-hidden="true" />}
     </button>
   );
 }
@@ -233,7 +243,7 @@ function PictureViewer({ state }: { state: Opened }) {
   const fitScale = Math.min(room.width / size.width, room.height / size.height, 1);
   // Across its width, but never enlarged past its own size, which would only blur it; zoom is there for that.
   const widthScale = Math.min(room.width / size.width, 1);
-  const effective: Exclude<Mode, 'auto'> =
+  const effective: 'fit' | 'width' | 'actual' | 'scale' =
     mode === 'auto' ? (isPage(size) ? 'width' : 'fit') : mode;
   const s =
     effective === 'fit'
@@ -259,8 +269,7 @@ function PictureViewer({ state }: { state: Opened }) {
     const target = Math.min(count - 1, Math.max(0, next));
     if (target === index) return;
     setIndex(target);
-    // A zoom chosen for one picture is not right for the next; fit and fit-width are a way of seeing, and stay.
-    if (mode === 'scale' || mode === 'actual') setMode('auto');
+    setMode('auto');
     setOffset(null);
   };
   // Zooms to `next`, keeping the point (px, py) of the stage where it is.
