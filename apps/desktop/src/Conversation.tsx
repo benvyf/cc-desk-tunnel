@@ -74,7 +74,7 @@ import {
 } from './QuoteActions.tsx';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import ConversationWidthControls from './ConversationWidthControls.tsx';
-import { pictureUrl, picturesOf, toolPictures } from './pictures.ts';
+import { pictureUrl, picturesOf } from './pictures.ts';
 import { PictureStrip } from './PictureStrip.tsx';
 import { Picture } from './Picture.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
@@ -237,7 +237,7 @@ function TaskActions({
 function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Live }) {
   const { category, verb, subject, added, removed, running, failed } = describe(tool, active);
   const Icon = icons[category];
-  const pictures = useMemo(() => (tool.output ? toolPictures(tool.output) : null), [tool.output]);
+  const pictures = tool.pictures ?? null;
   const approval = live.canApprove(tool);
   const control = live.taskControl(tool);
   // A question Claude asks is answered, not allowed or denied. With the dock below, the answer is given there and

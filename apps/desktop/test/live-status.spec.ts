@@ -517,7 +517,8 @@ test('a run that finishes out of sight lights a green dot before its title, brea
   });
   const finishing = make('后台完成的会话');
   const reading = make('正在看的会话');
-  const sessions = [finishing, reading];
+  const waiting = make('等后台任务的会话');
+  const sessions = [finishing, reading, waiting];
   let send: (value: unknown) => void = () => {};
   await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
     send = (value) => route.send(JSON.stringify(value));
@@ -591,6 +592,7 @@ test('a run that finishes out of sight lights a green dot before its title, brea
   await expect(row(finishing.title)).toHaveAttribute('data-state', 'running');
   const titleBefore = (await row(finishing.title).locator('strong').boundingBox())!;
   end();
+  const endedAt = Date.now();
   await expect(row(finishing.title)).toHaveAttribute('data-state', 'done');
   await expect(row(finishing.title).locator('small')).toHaveText('已完成');
   const light = row(finishing.title).locator('.done-dot');
@@ -629,15 +631,28 @@ test('a run that finishes out of sight lights a green dot before its title, brea
       };
     });
   expect((await progress())?.state).toBe('running');
-  await page.waitForTimeout(1500);
+  // Its breathing keeps the time since it was lit (about 200ms after the run ended), however often the list is drawn
+  // again in place: here by another session's changes.
+  const keepsTime = async () => {
+    const elapsed = Date.now() - endedAt - 200;
+    const time = (await progress())!.time;
+    expect(time).toBeGreaterThan(elapsed - 700);
+    expect(time).toBeLessThan(elapsed + 400);
+  };
+  for (let n = 0; n < 5; n++) {
+    send({ type: 'session.updated', session: { ...waiting, updatedAt: new Date().toISOString() } });
+    await page.waitForTimeout(300);
+  }
+  await keepsTime();
   const project = page.locator('.project-toggle').filter({ hasText: '完成' });
   await project.click();
   // Folded, the project carries the same green light.
   await expect(project).toHaveAttribute('data-state', 'done');
   await expect(project.locator('.done-dot')).toHaveCount(1);
   await project.click();
+  // Drawn anew, it goes on from where it was.
+  await keepsTime();
   const resumed = await progress();
-  expect(resumed?.time).toBeGreaterThan(1200);
   // After its breaths it stays lit.
   await page.waitForTimeout(7200 - resumed!.time + 300);
   expect(await progress()).toBeNull();
@@ -663,4 +678,49 @@ test('a run that finishes out of sight lights a green dot before its title, brea
   finish(reading);
   await expect(row(reading.title)).toHaveAttribute('data-state', 'running');
   await expect(row(reading.title).locator('.done-dot')).toHaveCount(0);
+
+  // A turn that finishes with only background tasks left lights at once, beside the background state, and breathes.
+  const run = { id: randomUUID(), status: 'running' as const, connectionId };
+  const state = (activeRun: unknown, lastRun?: unknown) =>
+    send({
+      type: 'session.updated',
+      session: { ...waiting, activeRun, ...(lastRun ? { lastRun } : {}) },
+    });
+  state(run);
+  await expect(row(waiting.title)).toHaveAttribute('data-state', 'running');
+  state({ ...run, waiting: 'background' });
+  await expect(row(waiting.title)).toHaveAttribute('data-state', 'background');
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(1);
+  await expect(row(waiting.title).locator('.running-dot')).toHaveCount(1);
+  expect(
+    await row(waiting.title)
+      .locator('.done-dot')
+      .evaluate((node) => node.getAnimations()[0]?.playState),
+  ).toBe('running');
+  // Claude taking the run up again puts it out.
+  state(run);
+  await expect(row(waiting.title)).toHaveAttribute('data-state', 'running');
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(0);
+  // Stopped after its background wait, it is not finished.
+  state({ ...run, waiting: 'background' });
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(1);
+  state(null, { id: run.id, status: 'cancelled', endedAt: new Date().toISOString() });
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(0);
+  await expect(row(waiting.title)).not.toHaveAttribute('data-state');
+  // Failing after its background wait marks it failed, not finished.
+  const again = { ...run, id: randomUUID() };
+  state(again);
+  state({ ...again, waiting: 'background' });
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(1);
+  state(null, { id: again.id, status: 'failed', endedAt: new Date().toISOString() });
+  await expect(row(waiting.title)).toHaveAttribute('data-state', 'failed');
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(0);
+  // Finishing after its background wait leaves it lit.
+  const third = { ...run, id: randomUUID() };
+  state(third);
+  await expect(row(waiting.title)).toHaveAttribute('data-state', 'running');
+  state({ ...third, waiting: 'background' });
+  state(null, { id: third.id, status: 'completed', endedAt: new Date().toISOString() });
+  await expect(row(waiting.title)).toHaveAttribute('data-state', 'done');
+  await expect(row(waiting.title).locator('.done-dot')).toHaveCount(1);
 });

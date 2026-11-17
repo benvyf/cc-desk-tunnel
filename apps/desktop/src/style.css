@@ -3854,6 +3854,9 @@ a.link-elsewhere {
   align-items: center;
   gap: 3px;
   margin-left: 2px;
+  /* The text of a line is a little under 20px high: the thumbnails overhang it rather than make it taller, so the
+     line keeps its height to the half pixel and nothing below moves when the first picture arrives. */
+  margin-block: -2px;
 }
 .picture-thumb,
 .picture-more {
@@ -3867,10 +3870,12 @@ a.link-elsewhere {
   width: 20px;
   overflow: hidden;
   cursor: zoom-in;
-  animation: picture-in 220ms ease-out both;
   transition:
     transform 120ms ease-out,
     border-color 120ms ease-out;
+}
+.picture-thumb.fresh {
+  animation: picture-in 220ms ease-out both;
 }
 .picture-thumb img {
   display: block;
@@ -3918,7 +3923,6 @@ a.link-elsewhere {
 .picture-peek img {
   display: block;
   max-width: 100%;
-  max-height: 232px;
   border-radius: var(--radius-md);
   object-fit: contain;
 }

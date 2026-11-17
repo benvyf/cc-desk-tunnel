@@ -88,6 +88,8 @@ const sideContextTypes = [
 ];
 
 export class SessionStore {
+  // Runs that reported an error before they ended (see lastRun).
+  private erroredRuns = new Set<string>();
   directory: string;
   database: DatabaseSync;
   // Sessions as last read or written: an event is recorded without reading its session back.
@@ -769,6 +771,8 @@ export class SessionStore {
       createdAt: now,
       updatedAt: now,
       activeRun: null,
+      // A fork has not run yet; the source's last run is not its own.
+      lastRun: undefined,
     };
     const events = this.events(sourceId, 0, beforeSequence).filter(
       ({ payload }) =>
@@ -908,12 +912,18 @@ export class SessionStore {
         const event: SessionEvent = { sessionId, runId, sequence: ++sequence, createdAt, payload };
         if (!stateReadings.has(payload.type)) session.updatedAt = event.createdAt;
         if (payload.type === 'native.compact' && session.prompt) session.prompt.compacted = true;
-        if (payload.type === 'run.status' && terminalStatuses.has(payload.status))
+        // How the run ended, as a window reading the session would show it: one that reported an error has failed,
+        // whatever status it ended with.
+        if (payload.type === 'run.error') this.erroredRuns.add(runId);
+        if (payload.type === 'run.status' && terminalStatuses.has(payload.status)) {
+          const status = payload.status as 'completed' | 'cancelled' | 'failed';
           session.lastRun = {
             id: runId,
-            status: payload.status as 'completed' | 'cancelled' | 'failed',
+            status: status === 'completed' && this.erroredRuns.has(runId) ? 'failed' : status,
             endedAt: event.createdAt,
           };
+          this.erroredRuns.delete(runId);
+        }
         if (payload.type === 'run.status')
           session.activeRun = terminalStatuses.has(payload.status)
             ? null

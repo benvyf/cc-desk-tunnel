@@ -145,13 +145,23 @@ async function open(page: Page, finished: boolean) {
       type: 'session.event',
       event: { sessionId: session.id, runId, sequence: ++sequence, createdAt: now, payload },
     });
-  return { push };
+  return { push, connectionId };
+}
+
+// A line keeps the height it has without its pictures.
+async function keepsItsHeight(summary: import('@playwright/test').Locator) {
+  const strip = summary.locator('.picture-strip');
+  const height = (await summary.boundingBox())!.height;
+  await strip.evaluate((node: HTMLElement) => (node.style.display = 'none'));
+  const without = (await summary.boundingBox())!.height;
+  await strip.evaluate((node: HTMLElement) => (node.style.display = ''));
+  expect(height).toBe(without);
 }
 
 test('pictures arrive on the line of the step that took them while the run goes on', async ({
   page,
 }) => {
-  const { push } = await open(page, false);
+  const { push, connectionId } = await open(page, false);
   const step = page.locator('details.work').last();
   for (const [index, payload] of [...looked(0), ...looked(1)].entries()) {
     push(payload);
@@ -160,9 +170,29 @@ test('pictures arrive on the line of the step that took them while the run goes 
   // The step's line stays folded and one line high, and carries both thumbnails.
   await expect(step).not.toHaveAttribute('open');
   await expect(step.locator('> summary .picture-thumb')).toHaveCount(2);
-  const line = (await step.locator('> summary').boundingBox())!;
-  expect(line.height).toBeLessThanOrEqual(28);
+  await keepsItsHeight(step.locator('> summary'));
+  // Only a picture shown for the first time fades in.
+  await expect(step.locator('.picture-thumb.fresh')).toHaveCount(2);
   await page.locator('.conversation').screenshot({ path: resolve(folder, '运行中.png') });
+
+  // A picture opened from the step stays open when the run finishes and folds its steps into the turn's line.
+  await step.locator('> summary .picture-thumb').last().click();
+  const dialog = page.locator('dialog:has(.picture-view)');
+  await expect(dialog.locator('h2')).toHaveText('图片 2 / 2');
+  push({ type: 'text.delta', messageId: randomUUID(), text: '好了。' });
+  push({ type: 'run.status', status: 'completed', connectionId });
+  await expect(page.locator('details.turn-process')).toHaveCount(1);
+  await expect(page.locator('details.work')).toHaveCount(0);
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('h2')).toHaveText('图片 2 / 2');
+  await page.keyboard.press('ArrowLeft');
+  await expect(dialog.locator('h2')).toHaveText('图片 1 / 2');
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  // The turn's line carries the same pictures, which do not fade in again.
+  const strip = page.locator('details.turn-process > summary .picture-strip');
+  await expect(strip.locator('.picture-thumb')).toHaveCount(2);
+  await expect(strip.locator('.picture-thumb.fresh')).toHaveCount(0);
 });
 
 test('a finished turn keeps its pictures on its one folded line: latest three, the rest counted, opened in turn', async ({
@@ -175,8 +205,7 @@ test('a finished turn keeps its pictures on its one folded line: latest three, t
   await expect(strip.locator('.picture-thumb')).toHaveCount(3);
   await expect(strip.locator('.picture-more')).toHaveText('+2');
   await expect(strip).toHaveAttribute('aria-label', '本轮的图片：5 张图片');
-  // The line is as high as one without pictures.
-  expect((await process.locator('> summary').boundingBox())!.height).toBeLessThanOrEqual(28);
+  await keepsItsHeight(process.locator('> summary'));
 
   // Under the pointer a picture shows larger beside the line, which does not move.
   const before = (await process.locator('> summary').boundingBox())!;
@@ -219,4 +248,6 @@ test('a finished turn keeps its pictures on its one folded line: latest three, t
   await expect(process).toHaveAttribute('open');
   await expect(strip).toHaveCount(0);
   await expect(process.locator('details.work > summary .picture-thumb')).toHaveCount(3);
+  // Pictures already shown on the turn's line do not fade in again on the step's.
+  await expect(process.locator('details.work > summary .picture-thumb.fresh')).toHaveCount(0);
 });

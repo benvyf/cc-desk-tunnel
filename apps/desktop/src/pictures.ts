@@ -3,23 +3,22 @@ export type ToolPicture = { type: string; data: string };
 // A tool that looked at a picture (Read on an image, a screenshot an MCP tool took) answers with content blocks,
 // which the service passes on as their JSON. The pictures are shown as pictures and the words stay text; any
 // other output is left as it is.
-type Pictures = { text: string; pictures: ToolPicture[] } | null;
-// Outputs with pictures are large and are read again each time a turn is drawn, by the tool, its group and the
-// turn: the latest few are kept, by the very string, so each is parsed once.
-const parsed = new Map<string, Pictures>();
+export type Pictures = { text: string; pictures: ToolPicture[] } | null;
 export function toolPictures(output: string): Pictures {
   if (!output.startsWith('[') || !output.includes('"image"')) return null;
-  if (parsed.has(output)) return parsed.get(output)!;
-  const result = parsePictures(output);
-  parsed.set(output, result);
-  if (parsed.size > 64) parsed.delete(parsed.keys().next().value!);
-  return result;
+  return parsePictures(output);
+}
+// The transcript is drawn anew from the session's events on every event, but each event is kept as the one
+// object: its pictures are read once, by that object, and are the same objects at every drawing. They go
+// with the event when the session's history is let go.
+const read = new WeakMap<object, Pictures>();
+export function resultPictures(result: { output: string }): Pictures {
+  if (!read.has(result)) read.set(result, toolPictures(result.output));
+  return read.get(result)!;
 }
 // Every picture the tools of a step or a turn looked at, in order.
-export function picturesOf(items: readonly { kind: string; output?: string }[]): ToolPicture[] {
-  return items.flatMap((item) =>
-    item.kind === 'tool' && item.output ? (toolPictures(item.output)?.pictures ?? []) : [],
-  );
+export function picturesOf(items: readonly { kind: string; pictures?: Pictures }[]): ToolPicture[] {
+  return items.flatMap((item) => (item.kind === 'tool' && item.pictures?.pictures) || []);
 }
 function parsePictures(output: string): Pictures {
   let blocks: unknown;
@@ -50,7 +49,13 @@ function parsePictures(output: string): Pictures {
   }
   return pictures.length ? { text: text.join('\n'), pictures } : null;
 }
-export const pictureUrl = (picture: ToolPicture) => `data:${picture.type};base64,${picture.data}`;
+// A picture's address is made once: it is megabytes long, and a thumbnail is drawn again every second.
+const urls = new WeakMap<ToolPicture, string>();
+export function pictureUrl(picture: ToolPicture) {
+  let url = urls.get(picture);
+  if (url === undefined) urls.set(picture, (url = `data:${picture.type};base64,${picture.data}`));
+  return url;
+}
 // What stands for a picture in text: its type and about how large it is.
 export const pictureNote = (picture: ToolPicture) =>
   `[图片 ${picture.type} · ${Math.max(1, Math.round((picture.data.length * 3) / 4 / 1024))} KB]`;

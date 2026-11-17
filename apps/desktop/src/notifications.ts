@@ -54,7 +54,8 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
   const markDone = useCallback(
     (sessionId: string, finished: boolean) =>
       setDone((current) => {
-        if (current.has(sessionId) === finished) return current;
+        // Going out is done once; lighting again starts the breathing anew, for a later finish.
+        if (!finished && !current.has(sessionId)) return current;
         const next = new Map(current);
         if (finished) next.set(sessionId, Date.now());
         else next.delete(sessionId);
@@ -62,6 +63,18 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
       }),
     [],
   );
+  const prune = useCallback((listed: ReadonlySet<string>) => {
+    setDone((current) =>
+      [...current.keys()].every((id) => listed.has(id))
+        ? current
+        : new Map([...current].filter(([id]) => listed.has(id))),
+    );
+    setFailed((current) =>
+      [...current].every((id) => listed.has(id))
+        ? current
+        : new Set([...current].filter((id) => listed.has(id))),
+    );
+  }, []);
   // A session finished or failed out of sight is marked; the one being read in a focused window is not.
   const unseen = (sessionId: string) => away() || sessionId !== view.current();
 
@@ -152,8 +165,18 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
             if (unseen(session.id)) markDone(session.id, true);
             push({ kind: 'done', title: '任务完成', body: session.title, sessionId: session.id });
           }
-          if (before && !now && before.waiting !== 'background') ended(session, before.id);
+          // Claude took the run up again from its background tasks: the turn it finished is no longer the last word.
+          if (before?.waiting === 'background' && now && now.waiting !== 'background')
+            markDone(session.id, false);
+          if (before && !now)
+            if (before.waiting !== 'background') ended(session, before.id);
+            else settled(session, before.id);
         }
+      // A session deleted, here or in another window, keeps no mark.
+      if (known) {
+        const listed = new Set(runs.keys());
+        prune(listed);
+      }
       previous = runs;
       known = true;
     };
@@ -168,41 +191,60 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
         sessionId: session.id,
       });
     };
+    // How a run ended: from its events where this window has them; a session out of sight has none here, and the
+    // service tells how its last run ended instead. A service from before that tells neither: undefined.
+    const outcomeOf = (session: Session, runId: string) => {
+      const events = (client.state.events[session.id] ?? []).filter(
+        (event) => event.runId === runId,
+      );
+      const status = events.findLast((event) => event.payload.type === 'run.status')?.payload;
+      const last = client.state.sessions.find((item) => item.id === session.id)?.lastRun;
+      const outcome =
+        status?.type === 'run.status'
+          ? status.status
+          : last?.id === runId
+            ? last.status
+            : undefined;
+      const error = events.findLast((event) => event.payload.type === 'run.error')?.payload;
+      return { outcome, error: error?.type === 'run.error' ? error : undefined };
+    };
+    const failed = (session: Session, error: { message: string } | undefined) => {
+      markDone(session.id, false);
+      // The session being read in a focused window shows the failure itself.
+      if (unseen(session.id)) mark(session.id, true);
+      push({
+        kind: 'failed',
+        title: '任务失败',
+        body: `${session.title}${error ? `：${error.message}` : ''}`,
+        sessionId: session.id,
+      });
+    };
+    // A run that ended after waiting only for its background tasks: its finished turn was told already. One that
+    // was stopped or failed since is no longer finished.
+    const settled = (session: Session, runId: string) =>
+      later(() => {
+        const { outcome, error } = outcomeOf(session, runId);
+        if (outcome === 'cancelled') markDone(session.id, false);
+        else if (outcome === 'failed' || error) failed(session, error);
+      });
     const ended = (session: Session, runId: string) =>
       later(() => {
-        const events = (client.state.events[session.id] ?? []).filter(
-          (event) => event.runId === runId,
-        );
-        const status = events.findLast((event) => event.payload.type === 'run.status')?.payload;
-        // A session out of sight has no events here; the service tells how its last run ended instead. A service
-        // from before that tells neither, and the run counts as finished.
-        const last = client.state.sessions.find((item) => item.id === session.id)?.lastRun;
-        const outcome =
-          status?.type === 'run.status'
-            ? status.status
-            : last?.id === runId
-              ? last.status
-              : undefined;
+        const { outcome, error } = outcomeOf(session, runId);
         // Stopping a run is the user's own doing.
-        if (outcome === 'cancelled') return;
-        const error = events.findLast((event) => event.payload.type === 'run.error')?.payload;
-        if (outcome === 'failed' || error) {
-          // The session being read in a focused window shows the failure itself.
-          if (unseen(session.id)) mark(session.id, true);
-          push({
-            kind: 'failed',
-            title: '任务失败',
-            body: `${session.title}${error?.type === 'run.error' ? `：${error.message}` : ''}`,
-            sessionId: session.id,
-          });
-        } else {
+        if (outcome === 'cancelled') {
+          markDone(session.id, false);
+          return;
+        }
+        // A run whose outcome is not told (a service from before lastRun) counts as finished.
+        if (outcome === 'failed' || error) failed(session, error);
+        else {
           if (unseen(session.id)) markDone(session.id, true);
           push({ kind: 'done', title: '任务完成', body: session.title, sessionId: session.id });
         }
       });
     inspect();
     return client.subscribe(inspect);
-  }, [client, push, mark, markDone]);
+  }, [client, push, mark, markDone, prune]);
 
   return {
     notices,

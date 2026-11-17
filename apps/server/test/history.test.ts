@@ -351,3 +351,32 @@ test('a run that ends is recorded as the last run of its session, kept across a 
     { id: second, status: 'completed' },
   );
 });
+
+test('a fork has not run: it does not take the last run of its source', (t) => {
+  const f = fixture(t);
+  const connectionId = randomUUID();
+  const runId = randomUUID();
+  f.store.append(f.session.id, runId, { type: 'run.status', status: 'running', connectionId });
+  f.store.append(f.session.id, runId, { type: 'run.status', status: 'completed', connectionId });
+  assert.equal(f.store.get(f.session.id).session.lastRun?.id, runId);
+  const fork = f.store.fork(randomUUID(), f.session.id, randomUUID(), '分叉', false, {
+    device: f.session.device!,
+  });
+  assert.equal(fork.lastRun, undefined);
+  assert.equal(f.store.get(fork.id).session.lastRun, undefined);
+});
+
+test('a run that reported an error before it completed is recorded as failed, as a reading window shows it', (t) => {
+  const f = fixture(t);
+  const connectionId = randomUUID();
+  const runId = randomUUID();
+  f.store.append(f.session.id, runId, { type: 'run.status', status: 'running', connectionId });
+  f.store.append(f.session.id, runId, { type: 'run.error', code: 'x', message: '出错了' });
+  f.store.append(f.session.id, runId, { type: 'run.status', status: 'completed', connectionId });
+  assert.equal(f.store.get(f.session.id).session.lastRun?.status, 'failed');
+  // The next run starts clean.
+  const next = randomUUID();
+  f.store.append(f.session.id, next, { type: 'run.status', status: 'running', connectionId });
+  f.store.append(f.session.id, next, { type: 'run.status', status: 'completed', connectionId });
+  assert.equal(f.store.get(f.session.id).session.lastRun?.status, 'completed');
+});

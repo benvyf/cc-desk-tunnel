@@ -65,18 +65,27 @@ const breathes = (state: RowState) =>
   state === 'running' || state === 'background' || state === 'terminal';
 // How long a finished session's light breathes before it stays lit (style.css: three breaths of 2.4s).
 const doneBreathing = 7200;
-// A finished session's light, as far into its breathing as the time since it finished: a list drawn again, or a
-// folded project opened, does not start it over.
+// A finished session's light, as far into its breathing as the time since it finished: a folded project opened, or
+// a list drawn anew, does not start it over. The delay is taken once, when the light is drawn: set again on a
+// later drawing, the browser would count it on top of the time the breathing has already run. A later finish
+// draws a new light, which breathes from the start.
 function DoneDot({ at, className = 'done-dot' }: { at: number | undefined; className?: string }) {
-  const elapsed = at === undefined ? doneBreathing : Math.max(0, Date.now() - at);
+  const delay = useMemo(
+    () => Math.min(at === undefined ? doneBreathing : Math.max(0, Date.now() - at), doneBreathing),
+    [at],
+  );
   return (
     <i
+      key={at}
       className={className}
       aria-hidden="true"
-      style={{ animationDelay: `-${Math.min(elapsed, doneBreathing)}ms` }}
+      style={{ animationDelay: `-${delay}ms` }}
     />
   );
 }
+// A session whose turn finished out of sight stays lit while only its background tasks go on.
+const lit = (session: Session, done: ReadonlyMap<string, number>) =>
+  done.has(session.id) && (!session.activeRun || session.activeRun.waiting === 'background');
 function activity(session: Session, state: RowState | undefined) {
   if (session.activeRun?.surface === 'terminal') return terminalState(session.activeRun.activity);
   return state ? stateLabels[state] : ago(Date.parse(session.updatedAt));
@@ -422,7 +431,10 @@ export default function Sidebar({
   // What a folded list most needs the user for: the state of the one session that ranks highest.
   const topState = (members: Session[]) =>
     members
-      .map((session) => rowState(session, notifications))
+      .map((session) => {
+        const state = rowState(session, notifications);
+        return lit(session, done) && (!state || stateRank.done > stateRank[state]) ? 'done' : state;
+      })
       .reduce<RowState | undefined>(
         (top, next) => (next && (!top || stateRank[next] > stateRank[top]) ? next : top),
         undefined,
@@ -595,7 +607,7 @@ export default function Sidebar({
           }}
         >
           {/* Finished while out of sight: a green light before the title, until the session is opened. */}
-          {state === 'done' && <DoneDot at={done.get(session.id)} />}
+          {lit(session, done) && <DoneDot at={done.get(session.id)} />}
           <strong>{session.title}</strong>
           {state && state !== 'done' && (
             <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />

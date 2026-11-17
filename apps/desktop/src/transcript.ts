@@ -1,3 +1,5 @@
+import { resultPictures } from './pictures.ts';
+import type { Pictures } from './pictures.ts';
 import type { SessionEvent, TurnStats } from '@cc-desk-tunnel/protocol';
 
 export type ToolState =
@@ -52,6 +54,8 @@ export type TranscriptItem =
       // Set once the result arrived; a tool without it is still running or was left unfinished.
       endedAt?: string;
       output?: string;
+      // The pictures in the output, read once per result (pictures.ts).
+      pictures?: Pictures;
       liveOutput?: string;
       elapsedSeconds?: number;
       // The task the call waits on in the foreground, which may be ended or sent to the background until it returns.
@@ -168,6 +172,7 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
         tool.state = payload.status;
         tool.endedAt = at;
         tool.output = payload.output;
+        tool.pictures = resultPictures(payload);
         tool.exitCode = payload.exitCode;
       }
     }
