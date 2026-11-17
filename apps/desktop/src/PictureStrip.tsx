@@ -3,6 +3,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  memo,
   useLayoutEffect,
   useRef,
   useState,
@@ -14,6 +15,19 @@ import { madeThumbnail, pictureSize, pictureUrl, thumbnail } from './pictures.ts
 import type { Thumbnail, ToolPicture } from './pictures.ts';
 import { openPictures } from './PictureViewer.tsx';
 import type { PictureEntry } from './PictureViewer.tsx';
+
+// The pictures of a step as the same array while they are the same: the step's items are made anew on every event
+// of the session, and its lines, drawn again with an equal list, would draw their thumbnails again for nothing.
+export function useSamePictures(next: ToolPicture[]) {
+  const kept = useRef(next);
+  if (
+    kept.current !== next &&
+    (kept.current.length !== next.length ||
+      next.some((picture, at) => picture !== kept.current[at]))
+  )
+    kept.current = next;
+  return kept.current;
+}
 
 // The pictures of the turn a line belongs to, so that a picture opened from any line pages through the whole turn.
 export const TurnPictures = createContext<{ key: string; entries: PictureEntry[] } | null>(null);
@@ -231,7 +245,7 @@ const keep = (event: SyntheticEvent) => {
 // The pictures of a step or a turn, as small thumbnails at the end of its folded line: they take no height of their
 // own, and arrive as the step takes them. Under the pointer one shows larger beside the line; a click opens the
 // viewer. Inside a heading that folds, they never fold or unfold it.
-export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
+function PictureStripLine({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
   const [peek, setPeek] = useState<{ picture: ToolPicture; box: DOMRect } | null>(null);
   const open = useOpen(pictures);
   const [line, setLine] = useState<HTMLSpanElement | null>(null);
@@ -348,7 +362,7 @@ function PicturePeek({ picture, box }: { picture: ToolPicture; box: DOMRect }) {
 // The pictures of an open step or a tool's output, as one row of 64px thumbnails under its line. However many
 // there are, they keep to one row: those that do not fit are counted in a last tile that opens the first of them.
 // Only the pictures that fit are drawn, so only their small copies are made, and none before the row is measured.
-export function PictureRow({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
+function PictureRowLine({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
   const row = useRef<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(0);
   // A copy made at other proportions than its header said changes the widths: the row is laid out again.
@@ -439,7 +453,7 @@ export function PictureRow({ pictures, label }: { pictures: ToolPicture[]; label
 
 // While a run goes on, its latest pictures in one line at the end of its steps, above "正在执行…": seen as they are
 // taken without unfolding anything. Its height is kept from the first picture on and it leaves with the run.
-export function LivePictures({ turn, entries }: { turn: string; entries: PictureEntry[] }) {
+function LivePicturesLine({ turn, entries }: { turn: string; entries: PictureEntry[] }) {
   const pictures = entries.map((entry) => entry.picture);
   const offset = Math.max(0, pictures.length - 4);
   const shown = pictures.slice(offset);
@@ -500,3 +514,8 @@ export function TurnPicturesProvider({
 }) {
   return <TurnPictures.Provider value={value}>{children}</TurnPictures.Provider>;
 }
+
+// Drawn again only when their pictures change, not on every event of the run.
+export const PictureStrip = memo(PictureStripLine);
+export const PictureRow = memo(PictureRowLine);
+export const LivePictures = memo(LivePicturesLine);

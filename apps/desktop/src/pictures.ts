@@ -153,11 +153,20 @@ function slot<T>(work: () => Promise<T>) {
 }
 export const thumbnailHeight = 128;
 // A picture's bytes. Read from its own data, not fetched: the window's policy lets no fetch reach a data: address.
+// Decoded natively where the window can (Chromium 140 on), else a byte at a time: a screenshot is megabytes, and
+// the loop holds the window for tens of milliseconds while a run is drawing its answer.
+const fromBase64 = (
+  Uint8Array as unknown as { fromBase64?: (text: string) => Uint8Array }
+).fromBase64?.bind(Uint8Array);
 export function pictureBlob(picture: ToolPicture) {
-  const text = atob(picture.data);
-  const bytes = new Uint8Array(text.length);
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
-  return new Blob([bytes], { type: picture.type });
+  let bytes: Uint8Array;
+  if (fromBase64) bytes = fromBase64(picture.data);
+  else {
+    const text = atob(picture.data);
+    bytes = new Uint8Array(text.length);
+    for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  }
+  return new Blob([bytes as Uint8Array<ArrayBuffer>], { type: picture.type });
 }
 const dataUrl = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {

@@ -76,7 +76,13 @@ import {
 import type { QuoteDestination } from './QuoteActions.tsx';
 import ConversationWidthControls from './ConversationWidthControls.tsx';
 import { picturesOf } from './pictures.ts';
-import { LivePictures, PictureRow, PictureStrip, TurnPictures } from './PictureStrip.tsx';
+import {
+  LivePictures,
+  PictureRow,
+  PictureStrip,
+  TurnPictures,
+  useSamePictures,
+} from './PictureStrip.tsx';
 import { updatePictures } from './PictureViewer.tsx';
 import type { PictureEntry } from './PictureViewer.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
@@ -414,7 +420,7 @@ function WorkGroup({
   );
   const control = controlled.length === 1 ? live.taskControl(controlled[0]) : undefined;
   // Folded, the group's line carries its pictures; open, each call's line carries its own.
-  const pictures = useMemo(() => picturesOf(work.items), [work.items]);
+  const pictures = useSamePictures(picturesOf(work.items));
   return (
     <Fold
       className="work"
@@ -699,6 +705,12 @@ function heldOpen(turns: Turn[], index: number) {
   return last > index && !turns[last].endedAt;
 }
 
+// An expanded step's pictures in a row above its calls, kept the same while they are.
+function StepPictureRow({ items }: { items: Work['items'] }) {
+  const pictures = useSamePictures(picturesOf(items));
+  return pictures.length > 0 ? <PictureRow pictures={pictures} label="这一步的图片" /> : null;
+}
+
 // A turn's pictures, each with the step of work that took it (1 for the first). Recomputed as the turn's events
 // arrive, but the same array while its pictures are the same, so an open viewer is not drawn again for nothing.
 function turnEntries(turn: Turn): PictureEntry[] {
@@ -764,9 +776,7 @@ function TurnView({
         expanded ? (
           <div key={step.id} className="work-flat">
             <PictureStep.Provider value={picturesOf(step.items).length > 0}>
-              {picturesOf(step.items).length > 0 && (
-                <PictureRow pictures={picturesOf(step.items)} label="这一步的图片" />
-              )}
+              <StepPictureRow items={step.items} />
               <WorkItems work={step} active={active} live={live} until={until} preview />
             </PictureStep.Provider>
           </div>
