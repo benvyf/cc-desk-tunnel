@@ -362,3 +362,75 @@ test('reference file tiles match both themes and forced colors retain readable c
   await expect(page.locator('.attachment-tile')).toHaveCount(3);
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
 });
+
+const pasteText = (page: import('@playwright/test').Page, text: string) =>
+  page.getByRole('textbox', { name: '消息', exact: true }).evaluate((box, value) => {
+    const data = new DataTransfer();
+    data.setData('text/plain', value);
+    const event = new ClipboardEvent('paste', {
+      clipboardData: data,
+      bubbles: true,
+      cancelable: true,
+    });
+    box.dispatchEvent(event);
+    return event.defaultPrevented;
+  }, text);
+
+test('long pasted text becomes a block beside the box, is sent whole and can go back into the box', async ({
+  page,
+}) => {
+  const input = page.getByRole('textbox', { name: '消息', exact: true });
+  expect(await pasteText(page, '一小段文字')).toBe(false);
+  await expect(page.locator('.attachment-text')).toHaveCount(0);
+  const log = [
+    'PS C:\\Users\\me> git diff --help',
+    ...Array.from({ length: 40 }, (_, index) => `  --option-${index}    explain option ${index}`),
+  ].join('\r\n');
+  const normalized = log.replace(/\r\n/g, '\n');
+  expect(await pasteText(page, log)).toBe(true);
+  await expect(input).toHaveValue('');
+  const tile = page.locator('.attachment-text');
+  await expect(tile).toHaveCount(1);
+  await expect(tile.locator('.attachment-kind')).toHaveText('TEXT');
+  await expect(tile.locator('.attachment-text-title')).toHaveText(
+    'PS C:\\Users\\me> git diff --help',
+  );
+  await expect(tile.locator('.attachment-text-meta')).toContainText('41 行');
+  await page.locator('main').screenshot({ path: '.local/paste-block.png' });
+
+  await page.getByRole('button', { name: '切换会话' }).click();
+  await expect(tile).toHaveCount(0);
+  await page.getByRole('button', { name: '切换会话' }).click();
+  await expect(tile).toHaveCount(1);
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('attachment-test-drafts')))
+    .toContain('--option-39');
+  await page.reload();
+  await expect(tile).toHaveCount(1);
+
+  await input.fill('这是什么意思？');
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  expect(await page.locator('main').getAttribute('data-sent')).toBe(
+    `这是什么意思？\n\n${normalized}`,
+  );
+
+  await tile.getByRole('button', { name: '在文本框中显示' }).click();
+  await expect(tile).toHaveCount(0);
+  await expect(input).toHaveValue(`这是什么意思？\n${normalized}`);
+  await expect(input).toBeFocused();
+  const box = await input.boundingBox();
+  expect(box!.height).toBeLessThanOrEqual(272);
+});
+
+test('a long paste in an SSH project also becomes a block, and a block can be removed', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/attachments.html?ssh');
+  expect(await pasteText(page, 'x'.repeat(2400))).toBe(true);
+  const tile = page.locator('.attachment-text');
+  await expect(tile).toHaveCount(1);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+  await tile.getByRole('button', { name: /^移除粘贴的文本/ }).click();
+  await expect(tile).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+});

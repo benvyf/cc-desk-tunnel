@@ -5565,6 +5565,72 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
   margin: 8px 18px 0;
   font-size: calc(12rem / 14);
 }
+/* A long pasted text: wider than a file tile, the same height, so both sit in one row. */
+.attachment-text-slot {
+  width: 252px;
+  animation-name: attachment-text-enter;
+}
+.attachment-tile.attachment-text {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 240px;
+  padding: 0 12px 10px;
+}
+.attachment-text-title {
+  overflow: hidden;
+  font-size: calc(13rem / 14);
+  font-weight: 500;
+  line-height: 18px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.attachment-text-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: calc(11rem / 14);
+  line-height: 16px;
+  white-space: nowrap;
+}
+.attachment-text-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-2);
+  font-size: inherit;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.attachment-text-expand:hover:enabled {
+  color: var(--text);
+}
+.attachment-text-expand svg.app-icon,
+.attachment-text-expand svg {
+  width: 12px;
+  height: 12px;
+}
+@keyframes attachment-text-enter {
+  from {
+    width: 0;
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    width: 252px;
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
 @keyframes attachment-enter {
   from {
     width: 0;
@@ -5612,7 +5678,8 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
   outline: none;
   padding: 16px 18px 6px;
   min-height: 56px;
-  max-height: min(46vh, 420px);
+  /* About ten lines; longer drafts scroll inside the box, and long pastes become blocks above it. */
+  max-height: min(34vh, 272px);
   overflow-y: auto;
   /* Clip text and native scrollbars to the ring and corners without changing auto-sizing. */
   clip-path: inset(2px 0 0 round var(--radius-2xl) var(--radius-2xl) 0 0);

@@ -2,6 +2,8 @@ export type Attachment = {
   id: string;
   name: string;
   path?: string;
+  // A long pasted text, kept beside the message instead of in the box; sent as part of the message.
+  text?: string;
   status: 'preparing' | 'ready' | 'error';
   error?: string;
 };
@@ -27,12 +29,42 @@ export function attachmentKind(name: string) {
     : 'FILE';
 }
 
-// Local attachments still reach Claude through the execution channel; previews never enter the message.
+// Pasted text this long becomes a block beside the message instead of filling the box.
+export const pastedBlockLines = 20;
+export const pastedBlockChars = 2000;
+
+export function isPastedBlock(text: string) {
+  return text.length >= pastedBlockChars || text.split('\n').length >= pastedBlockLines;
+}
+
+export function pastedBlock(text: string): Attachment {
+  const title = text
+    .split('\n')
+    .map((line) => line.trim())
+    .find(Boolean);
+  return {
+    id: `text:${Date.now().toString(36)}:${Math.random().toString(36).slice(2, 8)}`,
+    name: (title ?? '粘贴的文本').slice(0, 80),
+    text,
+    status: 'ready',
+  };
+}
+
+export function pastedSummary(text: string) {
+  return `${text.split('\n').length} 行 · ${text.length.toLocaleString('zh-CN')} 字`;
+}
+
+// Pasted blocks follow the typed text; local attachments still reach Claude through the execution channel as
+// quoted path lines at the end, and previews never enter the message.
 export function attachmentMessage(text: string, attachments: Attachment[]) {
+  const blocks = attachments
+    .filter((item) => item.status === 'ready' && item.text !== undefined && !item.path)
+    .map((item) => item.text!);
+  const body = [text, ...blocks].filter(Boolean).join('\n\n');
   const paths = attachments
     .filter((item) => item.status === 'ready' && item.path)
     .map((item) => `"${item.path}"`);
-  return [text, ...paths].filter(Boolean).join('\n');
+  return [body, ...paths].filter(Boolean).join('\n');
 }
 
 // Only full, quoted path lines at the end of a user message are attachment references. Inline paths,

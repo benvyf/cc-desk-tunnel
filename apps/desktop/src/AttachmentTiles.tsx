@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { FileCode, FileText, X } from './icons.tsx';
-import { attachmentKind, fileName } from './attachments.ts';
+import { ChevronRight, FileCode, FileText, X } from './icons.tsx';
+import { attachmentKind, fileName, pastedSummary } from './attachments.ts';
 import type { Attachment } from './attachments.ts';
 import { localPicture } from './links.ts';
 import { Modal } from './ui.tsx';
@@ -106,6 +106,56 @@ export function MessageAttachments({ items }: { items: Attachment[] }) {
   );
 }
 
+// A long pasted text: its first line, how long it is, and a way to put it back in the box to edit.
+function TextTile({
+  item,
+  remove,
+  expand,
+  disabled,
+}: {
+  item: Attachment;
+  remove?: () => void;
+  expand?: () => void;
+  disabled: boolean;
+}) {
+  return (
+    <div className="attachment-slot attachment-text-slot" role="listitem">
+      <div className="attachment-tile attachment-text" title={item.text!.slice(0, 400)}>
+        <span className="attachment-kind">
+          <FileText />
+          TEXT
+        </span>
+        {remove && (
+          <button
+            type="button"
+            className="attachment-remove"
+            aria-label={`移除粘贴的文本 ${item.name}`}
+            disabled={disabled}
+            onClick={remove}
+          >
+            <X />
+          </button>
+        )}
+        <span className="attachment-text-title">{item.name}</span>
+        <span className="attachment-text-meta">
+          <span>{pastedSummary(item.text!)}</span>
+          {expand && (
+            <button
+              type="button"
+              className="attachment-text-expand"
+              disabled={disabled}
+              onClick={expand}
+            >
+              在文本框中显示
+              <ChevronRight />
+            </button>
+          )}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function Tile({
   item,
   remove,
@@ -165,10 +215,13 @@ function Tile({
 export default function AttachmentTiles({
   items,
   remove,
+  expand,
   disabled = false,
 }: {
   items: Attachment[];
   remove?: (id: string) => void;
+  // Puts a pasted text block back into the message box.
+  expand?: (id: string) => void;
   disabled?: boolean;
 }) {
   const row = useRef<HTMLDivElement>(null);
@@ -196,14 +249,24 @@ export default function AttachmentTiles({
           row.current.scrollLeft = row.current.scrollWidth;
       }}
     >
-      {items.map((item) => (
-        <Tile
-          key={item.id}
-          item={item}
-          disabled={disabled}
-          remove={remove ? () => remove(item.id) : undefined}
-        />
-      ))}
+      {items.map((item) =>
+        item.text !== undefined && !item.path ? (
+          <TextTile
+            key={item.id}
+            item={item}
+            disabled={disabled}
+            remove={remove ? () => remove(item.id) : undefined}
+            expand={expand ? () => expand(item.id) : undefined}
+          />
+        ) : (
+          <Tile
+            key={item.id}
+            item={item}
+            disabled={disabled}
+            remove={remove ? () => remove(item.id) : undefined}
+          />
+        ),
+      )}
     </div>
   );
 }

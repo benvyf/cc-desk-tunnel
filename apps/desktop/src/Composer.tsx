@@ -3,7 +3,13 @@ import QuoteChips from './QuoteChips.tsx';
 import { quoteMessage } from './quotes.ts';
 import type { QuoteReference, SetQuotes } from './quotes.ts';
 import AttachmentTiles from './AttachmentTiles.tsx';
-import { attachmentMessage, fileName, messageLimit } from './attachments.ts';
+import {
+  attachmentMessage,
+  fileName,
+  isPastedBlock,
+  messageLimit,
+  pastedBlock,
+} from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
@@ -519,6 +525,13 @@ export default function Composer({
             <AttachmentTiles
               items={attachments}
               disabled={inputDisabled}
+              expand={(id) => {
+                const block = attachments.find((item) => item.id === id);
+                if (block?.text === undefined) return;
+                setDraft(draft ? `${draft}\n${block.text}` : block.text);
+                setAttachments?.(session.id, (current) => current.filter((item) => item.id !== id));
+                input.current?.focus();
+              }}
               remove={(id) => {
                 const path = attachments.find((item) => item.id === id)?.path;
                 setAttachments?.(session.id, (current) =>
@@ -568,17 +581,37 @@ export default function Composer({
                 setPick(null);
               }}
               onPaste={(event) => {
-                if (remoteSsh && event.clipboardData.files.length) {
+                // Long text goes beside the message as a block, so the box keeps its size.
+                const pastedText = event.clipboardData
+                  .getData('text/plain')
+                  .replace(/\r\n?/g, '\n');
+                const asBlock = () => {
+                  if (!setAttachments || inputDisabled || !isPastedBlock(pastedText)) return false;
+                  event.preventDefault();
+                  const block = pastedBlock(pastedText);
+                  setAttachments(session.id, (current) => [...current, block]);
+                  return true;
+                };
+                if (!event.clipboardData.files.length) {
+                  asBlock();
+                  return;
+                }
+                if (remoteSsh) {
                   if (event.clipboardData.getData('text/plain')) {
                     setAttachmentError(null);
+                    asBlock();
                     return;
                   }
                   event.preventDefault();
                   setAttachmentError('SSH 项目暂不支持图片或文件附件，可继续输入或粘贴文字。');
                   return;
                 }
-                // Pasted text is left to the browser, also when a program put a picture of it beside the text.
-                if (!window.desktop || inputDisabled || !event.clipboardData.files.length) return;
+                // Pasted text is left to the browser (or made a block), also when a program put a picture of it
+                // beside the text.
+                if (!window.desktop || inputDisabled) {
+                  asBlock();
+                  return;
+                }
                 const files = [...event.clipboardData.files];
                 const text = event.clipboardData.getData('text/plain');
                 const usable = files.filter(
@@ -592,7 +625,10 @@ export default function Composer({
                     })() ||
                     (!text && file.type.startsWith('image/')),
                 );
-                if (!usable.length) return;
+                if (!usable.length) {
+                  asBlock();
+                  return;
+                }
                 event.preventDefault();
                 void paste(usable);
               }}

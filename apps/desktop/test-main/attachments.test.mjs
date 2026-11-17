@@ -30,3 +30,28 @@ test('attachment references round-trip spaces, Unicode, UNC and POSIX paths with
   assert.equal(attachmentKind('config.json'), 'CODE');
   assert.equal(attachmentKind('LICENSE'), 'FILE');
 });
+
+test('long pasted text becomes a block that is sent after the typed text and before file references', async () => {
+  const { isPastedBlock, pastedBlock, pastedSummary } = await import('../src/attachments.ts');
+  assert.equal(isPastedBlock('short'), false);
+  assert.equal(isPastedBlock('x'.repeat(1999)), false);
+  assert.equal(isPastedBlock('x'.repeat(2000)), true);
+  assert.equal(isPastedBlock(Array.from({ length: 19 }, () => 'a').join('\n')), false);
+  assert.equal(isPastedBlock(Array.from({ length: 20 }, () => 'a').join('\n')), true);
+  const log = '\n  PS C:\\> git log\nfatal: not a git repository\nline 3';
+  const block = pastedBlock(log);
+  assert.equal(block.name, 'PS C:\\> git log');
+  assert.equal(block.status, 'ready');
+  assert.equal(block.path, undefined);
+  assert.equal(pastedSummary(log), '4 行 · ' + log.length + ' 字');
+  const file = { id: 'f', name: 'a.png', path: 'C:\\图\\a.png', status: 'ready' };
+  const sent = attachmentMessage('这是什么错误？', [block, file]);
+  assert.equal(sent, `这是什么错误？\n\n${log}\n"C:\\图\\a.png"`);
+  assert.equal(attachmentMessage('', [block]), log);
+  const restored = splitAttachmentMessage(sent);
+  assert.deepEqual(
+    restored.files.map((item) => item.path),
+    ['C:\\图\\a.png'],
+  );
+  assert.equal(restored.text, `这是什么错误？\n\n${log}`);
+});

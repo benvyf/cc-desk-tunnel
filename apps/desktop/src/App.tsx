@@ -1534,9 +1534,10 @@ export function App({
         const sentReferences = new Set(refs.map((quote) => quote.id));
         setQuotes(sessionId, (current) => current.filter((quote) => !sentReferences.has(quote.id)));
         const sent = new Set(attached.map((item) => item.id));
-        const sentPaths = new Set(attached.map((item) => item.path));
+        // Pasted blocks have no path; only files sent by path are matched by it.
+        const sentPaths = new Set(attached.flatMap((item) => (item.path ? [item.path] : [])));
         setAttachments(sessionId, (current) =>
-          current.filter((item) => !sent.has(item.id) && !sentPaths.has(item.path)),
+          current.filter((item) => !sent.has(item.id) && !(item.path && sentPaths.has(item.path))),
         );
       }
     });

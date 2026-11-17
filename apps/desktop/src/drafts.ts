@@ -24,6 +24,10 @@ function clean(value: unknown): Entries {
       const attachments: Attachment[] = [];
       for (const file of Array.isArray(item.attachments) ? item.attachments : []) {
         if (!file || typeof file.id !== 'string' || typeof file.name !== 'string') continue;
+        if (typeof file.text === 'string' && !file.path) {
+          attachments.push({ id: file.id, name: file.name, text: file.text, status: 'ready' });
+          continue;
+        }
         const path = typeof file.path === 'string' && file.path ? file.path : undefined;
         attachments.push({
           id: file.id,
