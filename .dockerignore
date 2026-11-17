@@ -53,6 +53,7 @@
 !deploy/host-update/
 !deploy/host-update/apply.py
 !deploy/host-update/cleanup.py
+!deploy/host-update/images.py
 !deploy/nginx.conf.example
 !deploy/nginx.md
 !deploy/test.sh
