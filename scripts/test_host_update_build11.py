@@ -95,7 +95,7 @@ class MigrationTests(unittest.TestCase):
 
     def test_published_build16_is_admitted_with_exact_descriptor_and_lock(self):
         baseline=self.baseline()
-        baseline.update(descriptor='bb97e49caf492f82abfe898b6c32bd0b017977d4b29f95e1aed015be5f722682',build=16,protocol=24,lock=m.LOCK)
+        baseline.update(descriptor='bb97e49caf492f82abfe898b6c32bd0b017977d4b29f95e1aed015be5f722682',build=16,protocol=24,lock=m.RUNTIME_LOCK)
         self.assertFalse(m.check_baseline(baseline,self.release()))
         baseline['lock']=m.PREVIOUS_LOCK
         with self.assertRaises(RuntimeError):m.check_baseline(baseline,self.release())
@@ -103,7 +103,7 @@ class MigrationTests(unittest.TestCase):
     def test_published_build18_requires_exact_descriptor_runtime_and_lock(self):
         baseline = self.baseline()
         baseline.update(descriptor='6201439cf95e495eb0741296cf7fe0d286a9c9c738cde335813a6794e3f31b33',
-                        build=18, protocol=24, lock=m.LOCK)
+                        build=18, protocol=24, lock=m.RUNTIME_LOCK)
         self.assertFalse(m.check_baseline(baseline, self.release()))
         for key in baseline:
             with self.subTest(key=key):
@@ -145,7 +145,7 @@ class MigrationTests(unittest.TestCase):
     def test_published_build15_uses_exact_descriptor_and_current_lock(self):
         baseline = self.baseline()
         baseline.update(descriptor='075f5d15b45156218327abf8341f965c1f5cda8d00e8f75445b59f696b9fcf09',
-                        build=15, protocol=24, lock=m.LOCK)
+                        build=15, protocol=24, lock=m.RUNTIME_LOCK)
         self.assertFalse(m.check_baseline(baseline, self.release()))
         baseline['lock'] = m.PREVIOUS_LOCK
         with self.assertRaises(RuntimeError): m.check_baseline(baseline, self.release())
