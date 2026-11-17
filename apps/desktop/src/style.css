@@ -4902,7 +4902,7 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
 .turn-process > summary .failed {
   color: var(--fail);
 }
-.thinking-block .tool-verb {
+.tool-verb {
   flex: none;
   white-space: nowrap;
 }
