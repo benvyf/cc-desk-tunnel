@@ -94,5 +94,11 @@
     "protocol": 24,
     "windowsBuilds": [28, 29, 30, 31, 32],
     "serverBuild": 20
+  },
+  {
+    "appVersion": "0.3.10",
+    "protocol": 24,
+    "windowsBuilds": [28, 29, 30, 31, 32, 33, 34, 35, 36],
+    "serverBuild": 20
   }
 ]
