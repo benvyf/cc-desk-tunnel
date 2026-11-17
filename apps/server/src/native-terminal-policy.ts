@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, statSync } from 'node:fs';
 import { isDeepStrictEqual } from 'node:util';
@@ -84,8 +85,10 @@ export function assertNativeTerminalPolicy(executable: string) {
 
 export function assertNativeTerminalReview(executable: string) {
   const binary = assertNativeTerminalPolicy(executable);
+  if (createHash('sha256').update(readFileSync(binary)).digest('hex') !== '0dc4f4a9a165fc60746d7ae8489712e5fc352f1e7ad4eb22e7141bd0812eb0cf')
+    throw new Error('Native review requires the authenticated official CLI binary');
   const version = execFileSync(binary, ['--version'], { encoding: 'utf8', timeout: 5000 }).trim();
-  if (version !== '2.1.295 (Claude Code)')
+  if (version !== '2.1.325 (Claude Code)')
     throw new Error('Native review requires the tested official CLI version');
   return binary;
 }

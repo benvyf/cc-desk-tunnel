@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import {
   strictObject,
@@ -52,7 +52,7 @@ export type ManagedBackend = {
   prepare(request: InstallConfirmation): Promise<void>;
   activate(): void;
 };
-export type MaintenanceAdmission = { enter(): boolean; leave(): void };
+export type MaintenanceAdmission = { enter(disconnectClients?: boolean): boolean; recoverRelay?(): boolean; leave(): void; busy?(): boolean; serving?(): boolean };
 const PREFIX = '/cc-managed/server/v1/';
 export function managedServerHandler(options: {
   token: string;
@@ -66,6 +66,13 @@ export function managedServerHandler(options: {
   requireValue(options.token.length >= 24, 'Managed API requires existing strong service token');
   const expected = createHash('sha256').update(options.token).digest();
   const throttle = new Throttle();
+  let relayLease: { id: string; expires: number; timer: ReturnType<typeof setTimeout> } | undefined;
+  function releaseRelay() {
+    if (!relayLease) return;
+    clearTimeout(relayLease.timer);
+    relayLease = undefined;
+    options.admission.leave();
+  }
   return (request: IncomingMessage, response: ServerResponse) => {
     if (!request.url?.startsWith(PREFIX)) return false;
     response.setHeader('Cache-Control', 'no-store');
@@ -91,9 +98,10 @@ export function managedServerHandler(options: {
     }
     const route = request.url.slice(PREFIX.length);
     const run = async () => {
-      let authorized =
+      const serviceAuthorized =
         provided.startsWith('Bearer ') &&
         timingSafeEqual(expected, createHash('sha256').update(provided.slice(7)).digest());
+      let authorized = serviceAuthorized;
       if (
         !authorized &&
         options.authorizeDesktopTicket &&
@@ -118,6 +126,47 @@ export function managedServerHandler(options: {
         return;
       }
       throttle.succeed(address);
+      if (relayLease && relayLease.expires <= Date.now()) releaseRelay();
+      if (route === 'relay-enter' || route === 'relay-leave') {
+        if (
+          request.method !== 'POST' ||
+          !serviceAuthorized ||
+          !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(request.socket.remoteAddress ?? '') ||
+          !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address)
+        ) {
+          reply(403);
+          return;
+        }
+        if (route === 'relay-leave') {
+          if (!relayLease || request.headers['x-cc-relay-lease'] !== relayLease.id) {
+            reply(409, { error: 'relay-lease-mismatch' });
+            return;
+          }
+          releaseRelay();
+          reply(200, { released: true });
+          return;
+        }
+        // Synchronous admission checks all tasks/terminals and closes reconnect admission
+        // before disconnecting idle clients. A lost agent cannot leave maintenance forever.
+        const recovery = request.headers['x-cc-relay-recovery'] === 'disconnected';
+        if (
+          relayLease ||
+          !(recovery ? options.admission.recoverRelay?.() : options.admission.enter(true))
+        ) {
+          reply(409, { error: 'busy' });
+          return;
+        }
+        const timer = setTimeout(releaseRelay, 120000);
+        timer.unref();
+        relayLease = { id: randomUUID(), expires: Date.now() + 120000, timer };
+        reply(200, { lease: relayLease.id, expires: relayLease.expires });
+        return;
+      }
+      if (relayLease && request.method === 'POST' && ['install', 'host-install'].includes(route)) {
+        reply(409, { error: 'relay-maintenance' });
+        return;
+      }
+
       if (request.method === 'GET' && route === 'status') {
         reply(200, await options.backend.status());
         return;
