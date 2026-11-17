@@ -341,3 +341,72 @@ test('the hooks file is read as it grows, and says what the CLI is doing', (t) =
   assert.equal(terminalActivity({ hook_event_name: 'PostToolUse' }), 'working');
   assert.equal(terminalActivity({ hook_event_name: 'PermissionRequest' }), 'waiting');
 });
+
+// CLI 2.1.321 and later record the /compact the user typed only after the summary; 2.1.295 did before it. Either way
+// the question comes first, then the mark. One the CLI makes by itself has no question. (Ported from upstream c619dd1.)
+test('a manual compaction shows its question before the mark, whichever order the CLI recorded them in', () => {
+  const summary = (uuid: string, trigger: string, preTokens: number) =>
+    entry(
+      uuid,
+      'user',
+      { role: 'user', content: 'This session is being continued from a previous conversation…' },
+      { isCompactSummary: true, is_meta: true, compact: { trigger, preTokens } },
+    );
+  const command = (uuid: string) =>
+    entry(uuid, 'user', {
+      role: 'user',
+      content:
+        '<command-name>/compact</command-name>\n<command-message>compact</command-message>\n<command-args> 保留要点 </command-args>',
+    });
+  const printed = (uuid: string) =>
+    entry(uuid, 'user', {
+      role: 'user',
+      content:
+        '<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>',
+    });
+  const shown = (events: EventPayload[]) =>
+    events.map((event) =>
+      event.type === 'message.user'
+        ? `message.user ${event.text}`
+        : event.type === 'native.compact'
+          ? `native.compact ${event.trigger} ${event.previousTokens}`
+          : event.type,
+    );
+
+  // 2.1.325: summary, then the command.
+  const after: EventPayload[] = [];
+  const transcript = new TerminalTranscript((event) => after.push(event));
+  const known = new Set<string>();
+  const read = (messages: SessionMessage[]) => {
+    transcript.accept(messages, known);
+    for (const message of messages) known.add(message.uuid);
+  };
+  read([summary('s1', 'manual', 120000)]);
+  assert.deepEqual(shown(after), [], 'the mark waits for its question');
+  read([command('c1'), printed('p1')]);
+  assert.deepEqual(shown(after), [
+    'message.user /compact 保留要点',
+    'native.compact manual 120000',
+  ]);
+  // A mark read last, with no question after it, still shows once the turn settles.
+  read([summary('s2', 'manual', 90000)]);
+  transcript.settle();
+  assert.deepEqual(shown(after).slice(2), ['native.compact manual 90000']);
+
+  // 2.1.295: the command, then the summary.
+  const before: EventPayload[] = [];
+  terminalEvents(
+    [command('c2'), summary('s3', 'manual', 80000), printed('p2')],
+    new Set(),
+    (event) => before.push(event),
+  );
+  assert.deepEqual(shown(before), [
+    'message.user /compact 保留要点',
+    'native.compact manual 80000',
+  ]);
+
+  // One the CLI makes by itself.
+  const auto: EventPayload[] = [];
+  terminalEvents([summary('s4', 'auto', 250000)], new Set(), (event) => auto.push(event));
+  assert.deepEqual(shown(auto), ['native.compact auto 250000']);
+});

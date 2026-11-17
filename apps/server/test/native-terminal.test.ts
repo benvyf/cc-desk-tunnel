@@ -1,16 +1,22 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import { NativeTerminal, terminalArguments, terminalEnvironment } from '../src/native-terminal.ts';
+import {
+  NativeTerminal,
+  programStatus,
+  terminalArguments,
+  terminalEnvironment,
+} from '../src/native-terminal.ts';
+import { loginExpiryWarnings } from '../src/login-expiry.ts';
 import { completeOnboarding } from '../src/native-onboarding.ts';
 import { parseAccountStatus } from '../src/native-account.ts';
 import type { TerminalSpawner } from '../src/native-terminal.ts';
-import type { Session } from '@cc-desk-tunnel/protocol';
+import type { Session, TerminalActivity } from '@cc-desk-tunnel/protocol';
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-function fixture(screen?: { detached: () => void }) {
+function fixture(screen?: { detached: () => void }, status?: (activity: TerminalActivity) => void) {
   let onData!: (text: string) => void, onExit!: (event: { exitCode: number }) => void;
   let paused = 0,
     resumed = 0,
@@ -48,7 +54,7 @@ function fixture(screen?: { detached: () => void }) {
   const terminal = new NativeTerminal(
     'claude',
     [],
-    { cwd: '.', cols: 80, rows: 24, env: {}, screen },
+    { cwd: '.', cols: 80, rows: 24, env: {}, screen, status },
     (text, bytes) => output.push({ text, bytes }),
     () => {},
     spawn,
@@ -300,4 +306,55 @@ test('a terminal that keeps running shows its current screen to a client that at
   assert.equal(f.terminal.outstanding, 0);
   assert.equal(detached, 0);
   await f.terminal.close();
+});
+
+// Ported from upstream c619dd1. As CLI 2.1.321 reports itself through OSC 7501 once its question is answered: idle at
+// start, working on a prompt, waiting on a permission, idle when the user stops the turn, done when it ends.
+test("a terminal answers the CLI's OSC 7501 question for the client and reads what the CLI reports", async () => {
+  const heard: TerminalActivity[] = [];
+  const f = fixture(undefined, (activity) => heard.push(activity));
+  f.data('\x1b[c\x1b]7501;?\x1b\\\x1b[>0q');
+  assert.deepEqual(f.input, ['\x1b]7501;?\x1b\\']);
+  f.data('\x1b]7501;state=idle:app=claude-code\x1b\\screen');
+  f.data('\x1b]7501;state=working:app=claude-code:msg=');
+  f.data('Q3J1bmNoaW5n\x1b\\');
+  f.data('\x1b]7501;state=working:app=claude-code:progress=50\x1b\\');
+  f.data('\x1b]7501;state=working:app=claude-code:id=task-1\x1b\\');
+  f.data('\x1b]7501;state=blocked:app=claude-code:kind=permission\x1b\\');
+  f.data('\x1b]7501;state=idle:app=claude-code\x07');
+  f.data('\x1b]7501;state=done:app=claude-code\x1b\\');
+  assert.deepEqual(heard, ['idle', 'working', 'waiting', 'idle']);
+  assert.equal(programStatus('state=blocked:app=claude-code:kind=auth'), 'idle');
+  assert.equal(programStatus('state=error:app=claude-code'), 'idle');
+  assert.equal(
+    programStatus('state=blocked:app=claude-code'),
+    undefined,
+    "a dialog of the CLI's own",
+  );
+  assert.equal(programStatus('state=clear'), undefined);
+  assert.equal(programStatus('state=working:app=other'), undefined);
+  await delay(20);
+  const shown = f.output.map((frame) => frame.text).join('');
+  assert.ok(shown.startsWith('\x1b[c\x1b[>0q'), 'the question is not passed on; the rest is');
+  assert.ok(shown.includes('\x1b]7501;state=done:app=claude-code\x1b\\'), 'reports are');
+  await f.terminal.close();
+});
+
+test('a terminal without a status listener passes the OSC 7501 question through untouched', async () => {
+  const f = fixture();
+  f.data('a\x1b]7501;?\x07b');
+  assert.deepEqual(f.input, []);
+  await delay(20);
+  assert.equal(f.output.map((frame) => frame.text).join(''), 'a\x1b]7501;?\x07b');
+  await f.terminal.close();
+});
+
+test('a sign-in about to end is told in the conversation once a day, from ten days before', () => {
+  const warn = loginExpiryWarnings();
+  const now = Date.parse('2026-11-10T08:00:00Z');
+  assert.equal(warn('2026-12-01T00:00:00Z', now), null);
+  assert.equal(warn(undefined, now), null);
+  assert.match(warn('2026-11-15T00:00:00Z', now) ?? '', /约 5 天后到期（2026-11-15）/);
+  assert.equal(warn('2026-11-15T00:00:00Z', now + 3_600_000), null, 'once a day');
+  assert.match(warn('2026-11-09T00:00:00Z', now + 86_400_000) ?? '', /可能已经到期/);
 });

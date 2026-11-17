@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { test } from 'node:test';
 import type { EventPayload } from '@cc-desk-tunnel/protocol';
-import { ClaudeStream } from '../src/claude-stream.ts';
+import { ClaudeStream, shownToday } from '../src/claude-stream.ts';
 
 test('native partial text/thinking are not duplicated by complete assistant events', () => {
   const events: EventPayload[] = [];
@@ -283,4 +283,39 @@ test('a local command answered after a streamed reply is shown as a reply of its
     ['模型的回答', '## Context Usage'],
   );
   assert.notEqual(texts[0].messageId, texts[1].messageId);
+});
+
+// Ported from upstream c619dd1: CLI 2.1.321 says on its way out that a full disk kept it from saving the session.
+test('a CLI that could not save what it wrote on exit is told in the conversation', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.accept({
+    type: 'system',
+    subtype: 'session_writes_lost',
+    error_code: 'ENOSPC',
+    lost: ['transcript'],
+    transcript_session_ids: ['x'],
+  });
+  stream.accept({
+    type: 'system',
+    subtype: 'session_writes_lost',
+    error_code: 'EDQUOT',
+    lost: ['global_config'],
+  });
+  const notices = events.flatMap((event) => (event.type === 'native.notice' ? [event.text] : []));
+  assert.equal(notices.length, 2);
+  assert.match(notices[0], /磁盘已满.*会话记录缺了一部分/);
+  assert.match(notices[1], /磁盘配额已用完.*~\/\.claude\.json/);
+});
+
+test('the gateway notice of auto mode is shown once a day, other notices every time', () => {
+  const billing =
+    "We're changing auto mode to no longer charge for classifier requests in Claude Code. However, this session isn't eligible because your requests go through api.example.com.";
+  const day = 86_400_000;
+  assert.equal(shownToday(billing, 10 * day), false);
+  assert.equal(shownToday(billing, 10 * day + 1000), true);
+  assert.equal(shownToday(billing, 11 * day - 1), true);
+  assert.equal(shownToday(billing, 11 * day), false);
+  assert.equal(shownToday('Native notice', 11 * day), false);
+  assert.equal(shownToday('Native notice', 11 * day), false);
 });

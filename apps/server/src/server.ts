@@ -50,7 +50,7 @@ import {
   readNativeStatus,
   quotas,
 } from './claude.ts';
-import type { ClaudeOptions } from './claude.ts';
+import type { ClaudeOptions, Unanswered } from './claude.ts';
 import {
   terminalHistoryContext,
   readTerminalHistory,
@@ -137,7 +137,12 @@ export type Run = {
   toolFinished: boolean;
   approvalId?: string;
   decide?: (allowed: boolean, answers?: Record<string, string>) => void;
-  approvals: Map<string, (allowed: boolean, answers?: Record<string, string>) => void>;
+  approvals: Map<
+    string,
+    (allowed: boolean, answers?: Record<string, string>, unanswered?: Unanswered) => void
+  >;
+  // The approvals that are Claude's questions, answered or left unanswered rather than allowed or denied.
+  questions: Set<string>;
   // Approvals and questions answered already: a second answer, from another window or computer, came late.
   answered: Set<string>;
   cancelReason?: string;
@@ -810,10 +815,12 @@ export function createProxyServer(options: ServerOptions) {
         approve: (toolId, waiting) => {
           if (run.controller.signal.aborted) return Promise.resolve({ allowed: false });
           const approvalId = randomUUID();
+          if (waiting === 'question') run.questions.add(approvalId);
           return new Promise((resolve) => {
-            run.approvals.set(approvalId, (allowed, answers) => {
+            run.approvals.set(approvalId, (allowed, answers, unanswered) => {
+              run.questions.delete(approvalId);
               emit(run, { type: 'approval.resolved', approvalId, allowed });
-              resolve({ allowed, answers });
+              resolve({ allowed, answers, unanswered });
             });
             emit(run, { type: 'approval.requested', approvalId, toolId });
             emit(run, {
@@ -1086,6 +1093,9 @@ export function createProxyServer(options: ServerOptions) {
           cols: command.cols,
           rows: command.rows,
           env,
+          status: current.continued
+            ? (activity) => void heardTerminal(current, false, activity)
+            : undefined,
           screen: {
             detached: () => {
               if (current.owner)
@@ -1173,7 +1183,7 @@ export function createProxyServer(options: ServerOptions) {
         const continued = current.continued!;
         if (continued.syncQueued || continued.syncFailed || current.process?.exited) return;
         continued.syncQueued = true;
-        void heardTerminal(current, false, false, true).finally(() => {
+        void heardTerminal(current, false, undefined, true).finally(() => {
           continued.syncQueued = false;
         });
       }, 1000);
@@ -1214,10 +1224,12 @@ export function createProxyServer(options: ServerOptions) {
       rmSync(path, { force: true });
     }
   }
+  // `told` is what the CLI is doing as it says so itself (OSC 7501, see `programStatus`), or as a key that interrupts
+  // it implies; it holds when no hook came since. A turn the user stops runs no hook, so its end is known only this way.
   function heardTerminal(
     terminal: Terminal,
     ended = false,
-    interrupted = false,
+    told?: TerminalActivity,
     incremental = false,
   ) {
     const continued = terminal.continued!;
@@ -1232,13 +1244,13 @@ export function createProxyServer(options: ServerOptions) {
             continued.elsewhere = true;
           activity = terminalActivity(hook) ?? activity;
         }
-        interrupted &&= !hooks.length && continued.activity === 'working';
-        if (interrupted) activity = 'idle';
+        if (told && !hooks.length) activity = told;
+        const stopped = told === 'idle' && !hooks.length && continued.activity !== 'idle';
         if (
           !continued.syncFailed &&
           (incremental ||
             ended ||
-            interrupted ||
+            stopped ||
             hooks.some((hook) => terminalActivity(hook) === 'idle'))
         )
           await importTerminal(terminal, ended, !incremental);
@@ -1670,6 +1682,9 @@ export function createProxyServer(options: ServerOptions) {
           deviceExecution(store.get(command.sessionId).session.device),
         ) + text,
       );
+      // A message sent while Claude waits on its question is the user's answer in the chat instead.
+      for (const approvalId of [...active.questions])
+        answerApproval(active, approvalId, false, undefined, 'replied_in_chat', peer.id);
       return;
     }
     if (options.claude && mutations.size)
@@ -1685,6 +1700,7 @@ export function createProxyServer(options: ServerOptions) {
       controller: new AbortController(),
       toolFinished: false,
       approvals: new Map(),
+      questions: new Set(),
       answered: new Set(),
       controls: {},
       stats: inOrder(),
@@ -1765,13 +1781,19 @@ export function createProxyServer(options: ServerOptions) {
       return;
     }
     if (options.claude) {
-      const decide = run.approvals.get(command.approvalId);
-      if (!decide) throw new DomainError('approval_inactive', '审批已失效。');
-      run.approvals.delete(command.approvalId);
-      run.answered.add(command.approvalId);
-      decide(command.allowed, command.answers);
-      if (!run.approvals.size)
-        emit(run, { type: 'run.status', status: 'running', connectionId: peer.id });
+      // A question the user declines is one they skipped.
+      const skipped = !command.allowed && run.questions.has(command.approvalId);
+      if (
+        !answerApproval(
+          run,
+          command.approvalId,
+          command.allowed,
+          command.answers,
+          skipped ? 'skipped' : undefined,
+          peer.id,
+        )
+      )
+        throw new DomainError('approval_inactive', '审批已失效。');
       return;
     }
     if (!run.decide || run.approvalId !== command.approvalId)
@@ -1780,6 +1802,23 @@ export function createProxyServer(options: ServerOptions) {
     run.decide = undefined;
     run.answered.add(command.approvalId);
     decide(command.allowed, command.answers);
+  }
+
+  function answerApproval(
+    run: Run,
+    approvalId: string,
+    allowed: boolean,
+    answers: Record<string, string> | undefined,
+    unanswered: Unanswered | undefined,
+    connectionId = run.connectionId,
+  ) {
+    const decide = run.approvals.get(approvalId);
+    if (!decide) return false;
+    run.approvals.delete(approvalId);
+    run.answered.add(approvalId);
+    decide(allowed, answers, unanswered);
+    if (!run.approvals.size) emit(run, { type: 'run.status', status: 'running', connectionId });
+    return true;
   }
 
   // Resolves to the session ID carried in the response frame; account and usage commands have none.
@@ -2469,7 +2508,7 @@ export function createProxyServer(options: ServerOptions) {
               continued.activity === 'working' &&
               continued.offset === offset
             )
-              void heardTerminal(current, false, true);
+              void heardTerminal(current, false, 'idle');
           }, 2000).unref();
         }
       } else if (control.type === 'terminal.resize')

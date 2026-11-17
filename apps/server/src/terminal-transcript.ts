@@ -76,6 +76,11 @@ export class TerminalTranscript {
   // out, the question and the mark already said so.
   private compacted = false;
   private skipPrinted = false;
+  // The question just shown was a /compact. CLI 2.1.321 and later record the /compact the user typed only after the
+  // summary, where 2.1.295 did before it: then the mark waits (`held`) to show after the question, as it did.
+  // (Ported from upstream c619dd1.)
+  private askedCompact = false;
+  private held: Extract<EventPayload, { type: 'native.compact' }> | undefined;
   // Compactions read, and how many of them were asked about (see `compactedSince`).
   private compactions = 0;
   private told = 0;
@@ -94,12 +99,15 @@ export class TerminalTranscript {
         this.flushQuestion();
         this.compacted = true;
         this.compactions++;
-        this.emit({
-          type: 'native.compact',
+        const mark = {
+          type: 'native.compact' as const,
           trigger: typeof entry.compact?.trigger === 'string' ? entry.compact.trigger : 'unknown',
           previousTokens:
             typeof entry.compact?.preTokens === 'number' ? entry.compact.preTokens : null,
-        });
+        };
+        if (mark.trigger === 'manual' && !this.askedCompact) this.held = mark;
+        else this.emit(mark);
+        this.askedCompact = false;
         continue;
       }
       // The CLI's own notes to the model, and messages it wrote on the user's behalf, such as a task's report.
@@ -145,8 +153,12 @@ export class TerminalTranscript {
           continue;
         }
         const text = [command, tag(content, 'command-args')?.trim()].filter(Boolean).join(' ');
-        if (wasCompacted && command === '/compact') this.skipPrinted = true;
-        else {
+        if (wasCompacted && command === '/compact') {
+          this.skipPrinted = true;
+          if (this.held) this.question(text);
+          this.release();
+          this.askedCompact = false;
+        } else {
           this.command = text;
           this.commandAt = this.at;
         }
@@ -169,6 +181,7 @@ export class TerminalTranscript {
       if (LEAVING.has(this.command.split(' ')[0])) this.command = undefined;
       else this.flushQuestion();
     }
+    this.release();
   }
   // Whether a compaction was read since this was last asked.
   compactedSince() {
@@ -176,8 +189,14 @@ export class TerminalTranscript {
     this.told = this.compactions;
     return since;
   }
+  private release() {
+    const held = this.held;
+    this.held = undefined;
+    if (held) this.emit(held);
+  }
   private question(text: string) {
     this.command = undefined;
+    this.askedCompact = text.split(' ')[0] === '/compact';
     this.emit({ type: 'message.user', messageId: randomUUID(), text, scenario: 'chat' });
   }
   private flushQuestion() {
