@@ -318,3 +318,36 @@ test('reading the native state of a session leaves its time of last use alone', 
   reopened.close();
   assert.equal(restored, used);
 });
+
+test('a run that ends is recorded as the last run of its session, kept across a restart, and a new one replaces it', (t) => {
+  const f = fixture(t);
+  const { session } = f;
+  const connectionId = randomUUID();
+  assert.equal(f.store.get(session.id).session.lastRun, undefined);
+  const first = randomUUID();
+  f.store.append(session.id, first, { type: 'run.status', status: 'running', connectionId });
+  // A run still going has no ending yet.
+  assert.equal(f.store.get(session.id).session.lastRun, undefined);
+  f.store.append(session.id, first, { type: 'run.status', status: 'failed', connectionId });
+  const failed = f.store.get(session.id).session;
+  assert.equal(failed.activeRun, null);
+  assert.deepEqual(
+    { id: failed.lastRun?.id, status: failed.lastRun?.status },
+    { id: first, status: 'failed' },
+  );
+  assert.ok(!Number.isNaN(Date.parse(failed.lastRun!.endedAt)));
+  const second = randomUUID();
+  f.store.append(session.id, second, { type: 'run.status', status: 'running', connectionId });
+  // Starting again keeps the earlier ending until this run has its own.
+  assert.equal(f.store.get(session.id).session.lastRun?.id, first);
+  f.store.append(session.id, second, { type: 'run.status', status: 'completed', connectionId });
+  f.made.store.close();
+  const again = (f.made.store = new SessionStore(f.directory));
+  assert.deepEqual(
+    {
+      id: again.get(session.id).session.lastRun?.id,
+      status: again.get(session.id).session.lastRun?.status,
+    },
+    { id: second, status: 'completed' },
+  );
+});

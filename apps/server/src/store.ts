@@ -908,6 +908,12 @@ export class SessionStore {
         const event: SessionEvent = { sessionId, runId, sequence: ++sequence, createdAt, payload };
         if (!stateReadings.has(payload.type)) session.updatedAt = event.createdAt;
         if (payload.type === 'native.compact' && session.prompt) session.prompt.compacted = true;
+        if (payload.type === 'run.status' && terminalStatuses.has(payload.status))
+          session.lastRun = {
+            id: runId,
+            status: payload.status as 'completed' | 'cancelled' | 'failed',
+            endedAt: event.createdAt,
+          };
         if (payload.type === 'run.status')
           session.activeRun = terminalStatuses.has(payload.status)
             ? null

@@ -481,6 +481,16 @@ export const sessionSchema = z.object({
       activity: terminalActivitySchema.optional(),
     })
     .nullable(),
+  // How the session's last run ended. Every window hears of a session's changes, but only those reading it hear
+  // its events, so this is how a window tells a run finished out of sight from one that failed or was stopped.
+  // Services from before it leave it out.
+  lastRun: z
+    .object({
+      id,
+      status: z.enum(['completed', 'cancelled', 'failed']),
+      endedAt: timestamp,
+    })
+    .optional(),
 });
 export type Session = z.infer<typeof sessionSchema>;
 export const snapshotSchema = z.object({ session: sessionSchema, events: z.array(eventSchema) });

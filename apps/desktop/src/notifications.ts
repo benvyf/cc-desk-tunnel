@@ -23,6 +23,9 @@ export type Notifications = {
   // Sessions whose last run failed: the list marks them until they are opened or run again, whether or not
   // failures raise a notice.
   failed: ReadonlySet<string>;
+  // Sessions whose last run finished while they were not being read, with when: the list lights them until they
+  // are opened or run again, whether or not finishing raises a notice.
+  done: ReadonlyMap<string, number>;
 };
 const kept = 50;
 const away = () => !document.hasFocus() || document.visibilityState === 'hidden';
@@ -34,6 +37,7 @@ const away = () => !document.hasFocus() || document.visibilityState === 'hidden'
 export function useNotifications(client: ProxyClient, viewing: () => string | null): Notifications {
   const [notices, setNotices] = useState<Notice[]>([]);
   const [failed, setFailed] = useState<ReadonlySet<string>>(() => new Set());
+  const [done, setDone] = useState<ReadonlyMap<string, number>>(() => new Map());
   const view = useRef(viewing);
   view.current = viewing;
   const mark = useCallback(
@@ -47,6 +51,19 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
       }),
     [],
   );
+  const markDone = useCallback(
+    (sessionId: string, finished: boolean) =>
+      setDone((current) => {
+        if (current.has(sessionId) === finished) return current;
+        const next = new Map(current);
+        if (finished) next.set(sessionId, Date.now());
+        else next.delete(sessionId);
+        return next;
+      }),
+    [],
+  );
+  // A session finished or failed out of sight is marked; the one being read in a focused window is not.
+  const unseen = (sessionId: string) => away() || sessionId !== view.current();
 
   const push = useCallback<Notifications['push']>((notice) => {
     const prefs = getPrefs().notify;
@@ -75,6 +92,7 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
       const sessionId = view.current();
       if (!sessionId || away()) return;
       mark(sessionId, false);
+      markDone(sessionId, false);
       setNotices((current) =>
         current.some((notice) => !notice.read && notice.sessionId === sessionId)
           ? current.map((notice) =>
@@ -90,7 +108,7 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
       window.removeEventListener('focus', read);
       document.removeEventListener('visibilitychange', read);
     };
-  }, [seen, mark]);
+  }, [seen, mark, markDone]);
 
   useEffect(() => {
     let previous = new Map<string, Session['activeRun']>();
@@ -107,7 +125,10 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
         for (const session of sessions) {
           const before = previous.get(session.id);
           const now = session.activeRun;
-          if (now && !before) mark(session.id, false);
+          if (now && !before) {
+            mark(session.id, false);
+            markDone(session.id, false);
+          }
           if (now?.surface === 'terminal' || before?.surface === 'terminal') {
             if (
               now?.surface === 'terminal' &&
@@ -127,8 +148,10 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
           if (now?.status === 'awaiting_approval' && before?.status !== 'awaiting_approval')
             waiting(session);
           // Claude's turn is over once only background tasks go on; their ending without another turn is no news.
-          if (now?.waiting === 'background' && before && before.waiting !== 'background')
+          if (now?.waiting === 'background' && before && before.waiting !== 'background') {
+            if (unseen(session.id)) markDone(session.id, true);
             push({ kind: 'done', title: '任务完成', body: session.title, sessionId: session.id });
+          }
           if (before && !now && before.waiting !== 'background') ended(session, before.id);
         }
       previous = runs;
@@ -151,25 +174,35 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
           (event) => event.runId === runId,
         );
         const status = events.findLast((event) => event.payload.type === 'run.status')?.payload;
-        const outcome = status?.type === 'run.status' ? status.status : undefined;
+        // A session out of sight has no events here; the service tells how its last run ended instead. A service
+        // from before that tells neither, and the run counts as finished.
+        const last = client.state.sessions.find((item) => item.id === session.id)?.lastRun;
+        const outcome =
+          status?.type === 'run.status'
+            ? status.status
+            : last?.id === runId
+              ? last.status
+              : undefined;
         // Stopping a run is the user's own doing.
         if (outcome === 'cancelled') return;
         const error = events.findLast((event) => event.payload.type === 'run.error')?.payload;
         if (outcome === 'failed' || error) {
           // The session being read in a focused window shows the failure itself.
-          if (away() || session.id !== view.current()) mark(session.id, true);
+          if (unseen(session.id)) mark(session.id, true);
           push({
             kind: 'failed',
             title: '任务失败',
             body: `${session.title}${error?.type === 'run.error' ? `：${error.message}` : ''}`,
             sessionId: session.id,
           });
-        } else
+        } else {
+          if (unseen(session.id)) markDone(session.id, true);
           push({ kind: 'done', title: '任务完成', body: session.title, sessionId: session.id });
+        }
       });
     inspect();
     return client.subscribe(inspect);
-  }, [client, push, mark]);
+  }, [client, push, mark, markDone]);
 
   return {
     notices,
@@ -181,5 +214,6 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
     ),
     clear: useCallback(() => setNotices([]), []),
     failed,
+    done,
   };
 }

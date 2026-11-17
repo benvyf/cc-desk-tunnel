@@ -448,7 +448,15 @@ test('the side list names each run state on its row and keeps a failure until th
   const run = { id: randomUUID(), status: 'running' as const, connectionId };
   send({ type: 'session.updated', session: { ...failing, activeRun: run } });
   await expect(row(failing.title)).toHaveAttribute('data-state', 'running');
-  send({ type: 'session.updated', session: { ...failing, activeRun: null } });
+  // Out of sight, the window hears how the run ended from the session itself, not from its events.
+  send({
+    type: 'session.updated',
+    session: {
+      ...failing,
+      activeRun: null,
+      lastRun: { id: run.id, status: 'failed', endedAt: new Date().toISOString() },
+    },
+  });
   send({
     type: 'session.event',
     event: {
@@ -487,4 +495,172 @@ test('the side list names each run state on its row and keeps a failure until th
     session: { ...failing, activeRun: { ...run, id: randomUUID() } },
   });
   await expect(row(failing.title)).toHaveAttribute('data-state', 'running');
+});
+
+test('a run that finishes out of sight lights a green dot before its title, breathing and then lit, until opened', async ({
+  page,
+}) => {
+  test.slow();
+  const connectionId = randomUUID();
+  const now = new Date().toISOString();
+  const make = (title: string): Session => ({
+    id: randomUUID(),
+    title,
+    autoTitle: false,
+    projectPath: 'D:\\工作\\完成',
+    permissionMode: 'auto',
+    model: null,
+    effort: null,
+    createdAt: now,
+    updatedAt: now,
+    activeRun: null,
+  });
+  const finishing = make('后台完成的会话');
+  const reading = make('正在看的会话');
+  const sessions = [finishing, reading];
+  let send: (value: unknown) => void = () => {};
+  await page.routeWebSocket('ws://127.0.0.1:18891/ws', (route) => {
+    send = (value) => route.send(JSON.stringify(value));
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'device') return;
+      if (message.type === 'auth')
+        return send({
+          type: 'ready',
+          protocolVersion: PROTOCOL_VERSION,
+          version: '0.0.1',
+          connectionId,
+          adapter: 'claude-code',
+          sessions,
+        });
+      if (message.type === 'session.subscribe')
+        send({
+          type: 'session.snapshot',
+          requestId: message.requestId,
+          session: sessions.find((item) => item.id === message.sessionId),
+          mode: 'replace',
+          firstSequence: 0,
+          lastSequence: 0,
+          hasEarlier: false,
+          events: [],
+        });
+      send({ type: 'response', requestId: message.requestId, ok: true });
+    });
+  });
+  await page.goto('/');
+  await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18891/ws');
+  await page
+    .getByLabel('服务凭据', { exact: true })
+    .fill('test-only-status-token-with-enough-length');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  const row = (title: string) => page.locator('.session-row').filter({ hasText: title });
+  const finish = (session: Session) => {
+    const run = { id: randomUUID(), status: 'running' as const, connectionId };
+    send({ type: 'session.updated', session: { ...session, activeRun: run } });
+    return (status: 'completed' | 'failed' = 'completed') => {
+      const endedAt = new Date().toISOString();
+      send({
+        type: 'session.updated',
+        session: { ...session, activeRun: null, lastRun: { id: run.id, status, endedAt } },
+      });
+      send({
+        type: 'session.event',
+        event: {
+          sessionId: session.id,
+          runId: run.id,
+          sequence: 1,
+          createdAt: endedAt,
+          payload: { type: 'run.status', status, connectionId },
+        },
+      });
+    };
+  };
+
+  // Finishing the session being read in a focused window lights nothing: it is in front of the user.
+  await row(reading.title).locator('.session-select').click();
+  let end = finish(reading);
+  await expect(row(reading.title)).toHaveAttribute('data-state', 'running');
+  end();
+  await expect(row(reading.title)).not.toHaveAttribute('data-state');
+  await page.waitForTimeout(400);
+  await expect(row(reading.title)).not.toHaveAttribute('data-state');
+  await expect(row(reading.title).locator('.done-dot')).toHaveCount(0);
+
+  // Finishing another one lights it: green, before the title, which keeps its place.
+  end = finish(finishing);
+  await expect(row(finishing.title)).toHaveAttribute('data-state', 'running');
+  const titleBefore = (await row(finishing.title).locator('strong').boundingBox())!;
+  end();
+  await expect(row(finishing.title)).toHaveAttribute('data-state', 'done');
+  await expect(row(finishing.title).locator('small')).toHaveText('已完成');
+  const light = row(finishing.title).locator('.done-dot');
+  await expect(light).toHaveCount(1);
+  await expect(row(finishing.title).locator('.running-dot')).toHaveCount(0);
+  const ok = await page.evaluate(() => {
+    const probe = document.createElement('i');
+    probe.style.color = 'var(--ok)';
+    document.querySelector('.sidebar')!.append(probe);
+    const color = getComputedStyle(probe).color;
+    probe.remove();
+    return color;
+  });
+  expect(await light.evaluate((node) => getComputedStyle(node).backgroundColor)).toBe(ok);
+  const dot = (await light.boundingBox())!;
+  const title = (await row(finishing.title).locator('strong').boundingBox())!;
+  expect(dot.x + dot.width).toBeLessThanOrEqual(title.x - 6);
+  const folderIcon = (await page.locator('.project-toggle .fold-icon').first().boundingBox())!;
+  expect(
+    Math.abs(dot.x + dot.width / 2 - (folderIcon.x + folderIcon.width / 2)),
+  ).toBeLessThanOrEqual(1);
+  expect(Math.abs(title.x - titleBefore.x)).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(dot.y + dot.height / 2 - (title.y + title.height / 2))).toBeLessThanOrEqual(1.5);
+  await page.locator('.sidebar').screenshot({ path: resolve(folder, '完成呼吸灯.png') });
+
+  // It breathes, and drawing the list again goes on from where it was rather than starting over.
+  // How far into its breaths the light is: the animation's own progress, which counts its negative delay.
+  const progress = () =>
+    light.evaluate((node) => {
+      const [animation] = node.getAnimations();
+      if (!animation) return null;
+      const timing = animation.effect!.getComputedTiming();
+      return {
+        state: animation.playState,
+        time: ((timing.currentIteration ?? 0) + (timing.progress ?? 0)) * 2400,
+      };
+    });
+  expect((await progress())?.state).toBe('running');
+  await page.waitForTimeout(1500);
+  const project = page.locator('.project-toggle').filter({ hasText: '完成' });
+  await project.click();
+  // Folded, the project carries the same green light.
+  await expect(project).toHaveAttribute('data-state', 'done');
+  await expect(project.locator('.done-dot')).toHaveCount(1);
+  await project.click();
+  const resumed = await progress();
+  expect(resumed?.time).toBeGreaterThan(1200);
+  // After its breaths it stays lit.
+  await page.waitForTimeout(7200 - resumed!.time + 300);
+  expect(await progress()).toBeNull();
+  expect(await light.evaluate((node) => getComputedStyle(node).opacity)).toBe('1');
+
+  // Opening the session puts it out.
+  await row(finishing.title).locator('.session-select').click();
+  await expect(row(finishing.title)).not.toHaveAttribute('data-state');
+  await expect(row(finishing.title).locator('.done-dot')).toHaveCount(0);
+
+  // A run that fails out of sight is marked as failed, never lit as finished.
+  end = finish(reading);
+  end('failed');
+  await expect(row(reading.title)).toHaveAttribute('data-state', 'failed');
+  await expect(row(reading.title).locator('.done-dot')).toHaveCount(0);
+  await row(reading.title).locator('.session-select').click();
+  await row(finishing.title).locator('.session-select').click();
+
+  // A new run of a lit session puts the light out as well.
+  end = finish(reading);
+  end();
+  await expect(row(reading.title)).toHaveAttribute('data-state', 'done');
+  finish(reading);
+  await expect(row(reading.title)).toHaveAttribute('data-state', 'running');
+  await expect(row(reading.title).locator('.done-dot')).toHaveCount(0);
 });

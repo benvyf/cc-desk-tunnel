@@ -1499,8 +1499,37 @@ html[data-platform='darwin'] .titlebar {
     transform: translateY(2px);
   }
 }
+/* A run that finished out of sight: a green light before the title that breathes three times (Sidebar.tsx:
+   doneBreathing) and then stays lit until the session is opened. Under a project it stands in the row's indent,
+   in line with the folder above, and the title keeps its place; a row without that indent has it before the
+   title. */
+.done-dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  display: inline-block;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: breathe 2.4s ease-in-out 3;
+}
+.running-dot.done-dot {
+  background: var(--ok);
+}
+.project-group .session-select:has(> .done-dot) {
+  position: relative;
+}
+/* The indent is 25px (.project-group .session-row); the folder's middle is 7px in from its end. */
+.project-group .session-select > .done-dot {
+  position: absolute;
+  top: calc(50% - 3.5px);
+  left: -10.5px;
+}
+.session-row[data-state='done'] .session-select small {
+  color: var(--ok-text);
+}
 @media (prefers-reduced-motion: reduce) {
   .running-dot.breathing,
+  .done-dot,
   .background-tasks li {
     animation: none;
   }

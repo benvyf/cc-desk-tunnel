@@ -30,7 +30,7 @@ import type { SshTarget } from './desktop.d.ts';
 import { projectPreferenceKey } from './developmentProjects.ts';
 
 // What a session is doing, as its row names it in `data-state`: the stylesheet colours the dot and the word by it.
-type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed';
+type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed' | 'done';
 const stateLabels: Record<RowState, string> = {
   running: '运行中',
   approval: '等待审批',
@@ -38,19 +38,23 @@ const stateLabels: Record<RowState, string> = {
   background: '后台任务',
   terminal: '原生终端',
   failed: '失败',
+  done: '已完成',
 };
-// A folded list shows the one state that most needs the user.
+// A folded list shows the one state that most needs the user. A finished run waits to be read, which
+// matters more than one still going.
 const stateRank: Record<RowState, number> = {
-  failed: 3,
-  approval: 2,
-  question: 2,
+  failed: 4,
+  approval: 3,
+  question: 3,
+  done: 2,
   running: 1,
   background: 0,
   terminal: 0,
 };
-function rowState(session: Session, failed: ReadonlySet<string>): RowState | undefined {
+type Outcomes = Pick<Notifications, 'failed' | 'done'>;
+function rowState(session: Session, { failed, done }: Outcomes): RowState | undefined {
   const run = session.activeRun;
-  if (!run) return failed.has(session.id) ? 'failed' : undefined;
+  if (!run) return failed.has(session.id) ? 'failed' : done.has(session.id) ? 'done' : undefined;
   if (run.surface === 'terminal') return run.activity === 'waiting' ? 'approval' : 'terminal';
   if (run.waiting === 'background') return 'background';
   if (run.status !== 'awaiting_approval') return 'running';
@@ -59,6 +63,20 @@ function rowState(session: Session, failed: ReadonlySet<string>): RowState | und
 // A run that is alive breathes; one that waits for the user, or has failed, rests.
 const breathes = (state: RowState) =>
   state === 'running' || state === 'background' || state === 'terminal';
+// How long a finished session's light breathes before it stays lit (style.css: three breaths of 2.4s).
+const doneBreathing = 7200;
+// A finished session's light, as far into its breathing as the time since it finished: a list drawn again, or a
+// folded project opened, does not start it over.
+function DoneDot({ at, className = 'done-dot' }: { at: number | undefined; className?: string }) {
+  const elapsed = at === undefined ? doneBreathing : Math.max(0, Date.now() - at);
+  return (
+    <i
+      className={className}
+      aria-hidden="true"
+      style={{ animationDelay: `-${Math.min(elapsed, doneBreathing)}ms` }}
+    />
+  );
+}
 function activity(session: Session, state: RowState | undefined) {
   if (session.activeRun?.surface === 'terminal') return terminalState(session.activeRun.activity);
   return state ? stateLabels[state] : ago(Date.parse(session.updatedAt));
@@ -155,7 +173,7 @@ export default function Sidebar({
   const prefs = usePrefs();
   const connectionName = useConnectionName();
 
-  const { failed } = notifications;
+  const { failed, done } = notifications;
   const [search, setSearch] = useState('');
   const [searching, setSearching] = useState(false);
   const searchBox = useRef<HTMLInputElement>(null);
@@ -395,10 +413,16 @@ export default function Sidebar({
   };
   useEffect(() => leave, []);
 
+  // When the latest of a folded list's finished sessions finished, for its light.
+  const latestDone = (members: Session[]) =>
+    members.reduce<number | undefined>((latest, session) => {
+      const at = done.get(session.id);
+      return at !== undefined && (latest === undefined || at > latest) ? at : latest;
+    }, undefined);
   // What a folded list most needs the user for: the state of the one session that ranks highest.
   const topState = (members: Session[]) =>
     members
-      .map((session) => rowState(session, failed))
+      .map((session) => rowState(session, notifications))
       .reduce<RowState | undefined>(
         (top, next) => (next && (!top || stateRank[next] > stateRank[top]) ? next : top),
         undefined,
@@ -441,7 +465,11 @@ export default function Sidebar({
           {open ? <ChevronDown className="fold-caret" /> : <ChevronRight className="fold-caret" />}
         </span>
         <span>{name}</span>
-        {state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
+        {state === 'done' ? (
+          <DoneDot at={latestDone(members)} className="running-dot done-dot" />
+        ) : (
+          state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
+        )}
         {!open && members.length > 0 && <small>{members.length}</small>}
       </button>
     );
@@ -487,7 +515,11 @@ export default function Sidebar({
         )}
         <span>{name}</span>
         {!icon && caret}
-        {state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
+        {state === 'done' ? (
+          <DoneDot at={latestDone(members)} className="running-dot done-dot" />
+        ) : (
+          state && <i className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
+        )}
         {!open && members.length > 0 && <small>{members.length}</small>}
       </button>
     );
@@ -501,7 +533,11 @@ export default function Sidebar({
   function renderSessions(key: string, members: Session[], loose = false) {
     const kept = members.filter(
       (session, index) =>
-        index < PAGE || session.id === selectedId || session.activeRun || failed.has(session.id),
+        index < PAGE ||
+        session.id === selectedId ||
+        session.activeRun ||
+        failed.has(session.id) ||
+        done.has(session.id),
     );
     if (search.trim() || kept.length === members.length) return members.map(renderSession);
     const full = listed.includes(key);
@@ -521,7 +557,7 @@ export default function Sidebar({
   }
 
   function renderSession(session: Session) {
-    const state = rowState(session, failed);
+    const state = rowState(session, notifications);
     return (
       <div
         className={`session-row ${selectedId === session.id ? 'selected' : ''}`}
@@ -558,8 +594,12 @@ export default function Sidebar({
             sessionMenu(session, below(event.currentTarget));
           }}
         >
+          {/* Finished while out of sight: a green light before the title, until the session is opened. */}
+          {state === 'done' && <DoneDot at={done.get(session.id)} />}
           <strong>{session.title}</strong>
-          {state && <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />}
+          {state && state !== 'done' && (
+            <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
+          )}
           <small>{activity(session, state)}</small>
         </button>
         <IconButton
@@ -834,7 +874,7 @@ export default function Sidebar({
                 : card.session.projectPath}
             </span>
             <small>
-              {activity(card.session, rowState(card.session, failed))} ·{' '}
+              {activity(card.session, rowState(card.session, notifications))} ·{' '}
               {new Date(card.session.updatedAt).toLocaleString('zh-CN', { hour12: false })}
             </small>
           </div>
