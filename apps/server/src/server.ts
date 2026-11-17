@@ -316,11 +316,10 @@ export function createProxyServer(options: ServerOptions) {
   let closing = false;
   let maintenance = options.managed?.initialMaintenance ?? false;
   let webRequests = 0;
-  const managedMaintenance = {
-    enter() {
-      if (maintenance || closing) return false;
-      maintenance = true;
-      if (
+  function maintenanceBusy(disconnectClients: boolean) {
+    try {
+      return !!(
+        closing ||
         runs.size ||
         terminals.size ||
         mutations.size ||
@@ -329,11 +328,40 @@ export function createProxyServer(options: ServerOptions) {
         tasks.size ||
         tunnelTasks.size ||
         webRequests ||
-        [...peers].some((peer) => peer.authenticated || peer.registering)
-      ) {
+        store.list().some((session) => session.activeRun) ||
+        [...peers].some((peer) => peer.registering || (!disconnectClients && peer.authenticated))
+      );
+    } catch {
+      return true;
+    }
+  }
+  const managedMaintenance = {
+    recoverRelay() {
+      if (maintenance || closing) return false;
+      // The root host controller has confirmed its old SSH transport is disconnected.
+      // Preserve existing tasks, approvals, terminals and peers while holding the same
+      // maintenance owner as installs; a tunnel-only restart does not terminate them.
+      maintenance = true;
+      return true;
+    },
+    serving() {
+      return !maintenance && !closing;
+    },
+    busy() {
+      return maintenance || maintenanceBusy(true);
+    },
+    enter(disconnectClients = false) {
+      if (maintenance || closing) return false;
+      maintenance = true;
+      if (maintenanceBusy(disconnectClients)) {
         maintenance = false;
         return false;
       }
+      if (disconnectClients)
+        for (const peer of peers) {
+          peer.left = true;
+          peer.socket.close(1012, 'Server update; reconnect after maintenance');
+        }
       return true;
     },
     leave() {
@@ -2096,12 +2124,7 @@ export function createProxyServer(options: ServerOptions) {
       ].includes(command.type)
     )
       throw new DomainError('session_busy', '内容正在审核，请稍后操作。');
-    // These reads use the proxy database, not the native CLI being initialized or changed.
-    if (
-      mutations.has(command.sessionId) &&
-      command.type !== 'session.subscribe' &&
-      command.type !== 'session.history'
-    )
+    if (mutations.has(command.sessionId))
       throw new DomainError('session_busy', '会话正在更新，请稍后重试。');
     switch (command.type) {
       case 'session.status':
