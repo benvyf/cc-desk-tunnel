@@ -440,7 +440,11 @@ export function createProxyServer(options: ServerOptions) {
         handler,
       )
     : createServer(handler);
-  const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_FRAME_BYTES });
+  const wss = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_FRAME_BYTES,
+    perMessageDeflate: { serverNoContextTakeover: true, clientNoContextTakeover: true },
+  });
   server.on('upgrade', (request, socket, head) => {
     if (maintenance) {
       socket.end('HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n');
@@ -491,8 +495,11 @@ export function createProxyServer(options: ServerOptions) {
   });
 
   function send(peer: Peer, message: ServerMessage) {
+    // History benefits from compression; small live events and control replies do not need it.
     if (peer.socket.readyState === WebSocket.OPEN)
-      peer.socket.send(JSON.stringify(accountMessageForClient(message)));
+      peer.socket.send(JSON.stringify(accountMessageForClient(message)), {
+        compress: message.type === 'session.snapshot',
+      });
   }
   function broadcast(message: ServerMessage, sessionId?: string) {
     for (const peer of peers) {
