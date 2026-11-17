@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import type { Page } from '@playwright/test';
+import type { Locator, Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { deflateSync, crc32 } from 'node:zlib';
 import { mkdirSync } from 'node:fs';
@@ -33,14 +33,14 @@ function png(width: number, height: number, [r, g, b]: number[]) {
     chunk('IEND', Buffer.alloc(0)),
   ]).toString('base64');
 }
-const colours = [
-  [217, 119, 87],
-  [94, 129, 172],
-  [120, 170, 110],
-  [200, 170, 80],
-  [150, 110, 170],
+// Three screenshots in the first step; in the second, a tall document page and one more screenshot.
+const pictures = [
+  png(320, 200, [217, 119, 87]),
+  png(320, 200, [94, 129, 172]),
+  png(320, 200, [120, 170, 110]),
+  png(1400, 2000, [244, 244, 240]),
+  png(320, 200, [150, 110, 170]),
 ];
-const pictures = colours.map((colour) => png(160, 100, colour));
 const looked = (index: number) => [
   {
     type: 'tool.requested',
@@ -60,6 +60,7 @@ const looked = (index: number) => [
     exitCode: null,
   },
 ];
+const said = (text: string) => ({ type: 'text.delta', messageId: randomUUID(), text });
 
 async function open(page: Page, finished: boolean) {
   const now = new Date().toISOString();
@@ -82,8 +83,13 @@ async function open(page: Page, finished: boolean) {
     { type: 'run.status', status: 'running', connectionId },
     ...(finished
       ? [
-          ...pictures.flatMap((_, index) => looked(index)),
-          { type: 'text.delta', messageId: randomUUID(), text: '改好了，截图都在上面。' },
+          ...looked(0),
+          ...looked(1),
+          ...looked(2),
+          said('先看一下这几张。'),
+          ...looked(3),
+          ...looked(4),
+          said('改好了，截图都在上面。'),
           { type: 'run.status', status: 'completed', connectionId },
         ]
       : []),
@@ -149,7 +155,7 @@ async function open(page: Page, finished: boolean) {
 }
 
 // A line keeps the height it has without its pictures.
-async function keepsItsHeight(summary: import('@playwright/test').Locator) {
+async function keepsItsHeight(summary: Locator) {
   const strip = summary.locator('.picture-strip');
   const height = (await summary.boundingBox())!.height;
   await strip.evaluate((node: HTMLElement) => (node.style.display = 'none'));
@@ -157,97 +163,220 @@ async function keepsItsHeight(summary: import('@playwright/test').Locator) {
   await strip.evaluate((node: HTMLElement) => (node.style.display = ''));
   expect(height).toBe(without);
 }
+const viewer = (page: Page) => page.locator('dialog.picture-viewer');
 
-test('pictures arrive on the line of the step that took them while the run goes on', async ({
+test('while a run goes on, its latest pictures stand above "正在执行…", and the viewer they open outlives the run', async ({
   page,
 }) => {
   const { push, connectionId } = await open(page, false);
+  for (const payload of [...looked(0), ...looked(1)]) push(payload);
+  const live = page.locator('.live-pictures');
+  await expect(live.locator('.picture-thumb')).toHaveCount(2);
+  // Seen without unfolding anything: 64px high, in one line 72px high, above the run's status.
+  const status = page.getByText('正在执行…');
+  expect((await live.boundingBox())!.height).toBe(72);
+  expect((await live.boundingBox())!.y).toBeLessThan((await status.boundingBox())!.y);
+  expect((await live.locator('.picture-thumb').first().boundingBox())!.height).toBe(64);
+  // The step's folded line carries its own small thumbnails, a line high.
   const step = page.locator('details.work').last();
-  for (const [index, payload] of [...looked(0), ...looked(1)].entries()) {
-    push(payload);
-    if (index === 1) await expect(step.locator('.picture-thumb')).toHaveCount(1);
-  }
-  // The step's line stays folded and one line high, and carries both thumbnails.
   await expect(step).not.toHaveAttribute('open');
   await expect(step.locator('> summary .picture-thumb')).toHaveCount(2);
   await keepsItsHeight(step.locator('> summary'));
-  // Only a picture shown for the first time fades in.
-  await expect(step.locator('.picture-thumb.fresh')).toHaveCount(2);
+  // Thumbnails show small copies, not the pictures themselves.
+  await expect
+    .poll(() => live.locator('img').first().getAttribute('src'))
+    .toMatch(/^data:image\/webp;base64,/);
+  expect((await live.locator('img').first().getAttribute('src'))!.length).toBeLessThan(
+    pictures[0].length,
+  );
   await page.locator('.conversation').screenshot({ path: resolve(folder, '运行中.png') });
 
-  // A picture opened from the step stays open when the run finishes and folds its steps into the turn's line.
-  await step.locator('> summary .picture-thumb').last().click();
-  const dialog = page.locator('dialog:has(.picture-view)');
-  await expect(dialog.locator('h2')).toHaveText('图片 2 / 2');
-  push({ type: 'text.delta', messageId: randomUUID(), text: '好了。' });
+  // Opened from the live line, the viewer takes up the pictures the run goes on taking, without leaving its own.
+  await live.locator('.picture-thumb').last().click();
+  const dialog = viewer(page);
+  await expect(dialog.locator('.viewer-count')).toHaveText('2 / 2 · 第 1 步');
+  for (const payload of looked(2)) push(payload);
+  await expect(dialog.getByRole('button', { name: '有 1 张新图' })).toBeVisible();
+  await expect(dialog.locator('.viewer-count')).toHaveText('2 / 3 · 第 1 步');
+  await expect(dialog.locator('.viewer-film-thumb')).toHaveCount(3);
+  await dialog.getByRole('button', { name: '有 1 张新图' }).click();
+  await expect(dialog.locator('.viewer-count')).toHaveText('3 / 3 · 第 1 步');
+  await expect(dialog.getByRole('button', { name: /张新图/ })).toHaveCount(0);
+  // The run finishing folds its steps and takes the live line away; the viewer stays.
+  push(said('好了。'));
   push({ type: 'run.status', status: 'completed', connectionId });
   await expect(page.locator('details.turn-process')).toHaveCount(1);
-  await expect(page.locator('details.work')).toHaveCount(0);
+  await expect(live).toHaveCount(0);
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator('h2')).toHaveText('图片 2 / 2');
   await page.keyboard.press('ArrowLeft');
-  await expect(dialog.locator('h2')).toHaveText('图片 1 / 2');
+  await expect(dialog.locator('.viewer-count')).toHaveText('2 / 3 · 第 1 步');
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
-  // The turn's line carries the same pictures, which do not fade in again.
-  const strip = page.locator('details.turn-process > summary .picture-strip');
-  await expect(strip.locator('.picture-thumb')).toHaveCount(2);
-  await expect(strip.locator('.picture-thumb.fresh')).toHaveCount(0);
 });
 
-test('a finished turn keeps its pictures on its one folded line: latest three, the rest counted, opened in turn', async ({
+test('a finished turn names its pictures on its folded line, and its steps show them in a row when opened', async ({
   page,
 }) => {
   await open(page, true);
   const process = page.locator('details.turn-process');
   await expect(process).not.toHaveAttribute('open');
-  const strip = process.locator('> summary .picture-strip');
+  const summary = process.locator('> summary');
+  await expect(summary).toContainText('5 张图片');
+  const strip = summary.locator('.picture-strip');
   await expect(strip.locator('.picture-thumb')).toHaveCount(3);
+  // The latest three, then how many more.
   await expect(strip.locator('.picture-more')).toHaveText('+2');
+  expect((await strip.locator('.picture-more').boundingBox())!.x).toBeGreaterThan(
+    (await strip.locator('.picture-thumb').last().boundingBox())!.x,
+  );
   await expect(strip).toHaveAttribute('aria-label', '本轮的图片：5 张图片');
-  await keepsItsHeight(process.locator('> summary'));
-
+  await keepsItsHeight(summary);
   // Under the pointer a picture shows larger beside the line, which does not move.
-  const before = (await process.locator('> summary').boundingBox())!;
+  const before = (await summary.boundingBox())!;
   await strip.locator('.picture-thumb').last().hover();
-  const peek = page.locator('.picture-peek');
-  await expect(peek).toBeVisible();
-  const box = (await peek.boundingBox())!;
-  // As wide as the picture (160 and the frame), centred on its thumbnail.
-  expect(box.width).toBe(168);
-  const thumb = (await strip.locator('.picture-thumb').last().boundingBox())!;
-  expect(Math.abs(box.x + box.width / 2 - (thumb.x + thumb.width / 2))).toBeLessThanOrEqual(1);
-  expect(box.x).toBeGreaterThanOrEqual(8);
-  expect(box.x + box.width).toBeLessThanOrEqual(page.viewportSize()!.width - 8);
-  expect((await process.locator('> summary').boundingBox())!.y).toBe(before.y);
-  await page.screenshot({ path: resolve(folder, '悬停预览.png') });
+  await expect(page.locator('.picture-peek')).toBeVisible();
+  expect((await summary.boundingBox())!.y).toBe(before.y);
   await page.mouse.move(0, 0);
-  await expect(peek).toHaveCount(0);
-
-  // A click opens them one at a time, and does not unfold the line.
-  await strip.locator('.picture-thumb').first().click();
-  const dialog = page.locator('dialog:has(.picture-view)');
-  await expect(dialog.locator('h2')).toHaveText('图片 3 / 5');
-  await page.keyboard.press('ArrowRight');
-  await expect(dialog.locator('h2')).toHaveText('图片 4 / 5');
-  await dialog.getByRole('button', { name: '下一张' }).click();
-  await expect(dialog.locator('h2')).toHaveText('图片 5 / 5');
-  await expect(dialog.getByRole('button', { name: '下一张' })).toBeDisabled();
-  await page.screenshot({ path: resolve(folder, '查看器.png') });
-  await page.keyboard.press('Escape');
-  await expect(dialog).toHaveCount(0);
-  await expect(process).not.toHaveAttribute('open');
-  await strip.locator('.picture-more').click();
-  await expect(dialog.locator('h2')).toHaveText('图片 1 / 5');
-  await expect(dialog.getByRole('button', { name: '上一张' })).toBeDisabled();
-  await page.keyboard.press('Escape');
   await page.locator('.conversation').screenshot({ path: resolve(folder, '完成后.png') });
 
-  // Unfolded, the turn's line lets its steps carry the pictures instead of showing them twice.
-  await process.locator('> summary').click();
+  // Opened, the steps are named by their pictures, and an open step shows them in a 64px row under its line.
+  await summary.click();
   await expect(process).toHaveAttribute('open');
   await expect(strip).toHaveCount(0);
-  await expect(process.locator('details.work > summary .picture-thumb')).toHaveCount(3);
-  // Pictures already shown on the turn's line do not fade in again on the step's.
-  await expect(process.locator('details.work > summary .picture-thumb.fresh')).toHaveCount(0);
+  const steps = process.locator('details.work');
+  await expect(steps).toHaveCount(2);
+  await expect(steps.first().locator('> summary')).toContainText('查看了 3 张图片');
+  await expect(steps.last().locator('> summary')).toContainText('查看了 2 张图片');
+  await expect(steps.first().locator('> summary .picture-thumb')).toHaveCount(3);
+  await steps.first().locator('> summary').click();
+  const row = steps.first().locator('.picture-row').first();
+  await expect(row.locator('.picture-thumb')).toHaveCount(3);
+  expect((await row.boundingBox())!.height).toBe(64);
+  expect((await row.locator('.picture-thumb').first().boundingBox())!.height).toBe(64);
+  // The step's line, open, carries no thumbnails of its own: the row has them.
+  await expect(steps.first().locator('> summary .picture-strip')).toHaveCount(0);
+  // One stop of the Tab key; the arrows move within it.
+  await row.locator('.picture-thumb').first().focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(row.locator('.picture-thumb').nth(1)).toBeFocused();
+  expect(await row.locator('.picture-thumb').nth(1).getAttribute('tabindex')).toBe('0');
+  expect(await row.locator('.picture-thumb').first().getAttribute('tabindex')).toBe('-1');
+  // A tool's output shows its picture in the same row, not a large one among its words.
+  const tool = steps.first().locator('details.tool').first();
+  await tool.locator('> summary').click();
+  await expect(tool.locator('.tool-results .picture-row .picture-thumb')).toHaveCount(1);
+  // Open, the call's line leaves its picture to the row.
+  await expect(tool.locator('> summary .picture-strip')).toHaveCount(0);
+  await page.waitForFunction(() =>
+    document.getAnimations().every((animation) => animation.playState !== 'running'),
+  );
+  const card = (await tool.locator('.tool-detail').boundingBox())!;
+  const shot = (await tool.locator('.tool-results .picture-row .picture-thumb').boundingBox())!;
+  expect(shot.y + shot.height).toBeLessThanOrEqual(card.y + card.height);
+  await page.locator('.conversation').screenshot({ path: resolve(folder, '展开后.png') });
+
+  // However many, one row: in a narrow window the ones that do not fit are counted in a last tile.
+  await page.setViewportSize({ width: 320, height: 800 });
+  await expect(row.locator('.picture-row-more')).toBeVisible();
+  const shown = await row.locator('.picture-thumb').count();
+  await expect(row.locator('.picture-row-more')).toHaveText(`+${3 - shown}`);
+  expect((await row.boundingBox())!.height).toBe(64);
+});
+
+test('in a narrow conversation a folded line keeps only its latest picture and counts the rest', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 520, height: 800 });
+  await open(page, true);
+  const width = await page.locator('.transcript').evaluate((node) => node.clientWidth);
+  expect(width).toBeLessThanOrEqual(520);
+  const strip = page.locator('details.turn-process > summary .picture-strip');
+  await expect(strip.locator('.picture-thumb')).toHaveCount(1);
+  await expect(strip.locator('.picture-more')).toHaveText('+4');
+  // Widened, the line shows its latest three again.
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await expect(strip.locator('.picture-thumb')).toHaveCount(3);
+  await expect(strip.locator('.picture-more')).toHaveText('+2');
+});
+
+test('the viewer pages the whole turn, reads a document page across its width, zooms, saves and copies', async ({
+  page,
+  context,
+}) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await open(page, true);
+  const strip = page.locator('details.turn-process > summary .picture-strip');
+  const opener = strip.locator('.picture-thumb').first();
+  await opener.click();
+  const dialog = viewer(page);
+  await expect(dialog).toBeVisible();
+  // The whole window, dark; from the picture clicked, among all of the turn's.
+  const box = (await dialog.boundingBox())!;
+  expect(box.width).toBe(page.viewportSize()!.width);
+  expect(box.height).toBe(page.viewportSize()!.height);
+  await expect(dialog.locator('.viewer-count')).toHaveText('3 / 5 · 第 1 步');
+  const film = dialog.locator('.viewer-film-thumb');
+  await expect(film).toHaveCount(5);
+  await expect(film.nth(2)).toHaveAttribute('aria-current', 'true');
+  // A gap where the pictures of another step begin.
+  await expect(film.nth(3)).toHaveClass(/step-start/);
+  await page.screenshot({ path: resolve(folder, '查看器.png') });
+
+  // A tall document page opens across its width, from its top, and scrolls under the wheel.
+  await page.keyboard.press('ArrowRight');
+  await expect(dialog.locator('.viewer-count')).toHaveText('4 / 5 · 第 2 步');
+  const image = dialog.locator('.viewer-stage > img');
+  const stage = (await dialog.locator('.viewer-stage').boundingBox())!;
+  // Across the stage, less the room of the side arrows, never past its own size.
+  const across = `${Math.round(Math.min((stage.width - 112) / 1400, 1) * 100)}%`;
+  await expect(dialog.locator('.viewer-percent')).toHaveText(across);
+  await expect.poll(async () => (await image.boundingBox())!.y).toBe(stage.y);
+  await page.screenshot({ path: resolve(folder, '文档页.png') });
+  await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2);
+  await page.mouse.wheel(0, 300);
+  await expect.poll(async () => (await image.boundingBox())!.y).toBeLessThan(stage.y - 100);
+  // Dragged, it moves with the pointer.
+  const dragged = (await image.boundingBox())!.y;
+  await page.mouse.down();
+  await page.mouse.move(stage.x + stage.width / 2, stage.y + stage.height / 2 + 120, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await image.boundingBox())!.y).toBeGreaterThan(dragged + 100);
+  // The keys: 1 is the picture's own size, 0 the default, + and − zoom.
+  await page.keyboard.press('1');
+  await expect(dialog.locator('.viewer-percent')).toHaveText('100%');
+  await page.keyboard.press('+');
+  await expect(dialog.locator('.viewer-percent')).toHaveText('125%');
+  await dialog.getByRole('button', { name: '缩小' }).click();
+  await expect(dialog.locator('.viewer-percent')).toHaveText('100%');
+  await page.keyboard.press('0');
+  await expect(dialog.locator('.viewer-percent')).toHaveText(across);
+  // A screenshot is seen whole.
+  await page.keyboard.press('End');
+  await expect(dialog.locator('.viewer-count')).toHaveText('5 / 5 · 第 2 步');
+  await expect(dialog.getByRole('button', { name: '下一张' })).toBeDisabled();
+  const whole = (await image.boundingBox())!;
+  expect(whole.y).toBeGreaterThan(stage.y);
+  expect(whole.y + whole.height).toBeLessThan(stage.y + stage.height);
+  await page.keyboard.press('Home');
+  await expect(dialog.locator('.viewer-count')).toHaveText('1 / 5 · 第 1 步');
+  await film.nth(3).click();
+  await expect(dialog.locator('.viewer-count')).toHaveText('4 / 5 · 第 2 步');
+
+  // Saved under a name of its own, and copied as a picture.
+  const download = page.waitForEvent('download');
+  await dialog.getByRole('button', { name: '下载图片' }).click();
+  expect((await download).suggestedFilename()).toBe('图片-4.png');
+  await dialog.getByRole('button', { name: '复制图片' }).click();
+  await expect(dialog.locator('.viewer-note')).toHaveText('已复制图片');
+
+  // Escape closes, and the thumbnail it was opened from has the focus again.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  // A click on the dark around the picture closes as well.
+  await opener.click();
+  await expect(dialog).toBeVisible();
+  const around = (await dialog.locator('.viewer-stage').boundingBox())!;
+  await page.mouse.click(around.x + 60, around.y + around.height - 30);
+  await expect(dialog).toHaveCount(0);
 });

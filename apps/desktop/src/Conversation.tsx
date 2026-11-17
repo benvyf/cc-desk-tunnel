@@ -74,9 +74,10 @@ import {
 } from './QuoteActions.tsx';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import ConversationWidthControls from './ConversationWidthControls.tsx';
-import { pictureUrl, picturesOf } from './pictures.ts';
-import { PictureStrip } from './PictureStrip.tsx';
-import { Picture } from './Picture.tsx';
+import { picturesOf } from './pictures.ts';
+import { LivePictures, PictureRow, PictureStrip, TurnPictures } from './PictureStrip.tsx';
+import { updatePictures } from './PictureViewer.tsx';
+import type { PictureEntry } from './PictureViewer.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
 
 const RichText = lazy(() => import('./RichText.tsx'));
@@ -259,14 +260,17 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
         category === 'question' || category === 'plan' ? ' asked' : ''
       }`}
       forced={approval && !docked}
-      summary={
+      summary={(shown) => (
         <span className="tool-heading">
           {running ? <LoaderCircle className="spinning" /> : <Icon />}
           <span className="tool-verb">{verb}</span>
           <span className="tool-subject" title={subject}>
             {subject}
           </span>
-          {pictures && <PictureStrip pictures={pictures.pictures} label="这次调用的图片" />}
+          {/* Open, the output shows them in a row. */}
+          {pictures && !shown && (
+            <PictureStrip pictures={pictures.pictures} label="这次调用的图片" />
+          )}
           {(added > 0 || removed > 0) && (
             <span className="tool-diff">
               <ins>+{added}</ins>
@@ -282,7 +286,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
           {control && <TaskActions tool={tool} control={control} live={live} />}
           {docked && <span className="tool-await">在下方{questions ? '回答' : '处理'}</span>}
         </span>
-      }
+      )}
     >
       {() => {
         // The input in the shape its tool reads (ToolInput.tsx); "input" and "output" head their parts of the card,
@@ -315,13 +319,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
                     </pre>
                   </>
                 )}
-                {pictures && (
-                  <div className="tool-pictures">
-                    {pictures.pictures.map((picture, index) => (
-                      <Picture key={index} src={pictureUrl(picture)} alt={`图片 ${index + 1}`} />
-                    ))}
-                  </div>
-                )}
+                {pictures && <PictureRow pictures={pictures.pictures} label="这次调用的图片" />}
               </div>
             )}
             {approval && !docked && (
@@ -426,7 +424,12 @@ function WorkGroup({
         </span>
       )}
     >
-      {() => <WorkItems work={work} active={active} live={live} until={until} />}
+      {() => (
+        <>
+          {pictures.length > 0 && <PictureRow pictures={pictures} label="这一步的图片" />}
+          <WorkItems work={work} active={active} live={live} until={until} />
+        </>
+      )}
     </Fold>
   );
 }
@@ -691,6 +694,31 @@ function heldOpen(turns: Turn[], index: number) {
   return last > index && !turns[last].endedAt;
 }
 
+// A turn's pictures, each with the step of work that took it (1 for the first). Recomputed as the turn's events
+// arrive, but the same array while its pictures are the same, so an open viewer is not drawn again for nothing.
+function turnEntries(turn: Turn): PictureEntry[] {
+  let step = 0;
+  const entries: PictureEntry[] = [];
+  for (const item of turn.steps)
+    if (item.kind === 'work') {
+      step++;
+      for (const picture of picturesOf(item.items)) entries.push({ picture, step });
+    }
+  return entries;
+}
+function useTurnPictures(turn: Turn | undefined) {
+  const kept = useRef<PictureEntry[]>([]);
+  const next = turn ? turnEntries(turn) : [];
+  const same =
+    next.length === kept.current.length &&
+    next.every(
+      (entry, at) =>
+        entry.picture === kept.current[at].picture && entry.step === kept.current[at].step,
+    );
+  if (!same) kept.current = next;
+  return kept.current;
+}
+
 function TurnView({
   turn,
   native,
@@ -713,11 +741,12 @@ function TurnView({
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
   // A turn of nothing but a compaction, as /compact makes, has nothing to fold away.
   const folds = turn.steps.some((step) => step.kind === 'work' || step.kind === 'assistant');
-  // A finished turn folds its steps into one line, which still carries every picture they looked at.
-  const pictures = useMemo(
-    () => picturesOf(turn.steps.flatMap((step) => (step.kind === 'work' ? step.items : []))),
-    [turn.steps],
-  );
+  // The turn's pictures with their steps: a finished turn folds its steps into one line, which still carries them,
+  // and a picture opened from any line pages through all of them, including those the run is still taking.
+  const entries = useTurnPictures(turn);
+  const pictures = useMemo(() => entries.map((entry) => entry.picture), [entries]);
+  const turnPictures = useMemo(() => ({ key: turn.id, entries }), [turn.id, entries]);
+  useEffect(() => updatePictures(turn.id, entries), [turn.id, entries]);
   const steps = () =>
     turn.steps.map((step, index) => {
       const next = turn.steps[index + 1] ?? turn.answer;
@@ -729,6 +758,9 @@ function TurnView({
       ) : step.kind === 'work' ? (
         expanded ? (
           <div key={step.id} className="work-flat">
+            {picturesOf(step.items).length > 0 && (
+              <PictureRow pictures={picturesOf(step.items)} label="这一步的图片" />
+            )}
             <WorkItems work={step} active={active} live={live} until={until} preview />
           </div>
         ) : (
@@ -746,7 +778,7 @@ function TurnView({
       );
     });
   return (
-    <>
+    <TurnPictures.Provider value={turnPictures}>
       {/* "Continue" without the turn it takes up, which is on an earlier page, shows nothing for itself. */}
       {turn.question && !turn.question.continued && (
         <Message
@@ -769,6 +801,7 @@ function TurnView({
                     用时 {spent(turn)}
                     {turn.tools > 0 && ` · ${turn.tools} 步`}
                     {notes > 0 && ` · ${notes} 条说明`}
+                    {pictures.length > 0 && ` · ${pictures.length} 张图片`}
                   </span>
                   {!shown && <PictureStrip pictures={pictures} label="本轮的图片" />}
                 </>
@@ -812,7 +845,7 @@ function TurnView({
           resume={resume}
         />
       )}
-    </>
+    </TurnPictures.Provider>
   );
 }
 
@@ -886,6 +919,9 @@ export default function Conversation({
   progress: Record<string, TaskProgress> | undefined;
 }) {
   const turns = useMemo(() => conversation(events), [events]);
+  // The pictures of the turn the run is in, for the line of its latest ones above "正在执行…".
+  const runningTurn = turns.at(-1)?.endedAt ? undefined : turns.at(-1);
+  const livePictures = useTurnPictures(runningTurn);
   // A compaction under way counts its time in its own line, as a tool does.
   const steps = turns.at(-1)?.steps ?? [];
   const toolAtWork =
@@ -1549,6 +1585,13 @@ export default function Conversation({
                     对话随终端进展同步，关闭终端后恢复聊天输入
                   </div>
                 )}
+                {session.activeRun &&
+                  session.activeRun.surface !== 'terminal' &&
+                  !background &&
+                  runningTurn &&
+                  livePictures.length > 0 && (
+                    <LivePictures turn={runningTurn.id} entries={livePictures} />
+                  )}
                 {session.activeRun &&
                   session.activeRun.surface !== 'terminal' &&
                   !background &&

@@ -59,3 +59,144 @@ export function pictureUrl(picture: ToolPicture) {
 // What stands for a picture in text: its type and about how large it is.
 export const pictureNote = (picture: ToolPicture) =>
   `[图片 ${picture.type} · ${Math.max(1, Math.round((picture.data.length * 3) / 4 / 1024))} KB]`;
+
+// The size a picture says it is in its own header, read from its first bytes without decoding it: room is kept
+// at the right width before its thumbnail is made, so nothing moves when it arrives. PNG, JPEG, GIF and WebP;
+// anything else, or a header that cannot be read, gives null and a 4:3 place.
+const sizes = new WeakMap<ToolPicture, { width: number; height: number } | null>();
+export function pictureSize(picture: ToolPicture) {
+  if (sizes.has(picture)) return sizes.get(picture)!;
+  let size: { width: number; height: number } | null = null;
+  try {
+    const head = Uint8Array.from(
+      atob(picture.data.slice(0, 87384).replace(/=+$/, '').slice(0, 87380)),
+      (c) => c.charCodeAt(0),
+    );
+    size = headerSize(head);
+  } catch {
+    size = null;
+  }
+  sizes.set(picture, size);
+  return size;
+}
+export function headerSize(b: Uint8Array): { width: number; height: number } | null {
+  const u16 = (i: number) => (b[i] << 8) | b[i + 1];
+  const u32 = (i: number) => ((b[i] << 24) >>> 0) + ((b[i + 1] << 16) | (b[i + 2] << 8) | b[i + 3]);
+  const le16 = (i: number) => b[i] | (b[i + 1] << 8);
+  const valid = (width: number, height: number) =>
+    width > 0 && height > 0 && width < 100000 && height < 100000 ? { width, height } : null;
+  if (b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47)
+    return valid(u32(16), u32(20));
+  if (b[0] === 0x47 && b[1] === 0x49 && b[2] === 0x46) return valid(le16(6), le16(8));
+  if (
+    b[0] === 0x52 &&
+    b[1] === 0x49 &&
+    b[2] === 0x46 &&
+    b[3] === 0x46 &&
+    b[8] === 0x57 &&
+    b[9] === 0x45
+  ) {
+    const kind = String.fromCharCode(b[12], b[13], b[14], b[15]);
+    if (kind === 'VP8X')
+      return valid(
+        1 + (b[24] | (b[25] << 8) | (b[26] << 16)),
+        1 + (b[27] | (b[28] << 8) | (b[29] << 16)),
+      );
+    if (kind === 'VP8 ') return valid(le16(26) & 0x3fff, le16(28) & 0x3fff);
+    if (kind === 'VP8L') {
+      const bits = b[21] | (b[22] << 8) | (b[23] << 16) | (b[24] << 24);
+      return valid((bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1);
+    }
+    return null;
+  }
+  if (b[0] === 0xff && b[1] === 0xd8) {
+    let i = 2;
+    while (i + 9 < b.length) {
+      if (b[i] !== 0xff) return null;
+      const marker = b[i + 1];
+      if (marker === 0xff) {
+        i++;
+        continue;
+      }
+      // Start of frame, except DHT (C4), JPG (C8) and DAC (CC), carries the size.
+      if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker))
+        return valid(u16(i + 7), u16(i + 5));
+      i += 2 + u16(i + 2);
+    }
+  }
+  return null;
+}
+
+// Small copies for every thumbnail: a picture is decoded once, at full size, to make a copy 128px high (at most
+// 512px wide), and every thumbnail of it uses that copy. A thumbnail of the full picture would decode it again,
+// at full size, for each place it stands: tens of screenshots would hold hundreds of megabytes. Only the viewer
+// decodes the picture itself. Two are made at a time, so a run of screenshots does not stall the window.
+export type Thumbnail = { url: string; width: number; height: number };
+const thumbnails = new WeakMap<ToolPicture, Promise<Thumbnail>>();
+const made = new WeakMap<ToolPicture, Thumbnail>();
+const queue: (() => void)[] = [];
+let making = 0;
+function slot<T>(work: () => Promise<T>) {
+  return new Promise<T>((resolve, reject) => {
+    const run = () => {
+      making++;
+      work()
+        .then(resolve, reject)
+        .finally(() => {
+          making--;
+          queue.shift()?.();
+        });
+    };
+    if (making < 2) run();
+    else queue.push(run);
+  });
+}
+export const thumbnailHeight = 128;
+// A picture's bytes. Read from its own data, not fetched: the window's policy lets no fetch reach a data: address.
+export function pictureBlob(picture: ToolPicture) {
+  const text = atob(picture.data);
+  const bytes = new Uint8Array(text.length);
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i);
+  return new Blob([bytes], { type: picture.type });
+}
+const dataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+async function makeThumbnail(picture: ToolPicture): Promise<Thumbnail> {
+  const bitmap = await createImageBitmap(pictureBlob(picture));
+  try {
+    const { width, height } = bitmap;
+    let h = Math.min(thumbnailHeight, height);
+    let w = Math.max(1, Math.round((width * h) / height));
+    if (w > 512) {
+      h = Math.max(1, Math.round((h * 512) / w));
+      w = 512;
+    }
+    const canvas = new OffscreenCanvas(w, h);
+    const context = canvas.getContext('2d')!;
+    context.imageSmoothingQuality = 'high';
+    context.drawImage(bitmap, 0, 0, w, h);
+    const small = await canvas.convertToBlob({ type: 'image/webp', quality: 0.86 });
+    // A data: address of a few kilobytes: the window's policy shows data: pictures, and no blob: ones.
+    return { url: await dataUrl(small), width, height };
+  } finally {
+    bitmap.close();
+  }
+}
+export function thumbnail(picture: ToolPicture): Promise<Thumbnail> {
+  let pending = thumbnails.get(picture);
+  if (!pending) {
+    pending = slot(() => makeThumbnail(picture)).then((value) => {
+      made.set(picture, value);
+      return value;
+    });
+    thumbnails.set(picture, pending);
+  }
+  return pending;
+}
+// The copy if it is made already, for drawing it at once.
+export const madeThumbnail = (picture: ToolPicture) => made.get(picture) ?? null;

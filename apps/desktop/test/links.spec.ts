@@ -163,19 +163,31 @@ test('links are followed by the conversation and pictures from the web are not f
 
 test('a picture a tool looked at is shown, and opens whole', async ({ page }) => {
   await open(page);
-  const tool = page.locator('details.tool').filter({ has: page.locator('.picture-strip') });
+  const tool = page.locator('details.tool').filter({ hasText: 'shot.png' });
+  // Folded, the call's line carries the picture; open, its output does.
+  await expect(tool.locator('> summary .picture-strip .picture-thumb')).toHaveCount(1);
   await tool.locator('summary').click();
+  await expect(tool.locator('> summary .picture-strip')).toHaveCount(0);
   await expect(tool.locator('.tool-output')).toHaveText('Read image');
-  const picture = tool.locator('.tool-pictures img');
+  const picture = tool.locator('.tool-results .picture-row .picture-thumb img');
   await expect(picture).toHaveCount(1);
   await expect
     .poll(() => picture.evaluate((image: HTMLImageElement) => image.naturalWidth))
-    .toBe(1);
+    .toBeGreaterThan(0);
   await expect(tool).not.toContainText(pixel.slice(0, 20));
-  await tool.locator('.tool-pictures .picture').click();
-  const dialog = page.locator('dialog:has(.picture-view)');
-  await expect(dialog.locator('h2')).toHaveText('图片 1');
-  await expect(dialog.locator('img')).toBeVisible();
+  await tool.locator('.tool-results .picture-row .picture-thumb').click();
+  const dialog = page.locator('dialog.picture-viewer');
+  await expect(dialog.locator('.viewer-count')).toHaveText('1 / 1 · 第 1 步');
+  await expect
+    .poll(() =>
+      dialog
+        .locator('.viewer-stage > img')
+        .evaluate((image: HTMLImageElement) => image.naturalWidth),
+    )
+    .toBe(1);
+  // One picture: no film, no paging.
+  await expect(dialog.locator('.viewer-film')).toHaveCount(0);
+  await expect(dialog.getByRole('button', { name: '下一张' })).toHaveCount(0);
   await page.keyboard.press('Escape');
   await expect(dialog).toHaveCount(0);
 });

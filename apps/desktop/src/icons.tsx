@@ -110,6 +110,7 @@ export const Pin = icon(paths.PinGlyph, 'Pin');
 export const PinOff = icon(paths.PinOffGlyph, 'PinOff');
 export const Play = icon(paths.PlayGlyph, 'Play');
 export const Plus = icon(paths.PlusGlyph, 'Plus');
+export const Minus = icon(paths.MinusGlyph, 'Minus');
 export const RefreshCw = icon(paths.RefreshCwGlyph, 'RefreshCw');
 export const RotateCcw = icon(paths.RotateCcwGlyph, 'RotateCcw');
 export const ScrollText = icon(paths.ScrollTextGlyph, 'ScrollText');

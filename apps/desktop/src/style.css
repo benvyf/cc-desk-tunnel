@@ -3835,19 +3835,9 @@ a.link-elsewhere {
   max-height: 280px;
   border-radius: inherit;
 }
-.tool-pictures {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 10px;
-  border-top: 1px solid var(--line-soft);
-}
-.tool-pictures .picture img {
-  max-width: 180px;
-  max-height: 135px;
-}
-/* The pictures a step looked at, at the end of its heading (PictureStrip.tsx): small enough to leave the line
-   its height, with the earlier ones counted before the latest three. */
+/* The pictures a step looked at (PictureStrip.tsx). Two sizes only: 20px at the end of a folded line, where they
+   take no height of their own, and a 64px row under an open line or a tool's output, and while a run goes on. Each
+   shows a small copy made once (pictures.ts); until it is made, its place is kept at the picture's proportions. */
 .picture-strip {
   display: inline-flex;
   flex: none;
@@ -3859,20 +3849,31 @@ a.link-elsewhere {
   margin-block: -2px;
 }
 .picture-thumb,
-.picture-more {
-  height: 20px;
+.picture-more,
+.picture-row-more {
   padding: 0;
   border: 1px solid var(--line);
-  border-radius: 5px;
   background: var(--surface-2);
+  color: var(--muted);
 }
 .picture-thumb {
-  width: 20px;
+  flex: none;
   overflow: hidden;
+  border-radius: 8px;
   cursor: zoom-in;
   transition:
     transform 120ms ease-out,
     border-color 120ms ease-out;
+}
+.picture-strip .picture-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+}
+.picture-thumb.pending {
+  background: linear-gradient(90deg, var(--surface-2), var(--hover), var(--surface-2));
+  background-size: 200% 100%;
+  animation: picture-wait 1.4s ease-in-out infinite;
 }
 .picture-thumb.fresh {
   animation: picture-in 220ms ease-out both;
@@ -3883,26 +3884,86 @@ a.link-elsewhere {
   height: 100%;
   object-fit: cover;
 }
-.picture-thumb:hover {
+.picture-strip .picture-thumb:hover {
   transform: scale(1.1);
   border-color: var(--line-strong);
 }
+.picture-thumb:hover {
+  border-color: var(--line-strong);
+}
+.picture-thumb:focus-visible,
+.picture-more:focus-visible,
+.picture-row-more:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
 .picture-more {
+  height: 20px;
   min-width: 20px;
   padding: 0 4px;
-  color: var(--muted);
+  border-radius: 5px;
   font-size: calc(11rem / 14);
   line-height: 18px;
   font-variant-numeric: tabular-nums;
 }
-.picture-more:hover {
+.picture-more:hover,
+.picture-row-more:hover {
   color: var(--text);
   border-color: var(--line-strong);
+}
+.picture-row,
+.live-pictures {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+}
+.picture-row {
+  height: 64px;
+  margin: 4px 0 8px 19px;
+}
+.tool-results > .picture-row {
+  margin: 0;
+  padding: 8px 10px;
+  height: auto;
+  border-top: 1px solid var(--line-soft);
+}
+.work-flat > .picture-row {
+  margin-left: 0;
+}
+.picture-row-more {
+  flex: none;
+  width: 64px;
+  height: 64px;
+  border-radius: 8px;
+  font-size: calc(13rem / 14);
+  font-variant-numeric: tabular-nums;
+}
+/* While a run goes on: its latest pictures at the end of its steps, above "正在执行…". The line takes its height once,
+   with the first picture, and a new picture comes in from the right. */
+.live-pictures {
+  height: 72px;
+  margin: 2px 0 6px;
+}
+.live-pictures .picture-thumb.fresh {
+  animation: picture-arrive 260ms ease-out both;
 }
 @keyframes picture-in {
   from {
     opacity: 0;
     transform: scale(0.8);
+  }
+}
+@keyframes picture-arrive {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+@keyframes picture-wait {
+  50% {
+    background-position: 100% 0;
   }
 }
 /* A picture under the pointer, larger beside its line without moving it, as a link's card is. */
@@ -3926,19 +3987,199 @@ a.link-elsewhere {
   border-radius: var(--radius-md);
   object-fit: contain;
 }
-.picture-nav {
+/* The viewer (PictureViewer.tsx): the whole window, dark in either theme, as pictures are best seen; the turn's
+   pictures in a film along its foot, a gap between those of different steps. */
+dialog.picture-viewer {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  overflow: hidden;
+  color: #f2f1ee;
+  background: rgb(14 14 13 / 94%);
+  box-shadow: none;
+}
+dialog.picture-viewer::backdrop {
+  background: transparent;
+}
+.viewer-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 12px 8px 18px;
+}
+.viewer-count {
+  font-size: calc(13rem / 14);
+  color: rgb(242 241 238 / 78%);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.viewer-new {
+  margin: 0 auto;
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: rgb(255 255 255 / 16%);
+  color: inherit;
+  font-size: calc(12rem / 14);
+}
+.viewer-new:hover {
+  background: rgb(255 255 255 / 24%);
+}
+.viewer-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.viewer-note {
+  margin-right: 6px;
+  font-size: calc(12rem / 14);
+  color: rgb(242 241 238 / 78%);
+}
+.viewer-button,
+.viewer-side,
+.viewer-percent {
+  display: grid;
+  place-items: center;
+  border: 0;
+  color: inherit;
+  background: rgb(255 255 255 / 10%);
+}
+.viewer-button {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+}
+.viewer-button svg.app-icon,
+.viewer-side svg.app-icon {
+  width: 18px;
+  height: 18px;
+}
+.viewer-button:hover:enabled,
+.viewer-side:hover:enabled,
+.viewer-percent:hover {
+  background: rgb(255 255 255 / 20%);
+}
+.viewer-button:focus-visible,
+.viewer-side:focus-visible,
+.viewer-percent:focus-visible,
+.viewer-new:focus-visible,
+.viewer-film-thumb:focus-visible {
+  outline: 2px solid #fff;
+  outline-offset: 2px;
+}
+.viewer-stage {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  touch-action: none;
+}
+.viewer-stage:focus {
+  outline: none;
+}
+.viewer-stage.pannable {
+  cursor: grab;
+}
+.viewer-stage.pannable:active {
+  cursor: grabbing;
+}
+.viewer-stage > img {
+  position: absolute;
+  max-width: none;
+  user-select: none;
+  background: #fff;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 45%);
+}
+.viewer-side {
+  position: absolute;
+  top: 50%;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: var(--radius-full);
+  background: rgb(255 255 255 / 14%);
+}
+.viewer-side.previous {
+  left: 16px;
+}
+.viewer-side.next {
+  right: 16px;
+}
+.viewer-side:disabled {
+  opacity: 0.3;
+}
+.viewer-zoom {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-top: 10px;
-  color: var(--muted);
-  font-size: calc(12rem / 14);
+  gap: 4px;
+  justify-self: center;
+  margin: 8px 0;
+  padding: 4px;
+  border-radius: var(--radius-full);
+  background: rgb(255 255 255 / 10%);
+}
+.viewer-zoom .viewer-button {
+  width: 32px;
+  height: 32px;
+  background: transparent;
+}
+.viewer-percent {
+  min-width: 58px;
+  height: 32px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  font-size: calc(13rem / 14);
   font-variant-numeric: tabular-nums;
+}
+.viewer-film {
+  display: flex;
+  gap: 4px;
+  height: 64px;
+  padding: 0 16px 12px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  justify-content: safe center;
+}
+.viewer-film-thumb {
+  flex: none;
+  height: 48px;
+  padding: 0;
+  overflow: hidden;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 10%);
+  opacity: 0.62;
+}
+.viewer-film-thumb.step-start {
+  margin-left: 12px;
+}
+.viewer-film-thumb[aria-current='true'] {
+  border-color: #fff;
+  opacity: 1;
+}
+.viewer-film-thumb:hover {
+  opacity: 1;
+}
+.viewer-film-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 @media (prefers-reduced-motion: reduce) {
   .picture-thumb,
-  .picture-peek {
+  .picture-peek,
+  .picture-thumb.pending,
+  .live-pictures .picture-thumb.fresh {
     animation: none;
     transition: none;
   }

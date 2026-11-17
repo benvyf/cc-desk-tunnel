@@ -1,109 +1,238 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import type { MouseEvent, SyntheticEvent } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import type { KeyboardEvent, MouseEvent, ReactNode, SyntheticEvent } from 'react';
 import { createPortal } from 'react-dom';
-import { createRoot } from 'react-dom/client';
-import type { Root } from 'react-dom/client';
-import { ChevronLeft, ChevronRight } from './icons.tsx';
-import { Modal } from './ui.tsx';
-import { pictureUrl } from './pictures.ts';
-import type { ToolPicture } from './pictures.ts';
+import { madeThumbnail, pictureSize, pictureUrl, thumbnail } from './pictures.ts';
+import type { Thumbnail, ToolPicture } from './pictures.ts';
+import { openPictures } from './PictureViewer.tsx';
+import type { PictureEntry } from './PictureViewer.tsx';
 
-// How many of the latest pictures stand in the line; the earlier ones are counted before them.
-const latest = 3;
-// The larger look's picture at most (style.css), and the room kept around it.
-const peekHeight = 232;
-const margin = 8;
+// The pictures of the turn a line belongs to, so that a picture opened from any line pages through the whole turn.
+export const TurnPictures = createContext<{ key: string; entries: PictureEntry[] } | null>(null);
 
-// The viewer stands on its own, outside every conversation: a picture opened from a step's line stays open when
-// that line goes away (the run finishing folds its steps into the turn's line, a step unfolds, a search opens it),
-// and every conversation of the window shares the one viewer.
-let outlet: Root | null = null;
-let opened = 0;
-function showPictures(pictures: ToolPicture[], index: number) {
-  if (!outlet) {
-    const place = document.createElement('div');
-    place.dataset.pictureViewer = '';
-    document.body.append(place);
-    outlet = createRoot(place);
-  }
-  const root = outlet;
-  root.render(
-    <PictureViewer
-      key={++opened}
-      pictures={pictures}
-      start={index}
-      onClose={() => root.render(null)}
-    />,
-  );
+// Opens a picture of `pictures` in the viewer, among the turn's pictures where the line knows its turn.
+function useOpen(pictures: ToolPicture[]) {
+  const turn = useContext(TurnPictures);
+  return (picture: ToolPicture) => {
+    const at = turn ? turn.entries.findIndex((entry) => entry.picture === picture) : -1;
+    if (turn && at >= 0) openPictures(turn.key, turn.entries, at);
+    else
+      openPictures(
+        'loose',
+        pictures.map((item) => ({ picture: item, step: 0 })),
+        pictures.indexOf(picture),
+      );
+  };
 }
+
+// A picture's small copy (pictures.ts), once made; until then its place is kept at its own proportions.
+function useThumbnail(picture: ToolPicture) {
+  const [made, setMade] = useState<Thumbnail | null>(() => madeThumbnail(picture));
+  useEffect(() => {
+    if (made && made === madeThumbnail(picture)) return;
+    let live = true;
+    setMade(madeThumbnail(picture));
+    thumbnail(picture).then(
+      (value) => live && setMade(value),
+      // Where no copy can be made, the picture itself stands in.
+      () =>
+        live &&
+        setMade({ url: pictureUrl(picture), ...(pictureSize(picture) ?? { width: 4, height: 3 }) }),
+    );
+    return () => {
+      live = false;
+    };
+  }, [picture]);
+  return made;
+}
+const ratioOf = (picture: ToolPicture, made: Thumbnail | null) => {
+  const size = made ?? pictureSize(picture);
+  return size ? size.width / size.height : 4 / 3;
+};
+// A row's thumbnail is 64px high and as wide as its picture's proportions, within these bounds.
+const rowHeight = 64;
+const rowWidth = (ratio: number) => Math.round(Math.min(114, Math.max(44, rowHeight * ratio)));
+
 // Pictures that have stood in a line already: only one shown for the first time fades in, not every picture of a
 // line that is drawn again, as a step that is folded and unfolded is.
 const seen = new WeakSet<ToolPicture>();
-
-// The pictures a step looked at, as a few small thumbnails at the end of its heading: no line of their own, and
-// they arrive as the step takes them. Under the pointer one shows larger beside the line without moving anything;
-// a click opens them all, one at a time. Inside a heading that folds, using them does not fold or unfold it.
-export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
-  const [peek, setPeek] = useState<{ index: number; box: DOMRect } | null>(null);
-  const offset = Math.max(0, pictures.length - latest);
-  const shown = pictures.slice(offset);
-  // Which pictures this line showed for the first time: they keep fading in however often the line is drawn while
-  // they do, and the line's other pictures never start to.
+function useFresh(shown: ToolPicture[]) {
+  // Which pictures this line showed first: they keep fading in however often it is drawn while they do.
   const firstHere = useRef(new WeakSet<ToolPicture>()).current;
   for (const picture of shown) if (!seen.has(picture)) firstHere.add(picture);
-  const fresh = shown.map((picture) => firstHere.has(picture));
   useEffect(() => {
     for (const picture of shown) seen.add(picture);
   });
+  return (picture: ToolPicture) => firstHere.has(picture);
+}
+
+// A group of thumbnails is one stop of the Tab key; the arrow keys, Home and End move within it.
+function roving(event: KeyboardEvent<HTMLElement>) {
+  const keys = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
+  if (!keys.includes(event.key)) return;
+  const buttons = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('button')];
+  const at = buttons.indexOf(document.activeElement as HTMLButtonElement);
+  if (at < 0) return;
+  const next =
+    event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? buttons.length - 1
+        : Math.min(buttons.length - 1, Math.max(0, at + (event.key === 'ArrowLeft' ? -1 : 1)));
+  event.preventDefault();
+  event.stopPropagation();
+  buttons[next].focus();
+}
+function rove(event: React.FocusEvent<HTMLElement>) {
+  if (!(event.target instanceof HTMLButtonElement)) return;
+  for (const button of event.currentTarget.querySelectorAll('button'))
+    button.tabIndex = button === event.target ? 0 : -1;
+}
+
+function Thumb({
+  picture,
+  label,
+  fresh,
+  height,
+  square,
+  first,
+  onOpen,
+  onPointerEnter,
+  onPointerLeave,
+}: {
+  picture: ToolPicture;
+  label: string;
+  fresh: boolean;
+  height: number;
+  square?: boolean;
+  first: boolean;
+  onOpen: (event: MouseEvent) => void;
+  onPointerEnter?: (event: React.PointerEvent<HTMLButtonElement>) => void;
+  onPointerLeave?: () => void;
+}) {
+  const made = useThumbnail(picture);
+  const width = square ? height : rowWidth(ratioOf(picture, made));
+  return (
+    <button
+      type="button"
+      className={`picture-thumb${fresh ? ' fresh' : ''}${made ? '' : ' pending'}`}
+      aria-label={label}
+      tabIndex={first ? 0 : -1}
+      style={square ? undefined : { width, height }}
+      onClick={onOpen}
+      onPointerEnter={onPointerEnter}
+      onPointerLeave={onPointerLeave}
+    >
+      {made && <img src={made.url} alt="" decoding="async" draggable={false} />}
+    </button>
+  );
+}
+
+// How many of the latest pictures stand at the end of a line; the earlier ones are counted after them. A narrow
+// conversation keeps only the latest.
+const latest = 3;
+const narrowWidth = 520;
+
+// The width of the conversation a line stands in, for every line through one observer. Measured, not queried by
+// the stylesheet: a size container on the conversation keeps the browser from holding the reader's place while
+// earlier history is put in above it.
+const widths = new Map<Element, Set<(width: number) => void>>();
+let sizes: ResizeObserver | null = null;
+function watchWidth(element: Element, listener: (width: number) => void) {
+  sizes ??= new ResizeObserver((records) => {
+    for (const record of records)
+      widths.get(record.target)?.forEach((notify) => notify(record.contentRect.width));
+  });
+  let listeners = widths.get(element);
+  if (!listeners) {
+    widths.set(element, (listeners = new Set()));
+    sizes.observe(element);
+  }
+  listeners.add(listener);
+  return () => {
+    listeners!.delete(listener);
+    if (!listeners!.size) {
+      widths.delete(element);
+      sizes!.unobserve(element);
+    }
+  };
+}
+function useNarrow(line: React.RefObject<HTMLElement | null>) {
+  const [narrow, setNarrow] = useState(false);
+  useLayoutEffect(() => {
+    const conversation = line.current?.closest('.transcript');
+    if (!conversation) return;
+    setNarrow(conversation.clientWidth < narrowWidth);
+    return watchWidth(conversation, (width) => setNarrow(width < narrowWidth));
+  }, [line]);
+  return narrow;
+}
+// The larger look's picture at most (style.css), and the room kept around it.
+const peekHeight = 232;
+const margin = 8;
+const keep = (event: SyntheticEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+};
+
+// The pictures of a step or a turn, as small thumbnails at the end of its folded line: they take no height of their
+// own, and arrive as the step takes them. A narrow conversation keeps only the latest. Under the pointer one shows
+// larger beside the line; a click opens the viewer. Inside a heading that folds, they never fold or unfold it.
+export function PictureStrip({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
+  const [peek, setPeek] = useState<{ picture: ToolPicture; box: DOMRect } | null>(null);
+  const open = useOpen(pictures);
+  const line = useRef<HTMLSpanElement>(null);
+  const narrow = useNarrow(line);
+  const offset = Math.max(0, pictures.length - (narrow ? 1 : latest));
+  const shown = pictures.slice(offset);
+  const fresh = useFresh(shown);
   if (!pictures.length) return null;
-  const keep = (event: SyntheticEvent) => {
-    event.preventDefault();
-    event.stopPropagation();
-  };
-  const open = (index: number) => (event: MouseEvent) => {
-    keep(event);
-    setPeek(null);
-    showPictures(pictures, index);
-  };
   return (
     <span
+      ref={line}
       className="picture-strip"
       role="group"
       aria-label={`${label}：${pictures.length} 张图片`}
       onClick={keep}
+      onKeyDown={roving}
+      onFocus={rove}
     >
+      {shown.map((picture, at) => (
+        <Thumb
+          // The same picture keeps its place as later ones arrive.
+          key={offset + at}
+          picture={picture}
+          label={`查看图片 ${offset + at + 1} / ${pictures.length}`}
+          fresh={fresh(picture)}
+          height={20}
+          square
+          first={at === 0}
+          onOpen={(event) => {
+            keep(event);
+            setPeek(null);
+            open(picture);
+          }}
+          onPointerEnter={(event) => {
+            if (event.pointerType === 'mouse')
+              setPeek({ picture, box: event.currentTarget.getBoundingClientRect() });
+          }}
+          onPointerLeave={() => setPeek(null)}
+        />
+      ))}
       {offset > 0 && (
         <button
           type="button"
           className="picture-more"
           aria-label={`查看全部 ${pictures.length} 张图片`}
-          onClick={open(0)}
+          tabIndex={-1}
+          onClick={(event) => {
+            keep(event);
+            open(pictures[0]);
+          }}
         >
           +{offset}
         </button>
       )}
-      {shown.map((picture, at) => {
-        const index = offset + at;
-        return (
-          <button
-            // The same picture keeps its place as later ones arrive.
-            key={index}
-            type="button"
-            className={`picture-thumb${fresh[at] ? ' fresh' : ''}`}
-            aria-label={`查看图片 ${index + 1} / ${pictures.length}`}
-            onClick={open(index)}
-            onPointerEnter={(event) => {
-              if (event.pointerType === 'mouse')
-                setPeek({ index, box: event.currentTarget.getBoundingClientRect() });
-            }}
-            onPointerLeave={() => setPeek(null)}
-          >
-            <img src={pictureUrl(picture)} alt="" decoding="async" draggable={false} />
-          </button>
-        );
-      })}
-      {peek &&
-        createPortal(<PicturePeek picture={pictures[peek.index]} box={peek.box} />, document.body)}
+      {peek && createPortal(<PicturePeek picture={peek.picture} box={peek.box} />, document.body)}
     </span>
   );
 }
@@ -150,56 +279,133 @@ function PicturePeek({ picture, box }: { picture: ToolPicture; box: DOMRect }) {
   );
 }
 
-// All of a step's pictures, whole, one at a time: the arrows, or the left and right keys, go between them.
-function PictureViewer({
-  pictures,
-  start,
-  onClose,
-}: {
-  pictures: ToolPicture[];
-  start: number;
-  onClose: () => void;
-}) {
-  const [index, setIndex] = useState(start);
-  const count = pictures.length;
-  useEffect(() => {
-    const move = (event: KeyboardEvent) => {
-      if (event.key === 'ArrowLeft') setIndex((value) => Math.max(0, value - 1));
-      if (event.key === 'ArrowRight') setIndex((value) => Math.min(count - 1, value + 1));
-    };
-    window.addEventListener('keydown', move);
-    return () => window.removeEventListener('keydown', move);
-  }, [count]);
+// The pictures of an open step or a tool's output, as one row of 64px thumbnails under its line. However many
+// there are, they keep to one row: those that do not fit are counted in a last tile that opens the first of them.
+export function PictureRow({ pictures, label }: { pictures: ToolPicture[]; label: string }) {
+  const row = useRef<HTMLDivElement>(null);
+  const [width, setWidth] = useState(0);
+  const open = useOpen(pictures);
+  useLayoutEffect(() => {
+    const element = row.current;
+    if (!element) return;
+    const measure = () => setWidth(element.clientWidth);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+  const gap = 6;
+  const widths = pictures.map((picture) => rowWidth(ratioOf(picture, madeThumbnail(picture))));
+  let fit = pictures.length;
+  if (width) {
+    const total = widths.reduce((sum, value) => sum + value + gap, -gap);
+    if (total > width) {
+      fit = 0;
+      let used = 0;
+      // Room for the counting tile.
+      while (fit < widths.length && used + widths[fit] + gap + rowHeight <= width)
+        used += widths[fit++] + gap;
+      fit = Math.max(1, fit);
+    }
+  }
+  const shown = pictures.slice(0, fit);
+  const fresh = useFresh(shown);
+  if (!pictures.length) return null;
   return (
-    <Modal title={count > 1 ? `图片 ${index + 1} / ${count}` : '图片'} onClose={onClose}>
-      <div className="picture-view" onContextMenu={(event) => event.stopPropagation()}>
-        <img src={pictureUrl(pictures[index])} alt={`图片 ${index + 1}`} />
-      </div>
-      {count > 1 && (
-        <div className="picture-nav">
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="上一张"
-            disabled={index === 0}
-            onClick={() => setIndex(index - 1)}
-          >
-            <ChevronLeft />
-          </button>
-          <span>
-            {index + 1} / {count}
-          </span>
-          <button
-            type="button"
-            className="icon-button"
-            aria-label="下一张"
-            disabled={index === count - 1}
-            onClick={() => setIndex(index + 1)}
-          >
-            <ChevronRight />
-          </button>
-        </div>
+    <div
+      ref={row}
+      className="picture-row"
+      role="group"
+      aria-label={`${label}：${pictures.length} 张图片`}
+      onKeyDown={roving}
+      onFocus={rove}
+    >
+      {shown.map((picture, at) => (
+        <Thumb
+          key={at}
+          picture={picture}
+          label={`查看图片 ${at + 1} / ${pictures.length}`}
+          fresh={fresh(picture)}
+          height={rowHeight}
+          first={at === 0}
+          onOpen={(event) => {
+            keep(event);
+            open(picture);
+          }}
+        />
+      ))}
+      {fit < pictures.length && (
+        <button
+          type="button"
+          className="picture-row-more"
+          aria-label={`查看其余 ${pictures.length - fit} 张图片`}
+          tabIndex={-1}
+          onClick={(event) => {
+            keep(event);
+            open(pictures[fit]);
+          }}
+        >
+          +{pictures.length - fit}
+        </button>
       )}
-    </Modal>
+    </div>
   );
+}
+
+// While a run goes on, its latest pictures in one line at the end of its steps, above "正在执行…": seen as they are
+// taken without unfolding anything. Its height is kept from the first picture on and it leaves with the run.
+export function LivePictures({ turn, entries }: { turn: string; entries: PictureEntry[] }) {
+  const pictures = entries.map((entry) => entry.picture);
+  const offset = Math.max(0, pictures.length - 4);
+  const shown = pictures.slice(offset);
+  const fresh = useFresh(shown);
+  if (!pictures.length) return null;
+  const open = (picture: ToolPicture) =>
+    openPictures(
+      turn,
+      entries,
+      entries.findIndex((entry) => entry.picture === picture),
+    );
+  return (
+    <div
+      className="live-pictures"
+      role="group"
+      aria-label={`本轮最新图片：共 ${pictures.length} 张`}
+      onKeyDown={roving}
+      onFocus={rove}
+    >
+      {offset > 0 && (
+        <button
+          type="button"
+          className="picture-row-more"
+          aria-label={`查看本轮全部 ${pictures.length} 张图片`}
+          tabIndex={-1}
+          onClick={() => open(pictures[0])}
+        >
+          +{offset}
+        </button>
+      )}
+      {shown.map((picture, at) => (
+        <Thumb
+          key={offset + at}
+          picture={picture}
+          label={`查看图片 ${offset + at + 1} / ${pictures.length}`}
+          fresh={fresh(picture)}
+          height={rowHeight}
+          first={at === 0}
+          onOpen={() => open(picture)}
+        />
+      ))}
+    </div>
+  );
+}
+
+export function TurnPicturesProvider({
+  value,
+  children,
+}: {
+  value: { key: string; entries: PictureEntry[] };
+  children: ReactNode;
+}) {
+  return <TurnPictures.Provider value={value}>{children}</TurnPictures.Provider>;
 }

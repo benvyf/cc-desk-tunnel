@@ -175,9 +175,22 @@ export function summarize(work: Work, active: boolean, latest: boolean) {
     label = `正在${[...new Set(running.map((tool) => words[categoryOf(tool)][2]))].slice(0, 2).join('、')}`;
   else if (!tools.length) label = active && latest ? '正在思考' : '思考';
   else {
+    // Calls that only looked at pictures are named by their pictures: what was read was pictures, and what a
+    // screenshot tool made was screenshots. Any other call keeps its own words, and its pictures are counted after.
+    const pictures = (tool: Tool) => tool.pictures?.pictures.length ?? 0;
+    const viewed = tools.filter((tool) => categoryOf(tool) === 'read' && pictures(tool));
+    const shots = tools.filter((tool) => /screenshot/i.test(tool.name) && pictures(tool));
+    const others = tools.filter((tool) => !viewed.includes(tool) && !shots.includes(tool));
     const counts = new Map<Category, number>();
-    for (const tool of tools) counts.set(categoryOf(tool), (counts.get(categoryOf(tool)) ?? 0) + 1);
-    label = [...counts].map(([category, count]) => words[category][3](count)).join('，');
+    for (const tool of others)
+      counts.set(categoryOf(tool), (counts.get(categoryOf(tool)) ?? 0) + 1);
+    const sum = (list: Tool[]) => list.reduce((total, tool) => total + pictures(tool), 0);
+    label = [
+      ...[...counts].map(([category, count]) => words[category][3](count)),
+      ...(viewed.length ? [`查看了 ${sum(viewed)} 张图片`] : []),
+      ...(shots.length ? [`截了 ${sum(shots)} 张图`] : []),
+    ].join('，');
+    if (sum(others)) label += ` · ${sum(others)} 张图片`;
     const failed = tools.filter((tool) => ['failed', 'unknown'].includes(tool.state)).length;
     if (failed) label += `，${failed} 项未成功`;
   }
