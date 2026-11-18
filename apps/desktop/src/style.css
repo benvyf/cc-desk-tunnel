@@ -4906,6 +4906,20 @@ details[open] > summary > .fold-chevron {
 .message-footer .message-time {
   padding: 0 4px;
 }
+/* The model that wrote a reply, beside its time, where more than one has answered (Conversation.tsx). */
+.message-model {
+  font-size: calc(11rem / 14);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.message-model > .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 /* Reply actions are quiet, icon-sized ghost buttons. */
 .message-footer .copy-button,
 .message-footer .message-action,

@@ -491,3 +491,97 @@ test('a subagent’s result keeps its text and names what is not text', () => {
   const result = events.find((event) => event.type === 'tool.result');
   assert.equal(result?.type === 'tool.result' && result.output, '截图如下\n[image]');
 });
+
+test('a reply carries the model that wrote it; a local command’s and a stand-in’s carry none', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  const texts = () =>
+    events.flatMap((event) => (event.type === 'text.delta' ? [[event.text, event.model]] : []));
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { model: 'claude-opus-4-7' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '一' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '二' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { model: 'claude-sonnet-4-6' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '三' } },
+  });
+  stream.accept({ type: 'result', subtype: 'success', is_error: false, result: '' });
+  assert.equal(stream.model, undefined);
+  // A whole message after the turn: a local command's (no request) carries none.
+  stream.accept({
+    type: 'assistant',
+    message: { model: '<synthetic>', content: [{ type: 'text', text: '本地' }] },
+  });
+  // Unstreamed, from a request: its own model; a stand-in is none.
+  stream.accept({ type: 'stream_event', event: { type: 'message_start', message: {} } });
+  stream.accept({
+    type: 'assistant',
+    message: { model: 'claude-haiku-4-5', content: [{ type: 'text', text: '整条' }] },
+  });
+  stream.accept({ type: 'result', subtype: 'success', is_error: false, result: '' });
+  stream.accept({ type: 'stream_event', event: { type: 'message_start', message: {} } });
+  stream.accept({
+    type: 'assistant',
+    message: { model: '<synthetic>', content: [{ type: 'text', text: '合成' }] },
+  });
+  assert.deepEqual(texts(), [
+    ['一', 'claude-opus-4-7'],
+    ['二', 'claude-opus-4-7'],
+    ['三', 'claude-sonnet-4-6'],
+    ['```text\n本地\n```', undefined],
+    ['整条', 'claude-haiku-4-5'],
+    ['合成', undefined],
+  ]);
+});
+
+test('an error the CLI wrote after a request is named by no model, nor by the request before it', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { model: 'claude-opus-4-7' } },
+  });
+  stream.accept({
+    type: 'assistant',
+    message: {
+      model: 'claude-opus-4-7',
+      content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: {} }],
+    },
+  });
+  stream.accept({
+    type: 'assistant',
+    message: { model: '<synthetic>', content: [{ type: 'text', text: 'API Error: 529' }] },
+  });
+  // A whole message that names no model is the streaming request's.
+  stream.accept({ type: 'assistant', message: { content: [{ type: 'text', text: '无名' }] } });
+  // What a local command printed, and a subagent's words with its own model.
+  stream.accept({ type: 'system', subtype: 'local_command_output', content: '输出' });
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'tool',
+    message: { model: 'claude-haiku-4-5', content: [{ type: 'text', text: '子代理' }] },
+  });
+  assert.deepEqual(
+    events.flatMap((event) =>
+      event.type === 'text.delta' ? [[event.text.replace(/`+text\n|\n`+/g, ''), event.model]] : [],
+    ),
+    [
+      ['API Error: 529', undefined],
+      ['无名', 'claude-opus-4-7'],
+      ['输出', undefined],
+      ['子代理', 'claude-haiku-4-5'],
+    ],
+  );
+});

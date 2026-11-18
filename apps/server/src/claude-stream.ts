@@ -50,6 +50,12 @@ function resultText(content: unknown, subagent: boolean) {
       .join('\n'),
   );
 }
+// A model's ID as the CLI reports it; not a stand-in such as <synthetic>, which the CLI writes for what no model said.
+function modelOf(value: unknown) {
+  return typeof value === 'string' && value && value.length <= 200 && !/^<.*>$/.test(value)
+    ? value
+    : undefined;
+}
 export type NativeTool = {
   id: string;
   name: string;
@@ -69,6 +75,8 @@ export class ClaudeStream {
   requested = false;
   // Model requests seen since the counter was last cleared; the service waits for as many call-log records.
   requests = 0;
+  // The model answering the request streaming now, as the CLI reported it.
+  model?: string;
   result: { failed: boolean; text: string } | null = null;
   blocks = new Map<number, string>();
   requestedPermissionMode?: PermissionMode;
@@ -233,6 +241,7 @@ export class ClaudeStream {
             messageId: randomUUID(),
             text: clipped(value.text),
             parentToolId: parent,
+            ...(modelOf(assistant.model) ? { model: modelOf(assistant.model) } : {}),
           });
         if (value.type === 'thinking' && typeof value.thinking === 'string' && value.thinking)
           this.emit({
@@ -256,6 +265,7 @@ export class ClaudeStream {
       if (event.type === 'message_start') {
         this.requests++;
         this.requested = true;
+        this.model = modelOf(jsonObject.safeParse(event.message).data?.model);
         this.messageId = randomUUID();
         this.streamed = false;
         this.thinkingStreamed = false;
@@ -280,6 +290,7 @@ export class ClaudeStream {
             type: 'text.delta',
             messageId: this.messageId,
             text: z.string().parse(delta.text),
+            ...(this.model ? { model: this.model } : {}),
           });
         }
         // A model that keeps its reasoning to itself still sends the block, with nothing in it.
@@ -307,10 +318,19 @@ export class ClaudeStream {
       for (const value of z.array(jsonObject).parse(assistant.content)) {
         if (value.type === 'text' && !this.streamed) {
           const text = z.string().parse(value.text);
+          // A local command's answer was written by no model.
+          // A message that names a stand-in (<synthetic>, an error the CLI wrote) was written by none, not by
+          // the model of the request before it; one that names no model at all is the streaming request's.
+          const model = !this.requested
+            ? undefined
+            : typeof assistant.model === 'string'
+              ? modelOf(assistant.model)
+              : this.model;
           this.emit({
             type: 'text.delta',
             messageId: this.messageId,
             text: this.requested ? text : printed(text),
+            ...(model ? { model } : {}),
           });
         }
         if (
@@ -353,6 +373,7 @@ export class ClaudeStream {
       this.streamed = false;
       this.thinkingStreamed = false;
       this.requested = false;
+      this.model = undefined;
       this.messageId = randomUUID();
       this.result = {
         failed: message.is_error === true || message.subtype !== 'success',

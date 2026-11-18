@@ -312,7 +312,10 @@ export class SessionStore {
             event.runId === open.event.runId &&
             continues(last, payload)
           ) {
-            open.event = { ...event, payload: { ...payload, text: last.text + payload.text } };
+            open.event = {
+              ...event,
+              payload: { ...last, ...payload, text: last.text + payload.text } as typeof payload,
+            };
             open.merged = true;
             continue;
           }

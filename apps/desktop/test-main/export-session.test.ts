@@ -84,3 +84,37 @@ test('an export lists a subagent’s calls after its own, as before they were pl
   assert.equal(body(placed), body(flat));
   assert.ok(!placed.includes('子代理的话'));
 });
+
+test('an export names each answer’s model where more than one answered, and none otherwise', () => {
+  let sequence = 0;
+  const at = (runId: string, payload: SessionEvent['payload']): SessionEvent =>
+    ({
+      sessionId: 's',
+      runId,
+      sequence: ++sequence,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      payload,
+    }) as SessionEvent;
+  const turn = (runId: string, model?: string) => [
+    at(runId, { type: 'message.user', messageId: `q-${runId}`, text: '问', scenario: 'chat' }),
+    at(runId, {
+      type: 'text.delta',
+      messageId: `a-${runId}`,
+      text: '答',
+      ...(model ? { model } : {}),
+    }),
+    at(runId, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  const two = markdown(session, [
+    ...turn('r1', 'claude-opus-4-7'),
+    ...turn('r2', 'claude-sonnet-4-6'),
+  ]);
+  assert.match(two, /## Claude Code · Opus 4\.7/);
+  assert.match(two, /## Claude Code · Sonnet 4\.6/);
+  const one = markdown(session, [
+    ...turn('r1', 'claude-opus-4-7'),
+    ...turn('r2', 'claude-opus-4-7-20260101'),
+    ...turn('r3'),
+  ]);
+  assert.ok(!one.includes('## Claude Code ·'));
+});

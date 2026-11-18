@@ -25,6 +25,8 @@ export type TranscriptItem =
       at: string;
       // A reply: when its last text arrived, which is when it was done (`at` is when it began).
       doneAt?: string;
+      // A reply: the model that wrote it, where the CLI said.
+      model?: string;
     }
   | { kind: 'notice'; id: string; runId: string; text: string; error: boolean; at: string }
   // What the CLI said along the way, in its place among the steps.
@@ -128,13 +130,22 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
     if (payload.type === 'text.delta') {
       const existing = byId.get(payload.messageId);
       const parent = subagent(payload.parentToolId);
+      const model = payload.model ? { model: payload.model } : {};
       if (existing?.kind === 'assistant') {
         existing.text += payload.text;
         existing.doneAt = at;
+        existing.model ??= payload.model;
       } else if (parent)
-        place(parent, { kind: 'assistant', id: payload.messageId, runId, text: payload.text, at });
+        place(parent, {
+          kind: 'assistant',
+          id: payload.messageId,
+          runId,
+          text: payload.text,
+          at,
+          ...model,
+        });
       else if (!payload.parentToolId)
-        add({ kind: 'assistant', id: payload.messageId, runId, text: payload.text, at });
+        add({ kind: 'assistant', id: payload.messageId, runId, text: payload.text, at, ...model });
     }
     // Sessions recorded before summaries were requested hold thinking with nothing in it.
     if (payload.type === 'thinking.delta' && payload.text) {
@@ -293,6 +304,16 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
 
 type Tool = Extract<TranscriptItem, { kind: 'tool' }>;
 type Text = Extract<TranscriptItem, { kind: 'user' | 'assistant' | 'thinking' }>;
+// Whether more than one model answered in these turns, named as people read them (`name`, modelName.ts), so that a
+// dated snapshot and its base are one. Replies then name their model; with one, it would be noise. A subagent's
+// words are under its call, not among the steps, and do not count.
+export function manyModels(turns: Turn[], name: (model: string) => string) {
+  const names = new Set<string>();
+  for (const turn of turns)
+    for (const step of [...turn.steps, ...(turn.answer ? [turn.answer] : [])])
+      if (step.kind === 'assistant' && step.model) names.add(name(step.model));
+  return names.size > 1;
+}
 // The calls among some steps, with those their subagents made, at any depth: a call deep in a subagent may wait on
 // an approval as well as one of the main conversation.
 export function calls(items: (Tool | Text)[]): Tool[] {

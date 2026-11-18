@@ -430,3 +430,68 @@ test('an approval asked deep in a subagent is what its step waits on', async () 
   assert.equal(waiting, true);
   assert.equal(label, '等待审批');
 });
+
+test('a reply keeps the model of its first piece that named one', () => {
+  const events = [
+    event('run-m', 0, { type: 'message.user', messageId: 'qm', text: '问', scenario: 'chat' }),
+    event('run-m', 1, {
+      type: 'text.delta',
+      messageId: 'am',
+      text: '一',
+      model: 'claude-opus-4-7',
+    }),
+    event('run-m', 2, { type: 'text.delta', messageId: 'am', text: '二' }),
+    event('run-m', 3, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  const [turn] = conversation(events);
+  assert.equal(turn.answer.text, '一二');
+  assert.equal(turn.answer.model, 'claude-opus-4-7');
+  assert.equal(
+    conversation([events[0], said('run-m', 1, 'x', '旧'), events[3]])[0].answer.model,
+    undefined,
+  );
+});
+
+test('two models among a session’s replies, a step’s included, are many; a snapshot of one is one', async () => {
+  const { manyModels } = await import('../src/transcript.ts');
+  const { modelName } = await import('../src/modelName.ts');
+  const name = (model) => modelName(undefined, model);
+  const run = (runId, second, steps) => [
+    event(runId, second, {
+      type: 'message.user',
+      messageId: `q-${runId}`,
+      text: '问',
+      scenario: 'chat',
+    }),
+    ...steps.map(([id, model], index) =>
+      event(runId, second + 1 + index, { type: 'text.delta', messageId: id, text: id, model }),
+    ),
+    event(runId, second + 5, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  // A step on one model, the answer on another, in one turn.
+  const mixed = conversation(
+    run('mx', 0, [
+      ['step', 'claude-sonnet-4-6'],
+      ['ans', 'claude-opus-4-7'],
+    ]).flatMap((item, index, all) =>
+      index === 1
+        ? [
+            item,
+            event('mx', 1, {
+              type: 'tool.requested',
+              toolId: 'tt',
+              name: 'Read',
+              input: '{}',
+              target: 'Linux',
+            }),
+          ]
+        : [item],
+    ),
+  );
+  assert.equal(manyModels(mixed, name), true);
+  const same = conversation([
+    ...run('s1', 10, [['a1', 'claude-opus-4-7']]),
+    ...run('s2', 20, [['a2', 'claude-opus-4-7-20260101']]),
+  ]);
+  assert.equal(manyModels(same, name), false);
+});

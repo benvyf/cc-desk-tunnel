@@ -42,7 +42,8 @@ import { approvalQuestion, toolInput } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import ApprovalDock from './ApprovalDock.tsx';
-import { calls, conversation } from './transcript.ts';
+import { calls, conversation, manyModels as answeredByMany } from './transcript.ts';
+import { modelName } from './modelName.ts';
 import SubagentSteps from './SubagentSteps.tsx';
 import { usePrefs } from './prefs.ts';
 import ThinkingAccordion from './ThinkingAccordion.tsx';
@@ -560,9 +561,12 @@ function Message({
   latest = false,
   joined = false,
   streaming = false,
+  model,
 }: {
   item: Text;
   native: boolean;
+  // The model that wrote the reply, beside its time: shown where more than one answered in the session.
+  model?: string;
   edit?: (item: Text) => void;
   footer?: ReactNode;
   closing?: boolean;
@@ -624,9 +628,17 @@ function Message({
         )
       : item.text;
   const stamp = time && (
-    <time className="message-time" dateTime={item.at} title={time.full}>
-      {user ? time.compact : time.short}
-    </time>
+    <>
+      <time className="message-time" dateTime={item.at} title={time.full}>
+        {user ? time.compact : time.short}
+      </time>
+      {model && (
+        <span className="message-model" title={model}>
+          <span className="sr-only">模型 </span>
+          {modelName(undefined, model)}
+        </span>
+      )}
+    </>
   );
   return (
     <article
@@ -783,12 +795,15 @@ function TurnView({
   latest,
   held,
   resume,
+  models = false,
 }: {
   turn: Turn;
   native: boolean;
   live: Live;
   latest: boolean;
   held: boolean;
+  // Whether replies name their model: more than one has answered in the session.
+  models?: boolean;
   // Given to the latest turn while it stands stopped or failed: its last notice offers to go on.
   resume?: () => void;
 }) {
@@ -874,6 +889,7 @@ function TurnView({
             native={native}
             closing
             latest={latest}
+            model={models ? turn.answer.model : undefined}
             footer={turn.stats && <TurnStats stats={turn.stats} />}
           />
         </FileMentionPaths.Provider>
@@ -976,6 +992,12 @@ export default function Conversation({
   progress: Record<string, TaskProgress> | undefined;
 }) {
   const turns = useMemo(() => conversation(events), [events]);
+  // Replies name their model once two have answered in what is loaded of the session; with one, it would be noise.
+  // Named as people read them, so a dated snapshot and its base are one model. A subagent's words are not counted.
+  const manyModels = useMemo(
+    () => answeredByMany(turns, (model) => modelName(undefined, model)),
+    [turns],
+  );
   // The pictures of the turn the run is in, for the line of its latest ones above "正在执行…".
   const runningTurn = turns.at(-1)?.endedAt ? undefined : turns.at(-1);
   const livePictures = useTurnPictures(runningTurn);
@@ -1586,6 +1608,7 @@ export default function Conversation({
                       latest={index === turns.length - 1}
                       held={heldOpen(turns, index)}
                       resume={index === turns.length - 1 ? resume : undefined}
+                      models={manyModels}
                     />
                   ))}
                 </LinkPlace.Provider>

@@ -1040,7 +1040,8 @@ export class ProxyClient {
         const last = open?.runId === runId ? open.payload : undefined;
         live[sessionId] =
           open && last && isFragment(last) && continues(last, payload)
-            ? { ...open, payload: { ...payload, text: last.text + payload.text } }
+            ? // What the first piece said of the stretch (its model) stays unless a later piece says it again.
+              { ...open, payload: { ...last, ...payload, text: last.text + payload.text } }
             : { sessionId, runId, sequence: 0, createdAt: new Date().toISOString(), payload };
         moved = true;
         continue;

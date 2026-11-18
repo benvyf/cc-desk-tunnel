@@ -259,7 +259,14 @@ export const eventPayloadSchema = z.discriminatedUnion('type', [
     activity: terminalActivitySchema.optional(),
     reason: z.string().optional(),
   }),
-  z.object({ type: z.literal('text.delta'), messageId: id, text: z.string(), parentToolId }),
+  z.object({
+    type: z.literal('text.delta'),
+    messageId: id,
+    text: z.string(),
+    parentToolId,
+    // The model that wrote it, as the CLI reported it; none for what a local command printed, or from before 25.
+    model: z.string().min(1).max(200).optional(),
+  }),
   z.object({ type: z.literal('thinking.delta'), messageId: id, text: z.string(), parentToolId }),
   z.object({
     type: z.literal('native.session'),
