@@ -592,7 +592,7 @@ test('a newer Build exposes the update action, downloads, then installs after di
   await expect(page.getByRole('button', { name: '连接', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '安装并重启' })).toBeEnabled();
   await dialog.getByRole('button', { name: '关闭', exact: true }).last().click();
-  // Signed out, the update is the notice below the sign-in card.
+  // Signed out, the update is the notice above the sign-in card.
   await page.locator('.login-update-banner').click();
   await page.getByRole('button', { name: '安装并重启' }).click();
   await expect(page.getByRole('heading', { name: '正在准备安装更新' })).toBeVisible();
@@ -1005,7 +1005,7 @@ for (const scenario of ['success', 'lost-response', 'current', 'skip', 'mismatch
 async function requiredByServer(
   page: import('@playwright/test').Page,
   offered: boolean,
-  { refuse = false, held = false, step = false, unpublished = false } = {},
+  { refuse = false, held = false, step = false, unpublished = false, locked = false } = {},
 ) {
   await page.addInitScript(
     ({ protocol, offered, refuse, held, step }) => {
@@ -1023,6 +1023,10 @@ async function requiredByServer(
       };
       api.check = async () => {
         window.updateFixture.calls.push('check');
+        // As the real controller: one operation at a time, a second refused while it runs.
+        (window as unknown as { checking: boolean }).checking = true;
+        await new Promise((resolve) => setTimeout(resolve, 300));
+        (window as unknown as { checking: boolean }).checking = false;
         if (offered) window.updateFixture.offer(protocol + 1, 30);
         if (offered) window.updateFixture.publish({ phase: 'available' });
         // Only an update of this client's own protocol: the bridge build comes first.
@@ -1032,14 +1036,21 @@ async function requiredByServer(
     { protocol: PROTOCOL_VERSION, offered, refuse, held, step },
   );
   if (refuse)
-    await page.addInitScript((unpublished) => {
-      (window.desktop as unknown as Record<string, unknown>).access = {
-        load: async () => null,
-        upgradeInfo: async () => (unpublished ? null : { build: 30, appVersion: '0.3.7' }),
-        openUpgrade: async () => {},
-        onExpired: () => () => {},
-      };
-    }, unpublished);
+    await page.addInitScript(
+      ({ unpublished, locked }) => {
+        (window.desktop as unknown as Record<string, unknown>).access = {
+          load: async () => null,
+          upgradeInfo: async () => {
+            if (locked && (window as unknown as { checking: boolean }).checking)
+              throw Error('更新操作正在进行，请稍后重试');
+            return unpublished ? null : { build: 30, appVersion: '0.3.7' };
+          },
+          openUpgrade: async () => {},
+          onExpired: () => () => {},
+        };
+      },
+      { unpublished, locked },
+    );
   await page.routeWebSocket('ws://127.0.0.1:18889/ws', (route) => {
     route.onMessage((raw) => {
       if (JSON.parse(String(raw)).type === 'auth')
@@ -1105,7 +1116,7 @@ test('without the required client in the channel, the user is told to ask for it
 test('a window that cannot take the requirement offers the full installer instead of a dead end', async ({
   page,
 }) => {
-  await requiredByServer(page, true, { refuse: true });
+  await requiredByServer(page, true, { refuse: true, locked: true });
   const manual = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
   await expect(manual.getByRole('button', { name: '下载新版客户端', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: '立即更新' })).toHaveCount(0);
@@ -1196,4 +1207,14 @@ test('the sign-in page shows the client version and any update as a visible noti
   await expect(notice).toBeInViewport();
   await notice.click();
   await expect(page.getByRole('dialog', { name: '更新', exact: true })).toBeVisible();
+});
+
+test('the interim update installs only the build its button names', async ({ page }) => {
+  const dialog = await requiredByServer(page, false, { step: true });
+  await dialog.getByRole('button', { name: '先更新到 Build 19', exact: true }).click();
+  // The channel moves on to Build 20 while Build 19 was offered.
+  await page.evaluate((protocol) => window.updateFixture.offer(protocol, 20), PROTOCOL_VERSION);
+  await page.evaluate(() => window.updateFixture.finish());
+  await expect(dialog.getByRole('alert')).toContainText('版本已变化');
+  expect(await page.evaluate(() => window.updateFixture.calls)).not.toContain('install');
 });

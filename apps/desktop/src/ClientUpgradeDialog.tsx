@@ -30,13 +30,20 @@ function useStep(state: ManagedUpdateState, requiredProtocol: number, looking: b
 }
 
 // Install that interim update: the connection is let go first, as an install requires.
-async function installStep(api: ManagedUpdateApi, blocked: () => boolean) {
+async function installStep(
+  api: ManagedUpdateApi,
+  blocked: () => boolean,
+  step: NonNullable<ReturnType<typeof stepFor>>,
+) {
   // A requirement held (by this window, or the main process for the management center) has the controller choose
   // the other protocol's release; this one is the client's own. Letting go of none is a no-op.
   await api.releaseRequirement?.();
   await window.desktop!.disconnectProxy();
   const current = await api.state();
-  if (current.phase !== 'ready') await api.download();
+  const ready = current.phase === 'ready' ? current : await api.download();
+  // Only the build the button names: the channel may have moved on since it was shown.
+  if (ready.release?.build !== step.build || ready.release.protocol !== step.protocol)
+    throw new Error('更新通道里的版本已变化，请重新检查。');
   if (blocked()) throw new Error('请先结束正在运行的任务、终端和登录流程，再更新。');
   await api.activity({ blocked: blocked() });
   await api.install();
@@ -160,7 +167,7 @@ export default function ClientUpgradeDialog({
     setWorking(true);
     setError(null);
     try {
-      await installStep(api!, () => blockedRef.current);
+      await installStep(api!, () => blockedRef.current, step!);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '更新失败，请重试。');
     } finally {
@@ -264,33 +271,35 @@ function ManualUpgrade({
     let active = true;
     setRelease(undefined);
     setError(null);
-    // Checked now, not at the next scheduled check: an update of this client's own protocol may come first.
-    // Its failure is the update notice's to show; the full installer below stays the way out.
-    void api?.check().catch(() => {});
-    void window.desktop!.access.upgradeInfo(requiredProtocol).then(
-      (value) => {
+    void (async () => {
+      // Checked now, not at the next scheduled check: an update of this client's own protocol may come first.
+      // Its failure is the update notice's to show; the full installer below stays the way out. One after the
+      // other: the controller runs one operation at a time and refuses a second.
+      await api?.check().catch(() => {});
+      if (!active) return;
+      try {
+        const value = await window.desktop!.access.upgradeInfo(requiredProtocol);
         if (active) setRelease(value);
-      },
-      (cause) => {
+      } catch (cause) {
         if (active)
           setError(cause instanceof Error ? cause.message : '无法检查配套客户端，请联系管理员。');
-      },
-    );
+      }
+    })();
     return () => {
       active = false;
     };
   }, [requiredProtocol, lookupAttempt]);
   const step = useStep(state, requiredProtocol, release === null && !!api);
-  // An update download under way holds the dialog's actions; a background check does not.
-  const busy =
-    opening ||
-    working ||
-    (!!step && ['downloading', 'preparing', 'installing'].includes(state.phase));
+  // The interim update under way holds the dialog open; opening the browser download does not.
+  const stepping =
+    working || (!!step && ['downloading', 'preparing', 'installing'].includes(state.phase));
+  // A background check holds nothing.
+  const busy = opening || stepping;
   async function updateStep() {
     setWorking(true);
     setError(null);
     try {
-      await installStep(api!, () => blockedRef.current);
+      await installStep(api!, () => blockedRef.current, step!);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '更新失败，请重试。');
     } finally {
@@ -309,7 +318,7 @@ function ManualUpgrade({
     }
   }
   return (
-    <Modal title="需要升级客户端" onClose={onClose}>
+    <Modal title="需要升级客户端" onClose={() => !stepping && onClose()}>
       <p>此工作空间已更新，请升级 CC Space 客户端后重新登录。你的账号和聊天记录会保留。</p>
       {!error && release === undefined && <p role="status">正在检查配套客户端…</p>}
       {release === null && !step && <p role="status">配套客户端尚未发布，请联系管理员。</p>}

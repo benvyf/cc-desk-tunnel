@@ -678,7 +678,16 @@ test('with only an interim build of its own protocol, the requirement is let go 
   // Shown for what it is (ClientUpgradeDialog stepFor): this protocol, a higher build.
   assert.equal(checked.release.protocol, identity.protocol);
   assert.ok(checked.release.build > identity.build);
-  // While the requirement is held the controller looks for protocol 21 only.
+  assert.equal(checked.phase, 'idle');
+  // Let go (the user put it off, or the interim update began): an ordinary available update again.
+  f.controller.clearRequirement();
+  assert.equal(f.controller.state().phase, 'available');
+  assert.equal(
+    managedUpdateNotice(f.controller.state()),
+    `客户端可更新到 ${release.appVersion} · Build ${release.build}`,
+  );
+  // While a requirement is held the controller looks for protocol 21 only.
+  f.controller.requireProtocol(21);
   await assert.rejects(f.controller.download(), /兼容/);
   f.controller.clearRequirement();
   assert.equal((await f.controller.download()).phase, 'ready');
