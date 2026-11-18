@@ -80,11 +80,38 @@ class CliUpgradeTests(unittest.TestCase):
                 upgrade.check_baseline({**before, 'cli': upgrade.BASE_CLI}, release)
             with self.assertRaisesRegex(RuntimeError, 'Unknown original'):
                 upgrade.check_baseline({**before, 'lock': upgrade.LOCK}, release)
-        target = dict(descriptor=release['descriptorSha256'], build=upgrade.BUILD, protocol=24,
+        # Build 29 already runs the target CLI and dependencies; only its protocol differs from Build 30's.
+        descriptor = next(k for k, v in upgrade.BASELINES.items() if v == (29, 24))
+        before = dict(descriptor=descriptor, build=29, protocol=24, node=upgrade.NODE_VERSION,
+                      lock=upgrade.LOCK, cli=upgrade.CLI)
+        self.assertFalse(upgrade.check_baseline(before, release))
+        for change in ({'lock': upgrade.RUNTIME_LOCK}, {'cli': upgrade.BASE_CLI}, {'protocol': 25}):
+            with self.assertRaisesRegex(RuntimeError, 'Unknown original'):
+                upgrade.check_baseline({**before, **change}, release)
+        target = dict(descriptor=release['descriptorSha256'], build=upgrade.BUILD, protocol=upgrade.PROTOCOL,
                       node=upgrade.NODE_VERSION, lock=upgrade.LOCK, cli=upgrade.CLI)
         self.assertTrue(upgrade.check_baseline(target, release))
         with self.assertRaises(RuntimeError):
             upgrade.check_baseline({**target, 'cli': upgrade.BASE_CLI}, release)
+
+    def test_live_server_is_probed_in_its_own_protocol(self):
+        current = {'build': 28, 'protocol': 24, 'sha256': None}
+        calls = []
+        def run(command, **options):
+            calls.append(command)
+            body = {'current': current, 'check': {'current': current}}
+            return SimpleNamespace(stdout=('progress\n' + __import__('json').dumps(body)).encode())
+        with patch.object(upgrade.subprocess, 'run', side_effect=run):
+            self.assertEqual(upgrade.live_probe('proxy', 24)['current'], current)
+        script = calls[0][calls[0].index('-e') + 1]
+        self.assertTrue(script.startswith('const target={"probe": true, "protocol": 24};'))
+        self.assertNotEqual(upgrade.PROTOCOL, 24)
+        def differing(command, **options):
+            body = {'current': current, 'check': {'current': {**current, 'build': 29}}}
+            return SimpleNamespace(stdout=__import__('json').dumps(body).encode())
+        with patch.object(upgrade.subprocess, 'run', side_effect=differing):
+            with self.assertRaisesRegex(RuntimeError, 'selection differs'):
+                upgrade.live_probe('proxy', 24)
 
     def test_candidate_uses_pinned_lean_base_and_complete_authenticated_runtime(self):
         recipe = upgrade.dockerfile()

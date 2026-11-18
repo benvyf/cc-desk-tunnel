@@ -23,12 +23,15 @@ import http.client
 ROOT = Path('/var/lib/cc-runtime-upgrade')
 PROGRAM = Path(__file__).resolve().parents[2]
 IDENTITY = json.loads((PROGRAM / 'deploy/managed-server.json').read_bytes())
-BUILD, PROTOCOL = IDENTITY['build'], 24
+# The target protocol. The protocol a baseline runs is in its BASELINES entry: Build 30 is the first
+# image upgrade across protocols on this path (24 to 25).
+BUILD, PROTOCOL = IDENTITY['build'], 25
 RUNTIME = IDENTITY['runtimeLevel']
 RUNTIME_LEVEL = (PROGRAM / 'deploy/docker/runtime-level').read_text().strip()
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
-# The dependencies of the runtime Builds 15-28 run; Build 29 brings Agent SDK 0.3.325 (LOCK).
+# The dependencies of the runtime Builds 15-28 run; Build 29 brought Agent SDK 0.3.325 (LOCK), which
+# Build 30 keeps.
 RUNTIME_LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
 LOCK = 'a884b488d89edb4075a507ce49955ea009cc20378555f9d07bcad865469c3bde'
 NODE_VERSION = '24.22.2'
@@ -41,6 +44,7 @@ IMAGE_SIZE_LIMIT = 3 * 1024**3
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    '7480a9d35f41479dc25d7197a14757794f72e23514f22b2d4aacbaf0fce9d01a': (29, 24),
     '2f7fc483b313d4b196fffc060a7ff035ae7568902a4dba1530820c5c8a2ba353': (28, 24),
     'be243f2689a4d6c9446dd3869c3eb08cafff623539a77be2d44bbc47f4472c4d': (27, 24),
     'd952131e9ebab6648fb49682aefd3f7f7b6f4281a2cea5c6d40cf2437a04e2a2': (26, 24),
@@ -208,7 +212,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28, 29) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] == 29 else RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -475,8 +479,9 @@ a.equal(JSON.parse(f.readFileSync('/app/node_modules/@anthropic-ai/claude-agent-
         check=True, capture_output=True, timeout=30)
 
 
-def live_probe(container):
-    script='const target='+json.dumps({'probe':True,'protocol':PROTOCOL})+';\n'+(PROGRAM/'apps/update-service/web/server-upgrade.cjs').read_text()
+# The running server is asked in the protocol it runs, never the target's.
+def live_probe(container, protocol):
+    script='const target='+json.dumps({'probe':True,'protocol':protocol})+';\n'+(PROGRAM/'apps/update-service/web/server-upgrade.cjs').read_text()
     raw=subprocess.run(['docker','exec',container,'/opt/runtime/node/bin/node','--env-file=/data/config/service.env','--input-type=commonjs','-e',script],check=True,capture_output=True,timeout=20).stdout
     need(len(raw)<=128*1024,'Management response exceeds limit')
     value=json.loads(raw.strip().splitlines()[-1])
@@ -563,7 +568,7 @@ def main():
         baseline = verify_runtime(b.CONTAINER, node)
         core=load('signed_platform_verifier',PROGRAM/'apps/update-service/web/host-platform.py')
         boot=load('signed_adoption_bootstrap',PROGRAM/'apps/update-service/web/host-bootstrap.py')
-        status=live_probe(b.CONTAINER)
+        status=live_probe(b.CONTAINER,baseline['protocol'])
         selected=authenticate_selected(core,boot,IDENTITY['keys'],baseline,baseline['journal'],status)
         release = verify_release(fresh, b.download('/cc-updates/server/v1/channels/pilot/linux-x64.json', 128 * 1024), args.sha256)
         need(release == confirmed, 'Published release changed; refresh and confirm again')
@@ -591,7 +596,7 @@ def main():
                 need((HOST_DATA/'config.json').read_bytes()==config_bytes,'Enrolled configuration changed during preparation')
             current=verify_runtime(container,node)
             need(current==baseline,'Application source or journal changed during preparation')
-            authenticate_selected(core,boot,IDENTITY['keys'],current,current['journal'],live_probe(container))
+            authenticate_selected(core,boot,IDENTITY['keys'],current,current['journal'],live_probe(container,current['protocol']))
         b.runtime_and_policy=reauthenticate
         work = Path(tempfile.mkdtemp(prefix=f'build{BUILD}-', dir=ROOT)); work.chmod(0o755)
         program = work / 'program'

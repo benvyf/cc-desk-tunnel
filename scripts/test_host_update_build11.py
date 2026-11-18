@@ -54,7 +54,7 @@ class MigrationTests(unittest.TestCase):
         return dict(descriptor=m.BASE_DESCRIPTOR, build=10, protocol=23, node=m.NODE_VERSION, cli=m.BASE_CLI, lock=m.BASE_LOCK)
 
     def release(self):
-        return dict(build=m.BUILD, protocol=24, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
+        return dict(build=m.BUILD, protocol=m.PROTOCOL, appVersion='0.3.10', runtimeLevel=m.RUNTIME,
                     packageLockSha256=m.LOCK, sha256='a'*64, descriptorSha256='b'*64)
 
     def test_known_build10_is_admitted_but_changed_baselines_are_rejected(self):
@@ -65,7 +65,7 @@ class MigrationTests(unittest.TestCase):
                 with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
 
     def test_installed_exact_target_is_idempotent(self):
-        value=self.baseline();value.update(descriptor='b'*64,build=m.BUILD,protocol=24,lock=m.LOCK,cli=m.CLI)
+        value=self.baseline();value.update(descriptor='b'*64,build=m.BUILD,protocol=m.PROTOCOL,lock=m.LOCK,cli=m.CLI)
         self.assertTrue(m.check_baseline(value,self.release()))
         value['protocol']=22
         with self.assertRaises(RuntimeError):m.check_baseline(value,self.release())
@@ -188,7 +188,7 @@ class MigrationTests(unittest.TestCase):
             root=Path(directory);policy=root/'old-policy';policy.mkdir()
             (policy/'managed-settings.json').write_text('{}')
             contents={name:(ROOT/name).read_bytes() for name in ['package-lock.json','deploy/docker/runtime-level','deploy/managed-server.json']}
-            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=m.BUILD,appVersion='0.3.10',protocol=24,sourceCommit='f'*40,
+            descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=m.BUILD,appVersion='0.3.10',protocol=m.PROTOCOL,sourceCommit='f'*40,
                             files={p:dict(size=len(b),sha256=hashlib.sha256(b).hexdigest()) for p,b in contents.items()})
             db=json.dumps(descriptor).encode();buffer=io.BytesIO()
             with tarfile.open(fileobj=buffer,mode='w:gz',format=tarfile.USTAR_FORMAT) as archive:
