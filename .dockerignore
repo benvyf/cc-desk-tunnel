@@ -64,6 +64,8 @@
 !deploy/update-service/cc-host-agent-index-renew.timer
 !deploy/update-service/cc-update-renew.service
 !deploy/update-service/cc-update-renew.timer
+!deploy/update-service/cc-update-renew-stable.service
+!deploy/update-service/cc-update-renew-stable.timer
 !deploy/update-service/cc-update-service.service
 !deploy/update-service/config.example.json
 !deploy/update-service/nginx.conf.example
