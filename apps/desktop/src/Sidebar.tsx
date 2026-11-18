@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import Brand from './Brand.tsx';
 import SidebarShell, { SearchField } from './SidebarShell.tsx';
-import type { KeyboardEvent, ReactNode } from 'react';
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import {
   CalendarClock,
   ChevronDown,
@@ -28,6 +28,8 @@ import Presence from './Presence.tsx';
 import { terminalState } from './RunStatus.tsx';
 import type { SshTarget } from './desktop.d.ts';
 import { projectPreferenceKey } from './developmentProjects.ts';
+import { forkRows, withAncestors } from './sessionTree.ts';
+import type { ForkRow } from './sessionTree.ts';
 
 // What a session is doing, as its row names it in `data-state`: the stylesheet colours the dot and the word by it.
 type RowState = 'running' | 'approval' | 'question' | 'background' | 'terminal' | 'failed' | 'done';
@@ -551,11 +553,13 @@ export default function Sidebar({
         failed.has(session.id) ||
         done.has(session.id),
     );
-    if (search.trim() || kept.length === members.length) return members.map(renderSession);
+    // A shortened list keeps the sources of the forks it keeps; if that is all of them, nothing is left to show.
+    const shortened = withAncestors(kept, members);
+    if (search.trim() || shortened.length === members.length) return renderTree(members);
     const full = listed.includes(key);
     return (
       <>
-        {(full ? members : kept).map(renderSession)}
+        {renderTree(full ? members : shortened)}
         <button
           type="button"
           className={`project-more${loose ? ' loose' : ''}`}
@@ -568,12 +572,25 @@ export default function Sidebar({
     );
   }
 
-  function renderSession(session: Session) {
+  // Forks under what they were forked from (sessionTree.ts).
+  function renderTree(members: Session[]) {
+    return forkRows(members).map((row) => renderSession(row.session, row));
+  }
+
+  function renderSession(session: Session, row?: ForkRow) {
     const state = rowState(session, notifications);
+    const depth = row?.depth ?? 0;
     return (
       <div
         className={`session-row ${selectedId === session.id ? 'selected' : ''}`}
         data-state={state}
+        {...(depth
+          ? {
+              'data-depth': depth,
+              'data-last': row?.last || undefined,
+              style: { '--depth': Math.min(depth, 4) } as CSSProperties,
+            }
+          : {})}
         key={session.id}
         onContextMenu={(event) => {
           event.preventDefault();
@@ -595,6 +612,20 @@ export default function Sidebar({
         }}
         onMouseLeave={leave}
       >
+        {/* The lines of the levels above, where they go on past this row; then its own. Four levels at most. */}
+        {row?.rails.map(
+          (through, level) =>
+            through &&
+            level < 3 && (
+              <span
+                key={level}
+                className="fork-rail through"
+                aria-hidden="true"
+                style={{ '--level': level + 1 } as CSSProperties}
+              />
+            ),
+        )}
+        {depth > 0 && <span className="fork-rail" aria-hidden="true" />}
         <button
           type="button"
           className="session-select"
@@ -609,6 +640,7 @@ export default function Sidebar({
           {/* Finished while out of sight: a green light before the title, until the session is opened. */}
           {lit(session, done) && <DoneDot at={done.get(session.id)} />}
           <strong>{session.title}</strong>
+          {row?.parentTitle && <span className="sr-only">，派生自 {row.parentTitle}</span>}
           {state && state !== 'done' && (
             <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
           )}
@@ -700,7 +732,7 @@ export default function Sidebar({
       </div>
       <nav className="session-list" aria-label="会话列表" onKeyDown={moveInList}>
         {pinned.length > 0 && <div className="list-heading">置顶</div>}
-        {pinned.map(renderSession)}
+        {pinned.map((session) => renderSession(session))}
         {localProjects && (
           <div className="list-heading">
             项目
@@ -800,7 +832,7 @@ export default function Sidebar({
           <p className="project-empty">{search ? '没有匹配的项目' : '还没有项目'}</p>
         )}
         {plain.length > 0 && <div className="list-heading">最近</div>}
-        {plain.map(renderSession)}
+        {renderTree(plain)}
         {othersCount > 0 && (
           <section className="elsewhere-group">
             <div

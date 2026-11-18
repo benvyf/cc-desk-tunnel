@@ -10884,3 +10884,55 @@ dialog:has(.web-settings-form) {
 .git-diff > .hunk {
   color: var(--faint);
 }
+/* A fork under what it was forked from (Sidebar.tsx, sessionTree.ts): indented a step a level, up to four, with a
+   rail from its source's line. A row at the top is as it always was. */
+.session-row[data-depth] {
+  position: relative;
+  padding-left: calc(var(--depth) * 14px);
+}
+.project-group .session-row[data-depth] {
+  padding-left: calc(25px + var(--depth) * 14px);
+}
+.session-row[data-depth] .fork-rail {
+  position: absolute;
+  top: -7px;
+  bottom: 0;
+  left: calc(var(--depth) * 14px - 7px);
+  width: 8px;
+  pointer-events: none;
+  border-left: 1px solid var(--line-strong);
+}
+.project-group .session-row[data-depth] .fork-rail {
+  left: calc(25px + var(--depth) * 14px - 7px);
+}
+.session-row[data-depth] .fork-rail::after {
+  content: '';
+  position: absolute;
+  top: calc(50% - 1px);
+  left: -1px;
+  width: 7px;
+  border-top: 1px solid var(--line-strong);
+}
+.session-row[data-last] .fork-rail:not(.through) {
+  bottom: 50%;
+}
+/* An ancestor's line going on past this row to a later fork of its own parent: straight down, no branch. */
+.session-row[data-depth] .fork-rail.through {
+  top: -1px;
+  bottom: 0;
+  left: calc(var(--level) * 14px - 7px);
+}
+.project-group .session-row[data-depth] .fork-rail.through {
+  left: calc(25px + var(--level) * 14px - 7px);
+}
+.session-row[data-depth] .fork-rail.through::after {
+  content: none;
+}
+.session-select .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

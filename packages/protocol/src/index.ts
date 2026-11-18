@@ -439,6 +439,9 @@ export const platformOf = (device?: { platform?: DevicePlatform } | null): Devic
 export type Device = z.infer<typeof deviceSchema>;
 export const sessionSchema = z.object({
   id,
+  // The session this one was forked from (session.fork), as it was then: the session may since have been deleted.
+  // Not a side conversation's parent, which is `sideConversation`. Sessions forked before protocol 25 have none.
+  forkedFromSessionId: id.optional(),
   sideConversation: z
     .object({
       parentSessionId: id,

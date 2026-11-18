@@ -766,6 +766,8 @@ export class SessionStore {
     const session: Session = {
       ...source,
       id,
+      // Its own source, not the one the source was forked from (which `...source` would copy).
+      forkedFromSessionId: sourceId,
       title,
       device: place.device,
       projectPath: place.projectPath ?? source.projectPath,
