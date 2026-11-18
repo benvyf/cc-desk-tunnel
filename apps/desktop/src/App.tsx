@@ -86,7 +86,11 @@ import {
   RenameProjectDialog,
   RenameSessionDialog,
 } from './SessionDialogs.tsx';
-import SettingsPage from './SettingsPage.tsx';
+import SettingsPage, { sections as settingSections } from './SettingsPage.tsx';
+import CommandPalette from './CommandPalette.tsx';
+import { knownRecent, pushRecent } from './palette.ts';
+import type { PaletteItem } from './palette.ts';
+import { slashCommands } from './commands.ts';
 import type { Section } from './SettingsPage.tsx';
 import Sidebar from './Sidebar.tsx';
 import OpenProjectDialog from './OpenProjectDialog.tsx';
@@ -2018,6 +2022,7 @@ export function App({
     {
       label: '视图',
       items: [
+        { label: '命令面板', hint: hint('palette'), run: () => setPaletteOpen(true) },
         {
           label: '查找对话内容',
           hint: hint('find'),
@@ -2068,6 +2073,119 @@ export function App({
       ],
     },
   ];
+  // The command palette (CommandPalette.tsx): what the window holds, found and gone to by keyboard. Built only while
+  // it is open; nothing in it asks the service anything.
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [paletteRecent, setPaletteRecent] = useState<string[]>(() => {
+    try {
+      return knownRecent(JSON.parse(localStorage.getItem('cc-palette-recent') ?? '[]'));
+    } catch {
+      return [];
+    }
+  });
+  const paletteItems = (): PaletteItem[] => {
+    const sessions = [...state.sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const projects = new Map<string, (typeof sessions)[number]>();
+    for (const session of sessions)
+      if (session.projectPath && !projects.has(pathKey(session.projectPath)))
+        projects.set(pathKey(session.projectPath), session);
+    const typed = selected ? draft : homeDraft;
+    const insert = (text: string) => {
+      if (place.page !== 'chat') open('chat');
+      if (selected) setDraft(selected.id, text);
+      else setHomeDraft(text);
+      // The conversation's own box, not a side conversation's of the same name, once the palette has given the
+      // focus back to where it was.
+      setTimeout(() =>
+        document
+          .querySelector<HTMLTextAreaElement>('.chat-workspace textarea[aria-label="消息"]')
+          ?.focus(),
+      );
+    };
+    const settingShown = settingSections.filter(
+      (item) =>
+        (!browser || !['account', 'claude', 'connections'].includes(item.id)) &&
+        (item.id !== 'shell' || (!browser && window.desktop?.platform === 'win32')),
+    );
+    return [
+      ...sessions.map((session) => ({
+        id: `session:${session.id}`,
+        group: 'session' as const,
+        label: session.title,
+        detail: session.projectPath ? projectLabel(session.projectPath) : undefined,
+        keywords: session.projectPath,
+        updatedAt: session.updatedAt,
+        run: () => show(session.id),
+      })),
+      ...[...projects.values()].map((latest) => ({
+        id: `project:${pathKey(latest.projectPath)}`,
+        group: 'project' as const,
+        label: projectLabel(latest.projectPath),
+        detail: latest.projectPath,
+        updatedAt: latest.updatedAt,
+        run: () => show(latest.id),
+      })),
+      ...(
+        [
+          ['newSession', '新建会话', 'xjhh new', canCreate ? () => void newSession() : false],
+          ['search', '在侧栏搜索会话', 'cbsshh search', openSearch],
+          ['toggleSide', sideOpen ? '收起侧栏' : '展开侧栏', 'cl sidebar', toggleSide],
+          [
+            'find',
+            '查找对话内容',
+            'czdhnr find',
+            !!selected && place.page === 'chat' && (() => setFindRequest((value) => value + 1)),
+          ],
+          ['settings', '打开设置', 'dksz settings', () => open('settings')],
+        ] as [Action, string, string, (() => void) | false][]
+      ).map(([action, label, keywords, run]) => ({
+        id: `action:${action}`,
+        group: 'action' as const,
+        label,
+        keywords,
+        hint: hint(action),
+        ...(run ? {} : { disabled: '现在不可用' }),
+        run: run || (() => {}),
+      })),
+      ...settingShown.map((item) => ({
+        id: `setting:${item.id}`,
+        group: 'setting' as const,
+        label: `设置：${item.name}`,
+        detail: item.group,
+        keywords: item.words,
+        run: () => open('settings', item.id),
+      })),
+      ...(nativeMode && connected
+        ? slashCommands(capabilities, '').map((command) => ({
+            id: `command:${command.name}`,
+            group: 'command' as const,
+            label: `/${command.name}`,
+            detail: command.description,
+            ...(typed.trim() ? { disabled: '输入框已有内容' } : {}),
+            run: () => insert(`/${command.name} `),
+          }))
+        : []),
+    ];
+  };
+  const choosePalette = (item: PaletteItem) => {
+    item.run();
+    const next = pushRecent(paletteRecent, item.id);
+    setPaletteRecent(next);
+    // Storage full or turned off loses only what was used lately.
+    try {
+      localStorage.setItem('cc-palette-recent', JSON.stringify(next));
+    } catch {}
+  };
+  // The entries as they were when the palette opened: the list holds still while replies stream in behind it.
+  const [paletteSnapshot, setPaletteSnapshot] = useState<PaletteItem[] | null>(null);
+  useEffect(() => {
+    if (!paletteOpen) setPaletteSnapshot(null);
+  }, [paletteOpen]);
+  if (paletteOpen && !paletteSnapshot) setPaletteSnapshot(paletteItems());
+  // A palette left open when the connection went is not brought back by the next one.
+  useEffect(() => {
+    if (!connected) setPaletteOpen(false);
+  }, [connected]);
   // The shortcuts, as the user set them. A key press that something else already took, or that belongs to the
   // native terminal or an open dialog, is left alone.
   const keys = useRef<(event: KeyboardEvent) => void>(() => {});
@@ -2093,6 +2211,10 @@ export function App({
       forward: () => step(1),
       toggleSide,
       newSession: canCreate && (() => void newSession()),
+      palette: () => {
+        setMenu(null);
+        setPaletteOpen(true);
+      },
       search: openSearch,
       settings: () => open('settings'),
       find: !!selected && place.page === 'chat' && (() => setFindRequest((value) => value + 1)),
@@ -2857,6 +2979,17 @@ export function App({
             )}
           </main>
         </>
+      )}
+      {paletteOpen && (
+        <CommandPalette
+          items={paletteSnapshot ?? []}
+          recent={paletteRecent}
+          close={() => setPaletteOpen(false)}
+          choose={choosePalette}
+          toggleCombo={(event) =>
+            prefs.shortcuts.enabled && comboOf(event) === keyFor(prefs, 'palette')
+          }
+        />
       )}
       <Presence>
         {menu && openMenu && (
