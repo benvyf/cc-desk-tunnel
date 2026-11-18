@@ -45,7 +45,7 @@ import Clawd from './Clawd.tsx';
 import type { ClawdState } from './Clawd.tsx';
 import { useInputHistory } from './useInputHistory.ts';
 
-export type Scenario = 'chat' | 'tool' | 'question' | 'error';
+export type Scenario = 'chat' | 'tool' | 'question' | 'error' | 'agent';
 // A draft that is only a slash and an optional command name opens the command menu.
 const slashDraft = /^[/\\][^ \n]*$/;
 
@@ -708,6 +708,7 @@ export default function Composer({
                   <option value="tool">工具审批</option>
                   <option value="question">提问</option>
                   <option value="error">上游错误</option>
+                  <option value="agent">子代理</option>
                 </select>
               </label>
             ) : (

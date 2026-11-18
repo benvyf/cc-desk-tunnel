@@ -61,6 +61,13 @@ export type TranscriptItem =
       // The task the call waits on in the foreground, which may be ended or sent to the background until it returns.
       taskId?: string;
       exitCode?: number | null;
+      // A subagent's call: the steps the subagent took, its calls and what it said, in order.
+      children?: (Tool | Text)[];
+      // The subagent call this one was made in.
+      parentId?: string;
+      // Where its approval was asked among the session's events: approvals are answered in the order asked, whatever
+      // subagent they come from.
+      askedAt?: number;
     };
 
 // A session nothing has been said in yet: no question, reply, step or notice to show. Such a session opens on the
@@ -80,6 +87,17 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
   );
   function add(item: TranscriptItem) {
     items.push(item);
+    byId.set(item.id, item);
+  }
+  // A step taken inside a subagent goes under the subagent's call. One whose call is not there — a subagent's
+  // call from before protocol 25 has no parent named — stays where it is.
+  function subagent(parentToolId: string | undefined) {
+    const parent = parentToolId ? byId.get(parentToolId) : undefined;
+    return parent?.kind === 'tool' ? parent : undefined;
+  }
+  function place(parent: Tool, item: Tool | Text) {
+    (parent.children ??= []).push(item);
+    if (item.kind === 'tool') item.parentId = parent.id;
     byId.set(item.id, item);
   }
   for (const { runId, sequence, payload, createdAt: at } of events) {
@@ -106,22 +124,29 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
           unconfirmed: '接收未确认',
         }[payload.status];
     }
+    // What a subagent said goes under its call, or nowhere: out of place, it would be taken for the answer.
     if (payload.type === 'text.delta') {
       const existing = byId.get(payload.messageId);
+      const parent = subagent(payload.parentToolId);
       if (existing?.kind === 'assistant') {
         existing.text += payload.text;
         existing.doneAt = at;
-      } else add({ kind: 'assistant', id: payload.messageId, runId, text: payload.text, at });
+      } else if (parent)
+        place(parent, { kind: 'assistant', id: payload.messageId, runId, text: payload.text, at });
+      else if (!payload.parentToolId)
+        add({ kind: 'assistant', id: payload.messageId, runId, text: payload.text, at });
     }
     // Sessions recorded before summaries were requested hold thinking with nothing in it.
     if (payload.type === 'thinking.delta' && payload.text) {
       const id = `thinking-${payload.messageId}`;
       const existing = byId.get(id);
+      const parent = subagent(payload.parentToolId);
       if (existing?.kind === 'thinking') existing.text += payload.text;
-      else add({ kind: 'thinking', id, runId, text: payload.text, at });
+      else if (parent) place(parent, { kind: 'thinking', id, runId, text: payload.text, at });
+      else if (!payload.parentToolId) add({ kind: 'thinking', id, runId, text: payload.text, at });
     }
-    if (payload.type === 'tool.requested')
-      add({
+    if (payload.type === 'tool.requested') {
+      const tool: Tool = {
         kind: 'tool',
         id: payload.toolId,
         runId,
@@ -132,14 +157,29 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
         status: '已请求',
         state: 'requested',
         at,
-      });
+      };
+      const parent = subagent(payload.parentToolId);
+      if (parent && parent.id !== tool.id) place(parent, tool);
+      else add(tool);
+    }
     if (payload.type === 'approval.requested') {
       const tool = byId.get(payload.toolId);
       if (tool?.kind === 'tool') {
         tool.approvalId = payload.approvalId;
+        tool.askedAt = sequence;
         tool.status = '等待审批';
         tool.state = 'approval';
         byApproval.set(payload.approvalId, tool);
+      }
+    }
+    // A call asked about before its subagent was known moves under it.
+    if (payload.type === 'tool.input' && payload.parentToolId) {
+      const tool = byId.get(payload.toolId);
+      const parent = subagent(payload.parentToolId);
+      const index = tool ? items.indexOf(tool) : -1;
+      if (tool?.kind === 'tool' && parent && parent !== tool && !tool.parentId && index >= 0) {
+        items.splice(index, 1);
+        place(parent, tool);
       }
     }
     if (payload.type === 'tool.input' || payload.type === 'tool.input.delta') {
@@ -253,6 +293,13 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
 
 type Tool = Extract<TranscriptItem, { kind: 'tool' }>;
 type Text = Extract<TranscriptItem, { kind: 'user' | 'assistant' | 'thinking' }>;
+// The calls among some steps, with those their subagents made, at any depth: a call deep in a subagent may wait on
+// an approval as well as one of the main conversation.
+export function calls(items: (Tool | Text)[]): Tool[] {
+  return items.flatMap((item) =>
+    item.kind === 'tool' ? [item, ...calls(item.children ?? [])] : [],
+  );
+}
 export type Compact = Extract<TranscriptItem, { kind: 'compact' }>;
 export type Notice = Extract<TranscriptItem, { kind: 'notice' | 'note' }>;
 // What happened between two pieces of text the reader was shown: tools and thinking, folded into one line.

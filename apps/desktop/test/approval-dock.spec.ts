@@ -117,6 +117,38 @@ waitOn(plan, [
     },
   },
 ]);
+// Two subagents at work side by side; the second one's call asks first.
+const parallel = session('并行子代理', 'approval');
+const parallelAsks = { a: randomUUID(), b: randomUUID() };
+{
+  const agent = (toolId: string) => ({
+    type: 'tool.requested',
+    toolId,
+    name: 'Agent',
+    input: '{}',
+    target: 'Linux',
+  });
+  const call = (toolId: string, parentToolId: string, command: string) => ({
+    type: 'tool.requested',
+    toolId,
+    name: 'Bash',
+    input: JSON.stringify({ command }),
+    target: 'Linux',
+    parentToolId,
+  });
+  approvals.set(parallel.id, [parallelAsks.b, parallelAsks.a]);
+  record(parallel, [
+    { type: 'message.user', messageId: randomUUID(), text: parallel.title, scenario: 'chat' },
+    { type: 'run.status', status: 'running', connectionId },
+    agent('agent-a'),
+    agent('agent-b'),
+    call('bash-a', 'agent-a', 'echo A'),
+    call('bash-b', 'agent-b', 'echo B'),
+    { type: 'approval.requested', approvalId: parallelAsks.b, toolId: 'bash-b' },
+    { type: 'approval.requested', approvalId: parallelAsks.a, toolId: 'bash-a' },
+    { type: 'run.status', status: 'awaiting_approval', connectionId, waiting: 'approval' },
+  ]);
+}
 const answered = session('已回答的提问');
 {
   const call = asks('AskUserQuestion', {
@@ -165,7 +197,7 @@ record(later, [
   { type: 'message.user', messageId: randomUUID(), text: later.title, scenario: 'chat' },
   { type: 'run.status', status: 'running', connectionId },
 ]);
-const sessions = [command, two, question, words, plan, answered, quoting, later];
+const sessions = [command, two, question, words, plan, answered, quoting, later, parallel];
 
 type Mock = {
   commands: Record<string, unknown>[];
@@ -298,6 +330,22 @@ test('calls that wait together are answered one after another', async ({ page })
   await dock.getByRole('button', { name: '允许', exact: true }).click();
   await expect.poll(() => replies(mock)).toHaveLength(2);
   expect(replies(mock)[1]).toMatchObject({ approvalId: second, allowed: true });
+});
+
+test('subagents side by side are answered in the order they asked, not their place', async ({
+  page,
+}) => {
+  const mock = await connect(page);
+  await open(page, parallel.title);
+  const dock = page.getByRole('region', { name: '需要你的许可' });
+  // B asked first; A, placed above it, asked after and waits its turn.
+  await expect(dock.locator('.tool-command')).toHaveText('echo B');
+  await expect(dock.locator('.approval-dock-more')).toHaveText('另有 1 项等待');
+  await dock.getByRole('button', { name: '允许', exact: true }).click();
+  await expect.poll(() => replies(mock)).toHaveLength(1);
+  expect(replies(mock)[0]).toMatchObject({ approvalId: parallelAsks.b, allowed: true });
+  mock.push(parallel, { type: 'approval.resolved', approvalId: parallelAsks.b, allowed: true });
+  await expect(dock.locator('.tool-command')).toHaveText('echo A');
 });
 
 test('an answer the service refuses can be given again', async ({ page }) => {

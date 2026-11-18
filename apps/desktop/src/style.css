@@ -5136,6 +5136,59 @@ details[open] > summary > .fold-chevron {
 .work > .tool {
   margin-left: 19px;
 }
+/* A subagent's steps, under its call's input: a fold of its own, and the steps in a column marked by a rule. */
+.subagent-steps {
+  margin: 6px 0;
+}
+.subagent-steps > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: fit-content;
+  padding: 3px 8px 3px 4px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted);
+}
+.subagent-steps > summary::-webkit-details-marker {
+  display: none;
+}
+.subagent-steps > summary:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+.subagent-steps-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 4px 0 0 10px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line-soft);
+}
+.subagent-words {
+  padding: 2px 0;
+  color: var(--text);
+  font-size: calc(13rem / 14);
+}
+.subagent-words > :first-child {
+  margin-top: 0;
+}
+.subagent-words > :last-child {
+  margin-bottom: 0;
+}
+.subagent-words.thinking {
+  color: var(--muted);
+}
+.subagent-words-label {
+  display: block;
+  color: var(--faint);
+  font-size: calc(11rem / 14);
+}
+.subagent-more {
+  align-self: flex-start;
+  margin-top: 4px;
+}
 .work-flat {
   margin: -6px 0 18px;
 }

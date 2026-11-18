@@ -251,6 +251,9 @@ export async function runClaude(
         pathToClaudeCodeExecutable: options.executable,
         abortController,
         includePartialMessages: true,
+        // A subagent's text and thinking come as well as its calls, so the steps it took can be read under its call.
+        // The CLI already has them; this only has it write them out to this process.
+        forwardSubagentText: true,
         permissionMode: run.permissionMode,
         // The SDK takes the mode that asks about nothing only with this said as well.
         allowDangerouslySkipPermissions: run.permissionMode === 'bypassPermissions',
@@ -299,7 +302,12 @@ export async function runClaude(
           stderr = (stderr + text).slice(-8192);
         },
         canUseTool: async (name, input, context) => {
-          const tool = mapper.tool(name, input, context.toolUseID);
+          const tool = mapper.tool(
+            name,
+            input,
+            context.toolUseID,
+            mapper.parentOf(context.agentID),
+          );
           const question = name === 'AskUserQuestion';
           const { allowed, answers, unanswered } =
             context.signal.aborted || run.signal.aborted

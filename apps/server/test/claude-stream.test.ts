@@ -319,3 +319,175 @@ test('the gateway notice of auto mode is shown once a day, other notices every t
   assert.equal(shownToday('Native notice', 11 * day), false);
   assert.equal(shownToday('Native notice', 11 * day), false);
 });
+
+test('a subagent’s calls, words and results are named by the Agent call that started them', async () => {
+  const { clipped, SUBAGENT_OUTPUT_LIMIT } = await import('../src/claude-stream.ts');
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.accept({ type: 'stream_event', event: { type: 'message_start' } });
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: null,
+    message: { content: [{ type: 'tool_use', id: 'agent', name: 'Agent', input: {} }] },
+  });
+  const main = stream.messageId;
+  stream.accept({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 'task-1',
+    tool_use_id: 'agent',
+    description: 'd',
+    is_backgrounded: false,
+  });
+  // The subagent's prompt echo and its streaming are not shown, nor are its requests counted.
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: 'agent',
+    message: { content: [{ type: 'text', text: '子代理收到的提示' }] },
+  });
+  stream.accept({
+    type: 'stream_event',
+    parent_tool_use_id: 'agent',
+    event: { type: 'message_start' },
+  });
+  stream.accept({
+    type: 'stream_event',
+    parent_tool_use_id: 'agent',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '流' } },
+  });
+  stream.streamed = true;
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        { type: 'thinking', thinking: '子代理在想' },
+        { type: 'text', text: '先看目录' },
+        { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: '/a' } },
+      ],
+    },
+  });
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'read',
+          content: [
+            { type: 'text', text: 'x'.repeat(SUBAGENT_OUTPUT_LIMIT + 5) },
+            { type: 'image' },
+          ],
+        },
+      ],
+    },
+  });
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: null,
+    message: {
+      content: [{ type: 'tool_result', tool_use_id: 'agent', content: 'y'.repeat(9000) }],
+    },
+  });
+  assert.equal(stream.requests, 1);
+  assert.equal(stream.messageId, main);
+  assert.equal(
+    events.filter((event) => event.type === 'text.delta' && event.text === '流').length,
+    0,
+  );
+  const text = events.find((event) => event.type === 'text.delta');
+  const thinking = events.find((event) => event.type === 'thinking.delta');
+  assert.deepEqual(
+    [
+      text?.type === 'text.delta' && text.parentToolId,
+      thinking?.type === 'thinking.delta' && thinking.parentToolId,
+    ],
+    ['agent', 'agent'],
+  );
+  assert.notEqual(text?.type === 'text.delta' && text.messageId, main);
+  const requested = events.filter((event) => event.type === 'tool.requested');
+  assert.deepEqual(
+    requested.map((event) => event.type === 'tool.requested' && [event.toolId, event.parentToolId]),
+    [
+      ['agent', undefined],
+      ['read', 'agent'],
+    ],
+  );
+  const results = events.filter((event) => event.type === 'tool.result');
+  const read = results[0].type === 'tool.result' ? results[0].output : '';
+  assert.ok(read.startsWith('x'.repeat(SUBAGENT_OUTPUT_LIMIT)));
+  assert.match(read, /已截断，共 8,013 字符/);
+  assert.ok(!read.includes('[image]'), 'the picture is past the limit');
+  // The Agent call's own result, the subagent's answer, is whole.
+  assert.equal(results[1].type === 'tool.result' && results[1].output, 'y'.repeat(9000));
+  assert.equal(clipped('short'), 'short');
+  assert.equal(clipped('abcdef', 3), 'abc\n…（已截断，共 6 字符）');
+});
+
+test('a subagent’s call asked about before its message is placed under its Agent call', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.tool('Agent', {}, 'agent');
+  stream.accept({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 'task-1',
+    tool_use_id: 'agent',
+    description: 'd',
+  });
+  // Known by its task: placed from the start.
+  stream.tool('Bash', { command: 'ls' }, 'early', stream.parentOf('task-1'));
+  // Not known: placed when the CLI's message names it.
+  stream.tool('Bash', { command: 'pwd' }, 'late', stream.parentOf('unknown'));
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        { type: 'tool_use', id: 'early', name: 'Bash', input: { command: 'ls' } },
+        { type: 'tool_use', id: 'late', name: 'Bash', input: { command: 'pwd' } },
+      ],
+    },
+  });
+  const early = events.find((event) => event.type === 'tool.requested' && event.toolId === 'early');
+  assert.equal(early?.type === 'tool.requested' && early.parentToolId, 'agent');
+  const inputs = events.filter((event) => event.type === 'tool.input');
+  assert.deepEqual(
+    inputs.map((event) => event.type === 'tool.input' && [event.toolId, event.parentToolId]),
+    [
+      ['early', undefined],
+      ['late', 'agent'],
+    ],
+  );
+  assert.equal(stream.parentOf(undefined), undefined);
+});
+
+test('a subagent’s result keeps its text and names what is not text', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.tool('Agent', {}, 'agent');
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'agent',
+    message: { content: [{ type: 'tool_use', id: 'shot', name: 'Screenshot', input: {} }] },
+  });
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'shot',
+          content: [
+            { type: 'text', text: '截图如下' },
+            { type: 'image', source: { data: 'AAAA' } },
+          ],
+        },
+      ],
+    },
+  });
+  const result = events.find((event) => event.type === 'tool.result');
+  assert.equal(result?.type === 'tool.result' && result.output, '截图如下\n[image]');
+});

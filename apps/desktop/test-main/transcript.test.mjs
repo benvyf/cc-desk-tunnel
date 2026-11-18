@@ -282,3 +282,151 @@ test("a terminal's turns are marked, and each ends with the last thing recorded 
     ],
   );
 });
+
+test('a subagent’s steps go under its call and are not the turn’s steps, tools or answer', async () => {
+  const { calls, transcript } = await import('../src/transcript.ts');
+  const tool = (second, toolId, parentToolId) =>
+    event('run-a', second, {
+      type: 'tool.requested',
+      toolId,
+      name: toolId === 'agent' || toolId === 'inner' ? 'Agent' : 'Read',
+      input: '{}',
+      target: 'Linux',
+      ...(parentToolId ? { parentToolId } : {}),
+    });
+  const done = (second, toolId) =>
+    event('run-a', second, {
+      type: 'tool.result',
+      toolId,
+      status: 'completed',
+      output: toolId,
+      exitCode: null,
+    });
+  const events = [
+    event('run-a', 0, { type: 'message.user', messageId: 'q', text: '问', scenario: 'chat' }),
+    tool(1, 'agent'),
+    event('run-a', 2, {
+      type: 'text.delta',
+      messageId: 'sub-1',
+      text: '子代理的话',
+      parentToolId: 'agent',
+    }),
+    event('run-a', 2, {
+      type: 'thinking.delta',
+      messageId: 'sub-2',
+      text: '子代理在想',
+      parentToolId: 'agent',
+    }),
+    tool(3, 'read-1', 'agent'),
+    done(4, 'read-1'),
+    tool(5, 'inner', 'agent'),
+    tool(6, 'read-2', 'inner'),
+    // Asked about before its subagent was known, then placed.
+    tool(7, 'late'),
+    event('run-a', 8, {
+      type: 'tool.input',
+      toolId: 'late',
+      input: '{"a":1}',
+      parentToolId: 'agent',
+    }),
+    // A subagent's words whose call is not there go nowhere.
+    event('run-a', 9, {
+      type: 'text.delta',
+      messageId: 'lost',
+      text: '无主',
+      parentToolId: 'missing',
+    }),
+    done(10, 'agent'),
+    said('run-a', 11, 'answer', '主线回答'),
+    event('run-a', 12, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  const [turn] = conversation(events);
+  assert.equal(turn.answer?.text, '主线回答');
+  assert.equal(turn.tools, 1);
+  const work = turn.steps.find((step) => step.kind === 'work');
+  assert.deepEqual(
+    work.items.map((item) => item.id),
+    ['agent'],
+  );
+  const agent = work.items[0];
+  assert.deepEqual(
+    agent.children.map((item) => [item.kind, item.id]),
+    [
+      ['assistant', 'sub-1'],
+      ['thinking', 'thinking-sub-2'],
+      ['tool', 'read-1'],
+      ['tool', 'inner'],
+      ['tool', 'late'],
+    ],
+  );
+  assert.equal(agent.children[2].output, 'read-1');
+  assert.equal(agent.children[4].input, '{"a":1}');
+  assert.equal(agent.children[4].parentId, 'agent');
+  assert.deepEqual(
+    agent.children[3].children.map((item) => item.id),
+    ['read-2'],
+  );
+  assert.deepEqual(
+    calls([agent]).map((item) => item.id),
+    ['agent', 'read-1', 'inner', 'read-2', 'late'],
+  );
+  assert.ok(!transcript(events).some((item) => item.id === 'lost'));
+});
+
+test('steps recorded before subagents were placed stay where they were', () => {
+  const plain = [
+    event('run-b', 0, { type: 'message.user', messageId: 'q2', text: '问', scenario: 'chat' }),
+    event('run-b', 1, {
+      type: 'tool.requested',
+      toolId: 'a',
+      name: 'Agent',
+      input: '{}',
+      target: 'Linux',
+    }),
+    event('run-b', 2, {
+      type: 'tool.requested',
+      toolId: 'r',
+      name: 'Read',
+      input: '{}',
+      target: 'Linux',
+    }),
+    said('run-b', 3, 'ans', '答'),
+    event('run-b', 4, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  const [turn] = conversation(plain);
+  assert.equal(turn.tools, 2);
+  assert.deepEqual(
+    turn.steps[0].items.map((item) => [item.id, item.children]),
+    [
+      ['a', undefined],
+      ['r', undefined],
+    ],
+  );
+});
+
+test('an approval asked deep in a subagent is what its step waits on', async () => {
+  const { summarize } = await import('../src/activity.ts');
+  const events = [
+    event('run-c', 0, { type: 'message.user', messageId: 'q3', text: '问', scenario: 'chat' }),
+    event('run-c', 1, {
+      type: 'tool.requested',
+      toolId: 'ag',
+      name: 'Agent',
+      input: '{}',
+      target: 'Linux',
+    }),
+    event('run-c', 2, {
+      type: 'tool.requested',
+      toolId: 'bash',
+      name: 'Bash',
+      input: '{}',
+      target: 'Linux',
+      parentToolId: 'ag',
+    }),
+    event('run-c', 3, { type: 'approval.requested', approvalId: 'ap', toolId: 'bash' }),
+  ];
+  const work = conversation(events)[0].steps.find((step) => step.kind === 'work');
+  const { waiting, label } = summarize(work, true, true);
+  assert.equal(waiting, true);
+  assert.equal(label, '等待审批');
+});

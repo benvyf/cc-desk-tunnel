@@ -41,3 +41,46 @@ test('an exported question fences its pasted text, keeps file lines and shows qu
   );
   assert.ok(text.includes('引用：\n引用的回答\n\n为什么？\n\n粘贴的文本'));
 });
+
+test('an export lists a subagent’s calls after its own, as before they were placed, and leaves its words out', () => {
+  const at = (sequence: number, payload: SessionEvent['payload']): SessionEvent =>
+    ({
+      sessionId: 's',
+      runId: 'run',
+      sequence,
+      createdAt: '2026-11-17T00:00:00.000Z',
+      payload,
+    }) as SessionEvent;
+  const tool = (sequence: number, toolId: string, parentToolId?: string) =>
+    at(sequence, {
+      type: 'tool.requested',
+      toolId,
+      name: toolId,
+      input: '{}',
+      target: 'Linux',
+      ...(parentToolId ? { parentToolId } : {}),
+    });
+  const head = [at(1, { type: 'message.user', messageId: 'q', text: '问', scenario: 'chat' })];
+  const tail = [
+    at(9, { type: 'text.delta', messageId: 'a', text: '答' }),
+    at(10, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  const placed = markdown(session, [
+    ...head,
+    tool(2, 'Agent'),
+    at(3, { type: 'text.delta', messageId: 'sub', text: '子代理的话', parentToolId: 'Agent' }),
+    tool(4, 'Read', 'Agent'),
+    tool(5, 'Grep', 'Agent'),
+    ...tail,
+  ]);
+  const flat = markdown(session, [
+    ...head,
+    tool(2, 'Agent'),
+    tool(4, 'Read'),
+    tool(5, 'Grep'),
+    ...tail,
+  ]);
+  const body = (text: string) => text.split('\n').slice(2).join('\n');
+  assert.equal(body(placed), body(flat));
+  assert.ok(!placed.includes('子代理的话'));
+});

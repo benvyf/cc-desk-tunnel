@@ -97,6 +97,50 @@ export async function simulate(
         exitCode: null,
       });
       await stream(answers ? `收到回答：${chosen}` : '没有得到回答，本轮到此为止。');
+    } else if (command.scenario === 'agent') {
+      // A subagent that takes 40 steps, a word of its own between some of them, and answers.
+      const agentId = randomUUID();
+      emit({
+        type: 'tool.requested',
+        toolId: agentId,
+        name: 'Agent',
+        input: JSON.stringify({ description: '模拟子代理', prompt: '查看项目结构' }, null, 2),
+        target: 'Windows (simulation)',
+      });
+      for (let step = 1; step <= 40; step++) {
+        await pause();
+        if (step % 10 === 1)
+          emit({
+            type: 'text.delta',
+            messageId: randomUUID(),
+            text: `子代理说明 ${step}`,
+            parentToolId: agentId,
+          });
+        const toolId = randomUUID();
+        emit({
+          type: 'tool.requested',
+          toolId,
+          name: 'Read',
+          input: JSON.stringify({ file_path: `${projectPath()}\\file-${step}.txt` }, null, 2),
+          target: 'Windows (simulation)',
+          parentToolId: agentId,
+        });
+        emit({
+          type: 'tool.result',
+          toolId,
+          status: 'completed',
+          output: `模拟内容 ${step}（未读取真实文件）`,
+          exitCode: null,
+        });
+      }
+      emit({
+        type: 'tool.result',
+        toolId: agentId,
+        status: 'completed',
+        output: '子代理已看完 40 个文件（模拟）。',
+        exitCode: null,
+      });
+      await stream('子代理已完成。');
     } else if (command.scenario === 'tool') {
       run.toolId = randomUUID();
       run.approvalId = randomUUID();

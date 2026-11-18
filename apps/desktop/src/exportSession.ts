@@ -1,7 +1,7 @@
 import type { Session, SessionEvent } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
-import { conversation } from './transcript.ts';
-import type { Step } from './transcript.ts';
+import { calls, conversation } from './transcript.ts';
+import type { Step, Work } from './transcript.ts';
 import { pictureNote, toolPictures } from './pictures.ts';
 import {
   attachmentMessage,
@@ -59,11 +59,14 @@ export function markdown(session: Session, events: SessionEvent[]) {
         `> ${item.endedAt ? '上下文已压缩' : '上下文压缩未完成'}${item.previousTokens == null ? '' : ` · 压缩前 ${item.previousTokens.toLocaleString()} tokens`}`,
       ];
     if (item.kind !== 'work') return [];
-    return item.items.map((work) =>
-      work.kind === 'tool'
-        ? `<details>\n<summary>工具 ${work.name} · ${work.status}</summary>\n\n${fenced(work.input)}\n\n${work.output ? fenced(toolOutput(work.output)) : ''}\n</details>`
-        : `<details>\n<summary>思考</summary>\n\n${work.text}\n</details>`,
-    );
+    // A subagent's calls follow its own, as they did before they were placed under it; what it said is left out.
+    return item.items
+      .flatMap((work): Work['items'] => (work.kind === 'tool' ? calls([work]) : [work]))
+      .map((work) =>
+        work.kind === 'tool'
+          ? `<details>\n<summary>工具 ${work.name} · ${work.status}</summary>\n\n${fenced(work.input)}\n\n${work.output ? fenced(toolOutput(work.output)) : ''}\n</details>`
+          : `<details>\n<summary>思考</summary>\n\n${work.text}\n</details>`,
+      );
   };
   for (const turn of conversation(events)) {
     if (turn.question && !turn.question.continued)

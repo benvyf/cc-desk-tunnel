@@ -107,6 +107,51 @@ test('side creation freezes busy text and tool records without mutating or copyi
   assert.equal(f.store.sideContext(child.id), '');
 });
 
+test('a legacy side snapshot keeps a subagent’s calls but not its words', (t) => {
+  const { f, parent } = fixture(t);
+  const runId = randomUUID();
+  f.store.append(parent.id, runId, {
+    type: 'message.user',
+    messageId: randomUUID(),
+    text: 'Main question',
+    scenario: 'chat',
+  });
+  f.store.append(parent.id, runId, {
+    type: 'tool.requested',
+    toolId: 'agent',
+    name: 'Agent',
+    input: 'Agent input',
+    target: 'Linux',
+  });
+  f.store.append(parent.id, runId, {
+    type: 'text.delta',
+    messageId: randomUUID(),
+    text: 'Subagent words',
+    parentToolId: 'agent',
+  });
+  f.store.append(parent.id, runId, {
+    type: 'thinking.delta',
+    messageId: randomUUID(),
+    text: 'Subagent thinking',
+    parentToolId: 'agent',
+  });
+  f.store.append(parent.id, runId, {
+    type: 'tool.requested',
+    toolId: 'read',
+    name: 'Read',
+    input: 'Subagent call',
+    target: 'Linux',
+    parentToolId: 'agent',
+  });
+  const child = f.store.createSide(randomUUID(), parent.id, 'Side');
+  const prompt = f.store.sideContext(child.id);
+  assert.match(prompt, /Main question/);
+  assert.match(prompt, /Agent input/);
+  assert.match(prompt, /Subagent call/);
+  assert.ok(!prompt.includes('Subagent words'));
+  assert.ok(!prompt.includes('Subagent thinking'));
+});
+
 test('legacy oversize snapshots without native context reject atomically instead of truncating', (t) => {
   const { f, parent } = fixture(t);
   f.store.append(parent.id, randomUUID(), {

@@ -42,7 +42,8 @@ import { approvalQuestion, toolInput } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import ApprovalDock from './ApprovalDock.tsx';
-import { conversation } from './transcript.ts';
+import { calls, conversation } from './transcript.ts';
+import SubagentSteps from './SubagentSteps.tsx';
 import { usePrefs } from './prefs.ts';
 import ThinkingAccordion from './ThinkingAccordion.tsx';
 import type { Compact, Notice, TranscriptItem, Turn, Work } from './transcript.ts';
@@ -256,6 +257,9 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
   // the transcript keeps the call's line, marked as waiting.
   const questions = tool.name === 'AskUserQuestion' ? questionsOf(tool.input) : null;
   const docked = approval && live.docked;
+  // A step of its subagent's that asks here, not in the dock, keeps the call open on it.
+  const childAsks =
+    !live.docked && calls(tool.children ?? []).some((child) => live.canApprove(child));
   if (approval && questions && !docked)
     return (
       <QuestionCard
@@ -270,7 +274,7 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
       className={`tool ${failed ? 'failed' : ''}${docked ? ' docked' : ''}${
         category === 'question' || category === 'plan' ? ' asked' : ''
       }`}
-      forced={approval && !docked}
+      forced={(approval && !docked) || childAsks}
       summary={(shown) => (
         <span className="tool-heading">
           {running ? <LoaderCircle className="spinning" /> : <Icon />}
@@ -306,6 +310,12 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
         const exit =
           tool.exitCode !== null && tool.exitCode !== undefined ? `退出码 ${tool.exitCode}` : '';
         const output = pictures ? pictures.text : tool.output || tool.liveOutput;
+        // A subagent's last words are its answer, which is its call's output as well: shown once, as the output.
+        const last = tool.children?.at(-1);
+        const steps =
+          last?.kind === 'assistant' && tool.output && saidIn(tool.output, last.text)
+            ? tool.children!.slice(0, -1)
+            : (tool.children ?? []);
         return (
           <div className="tool-detail">
             {approval && !docked && <p className="approval-title">{approvalQuestion(tool.name)}</p>}
@@ -316,6 +326,17 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
               </div>
               {input.body}
             </div>
+            {steps.length ? (
+              <SubagentSteps steps={steps} forced={childAsks} running={!tool.endedAt}>
+                {(step) =>
+                  step.kind === 'tool' ? (
+                    <ToolRow key={step.id} tool={step} active={active} live={live} />
+                  ) : (
+                    <SubagentWords key={step.id} step={step} />
+                  )
+                }
+              </SubagentSteps>
+            ) : null}
             {(output || pictures) && (
               <div className="tool-section tool-results">
                 {output && (
@@ -359,6 +380,25 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
         );
       }}
     </Fold>
+  );
+}
+
+// Whether a tool's output holds these words: as they are, or as a JSON string holds them.
+function saidIn(output: string, text: string) {
+  const words = text.trim();
+  return !!words && (output.includes(words) || output.includes(JSON.stringify(words).slice(1, -1)));
+}
+
+// What a subagent said between its steps, or thought, in a line of its own under its call.
+function SubagentWords({ step }: { step: Text }) {
+  return (
+    <div
+      className={`subagent-words${step.kind === 'thinking' ? ' thinking' : ''}`}
+      data-search-content
+    >
+      {step.kind === 'thinking' && <span className="subagent-words-label">思考</span>}
+      <Rich text={step.text} />
+    </div>
   );
 }
 
@@ -950,15 +990,13 @@ export default function Conversation({
   const cardAsks =
     connected &&
     ownsRun &&
-    steps
-      .flatMap((step) => (step.kind === 'work' ? step.items : []))
-      .some(
-        (item) =>
-          item.kind === 'tool' &&
-          item.runId === session?.activeRun?.id &&
-          !item.resolved &&
-          !!item.approvalId,
-      );
+    calls(steps.flatMap((step) => (step.kind === 'work' ? step.items : []))).some(
+      (item) =>
+        item.kind === 'tool' &&
+        item.runId === session?.activeRun?.id &&
+        !item.resolved &&
+        !!item.approvalId,
+    );
   // A task has been waited for since the run first listed it.
   const listedAt = (taskId: string) =>
     Date.parse(
@@ -1138,10 +1176,13 @@ export default function Conversation({
   // The calls that wait on an answer from here, in the order they were asked: the dock shows the first, and the next
   // once that one is answered. All turns are looked at: a message sent while one waits can join the run in a turn
   // of its own, and the call above it must still be answerable.
-  const waitingOn = turns
-    .flatMap((turn) => turn.steps)
-    .flatMap((step) => (step.kind === 'work' ? step.items : []))
-    .filter((item): item is Tool => item.kind === 'tool' && live.canApprove(item));
+  const waitingOn = calls(
+    turns.flatMap((turn) => turn.steps).flatMap((step) => (step.kind === 'work' ? step.items : [])),
+  )
+    .filter((item) => live.canApprove(item))
+    // Subagents at work side by side ask in no order of their place: a call asked later never takes the dock from
+    // one already in it.
+    .sort((a, b) => (a.askedAt ?? 0) - (b.askedAt ?? 0));
   // The dock folded into a bar over the input box, for the approval it was folded for; the next one opens again.
   const [foldedFor, setFoldedFor] = useState<string | null>(null);
   const firstWaiting = waitingOn[0]?.approvalId;

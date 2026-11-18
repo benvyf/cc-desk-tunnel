@@ -4,7 +4,7 @@ import { webCertificateStateSchema } from './web-certificate.ts';
 export * from './web.ts';
 export * from './web-certificate.ts';
 
-export const PROTOCOL_VERSION = 24;
+export const PROTOCOL_VERSION = 25;
 // The release each protocol version began with, from 0.2.4 on: a client newer than its service signs in with
 // the service's number to have it upgrade (see the README). A new number adds its line here.
 export const PROTOCOL_HISTORY: Readonly<Record<string, number>> = {
@@ -225,12 +225,16 @@ export type TerminalActivity = z.infer<typeof terminalActivitySchema>;
 export const terminalStatuses = new Set<RunStatus>(['completed', 'cancelled', 'failed']);
 export type RunStatus = z.infer<typeof runStatusSchema>;
 
-const scenarioSchema = z.enum(['chat', 'tool', 'question', 'error']);
+const scenarioSchema = z.enum(['chat', 'tool', 'question', 'error', 'agent']);
+// The call of a subagent (Agent or Task) that a step was taken in. Steps of the main conversation have none, and
+// neither do those recorded before protocol 25.
+const parentToolId = z.string().min(1).optional();
 const toolSchema = z.object({
   toolId: z.string().min(1),
   name: z.string().min(1),
   input: z.string(),
   target: z.enum(['Windows (simulation)', 'Windows', 'Linux']),
+  parentToolId,
 });
 export const eventPayloadSchema = z.discriminatedUnion('type', [
   z.object({
@@ -255,8 +259,8 @@ export const eventPayloadSchema = z.discriminatedUnion('type', [
     activity: terminalActivitySchema.optional(),
     reason: z.string().optional(),
   }),
-  z.object({ type: z.literal('text.delta'), messageId: id, text: z.string() }),
-  z.object({ type: z.literal('thinking.delta'), messageId: id, text: z.string() }),
+  z.object({ type: z.literal('text.delta'), messageId: id, text: z.string(), parentToolId }),
+  z.object({ type: z.literal('thinking.delta'), messageId: id, text: z.string(), parentToolId }),
   z.object({
     type: z.literal('native.session'),
     nativeSessionId: id,
@@ -331,7 +335,14 @@ export const eventPayloadSchema = z.discriminatedUnion('type', [
     partial: z.boolean(),
   }),
   z.object({ type: z.literal('tool.requested'), ...toolSchema.shape }),
-  z.object({ type: z.literal('tool.input'), toolId: z.string().min(1), input: z.string() }),
+  // `parentToolId` places in its subagent a call that was first reported without it (asked about before the CLI
+  // told whose step it was).
+  z.object({
+    type: z.literal('tool.input'),
+    toolId: z.string().min(1),
+    input: z.string(),
+    parentToolId,
+  }),
   z.object({ type: z.literal('tool.input.delta'), toolId: z.string().min(1), text: z.string() }),
   z.object({
     type: z.literal('tool.progress'),
@@ -393,7 +404,11 @@ export function isFragment(payload: EventPayload): payload is Fragment {
 // Whether `next` goes on where `open` stopped: the same message, or the same tool and stream.
 export function continues(open: Fragment, next: Fragment) {
   if (open.type !== next.type) return false;
-  if ('messageId' in open) return open.messageId === (next as typeof open).messageId;
+  if ('messageId' in open)
+    return (
+      open.messageId === (next as typeof open).messageId &&
+      open.parentToolId === (next as typeof open).parentToolId
+    );
   if (open.toolId !== (next as typeof open).toolId) return false;
   return open.type !== 'tool.output' || open.stream === (next as typeof open).stream;
 }

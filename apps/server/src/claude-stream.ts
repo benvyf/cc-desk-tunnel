@@ -26,12 +26,38 @@ export function shownToday(text: string, now = Date.now()) {
   dailyShownAt = now;
   return false;
 }
+// What a subagent's call returned is kept up to this many characters: a subagent may take hundreds of steps, each
+// recorded with the session. The subagent's own answer, the result of its Agent call, is kept whole.
+export const SUBAGENT_OUTPUT_LIMIT = 8000;
+export function clipped(text: string, limit = SUBAGENT_OUTPUT_LIMIT) {
+  if (text.length <= limit) return text;
+  return `${text.slice(0, limit)}\n…（已截断，共 ${text.length.toLocaleString('en-US')} 字符）`;
+}
+// A tool result's content as text. A subagent's results keep only their text: a picture is named, not carried.
+function resultText(content: unknown, subagent: boolean) {
+  if (typeof content === 'string') return subagent ? clipped(content) : content;
+  if (!subagent) return JSON.stringify(content);
+  const blocks = Array.isArray(content) ? content : [content];
+  return clipped(
+    blocks
+      .map((block) =>
+        block && typeof block === 'object' && 'type' in block
+          ? block.type === 'text' && typeof (block as { text?: unknown }).text === 'string'
+            ? (block as { text: string }).text
+            : `[${String(block.type)}]`
+          : JSON.stringify(block),
+      )
+      .join('\n'),
+  );
+}
 export type NativeTool = {
   id: string;
   name: string;
   input: Record<string, unknown>;
   finished: boolean;
   denied?: boolean;
+  // The subagent call it was made in.
+  parent?: string;
 };
 export class ClaudeStream {
   emit: (event: EventPayload) => void;
@@ -47,6 +73,8 @@ export class ClaudeStream {
   blocks = new Map<number, string>();
   requestedPermissionMode?: PermissionMode;
   requestedEffort?: Effort | null;
+  // The subagent call each task was started by: a permission request names the subagent by its task, not its call.
+  agents = new Map<string, string>();
   constructor(
     emit: (event: EventPayload) => void,
     permissionMode?: PermissionMode,
@@ -56,14 +84,33 @@ export class ClaudeStream {
     this.requestedPermissionMode = permissionMode;
     this.requestedEffort = effort;
   }
-  tool(name: string, input: Record<string, unknown>, id: string = randomUUID()): NativeTool {
+  tool(
+    name: string,
+    input: Record<string, unknown>,
+    id: string = randomUUID(),
+    parent?: string,
+  ): NativeTool {
     const sameId = this.tools.get(id);
     if (sameId) {
       sameId.input = input;
-      this.emit({ type: 'tool.input', toolId: id, input: JSON.stringify(input, null, 2) });
+      // A call asked about before the CLI said whose it was learns its subagent now.
+      const placed = parent && !sameId.parent && parent !== id ? parent : undefined;
+      if (placed) sameId.parent = placed;
+      this.emit({
+        type: 'tool.input',
+        toolId: id,
+        input: JSON.stringify(input, null, 2),
+        ...(placed ? { parentToolId: placed } : {}),
+      });
       return sameId;
     }
-    const tool = { id, name, input, finished: false };
+    const tool: NativeTool = {
+      id,
+      name,
+      input,
+      finished: false,
+      ...(parent && parent !== id ? { parent } : {}),
+    };
     this.tools.set(id, tool);
     this.emit({
       type: 'tool.requested',
@@ -71,11 +118,21 @@ export class ClaudeStream {
       name,
       input: JSON.stringify(input, null, 2),
       target: 'Linux',
+      ...(tool.parent ? { parentToolId: tool.parent } : {}),
     });
     return tool;
   }
+  // The subagent call a permission request's agent was started by, once its task has been reported.
+  parentOf(agentId: string | undefined) {
+    return agentId ? this.agents.get(agentId) : undefined;
+  }
   accept(value: unknown) {
     const message = jsonObject.parse(value);
+    // A message from inside a subagent names the Agent call that started it.
+    const parent =
+      typeof message.parent_tool_use_id === 'string' && message.parent_tool_use_id
+        ? message.parent_tool_use_id
+        : undefined;
     if (message.type === 'system') {
       if (message.subtype === 'init') {
         this.emit({
@@ -121,6 +178,8 @@ export class ClaudeStream {
       } else if (message.subtype === 'task_started') {
         // A call of the turn's that waits on a task of its own: a command or a subagent run in the foreground.
         const toolId = message.tool_use_id;
+        if (typeof toolId === 'string' && typeof message.task_id === 'string')
+          this.agents.set(message.task_id, toolId);
         if (
           message.is_backgrounded === false &&
           typeof toolId === 'string' &&
@@ -160,6 +219,37 @@ export class ClaudeStream {
         toolId: z.string().parse(message.tool_use_id),
         elapsedSeconds: z.number().nonnegative().parse(message.elapsed_time_seconds),
       });
+    }
+    // A subagent's streaming is not shown as it comes: its whole messages are. Nor are its requests counted: the
+    // service waits for the main loop's (server.ts, turnStats), and the reply streaming now is not the subagent's.
+    if (message.type === 'stream_event' && parent) return;
+    if (message.type === 'assistant' && parent) {
+      const assistant = jsonObject.parse(message.message);
+      for (const value of z.array(jsonObject).parse(assistant.content)) {
+        // Each block a message of its own: the blocks of one response come one message each, between its calls.
+        if (value.type === 'text' && typeof value.text === 'string' && value.text)
+          this.emit({
+            type: 'text.delta',
+            messageId: randomUUID(),
+            text: clipped(value.text),
+            parentToolId: parent,
+          });
+        if (value.type === 'thinking' && typeof value.thinking === 'string' && value.thinking)
+          this.emit({
+            type: 'thinking.delta',
+            messageId: randomUUID(),
+            text: clipped(value.thinking),
+            parentToolId: parent,
+          });
+        if (value.type === 'tool_use')
+          this.tool(
+            z.string().parse(value.name),
+            jsonObject.parse(value.input),
+            z.string().parse(value.id),
+            parent,
+          );
+      }
+      return;
     }
     if (message.type === 'stream_event') {
       const event = jsonObject.parse(message.event);
@@ -246,8 +336,8 @@ export class ClaudeStream {
         const toolId = z.string().parse(value.tool_use_id);
         const tool = this.tools.get(toolId);
         if (tool) tool.finished = true;
-        const output =
-          typeof value.content === 'string' ? value.content : JSON.stringify(value.content);
+        // A subagent's results are clipped; its prompt, a user message of text, shows nowhere.
+        const output = resultText(value.content, !!(parent || tool?.parent));
         const exitCode: number | null = null;
         const status: 'completed' | 'failed' | 'denied' | 'cancelled' = tool?.denied
           ? 'denied'

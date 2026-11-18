@@ -679,6 +679,12 @@ export class SessionStore {
     let characters = inherited.length;
     const add = (payload: EventPayload, sequence?: number) => {
       if (!sideContextTypes.includes(payload.type)) return;
+      // A subagent's words are its own, not the conversation's; its calls stay, as they did before they were placed.
+      if (
+        (payload.type === 'text.delta' || payload.type === 'thinking.delta') &&
+        payload.parentToolId
+      )
+        return;
       const record = { ...(sequence === undefined ? {} : { sequence }), payload };
       characters += JSON.stringify(record).length + 1;
       if (characters > 256_000)
