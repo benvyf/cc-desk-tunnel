@@ -211,6 +211,10 @@ export function sshConfig(
 // Joins one SSH connection to the channel connection opened for it. An end on either side ends the other once
 // what was already sent has been delivered; an error cuts both.
 function splice(socket: Socket, channel: WebSocket) {
+  // SSH sends a command as several small packets in a row (channel, request, script, end). Held back until the
+  // one before is acknowledged, each would wait out a delayed acknowledgement here; the WebSocket's own socket
+  // sends at once already.
+  socket.setNoDelay(true);
   const stream = createWebSocketStream(channel);
   stream.on('error', () => socket.destroy());
   socket.once('close', (hadError) => {

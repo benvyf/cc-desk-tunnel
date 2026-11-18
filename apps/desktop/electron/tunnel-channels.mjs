@@ -63,6 +63,8 @@ export function openChannels(
     // The stream takes over the connection's frames from here, in the same tick, so no bytes are missed.
     const stream = createWebSocketStream(channel);
     const local = connect(port, '127.0.0.1');
+    // Small SSH packets go to the device's SSH service as they come, not after the one before is acknowledged.
+    local.setNoDelay(true);
     const entry = { channel, local };
     open.add(entry);
     let unanswered = 0;
