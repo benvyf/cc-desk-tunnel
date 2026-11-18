@@ -135,15 +135,20 @@ class ManagedController {
     this.requirement = null;
     // A check made under the requirement showed this protocol's newer release as not for it; let go, that same
     // signed selection is an ordinary available update again (download verifies the index anew).
-    const value = read(this.file('state.json'), { phase: 'idle' });
-    const ledger = read(this.file('ledger.json'), { confirmedBuild: this.identity.build });
-    if (
-      value.phase === 'idle' &&
-      value.release?.protocol === this.identity.protocol &&
-      value.release.build > Math.max(this.identity.build, ledger.confirmedBuild)
-    )
-      this.publish({ ...value, phase: 'available', message: '有新的定制客户端可下载。' });
-    else this.notify(this.state());
+    // Best effort: callers (connecting, signing out) must not fail because the shared state could not be written.
+    try {
+      const value = read(this.file('state.json'), { phase: 'idle' });
+      const ledger = read(this.file('ledger.json'), { confirmedBuild: this.identity.build });
+      if (
+        value.phase === 'idle' &&
+        value.release?.protocol === this.identity.protocol &&
+        value.release.build > Math.max(this.identity.build, ledger.confirmedBuild)
+      ) {
+        this.publish({ ...value, phase: 'available', message: '有新的定制客户端可下载。' });
+        return this.state();
+      }
+    } catch {}
+    this.notify(this.state());
     return this.state();
   }
   // The protocol updates are chosen for: the required one while the requirement lasts, else this client's own.
