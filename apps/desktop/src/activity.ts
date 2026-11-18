@@ -1,4 +1,5 @@
 import { lineChanges } from './lineDiff.ts';
+import { calls } from './transcript.ts';
 import type { TranscriptItem, Work } from './transcript.ts';
 
 type Tool = Extract<TranscriptItem, { kind: 'tool' }>;
@@ -153,7 +154,8 @@ export function describe(tool: Tool, active: boolean) {
 // The folded line for a run of tool calls: what is happening now, or what was done.
 export function summarize(work: Work, active: boolean, latest: boolean) {
   const tools = work.items.filter((item): item is Tool => item.kind === 'tool');
-  const waiting = tools.find((tool) => tool.state === 'approval');
+  // A subagent's call may wait on an approval too, deep under the call that started it.
+  const waiting = calls(work.items).find((tool) => tool.state === 'approval');
   const running = active ? tools.filter(isRunning) : [];
   const started = work.items[0].at;
   const last = work.items.at(-1)!;

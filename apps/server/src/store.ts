@@ -312,7 +312,10 @@ export class SessionStore {
             event.runId === open.event.runId &&
             continues(last, payload)
           ) {
-            open.event = { ...event, payload: { ...payload, text: last.text + payload.text } };
+            open.event = {
+              ...event,
+              payload: { ...last, ...payload, text: last.text + payload.text } as typeof payload,
+            };
             open.merged = true;
             continue;
           }
@@ -679,6 +682,12 @@ export class SessionStore {
     let characters = inherited.length;
     const add = (payload: EventPayload, sequence?: number) => {
       if (!sideContextTypes.includes(payload.type)) return;
+      // A subagent's words are its own, not the conversation's; its calls stay, as they did before they were placed.
+      if (
+        (payload.type === 'text.delta' || payload.type === 'thinking.delta') &&
+        payload.parentToolId
+      )
+        return;
       const record = { ...(sequence === undefined ? {} : { sequence }), payload };
       characters += JSON.stringify(record).length + 1;
       if (characters > 256_000)
@@ -760,6 +769,8 @@ export class SessionStore {
     const session: Session = {
       ...source,
       id,
+      // Its own source, not the one the source was forked from (which `...source` would copy).
+      forkedFromSessionId: sourceId,
       title,
       device: place.device,
       projectPath: place.projectPath ?? source.projectPath,
@@ -773,6 +784,8 @@ export class SessionStore {
       activeRun: null,
       // A fork has not run yet; the source's last run is not its own.
       lastRun: undefined,
+      // A fork of a session put away is not put away itself.
+      archivedAt: undefined,
     };
     const events = this.events(sourceId, 0, beforeSequence).filter(
       ({ payload }) =>
@@ -1137,6 +1150,16 @@ export class SessionStore {
     session.title = title;
     session.autoTitle = false;
     session.updatedAt = new Date().toISOString();
+    this.save(session);
+    return session;
+  }
+  // Puts a session away or brings it back. Its place among the others stays: `updatedAt` is not touched.
+  archive(sessionId: string, archived: boolean) {
+    const { session } = this.get(sessionId);
+    if (session.activeRun)
+      throw new DomainError('run_active', '会话正在运行，请先结束运行再归档或恢复。');
+    if (archived) session.archivedAt ??= new Date().toISOString();
+    else delete session.archivedAt;
     this.save(session);
     return session;
   }

@@ -141,6 +141,9 @@ test('a terminal turn comes back as the events of a chat run, without what was t
   assert.equal(result.output, 'a.txt');
   assert.equal(second.text, '有一个文件');
   assert.notEqual(first.messageId, second.messageId);
+  // A terminal's answers name the model that wrote them, as a chat's do.
+  assert.equal(first.model, 'claude-opus-5-5');
+  assert.equal(second.model, 'claude-opus-5-5');
 });
 
 test('each event keeps the time the CLI recorded it at', () => {

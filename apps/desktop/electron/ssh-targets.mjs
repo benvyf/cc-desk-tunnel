@@ -8,6 +8,7 @@ import {
   startTargetAdapter,
   targetDirectory,
   targetDirectories,
+  targetRead,
   targetExec,
 } from './ssh-target-adapter.mjs';
 import { openProxyBridge } from './proxy-bridge.mjs';
@@ -542,6 +543,11 @@ export function createSshTargets({
         }
       }
       return { sessionId: await createSession(id, canonical, creationId), created: true };
+    },
+    // A read-only Git script for the changes panel, on the connection already open (git-changes.cjs).
+    async git(id, command, options) {
+      const run = readyRun(id);
+      return targetRead(run.target, command, options);
     },
     async directories(id, path) {
       const run = readyRun(id);

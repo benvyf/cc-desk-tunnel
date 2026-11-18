@@ -135,3 +135,20 @@ test('a project with a running session does not move', (t) => {
   assert.equal(store.get(session.id).session.projectPath, 'D:\\项目\\甲');
   assert.equal(create(store, 'D:\\项目\\甲').nativeRoot, session.nativeRoot);
 });
+
+test('a fork names the session it was forked from, its own and not its source’s, and keeps it', (t) => {
+  const { store } = fixture(t);
+  const source = create(store, 'D:\\项目\\甲');
+  const place = { device: desktop, projectPath: 'D:\\项目\\甲' };
+  const child = store.fork(randomUUID(), source.id, randomUUID(), '子', false, place);
+  const grandchild = store.fork(randomUUID(), child.id, randomUUID(), '孙', false, place);
+  assert.equal(source.forkedFromSessionId, undefined);
+  assert.equal(child.forkedFromSessionId, source.id);
+  assert.equal(grandchild.forkedFromSessionId, child.id);
+  store.delete(source.id);
+  assert.equal(store.get(child.id).session.forkedFromSessionId, source.id);
+  assert.equal(
+    store.list().find((session) => session.id === grandchild.id)?.forkedFromSessionId,
+    child.id,
+  );
+});

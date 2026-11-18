@@ -136,6 +136,8 @@ export type ClientState = {
   terminalDisplay?: { version: 1 };
   terminalHistory?: { version: 1 };
   deviceShells?: { version: 1 };
+  // The service takes session.archive (Sidebar.tsx).
+  sessionArchive?: { version: 1 };
   sideConversations: boolean;
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
@@ -706,6 +708,7 @@ export class ProxyClient {
           terminalDisplay: message.terminalDisplay,
           terminalHistory: message.terminalHistory,
           deviceShells: message.deviceShells,
+          sessionArchive: message.sessionArchive,
           sideConversations: message.sideConversations === true,
           browser: message.browser ?? null,
           sessions: message.sessions,
@@ -1040,7 +1043,8 @@ export class ProxyClient {
         const last = open?.runId === runId ? open.payload : undefined;
         live[sessionId] =
           open && last && isFragment(last) && continues(last, payload)
-            ? { ...open, payload: { ...payload, text: last.text + payload.text } }
+            ? // What the first piece said of the stretch (its model) stays unless a later piece says it again.
+              { ...open, payload: { ...last, ...payload, text: last.text + payload.text } }
             : { sessionId, runId, sequence: 0, createdAt: new Date().toISOString(), payload };
         moved = true;
         continue;

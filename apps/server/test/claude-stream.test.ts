@@ -319,3 +319,269 @@ test('the gateway notice of auto mode is shown once a day, other notices every t
   assert.equal(shownToday('Native notice', 11 * day), false);
   assert.equal(shownToday('Native notice', 11 * day), false);
 });
+
+test('a subagent’s calls, words and results are named by the Agent call that started them', async () => {
+  const { clipped, SUBAGENT_OUTPUT_LIMIT } = await import('../src/claude-stream.ts');
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.accept({ type: 'stream_event', event: { type: 'message_start' } });
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: null,
+    message: { content: [{ type: 'tool_use', id: 'agent', name: 'Agent', input: {} }] },
+  });
+  const main = stream.messageId;
+  stream.accept({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 'task-1',
+    tool_use_id: 'agent',
+    description: 'd',
+    is_backgrounded: false,
+  });
+  // The subagent's prompt echo and its streaming are not shown, nor are its requests counted.
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: 'agent',
+    message: { content: [{ type: 'text', text: '子代理收到的提示' }] },
+  });
+  stream.accept({
+    type: 'stream_event',
+    parent_tool_use_id: 'agent',
+    event: { type: 'message_start' },
+  });
+  stream.accept({
+    type: 'stream_event',
+    parent_tool_use_id: 'agent',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '流' } },
+  });
+  stream.streamed = true;
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        { type: 'thinking', thinking: '子代理在想' },
+        { type: 'text', text: '先看目录' },
+        { type: 'tool_use', id: 'read', name: 'Read', input: { file_path: '/a' } },
+      ],
+    },
+  });
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'read',
+          content: [
+            { type: 'text', text: 'x'.repeat(SUBAGENT_OUTPUT_LIMIT + 5) },
+            { type: 'image' },
+          ],
+        },
+      ],
+    },
+  });
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: null,
+    message: {
+      content: [{ type: 'tool_result', tool_use_id: 'agent', content: 'y'.repeat(9000) }],
+    },
+  });
+  assert.equal(stream.requests, 1);
+  assert.equal(stream.messageId, main);
+  assert.equal(
+    events.filter((event) => event.type === 'text.delta' && event.text === '流').length,
+    0,
+  );
+  const text = events.find((event) => event.type === 'text.delta');
+  const thinking = events.find((event) => event.type === 'thinking.delta');
+  assert.deepEqual(
+    [
+      text?.type === 'text.delta' && text.parentToolId,
+      thinking?.type === 'thinking.delta' && thinking.parentToolId,
+    ],
+    ['agent', 'agent'],
+  );
+  assert.notEqual(text?.type === 'text.delta' && text.messageId, main);
+  const requested = events.filter((event) => event.type === 'tool.requested');
+  assert.deepEqual(
+    requested.map((event) => event.type === 'tool.requested' && [event.toolId, event.parentToolId]),
+    [
+      ['agent', undefined],
+      ['read', 'agent'],
+    ],
+  );
+  const results = events.filter((event) => event.type === 'tool.result');
+  const read = results[0].type === 'tool.result' ? results[0].output : '';
+  assert.ok(read.startsWith('x'.repeat(SUBAGENT_OUTPUT_LIMIT)));
+  assert.match(read, /已截断，共 8,013 字符/);
+  assert.ok(!read.includes('[image]'), 'the picture is past the limit');
+  // The Agent call's own result, the subagent's answer, is whole.
+  assert.equal(results[1].type === 'tool.result' && results[1].output, 'y'.repeat(9000));
+  assert.equal(clipped('short'), 'short');
+  assert.equal(clipped('abcdef', 3), 'abc\n…（已截断，共 6 字符）');
+});
+
+test('a subagent’s call asked about before its message is placed under its Agent call', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.tool('Agent', {}, 'agent');
+  stream.accept({
+    type: 'system',
+    subtype: 'task_started',
+    task_id: 'task-1',
+    tool_use_id: 'agent',
+    description: 'd',
+  });
+  // Known by its task: placed from the start.
+  stream.tool('Bash', { command: 'ls' }, 'early', stream.parentOf('task-1'));
+  // Not known: placed when the CLI's message names it.
+  stream.tool('Bash', { command: 'pwd' }, 'late', stream.parentOf('unknown'));
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        { type: 'tool_use', id: 'early', name: 'Bash', input: { command: 'ls' } },
+        { type: 'tool_use', id: 'late', name: 'Bash', input: { command: 'pwd' } },
+      ],
+    },
+  });
+  const early = events.find((event) => event.type === 'tool.requested' && event.toolId === 'early');
+  assert.equal(early?.type === 'tool.requested' && early.parentToolId, 'agent');
+  const inputs = events.filter((event) => event.type === 'tool.input');
+  assert.deepEqual(
+    inputs.map((event) => event.type === 'tool.input' && [event.toolId, event.parentToolId]),
+    [
+      ['early', undefined],
+      ['late', 'agent'],
+    ],
+  );
+  assert.equal(stream.parentOf(undefined), undefined);
+});
+
+test('a subagent’s result keeps its text and names what is not text', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.tool('Agent', {}, 'agent');
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'agent',
+    message: { content: [{ type: 'tool_use', id: 'shot', name: 'Screenshot', input: {} }] },
+  });
+  stream.accept({
+    type: 'user',
+    parent_tool_use_id: 'agent',
+    message: {
+      content: [
+        {
+          type: 'tool_result',
+          tool_use_id: 'shot',
+          content: [
+            { type: 'text', text: '截图如下' },
+            { type: 'image', source: { data: 'AAAA' } },
+          ],
+        },
+      ],
+    },
+  });
+  const result = events.find((event) => event.type === 'tool.result');
+  assert.equal(result?.type === 'tool.result' && result.output, '截图如下\n[image]');
+});
+
+test('a reply carries the model that wrote it; a local command’s and a stand-in’s carry none', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  const texts = () =>
+    events.flatMap((event) => (event.type === 'text.delta' ? [[event.text, event.model]] : []));
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { model: 'claude-opus-4-7' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '一' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '二' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { model: 'claude-sonnet-4-6' } },
+  });
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'content_block_delta', delta: { type: 'text_delta', text: '三' } },
+  });
+  stream.accept({ type: 'result', subtype: 'success', is_error: false, result: '' });
+  assert.equal(stream.model, undefined);
+  // A whole message after the turn: a local command's (no request) carries none.
+  stream.accept({
+    type: 'assistant',
+    message: { model: '<synthetic>', content: [{ type: 'text', text: '本地' }] },
+  });
+  // Unstreamed, from a request: its own model; a stand-in is none.
+  stream.accept({ type: 'stream_event', event: { type: 'message_start', message: {} } });
+  stream.accept({
+    type: 'assistant',
+    message: { model: 'claude-haiku-4-5', content: [{ type: 'text', text: '整条' }] },
+  });
+  stream.accept({ type: 'result', subtype: 'success', is_error: false, result: '' });
+  stream.accept({ type: 'stream_event', event: { type: 'message_start', message: {} } });
+  stream.accept({
+    type: 'assistant',
+    message: { model: '<synthetic>', content: [{ type: 'text', text: '合成' }] },
+  });
+  assert.deepEqual(texts(), [
+    ['一', 'claude-opus-4-7'],
+    ['二', 'claude-opus-4-7'],
+    ['三', 'claude-sonnet-4-6'],
+    ['```text\n本地\n```', undefined],
+    ['整条', 'claude-haiku-4-5'],
+    ['合成', undefined],
+  ]);
+});
+
+test('an error the CLI wrote after a request is named by no model, nor by the request before it', () => {
+  const events: EventPayload[] = [];
+  const stream = new ClaudeStream((event) => events.push(event));
+  stream.accept({
+    type: 'stream_event',
+    event: { type: 'message_start', message: { model: 'claude-opus-4-7' } },
+  });
+  stream.accept({
+    type: 'assistant',
+    message: {
+      model: 'claude-opus-4-7',
+      content: [{ type: 'tool_use', id: 'tool', name: 'Bash', input: {} }],
+    },
+  });
+  stream.accept({
+    type: 'assistant',
+    message: { model: '<synthetic>', content: [{ type: 'text', text: 'API Error: 529' }] },
+  });
+  // A whole message that names no model is the streaming request's.
+  stream.accept({ type: 'assistant', message: { content: [{ type: 'text', text: '无名' }] } });
+  // What a local command printed, and a subagent's words with its own model.
+  stream.accept({ type: 'system', subtype: 'local_command_output', content: '输出' });
+  stream.accept({
+    type: 'assistant',
+    parent_tool_use_id: 'tool',
+    message: { model: 'claude-haiku-4-5', content: [{ type: 'text', text: '子代理' }] },
+  });
+  assert.deepEqual(
+    events.flatMap((event) =>
+      event.type === 'text.delta' ? [[event.text.replace(/`+text\n|\n`+/g, ''), event.model]] : [],
+    ),
+    [
+      ['API Error: 529', undefined],
+      ['无名', 'claude-opus-4-7'],
+      ['输出', undefined],
+      ['子代理', 'claude-haiku-4-5'],
+    ],
+  );
+});

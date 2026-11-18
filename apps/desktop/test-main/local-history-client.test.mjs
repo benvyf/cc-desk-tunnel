@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createRequire } from 'node:module';
 import { ProxyClient } from '../src/client.ts';
+import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
 const settle = () => new Promise((r) => setTimeout(r, 15));
 const deferred = () => {
   let resolve;
@@ -72,7 +73,7 @@ function fixture(t, read) {
   const ready = () =>
     Socket.current.message({
       type: 'ready',
-      protocolVersion: 24,
+      protocolVersion: PROTOCOL_VERSION,
       version: '0.3.10',
       connectionId: randomUUID(),
       adapter: 'simulation',

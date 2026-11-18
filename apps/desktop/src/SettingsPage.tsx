@@ -48,7 +48,13 @@ export type Section =
   | 'help'
   | 'about';
 // `words` is what the search box matches besides the name: the settings found inside.
-const sections: { id: Section; name: string; group: string; icon: typeof Bell; words: string }[] = [
+export const sections: {
+  id: Section;
+  name: string;
+  group: string;
+  icon: typeof Bell;
+  words: string;
+}[] = [
   {
     id: 'account',
     name: '账号与额度',

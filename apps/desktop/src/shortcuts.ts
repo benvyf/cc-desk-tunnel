@@ -8,6 +8,7 @@ export type Action =
   | 'forward'
   | 'toggleSide'
   | 'newSession'
+  | 'palette'
   | 'search'
   | 'settings'
   | 'find'
@@ -20,7 +21,8 @@ export const actions: { id: Action; name: string; desktop?: boolean }[] = [
   { id: 'forward', name: '前进' },
   { id: 'toggleSide', name: '收起或展开侧栏' },
   { id: 'newSession', name: '新建会话' },
-  { id: 'search', name: '搜索会话' },
+  { id: 'palette', name: '命令面板' },
+  { id: 'search', name: '在侧栏搜索会话' },
   { id: 'settings', name: '打开设置' },
   { id: 'find', name: '查找对话内容' },
   { id: 'zoomIn', name: '放大界面', desktop: true },
@@ -32,7 +34,10 @@ const defaults: Record<Action, string> = {
   forward: 'Alt+ArrowRight',
   toggleSide: 'Ctrl+KeyB',
   newSession: 'Ctrl+KeyN',
-  search: 'Ctrl+KeyK',
+  // The palette took Ctrl+K from the sidebar's search, which it finds sessions in as well; the search keeps no key
+  // of its own unless the user gives it one.
+  palette: 'Ctrl+KeyK',
+  search: '',
   settings: 'Ctrl+Comma',
   find: 'Ctrl+KeyF',
   zoomIn: 'Ctrl+Equal',
@@ -48,9 +53,18 @@ const macDefaults = {
   back: 'Win+BracketLeft',
   forward: 'Win+BracketRight',
 };
-// The combination an action answers to: the user's own, or the default; empty when the user removed it.
-export const keyFor = (prefs: Prefs, action: Action) =>
-  prefs.shortcuts.keys[action] ?? (isMac ? macDefaults : defaults)[action];
+// The combination an action answers to: the user's own, or the default; empty when the user removed it. A default
+// gives way to a combination the user set for another action, so that a default that changed (Ctrl+K went from
+// the search to the palette) never takes a key from what the user bound it to.
+export const keyFor = (prefs: Prefs, action: Action) => {
+  const own = prefs.shortcuts.keys[action];
+  if (own !== undefined) return own;
+  const fallback = (isMac ? macDefaults : defaults)[action];
+  const taken = Object.entries(prefs.shortcuts.keys).some(
+    ([other, combo]) => other !== action && combo === fallback,
+  );
+  return taken ? '' : fallback;
+};
 
 const numpad: Record<string, string> = {
   NumpadAdd: 'Equal',

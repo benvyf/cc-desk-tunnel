@@ -82,12 +82,8 @@ test('search turns its row into the field in place and back, and nothing below i
   const field = page.getByLabel('搜索会话', { exact: true });
   const listTop = (await box(page, '.session-list')).y;
   const schedulesTop = (await side.getByRole('button', { name: '定时任务' }).boundingBox())!.y;
-  // The shortcut shows on the row under the pointer.
-  const hint = row.locator('kbd');
-  await expect(hint).toHaveText('Ctrl+K');
-  await expect(hint).toHaveCSS('opacity', '0');
-  await row.hover();
-  await expect(hint).toHaveCSS('opacity', '1');
+  // Ctrl+K went to the command palette: the search has no shortcut of its own to show unless one is set.
+  await expect(row.locator('kbd')).toHaveCount(0);
   await expect(row).toHaveAccessibleName('搜索');
 
   const icon = (await row.locator('svg').boundingBox())!;
@@ -123,27 +119,27 @@ test('search turns its row into the field in place and back, and nothing below i
   await expect(row).toBeVisible();
 });
 
-test('Ctrl+K opens the search from any page and from the folded column, and is a shortcut like the others', async ({
+test('Ctrl+K opens the command palette from any page and from the folded column; the search keeps a shortcut of its own to set', async ({
   page,
 }) => {
   await page.goto('/');
   await login(page);
   const field = page.getByLabel('搜索会话', { exact: true });
+  const palette = page.getByRole('dialog', { name: '命令面板' });
   await page.locator('.sidebar').getByRole('button', { name: '定时任务', exact: true }).click();
   await expect(page.locator('.titlebar h1')).toHaveText('定时任务');
   await page.keyboard.press('Control+KeyK');
-  await expect(field).toBeFocused();
-  await expect(page.locator('.titlebar h1')).not.toHaveText('定时任务');
+  await expect(palette.getByRole('combobox')).toBeFocused();
   await page.keyboard.press('Escape');
+  await expect(palette).toHaveCount(0);
 
   await page.keyboard.press('Control+KeyB');
   await expect(page.locator('.sidebar')).toBeHidden();
   await page.keyboard.press('Control+KeyK');
-  await expect(page.locator('.sidebar')).toBeVisible();
-  await expect(field).toBeFocused();
-  await page.keyboard.press('Escape');
+  await expect(palette.getByRole('combobox')).toBeFocused();
+  await page.keyboard.press('Control+KeyK');
+  await expect(palette).toHaveCount(0);
 
-  await page.keyboard.press('Control+KeyB');
   await page
     .getByRole('navigation', { name: '页面' })
     .getByRole('button', { name: '搜索' })
@@ -157,9 +153,12 @@ test('Ctrl+K opens the search from any page and from the folded column, and is a
     .getByRole('navigation', { name: '设置分类' })
     .getByRole('button', { name: '快捷键', exact: true })
     .click();
-  await expect(page.getByRole('button', { name: '修改快捷键：搜索会话', exact: true })).toHaveText(
+  await expect(page.getByRole('button', { name: '修改快捷键：命令面板', exact: true })).toHaveText(
     'Ctrl+K',
   );
+  await expect(
+    page.getByRole('button', { name: '修改快捷键：在侧栏搜索会话', exact: true }),
+  ).toHaveText('未设置');
 });
 
 test('folded, the column is a 52px rail: new session, search, the pages, and the account', async ({
