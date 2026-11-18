@@ -114,6 +114,8 @@ export async function stageDesktop(
   for (const file of [
     ...commonjs,
     'release-download.mjs',
+    // Found by the Git changes panel on Windows; it imports only Node built-ins.
+    'git-bash.mjs',
     'icon.png',
     'tray.png',
     'trayTemplate.png',
