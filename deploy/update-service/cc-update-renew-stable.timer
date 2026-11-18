@@ -1,0 +1,11 @@
+[Unit]
+Description=Check CC stable index renewal every six hours (twenty minutes after pilot)
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:40:00 UTC
+Persistent=true
+RandomizedDelaySec=5min
+Unit=cc-update-renew-stable.service
+
+[Install]
+WantedBy=timers.target

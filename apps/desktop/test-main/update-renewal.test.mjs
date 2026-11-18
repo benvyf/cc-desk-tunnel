@@ -53,3 +53,14 @@ test('signing administrator can recover an expired authentic index without accep
   );
   assert.throws(() => verifyForRenewal(signed, { test: keys.publicKey }, now - day));
 });
+
+test('stable is renewed by its own configuration, and neither channel is taken for the other', () => {
+  const stable = { ...payload, channel: 'stable' };
+  assert.equal(renewalDecision(stable, release, now, true, 'stable'), 'renew');
+  assert.equal(renewalDecision(stable, release, now, false, 'stable'), 'not-due');
+  assert.throws(() => renewalDecision(stable, release, now, true, 'pilot'));
+  assert.throws(() => renewalDecision(payload, release, now, true, 'stable'));
+  assert.throws(() => renewalDecision(payload, release, now, true, 'beta'));
+  // pilot stays the default, as before.
+  assert.equal(renewalDecision(payload, release, now, true), 'renew');
+});

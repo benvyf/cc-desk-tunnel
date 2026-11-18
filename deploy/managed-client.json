@@ -1,7 +1,7 @@
 {
   "product": "cc-desk-tunnel-managed",
   "build": 37,
-  "channel": "pilot",
+  "channel": "stable",
   "origin": "https://api.ghostapi.org",
   "trustedKeys": {
     "managed-vps-2026-10-23": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAH4kVnTl+XgMx+Up2F5Om4YlRfZVi+1bXed67n+Q+yGI=\n-----END PUBLIC KEY-----\n"

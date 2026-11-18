@@ -97,6 +97,13 @@ function git(source, ...args) {
     stdio: ['ignore', 'pipe', 'pipe'],
   }).trim();
 }
+// The channel a build may be published to: its own; and, for the bridge client, which carries stable but is also
+// kept on pilot for the clients that have not reached it yet (docs/CLIENT-BRIDGE-RELEASE.md).
+export function channelAllowed(indexChannel, embeddedChannel) {
+  return (
+    indexChannel === embeddedChannel || (indexChannel === 'pilot' && embeddedChannel === 'stable')
+  );
+}
 async function sourceIdentity(source, release, channel) {
   await safePath(source, 'directory');
   check(relative(source, await realpath(git(source, 'rev-parse', '--show-toplevel'))) === '');
@@ -111,7 +118,7 @@ async function sourceIdentity(source, release, channel) {
   const identity = JSON.parse(git(source, 'show', 'HEAD:deploy/managed-client.json'));
   check(
     identity.build === release.build &&
-      identity.channel === channel &&
+      channelAllowed(channel, identity.channel) &&
       identity.product === 'cc-desk-tunnel-managed',
   );
   return identity;
@@ -288,7 +295,9 @@ export async function publishDifferential(args) {
   const descriptor = {
     schema: 1,
     product: 'cc-space-nsis-differential',
-    channel: payload.channel,
+    // The build's own channel, whichever index lists it: one descriptor a build, the same bytes for each channel
+    // it is published to. A client of another channel finds it out of scope and downloads the full installer.
+    channel: identity.channel,
     platform: 'win32',
     arch: 'x64',
     release: tuple,
@@ -303,7 +312,7 @@ export async function publishDifferential(args) {
   // the independently signed full installer hashes remain the final execution gate.
   decodeBlockmap(mapBytes, descriptor);
   const signed = signDescriptor(descriptor, args['key-id'], key);
-  verifyDescriptor(signed, identity.trustedKeys, release, payload.channel);
+  verifyDescriptor(signed, identity.trustedKeys, release, identity.channel);
   const descriptorCoordinate = descriptorPath(release);
   const mapCoordinate = blockmapPath(release);
   const descriptorFile = publicFile(publicRoot, descriptorCoordinate);

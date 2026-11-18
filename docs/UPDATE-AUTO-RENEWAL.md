@@ -59,3 +59,7 @@ systemctl start cc-update-renew.service
 timer 实测 active、enabled，首次计划检查为 2026-10-23 14:22:24（香港时间）。部署时未等待这个未来触发点；通过真实服务验收及日历核对确认配置生效。`systemd-analyze verify` 通过，线上脚本/契约/units 的 SHA256 与仓库文件一致。本机另行核对实时 HTTPS 索引的固定公钥签名、与 VPS 签名文件的逐字节一致性、旧 revision 4 ledger 接受 revision 5，以及 build 2 仍为 current。
 
 三项核心单元测试覆盖到期决策/强制验收、撤回及版本变更拒绝、过期真实签名恢复及错误签名/未来签发拒绝。证据在本机 `artifacts/update-auto-renew-20261023/` 和 VPS `automation/runs/2026-10-23T06-11-42.995Z/`。该目录仅保留公开索引和脱敏结果，没有复制生产私钥或管理令牌。
+
+## 2026-11-18：stable 通道续期
+
+为跨协议过渡版的两通道发布（[方案说明](CLIENT-BRIDGE-RELEASE.md)），续期脚本支持按配置的 `channel` 续期 stable，并新增 `cc-update-renew-stable.service/.timer`。pilot 的配置、路径与行为保持不变（`channel` 缺省为 pilot），唯一收紧：配置文件必须位于与通道一致的目录（pilot 为 `automation/`，现生产路径已满足），放在别处会被拒绝。尚未部署到 VPS。

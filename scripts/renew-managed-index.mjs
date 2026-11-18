@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { verifyIndex } from '../packages/managed-updates/src/index.ts';
 
@@ -14,8 +14,18 @@ export function verifyForRenewal(bytes, keys, now = Date.now()) {
   return verifyIndex(bytes, keys, Math.min(now, issued));
 }
 
-export function renewalDecision(payload, expectedRelease, now = Date.now(), force = false) {
-  assert.equal(payload.channel, 'pilot');
+// The channels renewed, each by its own configuration: pilot keeps the bridge client for clients that have not
+// reached it yet, stable the newest (docs/CLIENT-BRIDGE-RELEASE.md).
+export const renewableChannels = ['pilot', 'stable'];
+export function renewalDecision(
+  payload,
+  expectedRelease,
+  now = Date.now(),
+  force = false,
+  channel = 'pilot',
+) {
+  assert(renewableChannels.includes(channel), 'Unknown channel');
+  assert.equal(payload.channel, channel);
   if (payload.state === 'empty') return 'withdrawn';
   assert.deepEqual(
     payload.release,
@@ -28,7 +38,23 @@ export function renewalDecision(payload, expectedRelease, now = Date.now(), forc
 export async function renew(configFile, force = false) {
   const config = JSON.parse(await readFile(configFile));
   const root = config.adminRoot;
-  const automation = join(root, 'automation');
+  // pilot as before; another channel keeps its state, runs and snapshot apart.
+  const name = config.channel ?? 'pilot';
+  assert(renewableChannels.includes(name), 'Unknown channel');
+  const other = name === 'pilot' ? 'stable' : 'pilot';
+  const automation = join(root, name === 'pilot' ? 'automation' : `automation-${name}`);
+  // A configuration in another channel's directory that forgets its channel would renew pilot twice and leave its
+  // own channel to expire.
+  assert.equal(
+    basename(dirname(resolve(configFile))),
+    basename(automation),
+    'Configuration directory does not match its channel',
+  );
+  const snapshotFile = join(
+    root,
+    name === 'pilot' ? 'CURRENT-RELEASE.json' : `CURRENT-RELEASE-${name}.json`,
+  );
+  await mkdir(automation, { recursive: true, mode: 0o700 });
   const identity = JSON.parse(await readFile(join(root, 'identity-public.json')));
   const token = (await readFile(join(root, 'access/admin-token.txt'), 'utf8')).trim();
   let stage = 'read-index';
@@ -52,8 +78,8 @@ export async function renew(configFile, force = false) {
   const channel = (name) => `/cc-updates/v1/channels/${name}/win32-x64.json`;
   const bytes = async (name) => Buffer.from(await (await request(channel(name))).arrayBuffer());
   try {
-    const before = verifyForRenewal(await bytes('pilot'), identity.trustedKeys).payload;
-    const decision = renewalDecision(before, config.expectedRelease, Date.now(), force);
+    const before = verifyForRenewal(await bytes(name), identity.trustedKeys).payload;
+    const decision = renewalDecision(before, config.expectedRelease, Date.now(), force, name);
     if (decision !== 'renew')
       return await record({
         at: new Date().toISOString(),
@@ -68,11 +94,11 @@ export async function renew(configFile, force = false) {
       0,
       'Unfinished publication requires administrator review',
     );
-    const stable = await bytes('stable');
+    const untouched = await bytes(other);
     const runDirectory = join(automation, 'runs', new Date().toISOString().replaceAll(':', '-'));
     await mkdir(runDirectory, { recursive: true, mode: 0o700 });
     const input = join(runDirectory, 'template.json');
-    const output = join(runDirectory, 'pilot.json');
+    const output = join(runDirectory, `${name}.json`);
     const { size, sha256, ...release } = before.release;
     await writeFile(
       input,
@@ -113,31 +139,31 @@ export async function renew(configFile, force = false) {
         evidence.otherChannelUnchanged,
     );
     const signed = await readFile(output);
-    assert.deepEqual(await bytes('pilot'), signed);
+    assert.deepEqual(await bytes(name), signed);
     const after = verifyIndex(signed, identity.trustedKeys).payload;
     assert.deepEqual(after.release, before.release);
     assert(
       after.revision > before.revision &&
         Date.parse(after.expiresAt) > Date.parse(before.expiresAt),
     );
-    assert.deepEqual(await bytes('stable'), stable);
+    assert.deepEqual(await bytes(other), untouched);
     stage = 'cleanup-candidate';
     assert.match(evidence.candidateId, /^[a-f0-9-]{36}$/);
     await request(`/cc-updates/admin/api/candidates/${evidence.candidateId}`, true, 'DELETE');
-    assert.deepEqual(await bytes('pilot'), signed);
-    assert.deepEqual(await bytes('stable'), stable);
+    assert.deepEqual(await bytes(name), signed);
+    assert.deepEqual(await bytes(other), untouched);
     const finalStatus = await (await request('/cc-updates/admin/api/status', true)).json();
     assert.equal(finalStatus.candidates.length, 0);
     const result = {
       at: new Date().toISOString(),
       status: 'renewed',
-      channel: 'pilot',
+      channel: name,
       build: after.release.build,
       previousRevision: before.revision,
       revision: after.revision,
       expiresAt: after.expiresAt,
       releaseUnchanged: true,
-      stableUnchanged: true,
+      ...(name === 'pilot' ? { stableUnchanged: true } : { pilotUnchanged: true }),
       candidates: 0,
       publicArtifactVerified: true,
       signedIndex: output,
@@ -147,9 +173,15 @@ export async function renew(configFile, force = false) {
       mode: 0o600,
     });
     stage = 'save-snapshot';
-    const snapshot = JSON.parse(await readFile(join(root, 'CURRENT-RELEASE.json')));
+    // pilot's snapshot must exist, as before; stable's is made by its first renewal.
+    const snapshot = JSON.parse(
+      await readFile(snapshotFile).catch((error) => {
+        if (name !== 'pilot' && error.code === 'ENOENT') return '{}';
+        throw error;
+      }),
+    );
     await writeFile(
-      join(root, 'CURRENT-RELEASE.json'),
+      snapshotFile,
       JSON.stringify({ ...snapshot, ...result, automaticRenewalConfigured: true }, null, 2) + '\n',
       { mode: 0o600 },
     );

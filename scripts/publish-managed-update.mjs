@@ -7,6 +7,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { artifactPath, verifyIndex } from '../packages/managed-updates/src/index.ts';
 import { prepareDifferential } from './prepare-managed-differential.mjs';
+import { channelAllowed } from './publish-managed-differential.mjs';
 
 // Run over SSH on the publication VPS. Credentials stay outside the source checkout.
 const usage =
@@ -82,6 +83,11 @@ async function main() {
     assert.equal(embedded.origin, identity.origin);
     assert.equal(embedded.build, payload.release.build);
     assert.deepEqual(embedded.trustedKeys, identity.trustedKeys);
+    // Checked before anything is uploaded: a build goes to its own channel, or the bridge (stable) also to pilot.
+    assert(
+      channelAllowed(payload.channel, embedded.channel),
+      'Build channel does not fit this index',
+    );
   } else {
     assert.equal(payload.state, 'empty');
     assert(!args.source && !args.artifact);

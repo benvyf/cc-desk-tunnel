@@ -365,3 +365,38 @@ test('invalid map is rejected before staging optional full installer', async (t)
   await assert.rejects(publishDifferential({ ...f.args, artifact }));
   await assert.rejects(readFile(f.artifact), { code: 'ENOENT' });
 });
+
+test('the bridge build, which carries stable, is published to stable and then pilot with one descriptor', async (t) => {
+  const f = await fixture(t);
+  const identity = JSON.parse(await readFile(join(f.source, 'deploy/managed-client.json')));
+  await writeFile(
+    join(f.source, 'deploy/managed-client.json'),
+    JSON.stringify({ ...identity, channel: 'stable' }),
+  );
+  f.git(
+    '-c',
+    'user.name=Fixture',
+    '-c',
+    'user.email=fixture@example.com',
+    'commit',
+    '-qam',
+    'stable',
+  );
+  f.payload.release.sourceCommit = f.git('rev-parse', 'HEAD');
+  const sign = (channel) =>
+    writeFile(f.index, signIndex({ ...f.payload, channel }, 'fixture', f.privateKey));
+  await sign('stable');
+  const first = await publishDifferential(f.args);
+  const path = join(f.publicRoot, first.descriptorPath.replace('/cc-updates/v1/', ''));
+  const descriptor = await readFile(path);
+  // Signed for the build's own channel, whichever index lists it.
+  contract.verifyDescriptor(descriptor, f.trustedKeys, f.payload.release, 'stable');
+  await sign('pilot');
+  const second = await publishDifferential(f.args);
+  assert.equal(second.channel, 'pilot');
+  assert.deepEqual(await readFile(path), descriptor);
+  // A pilot client finds it out of scope, and falls back to the full installer.
+  assert.throws(() =>
+    contract.verifyDescriptor(descriptor, f.trustedKeys, f.payload.release, 'pilot'),
+  );
+});

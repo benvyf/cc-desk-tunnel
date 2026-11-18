@@ -751,3 +751,29 @@ test('a requirement withdrawn while the windows are being asked to close stops t
     });
   }
 });
+
+test('a pilot client installs the bridge, which reads stable from then on and confirms the install', async (t) => {
+  const f = fixture(t);
+  await f.controller.download();
+  await f.controller.install();
+  assert.equal(f.launches(), 1);
+  // The bridge build carries the stable channel: its own ledger, the same installation's pending install.
+  const bridge = new ManagedController({
+    ...f.options,
+    identity: { ...identity, build: 2, channel: 'stable' },
+  });
+  t.after(() => bridge.stop());
+  await bridge.recover();
+  assert.equal(bridge.state().pending, null);
+  assert.equal(JSON.parse(readFileSync(bridge.file('last-install.json'))).status, 'confirmed');
+  assert.match(bridge.file('ledger.json'), /ledger-stable\.json$/);
+  // Stable offers the newest, of the next protocol, which the bridge installs once a server requires it.
+  const newest = { ...release, build: 3, protocol: 21 };
+  f.index({ ...payload(1, newest), channel: 'stable' });
+  bridge.report({ blocked: false });
+  assert.equal((await bridge.check()).phase, 'idle');
+  bridge.requireProtocol(21);
+  f.advance(31000);
+  bridge.report({ blocked: false });
+  assert.equal((await bridge.check()).phase, 'available');
+});
