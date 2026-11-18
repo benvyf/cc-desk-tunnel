@@ -417,6 +417,25 @@ handle('devtools:open', (event) => {
   event.sender.openDevTools({ mode: 'detach' });
 });
 handle('git:branch', (_event, directory) => gitBranch(directory));
+// The changes panel: read-only Git on this computer, or over the SSH connection already open to a Linux device.
+const gitChanges = require('./git-changes.cjs').createGitChanges({
+  findShell: () =>
+    import(pathToFileURL(path.join(__dirname, 'git-bash.mjs')).href).then((module) =>
+      module.findGitBash(),
+    ),
+  ssh: async (id, command, options) => (await sshTargets()).git(id, command, options),
+  // Elsewhere the shell leads a process group of its own, ended whole (git-changes.cjs).
+  killTree:
+    process.platform === 'win32'
+      ? (pid) =>
+          spawn('taskkill.exe', ['/T', '/F', '/PID', String(pid)], { windowsHide: true }).on(
+            'error',
+            () => {},
+          )
+      : undefined,
+});
+handle('git:changes', (_event, input) => gitChanges.list(input));
+handle('git:file-diff', (_event, input) => gitChanges.fileDiff(input));
 handle('clipboard:write', (_event, text) => {
   if (typeof text !== 'string') throw new Error('Expected clipboard text');
   // Electron's clipboard answers once written; a failure reaches the window.

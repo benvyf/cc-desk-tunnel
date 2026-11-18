@@ -10743,3 +10743,144 @@ dialog:has(.web-settings-form) {
 .terminal-list .terminal-project-choice[data-offline='true'] .terminal-list-name {
   color: var(--muted);
 }
+/* The changes panel (GitChanges.tsx): a column of its own where the directory tree stands. */
+.git-changes {
+  width: 320px;
+  min-width: 200px;
+  max-width: 60%;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line-soft);
+  background: var(--surface);
+  font-size: calc(13rem / 14);
+  overflow: auto;
+}
+.git-changes-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  min-height: 40px;
+}
+.git-changes .git-changes-head > label {
+  display: flex;
+  flex-direction: row;
+  margin: 0;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+}
+.git-changes-head select {
+  flex: 1;
+  min-width: 0;
+}
+.git-changes-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  margin: 0;
+  padding: 8px 12px;
+  color: var(--muted);
+}
+.git-changes-note,
+.git-changes-error,
+.git-diff-note {
+  margin: 4px 12px;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+.git-changes-error {
+  color: var(--fail);
+}
+.git-changes-list {
+  margin: 0;
+  padding: 0 4px 8px;
+  list-style: none;
+}
+.git-change-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.git-change-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.git-change-toggle:hover {
+  background: var(--hover);
+}
+.git-change-toggle[aria-expanded='true'] > .fold-chevron {
+  transform: rotate(90deg);
+}
+.git-status {
+  width: 14px;
+  flex: none;
+  font-family: var(--font-mono);
+  text-align: center;
+}
+.git-status-A,
+.git-status-U {
+  color: var(--added);
+}
+.git-status-D {
+  color: var(--fail);
+}
+.git-status-M,
+.git-status-R {
+  color: var(--accent, var(--text));
+}
+.git-change-toggle > .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.git-change-name {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.git-change-name > small {
+  color: var(--faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.git-change-conflict {
+  color: var(--fail);
+  font-size: calc(11rem / 14);
+}
+.git-change-open {
+  flex: none;
+  padding: 2px 8px;
+}
+.git-diff {
+  margin: 2px 0 8px 20px;
+  max-height: 420px;
+  overflow: auto;
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-md);
+  font-size: calc(12rem / 14);
+}
+.git-diff > .hunk {
+  color: var(--faint);
+}

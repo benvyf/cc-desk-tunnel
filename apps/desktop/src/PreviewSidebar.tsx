@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { FolderOpen, Globe, ListTree, Maximize2, Minimize2, Plus, X } from './icons.tsx';
+import { FolderOpen, GitBranch, Globe, ListTree, Maximize2, Minimize2, Plus, X } from './icons.tsx';
+import GitChanges from './GitChanges.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
 import { previewSpan, previewWebsite } from './preview.ts';
 import type { PreviewSurface, PreviewWorkspace } from './preview.ts';
@@ -14,11 +15,14 @@ export default function PreviewSidebar({
   filesAvailable = true,
   renderChat,
   leaving = false,
+  changes,
 }: {
   workspace: PreviewWorkspace;
   surface?: PreviewSurface;
   root?: string;
   filesAvailable?: boolean;
+  // The project whose Git changes may be shown (GitChanges.tsx): on this computer, or on an SSH device.
+  changes?: { root: string; targetId?: string; busy?: boolean };
   renderChat?: (tab: import('./preview.ts').PreviewTab) => ReactNode;
   // Put away and sliding out (Presence.tsx useLeaving): seen, but no longer used.
   leaving?: boolean;
@@ -27,6 +31,7 @@ export default function PreviewSidebar({
   const [url, setUrl] = useState('http://localhost:5173');
   const [error, setError] = useState('');
   const [full, setFull] = useState(false);
+  const [changesShown, setChangesShown] = useState(false);
   const [ownerDocument, setOwnerDocument] = useState<Document>(() => document);
   const { width, resize: setWidth } = workspace;
   const drag = useRef<{ x: number; width: number } | null>(null);
@@ -109,6 +114,16 @@ export default function PreviewSidebar({
   // under the system's window buttons. With every pane floating, the heading comes back to carry them.
   const headerActions = (
     <div className="preview-heading-actions">
+      {changes && (
+        <IconButton
+          title="Git 改动"
+          size="sm"
+          aria-pressed={changesShown}
+          onClick={() => setChangesShown((value) => !value)}
+        >
+          <GitBranch />
+        </IconButton>
+      )}
       {root && (
         <IconButton
           title="工作区目录"
@@ -153,7 +168,8 @@ export default function PreviewSidebar({
   );
   const docked = workspace.panes.find((pane) => !pane.floating);
   const inRow = !!docked;
-  const tree = workspace.tree && !!root;
+  const showChanges = changesShown && !!changes;
+  const tree = !showChanges && workspace.tree && !!root;
   return (
     <>
       {/* A narrow main window lays the preview over the page (style.css, ≤1050px); like the side column's overlay
@@ -171,7 +187,9 @@ export default function PreviewSidebar({
         className={`preview-sidebar ${full ? 'preview-full' : ''}`}
         data-leaving={leaving || undefined}
         inert={leaving}
-        style={{ '--preview-width': `${previewSpan(width, tree)}px` } as CSSProperties}
+        style={
+          { '--preview-width': `${previewSpan(width, tree || showChanges)}px` } as CSSProperties
+        }
         aria-label="文件与网站预览"
       >
         <div
@@ -237,6 +255,17 @@ export default function PreviewSidebar({
           </p>
         )}
         <div className="preview-workarea">
+          {showChanges && (
+            <GitChanges
+              key={`${changes.targetId ?? ''}|${changes.root}`}
+              root={changes.root}
+              targetId={changes.targetId}
+              busy={changes.busy}
+              openFile={
+                filesAvailable && root ? (path) => workspace.openFile(path, root, true) : undefined
+              }
+            />
+          )}
           {tree && root && (
             <PreviewTree
               root={root}

@@ -421,8 +421,16 @@ export function App({
       .join('\n'),
   );
   const previewAvailable = !!window.desktop?.preview && !!selected && onThis(selected);
+  // The Git changes of the project: read by this computer's desktop, from a project on it or on an SSH device it
+  // is connected to. A browser has no way to read them.
+  const changesAvailable =
+    !!window.desktop?.git &&
+    !!selected?.projectPath &&
+    (onThis(selected) || !!selected.device?.viaSsh);
   const sidebarAvailable =
-    previewAvailable || (!!selected && preview.tabs.some((tab) => tab.kind === 'chat'));
+    previewAvailable ||
+    changesAvailable ||
+    (!!selected && preview.tabs.some((tab) => tab.kind === 'chat'));
   const previewShown = sidebarAvailable && preview.expanded && place.page === 'chat';
   // Put away, the preview slides out before it goes (style.css, .preview-sidebar[data-leaving]).
   const previewLeaving = useLeaving(previewShown);
@@ -2872,6 +2880,15 @@ export function App({
           workspace={preview}
           filesAvailable={previewAvailable}
           root={previewAvailable ? selected?.projectPath : undefined}
+          changes={
+            changesAvailable && selected
+              ? {
+                  root: selected.projectPath,
+                  ...(selected.device?.viaSsh ? { targetId: selected.device.id } : {}),
+                  busy: !!selected.activeRun,
+                }
+              : undefined
+          }
           renderChat={(tab) => {
             const side = state.sessions.find((session) => session.id === tab.target);
             return (

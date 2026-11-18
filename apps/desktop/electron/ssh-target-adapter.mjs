@@ -112,6 +112,50 @@ export function targetExec(client, command, input = '') {
   });
 }
 
+// A command's whole output, up to a limit, for a read that may be larger than a check's (the changes panel). It runs
+// on the connection already open, in a channel of its own; nothing is dialled.
+export function targetRead(client, command, { limit = 6 * 1024 * 1024, timeoutMs = 25000 } = {}) {
+  return new Promise((resolve, reject) => {
+    // The remote end may never answer (a hung mount, no `timeout` there): this side gives up on its own.
+    let open;
+    let abandoned = false;
+    const timer = setTimeout(() => {
+      abandoned = true;
+      open?.destroy?.();
+      reject(new Error('读取 Git 改动超时。'));
+    }, timeoutMs);
+    (client.execMetadata ?? client.exec).call(client, command, (error, channel) => {
+      if (error) {
+        clearTimeout(timer);
+        return reject(error);
+      }
+      open = channel;
+      // Given up on before the channel opened: it is closed at once.
+      if (abandoned) return channel.destroy();
+      const chunks = [];
+      let size = 0;
+      channel.on('data', (chunk) => {
+        size += chunk.length;
+        if (size > limit) channel.destroy(new Error('SSH 输出过大。'));
+        else chunks.push(chunk);
+      });
+      channel.stderr.on('data', () => {});
+      channel.once('error', (problem) => {
+        clearTimeout(timer);
+        reject(problem);
+      });
+      channel.once('close', (code) => {
+        clearTimeout(timer);
+        if (code === 0 || code === undefined || code === null) resolve(Buffer.concat(chunks));
+        else if (code === 124 || code === 137) reject(new Error('读取 Git 改动超时。'));
+        else if (code === 127) reject(new Error('SSH 设备上缺少 timeout 或 git 命令。'));
+        else reject(new Error(`SSH 读取失败（${code}）。`));
+      });
+      channel.end();
+    });
+  });
+}
+
 async function withDirectory(client, path, action) {
   if (
     typeof path !== 'string' ||

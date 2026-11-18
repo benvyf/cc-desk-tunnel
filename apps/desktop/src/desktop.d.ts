@@ -164,6 +164,20 @@ declare global {
       attachmentPreview: (path: string) => Promise<string | null>;
       // The branch a project's working tree is on, or null outside a repository.
       gitBranch: (path: string) => Promise<string | null>;
+      // The changes panel (GitChanges.tsx): read-only, from the repository on disk. Absent in a window from before it.
+      git?: {
+        changes: (input: {
+          root: string;
+          targetId?: string;
+          base?: string;
+        }) => Promise<import('./gitChanges.ts').GitChangeList>;
+        fileDiff: (input: {
+          root: string;
+          targetId?: string;
+          against: string;
+          path: string;
+        }) => Promise<import('./gitChanges.ts').GitFileDiff>;
+      };
       copyText: (text: string) => Promise<void>;
       // A picture as PNG bytes; absent in a window from before it.
       copyImage?: (png: Uint8Array) => Promise<void>;

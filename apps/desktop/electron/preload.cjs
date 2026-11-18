@@ -106,6 +106,10 @@ contextBridge.exposeInMainWorld('desktop', {
   openLogs: () => ipcRenderer.invoke('log:open'),
   openDevTools: () => ipcRenderer.invoke('devtools:open'),
   gitBranch: (directory) => ipcRenderer.invoke('git:branch', directory),
+  git: {
+    changes: (input) => ipcRenderer.invoke('git:changes', input),
+    fileDiff: (input) => ipcRenderer.invoke('git:file-diff', input),
+  },
   copyText: (text) => ipcRenderer.invoke('clipboard:write', text),
   copyImage: (png) => ipcRenderer.invoke('clipboard:write-image', png),
   openExternal: (url) => ipcRenderer.invoke('external:open', url),
