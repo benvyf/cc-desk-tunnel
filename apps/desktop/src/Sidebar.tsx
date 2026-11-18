@@ -14,7 +14,12 @@ import {
   Plus,
   Search,
   SquarePen,
+  Check,
+  Trash2,
+  FolderInput as Archive,
+  X,
 } from './icons.tsx';
+import { pruned, ranged, toggled as chosenToggled } from './sessionSelection.ts';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import type { ConnectedDevice } from './client.ts';
 import NoticeBell from './NoticeBell.tsx';
@@ -145,7 +150,26 @@ export default function Sidebar({
   projectScope = '',
   createRemoteProject,
   remoteProjectMenu,
+  archived = [],
+  chosen = new Set(),
+  setChosen = () => {},
+  choosable = () => false,
+  canArchive = false,
+  archiveChosen,
+  deleteChosen,
+  batchProgress,
 }: {
+  // Sessions put away: listed apart, at the foot, and found by a search.
+  archived?: Session[];
+  // The sessions chosen to act on together (sessionSelection.ts); choosing is on while any is.
+  chosen?: ReadonlySet<string>;
+  setChosen?: (next: ReadonlySet<string>) => void;
+  // Not at work, nor held by its terminal: may be chosen.
+  choosable?: (session: Session) => boolean;
+  canArchive?: boolean;
+  archiveChosen?: (sessions: Session[], archived: boolean) => void;
+  deleteChosen?: (sessions: Session[]) => void;
+  batchProgress?: string | null;
   sideOpen?: boolean;
   localProjects?: boolean;
   sessions: Session[];
@@ -577,13 +601,55 @@ export default function Sidebar({
     return forkRows(members).map((row) => renderSession(row.session, row));
   }
 
+  // Choosing: Ctrl (Command) and a click take a row in or out and start choosing; Shift and a click take the rows
+  // from the last one taken; while choosing, a click, Space or Enter takes a row in or out, and Esc stops.
+  const choosing = chosen.size > 0;
+  const anchor = useRef<string | undefined>(undefined);
+  const shownIds = () =>
+    [...(aside.current?.querySelectorAll<HTMLElement>('.session-row[data-session-id]') ?? [])]
+      .filter((row) => row.dataset.choosable === 'true')
+      .map((row) => row.dataset.sessionId!);
+  const allSessions = [...sessions, ...elsewhere, ...archived];
+  // What is chosen and can no longer be (at work now, gone) or is out of sight (folded away, filtered out by a
+  // search) drops out: only what is shown is acted on.
+  useEffect(() => {
+    if (!chosen.size) return;
+    const shown = new Set(
+      [
+        ...(aside.current?.querySelectorAll<HTMLElement>('.session-row[data-session-id]') ?? []),
+      ].map((row) => row.dataset.sessionId!),
+    );
+    const possible = new Set(
+      allSessions
+        .filter((session) => choosable(session) && shown.has(session.id))
+        .map((session) => session.id),
+    );
+    const next = pruned(chosen, possible);
+    if (next !== chosen) setChosen(next);
+  });
+  function choose(session: Session, event: { shiftKey: boolean }) {
+    if (!choosable(session)) return;
+    if (event.shiftKey)
+      setChosen(ranged(chosen, shownIds(), anchor.current ?? selectedId, session.id));
+    else setChosen(chosenToggled(chosen, session.id));
+    anchor.current = session.id;
+  }
+  const chosenSessions = allSessions.filter((session) => chosen.has(session.id));
+  const allArchived =
+    chosenSessions.length > 0 && chosenSessions.every((session) => session.archivedAt);
+  const [archivedOpen, setArchivedOpen] = useState(false);
+
   function renderSession(session: Session, row?: ForkRow) {
     const state = rowState(session, notifications);
     const depth = row?.depth ?? 0;
+    const canChoose = choosable(session);
+    const taken = chosen.has(session.id);
     return (
       <div
-        className={`session-row ${selectedId === session.id ? 'selected' : ''}`}
+        className={`session-row ${selectedId === session.id ? 'selected' : ''}${taken ? ' chosen' : ''}`}
         data-state={state}
+        data-session-id={session.id}
+        data-choosable={canChoose}
         {...(depth
           ? {
               'data-depth': depth,
@@ -629,14 +695,49 @@ export default function Sidebar({
         <button
           type="button"
           className="session-select"
-          onClick={() => select(session.id)}
+          {...(choosing
+            ? {
+                role: 'checkbox',
+                'aria-checked': taken,
+                'aria-disabled': canChoose ? undefined : true,
+                title: canChoose ? undefined : '正在运行的会话不能选择',
+              }
+            : {})}
+          onClick={(event) => {
+            if (choosing || event.ctrlKey || event.metaKey || (event.shiftKey && canChoose)) {
+              event.preventDefault();
+              choose(session, event);
+              return;
+            }
+            select(session.id);
+          }}
           onKeyDown={(event) => {
+            if (choosing && (event.key === ' ' || event.key === 'Enter')) {
+              event.preventDefault();
+              choose(session, event);
+              return;
+            }
+            if (choosing && event.key === 'Escape') {
+              event.preventDefault();
+              setChosen(new Set());
+              return;
+            }
+            if (event.key === ' ' && event.ctrlKey && canChoose) {
+              event.preventDefault();
+              choose(session, event);
+              return;
+            }
             if (!asksForMenu(event)) return;
             event.preventDefault();
             leave();
             sessionMenu(session, below(event.currentTarget));
           }}
         >
+          {choosing && (
+            <span className={`choose-box${taken ? ' taken' : ''}`} aria-hidden="true">
+              {taken && <Check />}
+            </span>
+          )}
           {/* Finished while out of sight: a green light before the title, until the session is opened. */}
           {lit(session, done) && <DoneDot at={done.get(session.id)} />}
           <strong>{session.title}</strong>
@@ -730,6 +831,65 @@ export default function Sidebar({
           </button>
         )}
       </div>
+      {choosing && (
+        <div
+          className="choose-bar"
+          role="toolbar"
+          aria-label="已选会话的操作"
+          onKeyDown={(event) => {
+            if (event.key !== 'Escape') return;
+            event.preventDefault();
+            setChosen(new Set());
+          }}
+        >
+          <span aria-hidden="true">已选 {chosen.size} 个</span>
+          {batchProgress && <small>{batchProgress}</small>}
+          {canArchive && archiveChosen && (
+            <IconButton
+              // Those already in the state asked for are left as they are, and not counted.
+              title={
+                allArchived
+                  ? `恢复 ${chosen.size} 个`
+                  : `归档 ${chosenSessions.filter((session) => !session.archivedAt).length} 个`
+              }
+              size="sm"
+              disabled={busy || !connected}
+              onClick={() =>
+                archiveChosen(
+                  allArchived
+                    ? chosenSessions
+                    : chosenSessions.filter((session) => !session.archivedAt),
+                  !allArchived,
+                )
+              }
+            >
+              <Archive />
+            </IconButton>
+          )}
+          {deleteChosen && (
+            <IconButton
+              title={`删除 ${chosen.size} 个`}
+              size="sm"
+              disabled={busy || !connected}
+              onClick={() => deleteChosen(chosenSessions)}
+            >
+              <Trash2 />
+            </IconButton>
+          )}
+          <IconButton
+            title="取消选择"
+            size="sm"
+            className="choose-cancel"
+            onClick={() => setChosen(new Set())}
+          >
+            <X />
+          </IconButton>
+        </div>
+      )}
+      {/* Always there, so that a screen reader is told of the first choice as of the next. */}
+      <span className="choose-status" role="status">
+        {choosing ? `已选 ${chosen.size} 个会话${batchProgress ? `，${batchProgress}` : ''}` : ''}
+      </span>
       <nav className="session-list" aria-label="会话列表" onKeyDown={moveInList}>
         {pinned.length > 0 && <div className="list-heading">置顶</div>}
         {pinned.map((session) => renderSession(session))}
@@ -901,11 +1061,40 @@ export default function Sidebar({
               })}
           </section>
         )}
+        {(() => {
+          // Put away, at the foot: folded until opened, and open on what a search finds there.
+          const term = search.trim().toLowerCase();
+          const found = archived
+            .filter((session) =>
+              `${session.title} ${session.projectPath} ${session.device?.name ?? ''}`
+                .toLowerCase()
+                .includes(term),
+            )
+            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+          if (!found.length) return null;
+          const shown = archivedOpen || !!term;
+          return (
+            <section className="archived-group">
+              <button
+                type="button"
+                className="project-toggle list-heading archived-toggle"
+                aria-expanded={shown}
+                onClick={() => setArchivedOpen(!archivedOpen)}
+              >
+                已归档 ({found.length})
+              </button>
+              {shown && found.map((session) => renderSession(session))}
+            </section>
+          );
+        })()}
         {search &&
           groups.length === 0 &&
           plain.length === 0 &&
           pinned.length === 0 &&
-          othersCount === 0 && <p className="list-empty">没有匹配会话</p>}
+          othersCount === 0 &&
+          !archived.some((session) =>
+            session.title.toLowerCase().includes(search.trim().toLowerCase()),
+          ) && <p className="list-empty">没有匹配会话</p>}
       </nav>
       <Presence>
         {card && (

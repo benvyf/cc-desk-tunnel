@@ -32,7 +32,11 @@ import {
   Trash2,
   Unplug,
   X,
+  FolderInput as Archive,
+  ListChecks,
 } from './icons.tsx';
+import { runBatch } from './sessionSelection.ts';
+import type { BatchFailure } from './sessionSelection.ts';
 import { GithubMark, openProject, project } from './project.tsx';
 import type { Effort, PermissionMode, Session } from '@cc-desk-tunnel/protocol';
 import type { NativeCapabilities } from '../../../packages/protocol/src/account-display.ts';
@@ -83,6 +87,7 @@ import type { Page } from './Rail.tsx';
 import {
   AddProjectDialog,
   DeleteSessionDialog,
+  DeleteSessionsDialog,
   RenameProjectDialog,
   RenameSessionDialog,
 } from './SessionDialogs.tsx';
@@ -273,6 +278,9 @@ export function App({
       if (target?.closest('input, textarea, [role="menu"], dialog')) return;
       if (document.querySelector('dialog[open], .menu')) return;
       event.preventDefault();
+      // While sessions are being chosen, Esc stops choosing first; the column stays.
+      const stopChoosing = document.querySelector<HTMLButtonElement>('.choose-bar .choose-cancel');
+      if (stopChoosing) return stopChoosing.click();
       putAwaySide();
     };
     // Captured before the double-Esc stop shortcut, which leaves a prevented key alone.
@@ -409,8 +417,15 @@ export function App({
     };
   }, [unplaced]);
   const onThis = (session: Session) => !browser && isHere(session, state.device, absent);
-  const sessions = state.sessions.filter((session) => onThis(session));
-  const elsewhere = state.sessions.filter((session) => !onThis(session));
+  // Sessions put away are listed apart, under "已归档", and nowhere else.
+  const sessions = state.sessions.filter((session) => onThis(session) && !session.archivedAt);
+  const elsewhere = state.sessions.filter((session) => !onThis(session) && !session.archivedAt);
+  const archivedSessions = state.sessions.filter((session) => !!session.archivedAt);
+  // Sessions chosen in the sidebar for acting on together; none while not choosing.
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const [deleteMany, setDeleteMany] = useState<Session[] | null>(null);
+  const [batchFailures, setBatchFailures] = useState<BatchFailure[]>([]);
+  const [batchProgress, setBatchProgress] = useState<string | null>(null);
   const away = !!selected && !onThis(selected);
   const selectedTerminal =
     !!selected &&
@@ -1392,6 +1407,7 @@ export function App({
         const { sessionId } = task.target;
         session = sessions.find((item) => item.id === sessionId);
         if (!session) throw new Error('目标会话已不存在');
+        if (session.archivedAt) throw new Error('目标会话已归档，请先恢复');
         if (session.activeRun || terminalOwns(session.id)) return false;
       } else {
         const created = await client.request({
@@ -1645,7 +1661,7 @@ export function App({
             {
               label: '移到其他项目…',
               icon: <FolderSymlink />,
-              disabled: !idle || !!session.activeRun,
+              disabled: !idle || !!session.activeRun || !!session.archivedAt,
               run: () => {
                 if (menu) setMenu({ ...menu, kind: 'move', sessionId: session.id });
               },
@@ -1657,12 +1673,17 @@ export function App({
             {
               label: '原生终端',
               icon: <SquareTerminal />,
-              detail: refreshing ? '正在读取会话状态，完成后可打开终端' : undefined,
+              detail: session.archivedAt
+                ? '已归档，请先恢复'
+                : refreshing
+                  ? '正在读取会话状态，完成后可打开终端'
+                  : undefined,
               // A terminal takes only its own session; others may be running.
               disabled:
                 !connected ||
                 busy ||
                 refreshing ||
+                !!session.archivedAt ||
                 client.historyPending(session.id) ||
                 (!!session.activeRun && !terminalOwns(session.id)),
               run: () => {
@@ -1682,10 +1703,30 @@ export function App({
           ]
         : []),
       {
+        label: '选择',
+        icon: <ListChecks />,
+        separated: true,
+        disabled: !choosable(session),
+        detail: '选择多个会话，一起归档或删除',
+        run: () => setChosen(new Set([session.id])),
+      },
+      ...(state.sessionArchive
+        ? [
+            {
+              label: session.archivedAt ? '恢复' : '归档',
+              icon: <Archive />,
+              disabled: !connected || busy || !choosable(session),
+              run: () =>
+                void act(async () => {
+                  await archiveSessions([session], !session.archivedAt);
+                }),
+            },
+          ]
+        : []),
+      {
         label: '删除',
         icon: <Trash2 />,
         danger: true,
-        separated: true,
         disabled: !connected || !!session.activeRun || terminalOwns(session.id),
         run: () => {
           setError(null);
@@ -1694,6 +1735,52 @@ export function App({
         },
       },
     ];
+  }
+  // A session that may be chosen, put away or deleted: one not at work, its terminal's included.
+  function choosable(session: Session) {
+    // Not `busy` nor `connected`: a batch under way, or a moment offline, keeps what is chosen, and its failures
+    // stay chosen after it. The actions themselves wait for the connection.
+    return !session.activeRun && !terminalOwns(session.id);
+  }
+  // Each in turn (sessionSelection.ts); what failed stays chosen and is told by name.
+  async function archiveSessions(targets: Session[], archived: boolean) {
+    const items = targets.filter(choosable);
+    setBatchFailures([]);
+    const { done, failed } = await runBatch(
+      items.map((session) => ({ id: session.id, title: session.title })),
+      (sessionId) => client.request({ type: 'session.archive', sessionId, archived }),
+      (at, total) =>
+        setBatchProgress(
+          total > 1 && at < total ? `正在${archived ? '归档' : '恢复'} ${at + 1}/${total}` : null,
+        ),
+    );
+    setBatchFailures(failed);
+    setChosen((value) => new Set([...value].filter((id) => !done.includes(id))));
+    // What could not be put away or brought back is said, by name and why.
+    if (failed.length)
+      setError(
+        `${failed.length} 个会话没有${archived ? '归档' : '恢复'}：${failed
+          .map((failure) => `${failure.title}（${failure.message}）`)
+          .join('；')}`,
+      );
+    return failed;
+  }
+  async function deleteSessions(targets: Session[]) {
+    const items = targets.filter(choosable);
+    const { done, failed } = await runBatch(
+      items.map((session) => ({ id: session.id, title: session.title })),
+      async (sessionId) => {
+        await client.request({ type: 'session.delete', sessionId });
+        const session = targets.find((item) => item.id === sessionId)!;
+        setDraft(sessionId, '');
+        setAttachments(sessionId, () => []);
+        if (isInside(session.projectPath, workspaceRoots))
+          void window.desktop?.removeWorkspace(session.projectPath);
+      },
+      (at, total) => setBatchProgress(at < total ? `正在删除 ${at + 1}/${total}` : null),
+    );
+    setChosen((value) => new Set([...value].filter((id) => !done.includes(id))));
+    return failed;
   }
   function restoreProject(path: string, deviceId?: string) {
     const key = projectPreferenceKey(projectScope, deviceId, path);
@@ -2084,7 +2171,9 @@ export function App({
     }
   });
   const paletteItems = (): PaletteItem[] => {
-    const sessions = [...state.sessions].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    const sessions = state.sessions
+      .filter((session) => !session.archivedAt)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     const projects = new Map<string, (typeof sessions)[number]>();
     for (const session of sessions)
       if (session.projectPath && !projects.has(pathKey(session.projectPath)))
@@ -2624,6 +2713,21 @@ export function App({
             searchAsked={searchAsked}
             searchDone={searchDone}
             footer={accountArea}
+            archived={archivedSessions}
+            chosen={chosen}
+            setChosen={setChosen}
+            choosable={choosable}
+            canArchive={!!state.sessionArchive}
+            archiveChosen={(targets, archived) =>
+              void act(async () => {
+                await archiveSessions(targets, archived);
+              })
+            }
+            deleteChosen={(targets) => {
+              setBatchFailures([]);
+              setDeleteMany(targets);
+            }}
+            batchProgress={batchProgress}
           />
           <main
             className={`workspace chat-workspace${fresh && !selectedTerminal ? ' new-session' : ''}`}
@@ -2885,7 +2989,26 @@ export function App({
                 )}
               </div>
             )}
-            {selected && (!away || remote || selectedTerminal) && (
+            {/* A session put away is read only: no box to write in until it is restored. */}
+            {selected?.archivedAt && (
+              <div className="elsewhere-bar archived-bar" role="status">
+                <Archive />
+                <p>这个会话已归档，只能查看；恢复后可以继续。</p>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={!connected || busy || !choosable(selected)}
+                  onClick={() =>
+                    void act(async () => {
+                      await archiveSessions([selected], false);
+                    })
+                  }
+                >
+                  恢复
+                </button>
+              </div>
+            )}
+            {selected && !selected.archivedAt && (!away || remote || selectedTerminal) && (
               <Composer
                 dockSlot={setDockSlot}
                 mascot={prefs.mascot}
@@ -3217,6 +3340,38 @@ export function App({
                 restoreProject(path);
                 setProjects((value) => withProject(value, path));
                 setCreateOpen(false);
+              });
+            }}
+          />
+        )}
+      </Presence>
+      <Presence kind="dialog">
+        {deleteMany && (
+          <DeleteSessionsDialog
+            // As they are now: one that started a run since the dialog opened counts as skipped.
+            sessions={deleteMany.map(
+              (session) => state.sessions.find((item) => item.id === session.id) ?? session,
+            )}
+            skipped={deleteMany
+              .map((session) => state.sessions.find((item) => item.id === session.id) ?? session)
+              .filter((session) => !choosable(session))}
+            busy={busy}
+            connected={connected}
+            progress={batchProgress}
+            failures={batchFailures}
+            close={() => {
+              setDeleteMany(null);
+              setBatchFailures([]);
+            }}
+            confirm={() => {
+              void act(async () => {
+                const failed = await deleteSessions(deleteMany);
+                setBatchFailures(failed);
+                if (failed.length)
+                  setDeleteMany(
+                    deleteMany.filter((session) => failed.some((item) => item.id === session.id)),
+                  );
+                else setDeleteMany(null);
               });
             }}
           />

@@ -197,3 +197,69 @@ export function RenameProjectDialog({
     </Modal>
   );
 }
+
+// Several sessions deleted at once: how many, which (the first few), and what could not be done, one by one.
+export function DeleteSessionsDialog({
+  sessions,
+  skipped,
+  busy,
+  connected,
+  progress,
+  failures,
+  close,
+  confirm,
+}: {
+  sessions: Session[];
+  // Chosen but at work by now, and left alone.
+  skipped: Session[];
+  busy: boolean;
+  connected: boolean;
+  progress: string | null;
+  failures: { id: string; title: string; message: string }[];
+  close: () => void;
+  confirm: () => void;
+}) {
+  const going = sessions.filter((session) => !skipped.includes(session));
+  const count = going.length;
+  const names = going.slice(0, 5).map((session) => `“${session.title}”`);
+  return (
+    <Modal
+      title="删除会话"
+      onClose={() => {
+        if (!busy) close();
+      }}
+    >
+      <p className="delete-question">
+        删除 {count} 个会话？{names.join('、')}
+        {count > 5 ? ` 等 ${count} 个` : ''}
+      </p>
+      <p className="muted">会话记录会被删除，项目文件不受影响；从它们派生出的会话不会一并删除。</p>
+      {skipped.length > 0 && <p className="muted">{skipped.length} 个正在运行，已跳过。</p>}
+      {progress && (
+        <p className="muted" role="status">
+          {progress}
+        </p>
+      )}
+      {failures.length > 0 && (
+        <div className="error-text" role="alert">
+          <p>{failures.length} 个没有删除：</p>
+          <ul>
+            {failures.map((failure) => (
+              <li key={failure.id}>
+                {failure.title}：{failure.message}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div className="dialog-actions">
+        <Button disabled={busy} onClick={close}>
+          取消
+        </Button>
+        <Button variant="danger" disabled={busy || !connected || count <= 0} onClick={confirm}>
+          {failures.length ? '重试' : `删除 ${count} 个`}
+        </Button>
+      </div>
+    </Modal>
+  );
+}

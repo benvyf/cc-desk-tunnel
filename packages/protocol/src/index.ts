@@ -467,6 +467,8 @@ export const sessionSchema = z.object({
   // The session this one was forked from (session.fork), as it was then: the session may since have been deleted.
   // Not a side conversation's parent, which is `sideConversation`. Sessions forked before protocol 25 have none.
   forkedFromSessionId: id.optional(),
+  // Put away by the user (session.archive): out of the lists, read only, until restored. None before protocol 25.
+  archivedAt: timestamp.optional(),
   sideConversation: z
     .object({
       parentSessionId: id,
@@ -691,6 +693,15 @@ export const commandSchema = z.discriminatedUnion('type', [
     })
     .strict(),
   z.object({ type: z.literal('session.delete'), ...request, sessionId: id }).strict(),
+  // Puts a session away, or brings it back. A session at work, or held by its terminal, is refused.
+  z
+    .object({
+      type: z.literal('session.archive'),
+      ...request,
+      sessionId: id,
+      archived: z.boolean(),
+    })
+    .strict(),
   z
     .object({
       type: z.literal('session.rename'),
@@ -922,6 +933,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     deviceShells: z.object({ version: z.literal(1) }).optional(),
     // The service answers permissions.get.
     permissionRules: z.object({ version: z.literal(1) }).optional(),
+    // The service takes session.archive.
+    sessionArchive: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),
     // The service's own release version, and where it stands against the published releases if it follows them.
     version: versionSchema,

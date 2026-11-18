@@ -1220,3 +1220,75 @@ test('the offline simulation offers no permission rules and refuses to read any'
   const response = await client.request({ type: 'permissions.get' });
   assert.ok(response.type === 'response' && !response.ok && response.code === 'native_unavailable');
 });
+
+test('a session put away is told to every connection, keeps its place, is read only, and comes back', async (t) => {
+  const f = await fixture(t);
+  const client = await f.connect();
+  const other = await f.connect();
+  const sessionId = await f.create(client);
+  const before = f.server.store.get(sessionId).session.updatedAt;
+  const archived = await client.request({ type: 'session.archive', sessionId, archived: true });
+  assert.ok(archived.type === 'response' && archived.ok);
+  const told = await other.wait(
+    (message) =>
+      message.type === 'session.updated' &&
+      message.session.id === sessionId &&
+      !!message.session.archivedAt,
+  );
+  assert.equal(told.type, 'session.updated');
+  assert.equal(f.server.store.get(sessionId).session.updatedAt, before);
+  // Again is the same.
+  const at = f.server.store.get(sessionId).session.archivedAt;
+  await client.request({ type: 'session.archive', sessionId, archived: true });
+  assert.equal(f.server.store.get(sessionId).session.archivedAt, at);
+  const send = await client.request({
+    type: 'message.send',
+    sessionId,
+    text: '还能发吗',
+    scenario: 'chat',
+  });
+  assert.ok(send.type === 'response' && !send.ok && send.code === 'session_archived');
+  const side = await client.request({ type: 'session.side.create', sessionId, title: '旁路' });
+  assert.ok(side.type === 'response' && !side.ok && side.code === 'session_archived');
+  for (const command of [
+    { type: 'session.compact', sessionId },
+    { type: 'session.configure', sessionId, permissionMode: 'plan', model: null, effort: null },
+    { type: 'session.move', sessionId, projectPath: 'D:\\别处' },
+  ] as const) {
+    const refused = await client.request(command);
+    assert.ok(
+      refused.type === 'response' && !refused.ok && refused.code === 'session_archived',
+      command.type,
+    );
+  }
+  // Renaming stays possible.
+  const renamed = await client.request({ type: 'session.rename', sessionId, title: '改名' });
+  assert.ok(renamed.type === 'response' && renamed.ok);
+  // A fork of it is not put away.
+  const fork = await client.request({ type: 'session.fork', sessionId });
+  assert.ok(fork.type === 'response' && fork.ok && fork.sessionId);
+  assert.equal(f.server.store.get(fork.sessionId).session.archivedAt, undefined);
+  const restored = await client.request({ type: 'session.archive', sessionId, archived: false });
+  assert.ok(restored.type === 'response' && restored.ok);
+  assert.equal(f.server.store.get(sessionId).session.archivedAt, undefined);
+  await client.request({ type: 'session.archive', sessionId, archived: true });
+  const deleted = await client.request({ type: 'session.delete', sessionId });
+  assert.ok(deleted.type === 'response' && deleted.ok);
+});
+
+test('a session at work cannot be put away', async (t) => {
+  const f = await fixture(t, 200);
+  const client = await f.connect();
+  const sessionId = await f.create(client);
+  client.send({
+    type: 'message.send',
+    requestId: randomUUID(),
+    sessionId,
+    text: '慢慢回答',
+    scenario: 'chat',
+  });
+  await client.event('text.delta');
+  const refused = await client.request({ type: 'session.archive', sessionId, archived: true });
+  assert.ok(refused.type === 'response' && !refused.ok && refused.code === 'run_active');
+  assert.equal(f.server.store.get(sessionId).session.archivedAt, undefined);
+});

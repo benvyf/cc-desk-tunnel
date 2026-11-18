@@ -1561,10 +1561,13 @@ export function createProxyServer(options: ServerOptions) {
   }
   // Freeze a native prefix now; resuming the child later never rereads the growing parent. The UI's
   // selected quote carries any visible output that the CLI has not yet persisted in that prefix.
+  // A session put away is read only until it is restored.
+  const archived = () => new DomainError('session_archived', '会话已归档，请先恢复再继续。');
   async function createSide(command: CommandOf<'session.side.create'>) {
     const previous = store.sideCreated(command.requestId, command.sessionId, command.title);
     if (previous) return previous;
     const { session: parent } = store.get(command.sessionId);
+    if (parent.archivedAt) throw archived();
     if (mutations.has(parent.id) || reviewing.has(parent.id) || terminals.has(parent.id))
       throw new DomainError('session_busy', '来源会话正在更新或使用原生终端，请稍后重试。');
     if (!options.claude || !store.hasNativeContext(parent.id))
@@ -2220,6 +2223,7 @@ export function createProxyServer(options: ServerOptions) {
         await closeTerminal(peer, command);
         return command.sessionId;
       case 'terminal.open':
+        if (session.archivedAt) throw archived();
         await openTerminal(peer, command, session);
         return command.sessionId;
       case 'session.subscribe':
@@ -2256,6 +2260,13 @@ export function createProxyServer(options: ServerOptions) {
     }
     if (terminalForNative(command.sessionId))
       throw new DomainError('native_busy', '这个会话的原生终端开着，请先关闭终端再操作它。');
+    // Settings and place of a session put away stay as they were until it is restored; it may still be renamed,
+    // forked, archived again or deleted.
+    if (
+      (command.type === 'session.configure' || command.type === 'session.move') &&
+      session.archivedAt
+    )
+      throw archived();
     switch (command.type) {
       case 'session.configure':
         broadcast({
@@ -2278,11 +2289,18 @@ export function createProxyServer(options: ServerOptions) {
       case 'session.rename':
         await manageSession(command, session);
         break;
+      case 'session.archive':
+        broadcast({
+          type: 'session.updated',
+          session: store.archive(command.sessionId, command.archived),
+        });
+        break;
       case 'session.fork':
         return fork(peer, command, session);
       case 'message.send':
       case 'session.compact':
       case 'run.continue':
+        if (session.archivedAt) throw archived();
         await submit(peer, command, session);
         break;
     }
@@ -2313,6 +2331,7 @@ export function createProxyServer(options: ServerOptions) {
         terminalHistory: { version: 1 },
         deviceShells: { version: 1 },
         sideConversations: true,
+        sessionArchive: { version: 1 },
         model: options.claude?.model,
         version,
         sessions: store.list(),
@@ -2384,6 +2403,7 @@ export function createProxyServer(options: ServerOptions) {
       connectionId: peer.id,
       adapter,
       ...(options.claude ? { permissionRules: { version: 1 as const } } : {}),
+      sessionArchive: { version: 1 as const },
       terminalWorkspace: { version: 1, minRows: 1, resumable: true },
       terminalDisplay: { version: 1 },
       terminalFiles: { version: 1 },

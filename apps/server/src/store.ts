@@ -784,6 +784,8 @@ export class SessionStore {
       activeRun: null,
       // A fork has not run yet; the source's last run is not its own.
       lastRun: undefined,
+      // A fork of a session put away is not put away itself.
+      archivedAt: undefined,
     };
     const events = this.events(sourceId, 0, beforeSequence).filter(
       ({ payload }) =>
@@ -1148,6 +1150,16 @@ export class SessionStore {
     session.title = title;
     session.autoTitle = false;
     session.updatedAt = new Date().toISOString();
+    this.save(session);
+    return session;
+  }
+  // Puts a session away or brings it back. Its place among the others stays: `updatedAt` is not touched.
+  archive(sessionId: string, archived: boolean) {
+    const { session } = this.get(sessionId);
+    if (session.activeRun)
+      throw new DomainError('run_active', '会话正在运行，请先结束运行再归档或恢复。');
+    if (archived) session.archivedAt ??= new Date().toISOString();
+    else delete session.archivedAt;
     this.save(session);
     return session;
   }

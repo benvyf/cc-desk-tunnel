@@ -11082,3 +11082,61 @@ dialog.palette:not([open]) {
     display: none;
   }
 }
+/* Choosing sessions (Sidebar.tsx): a bar over the list with what may be done to them, and a box on each row. */
+.choose-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 4px 8px;
+  padding: 4px 4px 4px 10px;
+  border-radius: var(--radius-md);
+  background: var(--hover);
+  font-size: calc(12.5rem / 14);
+}
+.choose-bar > span:first-child {
+  flex: 1;
+}
+.choose-box {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 14px;
+  height: 14px;
+  margin-right: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+.choose-box.taken {
+  background: var(--accent, var(--text));
+  border-color: transparent;
+  color: var(--surface);
+}
+.choose-box svg {
+  width: 10px;
+  height: 10px;
+}
+.session-row.chosen {
+  background: var(--hover);
+}
+.session-select[aria-disabled='true'] {
+  opacity: 0.55;
+}
+.archived-group {
+  margin-top: 8px;
+}
+.archived-toggle {
+  width: 100%;
+  border: 0;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+}
+.choose-status {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

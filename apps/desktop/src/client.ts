@@ -141,6 +141,8 @@ export type ClientState = {
   deviceShells?: { version: 1 };
   // The service answers permissions.get (PermissionRules.tsx).
   permissionRules?: { version: 1 };
+  // The service takes session.archive (Sidebar.tsx).
+  sessionArchive?: { version: 1 };
   sideConversations: boolean;
   // The computer this client signed in as; a session's commands run on the one it is on.
   device: Device | null;
@@ -712,6 +714,7 @@ export class ProxyClient {
           terminalHistory: message.terminalHistory,
           deviceShells: message.deviceShells,
           permissionRules: message.permissionRules,
+          sessionArchive: message.sessionArchive,
           sideConversations: message.sideConversations === true,
           browser: message.browser ?? null,
           sessions: message.sessions,
