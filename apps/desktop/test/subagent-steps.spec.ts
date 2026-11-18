@@ -53,7 +53,7 @@ function agentTurn(steps: number, placed = true) {
   return payloads;
 }
 
-async function open(page: Page, payloads: EventPayload[], live = 0, ended = true) {
+async function open(page: Page, payloads: EventPayload[], live = 0, ended = true, idle = false) {
   const now = new Date().toISOString();
   const connectionId = randomUUID();
   const runId = randomUUID();
@@ -67,7 +67,7 @@ async function open(page: Page, payloads: EventPayload[], live = 0, ended = true
     effort: null,
     createdAt: now,
     updatedAt: now,
-    activeRun: { id: runId, status: 'running', connectionId },
+    activeRun: idle ? null : { id: runId, status: 'running', connectionId },
   };
   let sequence = 0;
   const events = payloads.map((payload) => ({
@@ -163,6 +163,7 @@ test('a subagent’s steps fold under its call, 25 at first and the rest on dema
   );
   const steps = agent.locator('details.subagent-steps');
   await expect(steps.locator(':scope > summary')).toContainText('子代理过程 · 40 次调用，4 段说明');
+  await expect(steps.locator('.subagent-outcome')).toHaveText(/^已完成 · /);
   await expect(steps.locator('details.tool')).toHaveCount(0);
   await steps.locator(':scope > summary').click();
   const list = steps.locator('.subagent-steps-list');
@@ -221,6 +222,7 @@ test('a subagent at work shows its latest steps, and earlier ones on demand', as
   const list = steps.locator('.subagent-steps-list');
   const more = list.locator('.subagent-more');
   await expect(more).toHaveText('显示更早的 19 步（还有 19 步）');
+  await expect(steps.locator('.subagent-outcome')).toHaveText(/^进行中 /);
   await expect(list.locator(':scope > details.tool').last()).toContainText('file-40.txt');
   await expect(list.locator(':scope > details.tool').first()).toContainText('file-18.txt');
   await more.click();
@@ -245,4 +247,21 @@ test('what a subagent says while it streams is under its call, and its answer is
   await steps.locator(':scope > summary').click();
   await expect(steps.locator('.subagent-words')).toHaveText(['子代理说明 1']);
   await expect(page.locator('.message.assistant')).toHaveCount(0);
+});
+
+test('a subagent whose call never got its result, the run being over, is not shown at work', async ({
+  page,
+}) => {
+  // Stopped: the run ended without the Agent call's result.
+  await open(
+    page,
+    [...agentTurn(3), { type: 'run.status', status: 'cancelled', connectionId: randomUUID() }],
+    0,
+    false,
+    true,
+  );
+  // A finished turn folds its steps into one line.
+  await page.locator('details.turn-process > summary').click();
+  const agent = await openAgent(page);
+  await expect(agent.locator('.subagent-outcome')).toHaveText('未完成');
 });

@@ -11089,3 +11089,21 @@ dialog.palette:not([open]) {
   clip-path: inset(50%);
   white-space: nowrap;
 }
+/* What was just put away, with a way back for a few seconds (App.tsx). */
+.undo-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px;
+  font-size: calc(12rem / 14);
+  background: var(--hover);
+  border-bottom: 1px solid var(--line-soft);
+}
+.undo-banner > span {
+  flex: 1;
+}
+.subagent-outcome {
+  color: var(--faint);
+  font-size: calc(11rem / 14);
+  white-space: nowrap;
+}

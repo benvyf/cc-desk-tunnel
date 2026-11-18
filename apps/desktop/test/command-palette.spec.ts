@@ -24,6 +24,7 @@ const session = (title: string, minutes: number, projectPath: string) =>
 async function open(page: Page) {
   const alpha = session('Alpha 报告', 1, 'D:\\工作\\甲项目');
   const beta = session('整理笔记', 5, 'D:\\工作\\乙项目');
+  const gamma = { ...session('旧账核对', 9, 'D:\\工作\\乙项目'), archivedAt: minutesAgo(8) };
   const sent: { type: string }[] = [];
   await page.routeWebSocket('ws://127.0.0.1:18899/ws', (route) => {
     const reply = (value: unknown) => route.send(JSON.stringify(value));
@@ -38,10 +39,10 @@ async function open(page: Page) {
           version: '0.0.1',
           connectionId: randomUUID(),
           adapter: 'claude-code',
-          sessions: [alpha, beta],
+          sessions: [alpha, beta, gamma],
         });
       if (message.type === 'session.subscribe') {
-        const target = message.sessionId === alpha.id ? alpha : beta;
+        const target = [alpha, beta, gamma].find((item) => item.id === message.sessionId)!;
         reply({
           type: 'session.snapshot',
           requestId: message.requestId,
@@ -224,4 +225,18 @@ test('narrow, the palette fits the window', async ({ page }) => {
   const bounds = (await palette(page).boundingBox())!;
   expect(bounds.x).toBeGreaterThanOrEqual(0);
   expect(bounds.x + bounds.width).toBeLessThanOrEqual(360);
+});
+
+test('a session put away is found by a query, not listed without one, and opens read only to be restored', async ({
+  page,
+}) => {
+  await open(page);
+  await page.keyboard.press('Control+KeyK');
+  await expect(palette(page).getByRole('option').filter({ hasText: '旧账核对' })).toHaveCount(0);
+  await palette(page).getByRole('combobox').fill('旧账');
+  const option = palette(page).getByRole('option').filter({ hasText: '旧账核对' });
+  await expect(option).toContainText('已归档 · 打开后可恢复');
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.archived-bar')).toContainText('已归档');
+  await expect(page.locator('.archived-bar').getByRole('button', { name: '恢复' })).toBeVisible();
 });

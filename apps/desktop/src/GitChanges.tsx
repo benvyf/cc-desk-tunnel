@@ -196,6 +196,32 @@ export default function GitChanges({
                       className="git-change-toggle"
                       aria-expanded={shown}
                       onClick={() => toggle(file)}
+                      // ↑↓ go from file to file, → opens one's diff and ← shuts it, as in a tree.
+                      onKeyDown={(event) => {
+                        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
+                          return;
+                        const rows = [
+                          ...(event.currentTarget
+                            .closest('.git-changes-list')
+                            ?.querySelectorAll<HTMLButtonElement>('.git-change-toggle') ?? []),
+                        ];
+                        const at = rows.indexOf(event.currentTarget);
+                        const go = (index: number) => {
+                          event.preventDefault();
+                          rows[Math.max(0, Math.min(rows.length - 1, index))]?.focus();
+                        };
+                        if (event.key === 'ArrowDown') go(at + 1);
+                        else if (event.key === 'ArrowUp') go(at - 1);
+                        else if (event.key === 'Home') go(0);
+                        else if (event.key === 'End') go(rows.length - 1);
+                        else if (event.key === 'ArrowRight' && !shown) {
+                          event.preventDefault();
+                          toggle(file);
+                        } else if (event.key === 'ArrowLeft' && shown) {
+                          event.preventDefault();
+                          toggle(file);
+                        }
+                      }}
                     >
                       <ChevronRight className="fold-chevron" />
                       <b

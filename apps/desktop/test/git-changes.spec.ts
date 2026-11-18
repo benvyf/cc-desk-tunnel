@@ -94,3 +94,22 @@ test('a folder outside a repository says so, and many changes say they are cut s
   await page.goto('/test/fixtures/git-changes.html?truncated=1');
   await expect(page.locator('.git-changes-note')).toContainText('只列出前 6 个文件');
 });
+
+test('the files are gone through by keys: ↑↓ move, → opens a diff, ← shuts it', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/git-changes.html');
+  const panel = page.getByRole('region', { name: 'Git 改动' });
+  const toggles = panel.locator('.git-change-toggle');
+  await toggles.first().focus();
+  await page.keyboard.press('ArrowDown');
+  await expect(toggles.nth(1)).toBeFocused();
+  await page.keyboard.press('End');
+  await expect(toggles.last()).toBeFocused();
+  await page.keyboard.press('Home');
+  await page.keyboard.press('ArrowRight');
+  await expect(toggles.first()).toHaveAttribute('aria-expanded', 'true');
+  await expect(panel.locator('.git-diff')).toBeVisible();
+  await page.keyboard.press('ArrowLeft');
+  await expect(toggles.first()).toHaveAttribute('aria-expanded', 'false');
+});

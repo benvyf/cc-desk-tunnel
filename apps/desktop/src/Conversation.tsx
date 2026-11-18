@@ -328,7 +328,29 @@ function ToolRow({ tool, active, live }: { tool: Tool; active: boolean; live: Li
               {input.body}
             </div>
             {steps.length ? (
-              <SubagentSteps steps={steps} forced={childAsks} running={!tool.endedAt}>
+              <SubagentSteps
+                steps={steps}
+                forced={childAsks}
+                running={!tool.endedAt}
+                // How the subagent stands and how long it has taken, on the folded line.
+                // At work only while its call is (as its heading says); a call that never got its result — the run
+                // stopped or was cut off — is not at work for ever.
+                outcome={
+                  running
+                    ? `进行中 ${duration(tool.at, live.now)}`
+                    : !tool.endedAt
+                      ? '未完成'
+                      : `${
+                          tool.state === 'failed'
+                            ? '失败'
+                            : tool.state === 'unknown'
+                              ? '结果未知'
+                              : tool.state === 'cancelled' || tool.state === 'denied'
+                                ? '已停止'
+                                : '已完成'
+                        } · ${duration(tool.at, tool.endedAt)}`
+                }
+              >
                 {(step) =>
                   step.kind === 'tool' ? (
                     <ToolRow key={step.id} tool={step} active={active} live={live} />

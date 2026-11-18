@@ -139,6 +139,15 @@ test('put away, sessions go under 已归档, open read only, and come back', asy
   await row(page, '会话二').click();
   await page.getByRole('toolbar').getByRole('button', { name: '归档 2 个' }).click();
   await expect(page.getByRole('toolbar', { name: '已选会话的操作' })).toHaveCount(0);
+  // Archiving asks nothing first, so it can be undone for a few seconds.
+  const undo = page.locator('.undo-banner');
+  await expect(undo).toContainText('已归档 2 个会话');
+  await undo.getByRole('button', { name: '撤销' }).click();
+  await expect(page.locator('.session-row')).toHaveCount(5);
+  await expect(page.getByRole('button', { name: /^已归档/ })).toHaveCount(0);
+  await row(page, '会话一').click({ modifiers: ['Control'] });
+  await row(page, '会话二').click();
+  await page.getByRole('toolbar').getByRole('button', { name: '归档 2 个' }).click();
   const toggle = page.getByRole('button', { name: '已归档 (2)' });
   await expect(toggle).toBeVisible();
   await expect(page.locator('.session-row')).toHaveCount(3);
@@ -176,4 +185,30 @@ test('a search keeps only the chosen rows it shows', async ({ page }) => {
   await page.locator('.sidebar').getByRole('button', { name: '搜索', exact: true }).click();
   await page.getByPlaceholder('搜索设备、项目或会话').fill('会话一');
   await expect(page.getByRole('toolbar')).toContainText('已选 1 个');
+});
+
+test('the undo bar goes by itself after eight seconds, waits under the pointer, and again after being shut', async ({
+  page,
+}) => {
+  await page.clock.install();
+  await open(page);
+  const undo = page.locator('.undo-banner');
+  const archiveOne = async (title: string) => {
+    await row(page, title).click({ modifiers: ['Control'] });
+    await page.getByRole('toolbar').getByRole('button', { name: '归档 1 个' }).click();
+    await expect(undo).toBeVisible();
+  };
+  await archiveOne('会话一');
+  // Held while the pointer is on it.
+  await undo.hover();
+  await page.clock.runFor(9000);
+  await expect(undo).toBeVisible();
+  // Shut by hand with the pointer on it; the next one still goes by itself.
+  await undo.getByRole('button', { name: '关闭提示' }).click();
+  await expect(undo).toHaveCount(0);
+  await page.mouse.move(0, 0);
+  await archiveOne('会话二');
+  await page.mouse.move(0, 0);
+  await page.clock.runFor(9000);
+  await expect(undo).toHaveCount(0);
 });

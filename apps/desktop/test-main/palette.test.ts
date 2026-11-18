@@ -111,3 +111,12 @@ test('the palette asks the service nothing: its modules reach no network or clie
       assert.ok(!banned.test(source), `${file}: ${banned}`);
   }
 });
+
+test('a session put away is found by a query only, not listed nor recalled with nothing typed', () => {
+  const items = [
+    item('session:a', 'session', '归档的报告', { onlyWhenTyped: true }),
+    item('session:b', 'session', '活跃的报告'),
+  ];
+  assert.deepEqual(ids(rank(items, '', ['session:a'])), [['session', ['session:b']]]);
+  assert.deepEqual(ids(rank(items, '报告', [])), [['session', ['session:a', 'session:b']]]);
+});

@@ -426,6 +426,22 @@ export function App({
   const [deleteMany, setDeleteMany] = useState<Session[] | null>(null);
   const [batchFailures, setBatchFailures] = useState<BatchFailure[]>([]);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
+  // What was just put away, offered back for a few seconds: archiving asks nothing first, so it can be undone.
+  const [undoArchive, setUndoArchive] = useState<{ ids: string[] } | null>(null);
+  // It waits while the pointer or the keyboard is on it, so that it does not go from under a hand reaching for it.
+  // Pointer and focus each hold it; both let go when it goes, however it went (a removed node tells no leave).
+  const [undoHovered, setUndoHovered] = useState(false);
+  const [undoFocused, setUndoFocused] = useState(false);
+  useEffect(() => {
+    if (!undoArchive) {
+      setUndoHovered(false);
+      setUndoFocused(false);
+      return;
+    }
+    if (undoHovered || undoFocused) return;
+    const timer = setTimeout(() => setUndoArchive(null), 8000);
+    return () => clearTimeout(timer);
+  }, [undoArchive, undoHovered, undoFocused]);
   const away = !!selected && !onThis(selected);
   const selectedTerminal =
     !!selected &&
@@ -1756,6 +1772,13 @@ export function App({
     );
     setBatchFailures(failed);
     setChosen((value) => new Set([...value].filter((id) => !done.includes(id))));
+    // A new archive is what can be undone now; a restore takes back only what it restored.
+    if (archived && done.length) setUndoArchive({ ids: done });
+    else if (!archived)
+      setUndoArchive((value) => {
+        const ids = value?.ids.filter((id) => !done.includes(id)) ?? [];
+        return ids.length ? { ids } : null;
+      });
     // What could not be put away or brought back is said, by name and why.
     if (failed.length)
       setError(
@@ -2206,6 +2229,19 @@ export function App({
         updatedAt: session.updatedAt,
         run: () => show(session.id),
       })),
+      // Sessions put away are found by a query, and open read only with a way to restore them.
+      ...state.sessions
+        .filter((session) => session.archivedAt)
+        .map((session) => ({
+          id: `session:${session.id}`,
+          group: 'session' as const,
+          label: session.title,
+          detail: `已归档 · 打开后可恢复${session.projectPath ? ` · ${projectLabel(session.projectPath)}` : ''}`,
+          keywords: `${session.projectPath ?? ''} 已归档 archived`,
+          updatedAt: session.updatedAt,
+          onlyWhenTyped: true,
+          run: () => show(session.id),
+        })),
       ...[...projects.values()].map((latest) => ({
         id: `project:${pathKey(latest.projectPath)}`,
         group: 'project' as const,
@@ -2743,6 +2779,38 @@ export function App({
                     client.update({ error: null });
                   }}
                 >
+                  <X />
+                </IconButton>
+              </div>
+            )}
+            {undoArchive && (
+              <div
+                className="undo-banner"
+                role="status"
+                onMouseEnter={() => setUndoHovered(true)}
+                onMouseLeave={() => setUndoHovered(false)}
+                onFocus={() => setUndoFocused(true)}
+                onBlur={() => setUndoFocused(false)}
+              >
+                <span>已归档 {undoArchive.ids.length} 个会话</span>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={!connected || busy}
+                  onClick={() => {
+                    // Only those still put away: one restored meanwhile, or deleted, is left alone.
+                    const targets = state.sessions.filter(
+                      (session) => undoArchive.ids.includes(session.id) && session.archivedAt,
+                    );
+                    setUndoArchive(null);
+                    void act(async () => {
+                      await archiveSessions(targets, false);
+                    });
+                  }}
+                >
+                  撤销
+                </button>
+                <IconButton title="关闭提示" onClick={() => setUndoArchive(null)}>
                   <X />
                 </IconButton>
               </div>

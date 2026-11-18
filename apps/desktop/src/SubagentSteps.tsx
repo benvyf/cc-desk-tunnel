@@ -16,11 +16,14 @@ export default function SubagentSteps({
   steps,
   forced = false,
   running = false,
+  outcome,
   children,
 }: {
   steps: Step[];
   forced?: boolean;
   running?: boolean;
+  // How the subagent stands: at work and for how long, done, failed or stopped.
+  outcome?: string;
   children: (step: Step) => ReactNode;
 }) {
   const [open, setOpen] = useState(false);
@@ -53,6 +56,7 @@ export default function SubagentSteps({
         <span>
           子代理过程 · {calls} 次调用{words ? `，${words} 段说明` : ''}
         </span>
+        {outcome && <small className="subagent-outcome">{outcome}</small>}
       </summary>
       {shown && (
         <div className="subagent-steps-list">

@@ -16,6 +16,8 @@ export type PaletteItem = {
   disabled?: string;
   // Recently used sessions first among equals.
   updatedAt?: string;
+  // Listed only for a query (a session put away), never among what shows with nothing typed.
+  onlyWhenTyped?: boolean;
   run: () => void;
 };
 
@@ -87,6 +89,7 @@ export function rank(items: PaletteItem[], query: string, recent: string[]): Pal
   const used = new Map(recent.map((id, index) => [id, index]));
   const scored = items
     .filter((item) => !commandsOnly || item.group === 'command')
+    .filter((item) => typed || !item.onlyWhenTyped)
     .map((item) => ({ item, score: words ? matchScore(item, words) : 0 }))
     .filter((entry): entry is { item: PaletteItem; score: number } => entry.score !== null)
     .sort(
@@ -101,7 +104,7 @@ export function rank(items: PaletteItem[], query: string, recent: string[]): Pal
   if (!typed) {
     const lately = recent
       .map((id) => items.find((item) => item.id === id))
-      .filter((item): item is PaletteItem => !!item)
+      .filter((item): item is PaletteItem => !!item && !item.onlyWhenTyped)
       .slice(0, 5);
     if (lately.length) {
       sections.push({ group: 'recent', items: lately });
