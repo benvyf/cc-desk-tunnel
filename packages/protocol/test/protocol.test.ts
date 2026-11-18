@@ -76,9 +76,15 @@ test('upstream version history and managed build history describe their respecti
     (entry: { windowsBuilds: number[] }) => entry.windowsBuilds.length,
   );
   assert.ok(latestWindows.windowsBuilds.includes(read('deploy/managed-client.json').build));
+  const serverBuild = read('deploy/managed-server.json').build;
+  // A desktop release may also precede its matching server (a protocol change ships the
+  // client first, docs/CLIENT-BRIDGE-RELEASE.md): it names the next server build.
   if (PROTOCOL_VERSION === latest.protocol)
-    assert.equal(latest.serverBuild, read('deploy/managed-server.json').build);
-  else assert.ok(latest.serverBuild <= read('deploy/managed-server.json').build);
+    assert.ok(
+      latest.serverBuild === serverBuild ||
+        (latest.windowsBuilds.length > 0 && latest.serverBuild === serverBuild + 1),
+    );
+  else assert.ok(latest.serverBuild <= serverBuild);
 });
 test('authentication version and event ordering are explicit', () => {
   const auth = {
