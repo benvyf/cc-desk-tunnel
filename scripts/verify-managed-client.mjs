@@ -225,7 +225,10 @@ try {
   let resumed = first;
   if (!interactiveCancel) {
     const ipc = await first.application.evaluate(async ({ ipcMain, BrowserWindow }) => {
-      const event = { senderFrame: BrowserWindow.getAllWindows()[0].webContents.mainFrame };
+      // The main process trusts the app's own frame of its own window (renderer-origin.cjs): both are given, so a
+      // refusal below is of the argument or channel, never of the caller.
+      const { webContents } = BrowserWindow.getAllWindows()[0];
+      const event = { sender: webContents, senderFrame: webContents.mainFrame };
       const failures = [];
       for (const channel of [
         'update:install',
@@ -242,6 +245,7 @@ try {
       return failures;
     });
     assert.equal(ipc.length, 4);
+    assert.ok(!ipc.includes('Untrusted renderer'), ipc.join('; '));
     evidence.checks.push('packaged old IPC refusal and new IPC argument rejection');
     assert.equal((await call(first.page, 'check')).phase, 'available');
     assert.equal((await call(first.page, 'download')).phase, 'ready');
@@ -250,7 +254,7 @@ try {
     await second.application.evaluate(({ ipcMain, BrowserWindow }) => {
       const window = BrowserWindow.getAllWindows()[0];
       ipcMain._invokeHandlers.get('managed-update:activity')(
-        { senderFrame: window.webContents.mainFrame },
+        { sender: window.webContents, senderFrame: window.webContents.mainFrame },
         { blocked: true },
       );
       // A crashed renderer cannot later replace its busy report with a safe one.
@@ -367,11 +371,11 @@ try {
   assert.equal(final.pending, null);
   evidence.checks.push('real NSIS build 1 -> 2, external helper and embedded-build confirmation');
   evidence.installation = true;
-  await upgraded.page.getByRole('button', { name: '本机设置', exact: true }).click();
-  await upgraded.page.getByRole('button', { name: '关于与更新', exact: true }).click();
-  await upgraded.page.getByText('定制构建 2 · pilot · 协议 20', { exact: true }).waitFor();
+  // The sign-in page no longer has a settings entry (About is inside the signed-in settings); the
+  // confirmed build is read above through the window's own preload, and no pending notice is shown.
+  await upgraded.page.locator('body').waitFor();
   assert.equal(await upgraded.page.getByText('安装尚未确认', { exact: false }).count(), 0);
-  evidence.checks.push('login settings expose build 2 and clear pending status');
+  evidence.checks.push('sign-in page shows no pending installation after build 2 is confirmed');
   // Native capture avoids a Chromium protocol screenshot stalling on an occluded Electron window.
   try {
     const screenshot = await upgraded.application.evaluate(async ({ BrowserWindow }) => {
