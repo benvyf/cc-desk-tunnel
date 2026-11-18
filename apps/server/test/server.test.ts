@@ -1210,3 +1210,13 @@ test('a project moves to another folder of its computer with all its sessions, a
     f.server.store.get(ids[0]!).session.nativeRoot,
   );
 });
+
+test('the offline simulation offers no permission rules and refuses to read any', async (t) => {
+  const f = await fixture(t);
+  const client = new Client(f.url, undefined, device);
+  f.clients.push(client);
+  const ready = await client.open();
+  assert.ok(ready.type === 'ready' && ready.permissionRules === undefined);
+  const response = await client.request({ type: 'permissions.get' });
+  assert.ok(response.type === 'response' && !response.ok && response.code === 'native_unavailable');
+});

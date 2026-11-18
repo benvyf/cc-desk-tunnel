@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import PermissionRules from './PermissionRules.tsx';
 import type { NativeSettings } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import GlobalInstructions from './GlobalInstructions.tsx';
@@ -332,6 +333,7 @@ export default function SettingsPanel({ client }: { client: ProxyClient }) {
             </div>
           ))}
         <GlobalInstructions client={client} />
+        <PermissionRules client={client} />
       </div>
     </section>
   );

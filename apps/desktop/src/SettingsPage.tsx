@@ -61,7 +61,7 @@ const sections: { id: Section; name: string; group: string; icon: typeof Bell; w
     name: 'Claude Code',
     group: 'Claude Code',
     icon: Settings2,
-    words: '自动压缩 思考 快速模式 记忆 检查点 缓存 语言 额度 模型',
+    words: '自动压缩 思考 快速模式 记忆 检查点 缓存 语言 额度 模型 权限 规则 allow deny ask',
   },
   {
     id: 'general',

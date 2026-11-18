@@ -51,6 +51,24 @@ export const permissionModeSchema = z.enum([
   'bypassPermissions',
 ]);
 export type PermissionMode = z.infer<typeof permissionModeSchema>;
+// One settings file's permission rules as the settings page shows them: only these fields, never the rest of it.
+export const permissionSourceSchema = z
+  .object({
+    // user: the CLI's configuration directory; project and local: the session's working directory on the server;
+    // flag: the file given with --settings; managed: the administrator's.
+    scope: z.enum(['user', 'project', 'local', 'flag', 'managed']),
+    path: z.string().max(4096),
+    status: z.enum(['ok', 'missing', 'invalid_json', 'too_large', 'unreadable', 'not_file']),
+    symlink: z.literal(true).optional(),
+    allow: z.array(z.string().max(2000)).max(500),
+    deny: z.array(z.string().max(2000)).max(500),
+    ask: z.array(z.string().max(2000)).max(500),
+    additionalDirectories: z.array(z.string().max(2000)).max(500).optional(),
+    defaultMode: z.string().max(40).optional(),
+    truncated: z.literal(true).optional(),
+  })
+  .strict();
+export type PermissionSource = z.infer<typeof permissionSourceSchema>;
 export const effortSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 export type Effort = z.infer<typeof effortSchema>;
 export const modelInfoSchema = z.object({
@@ -649,6 +667,9 @@ export const commandSchema = z.discriminatedUnion('type', [
     .strict(),
   z.object({ type: z.literal('usage.summary'), ...request }).strict(),
   z.object({ type: z.literal('session.stats'), ...request, sessionId: id }).strict(),
+  // The permission rules of the Claude Code settings files on the server, read only (native-permissions.ts); with a
+  // session, also those of its working directory there.
+  z.object({ type: z.literal('permissions.get'), ...request, sessionId: id.optional() }).strict(),
   z.object({ type: z.literal('service.update.check'), ...request }).strict(),
   z
     .object({ type: z.literal('service.update.install'), ...request, version: versionSchema })
@@ -899,6 +920,8 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
     terminalDisplay: z.object({ version: z.literal(1) }).optional(),
     terminalHistory: z.object({ version: z.literal(1) }).optional(),
     deviceShells: z.object({ version: z.literal(1) }).optional(),
+    // The service answers permissions.get.
+    permissionRules: z.object({ version: z.literal(1) }).optional(),
     model: z.string().optional(),
     // The service's own release version, and where it stands against the published releases if it follows them.
     version: versionSchema,
@@ -936,6 +959,13 @@ export const serverMessageSchema = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('usage.summary'), requestId: id, ...usageSummarySchema.shape }),
   z.object({ type: z.literal('usage.page'), requestId: id, ...usagePageSchema.shape }),
+  z
+    .object({
+      type: z.literal('permissions.state'),
+      requestId: id,
+      sources: z.array(permissionSourceSchema).max(8),
+    })
+    .strict(),
   // What a whole session has cost so far, summed from the model requests the call log holds for it.
   z.object({
     type: z.literal('session.stats'),

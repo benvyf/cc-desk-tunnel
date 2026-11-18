@@ -51,6 +51,7 @@ import {
   quotas,
 } from './claude.ts';
 import type { ClaudeOptions, Unanswered } from './claude.ts';
+import { permissionPaths, readPermissions } from './native-permissions.ts';
 import {
   terminalHistoryContext,
   readTerminalHistory,
@@ -2097,6 +2098,20 @@ export function createProxyServer(options: ServerOptions) {
       case 'quota.watch':
         peer.quotaWanted = command.active;
         return undefined;
+      case 'permissions.get': {
+        if (!options.claude)
+          throw new DomainError('native_unavailable', '模拟模式没有 Claude Code 配置文件。');
+        if (command.sessionId) store.get(command.sessionId);
+        const cwd = command.sessionId
+          ? nativeDirectory(store.directory, nativeRoot(command.sessionId))
+          : undefined;
+        send(peer, {
+          type: 'permissions.state',
+          requestId: command.requestId,
+          sources: await readPermissions(permissionPaths(options.claude, cwd)),
+        });
+        return undefined;
+      }
       case 'session.stats':
         store.get(command.sessionId);
         send(peer, {
@@ -2368,6 +2383,7 @@ export function createProxyServer(options: ServerOptions) {
       protocolVersion: PROTOCOL_VERSION,
       connectionId: peer.id,
       adapter,
+      ...(options.claude ? { permissionRules: { version: 1 as const } } : {}),
       terminalWorkspace: { version: 1, minRows: 1, resumable: true },
       terminalDisplay: { version: 1 },
       terminalFiles: { version: 1 },
@@ -2548,7 +2564,7 @@ export function createProxyServer(options: ServerOptions) {
     }
     // Serialize reviewed messages across connections; keep cancellation and answers responsive.
     const queued = options.moderation && command.type === 'message.send';
-    const queueId = 'sessionId' in command ? command.sessionId : 'global-instructions';
+    const queueId = ('sessionId' in command && command.sessionId) || 'global-instructions';
     if (queued) reviewDeadlines.set(command, Date.now() + 8000);
     const task = queued
       ? (inputQueues.get(queueId) ?? Promise.resolve())
