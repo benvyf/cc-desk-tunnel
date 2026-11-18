@@ -26,7 +26,6 @@ type DataMessage = Extract<
       | 'usage.summary'
       | 'usage.page'
       | 'session.stats'
-      | 'permissions.state'
       | 'settings.state'
       | 'instructions.state'
       | 'web.settings.state'
@@ -45,7 +44,6 @@ type Replies = {
   'usage.summary': 'usage.summary';
   'usage.query': 'usage.page';
   'session.stats': 'session.stats';
-  'permissions.get': 'permissions.state';
   'settings.get': 'settings.state';
   'settings.update': 'settings.state';
   'instructions.get': 'instructions.state';
@@ -100,7 +98,6 @@ export class RequestInterruptedError extends Error {
       'usage.query',
       'quota.watch',
       'session.stats',
-      'permissions.get',
       'settings.get',
       'instructions.get',
       'web.settings.get',
@@ -139,8 +136,6 @@ export type ClientState = {
   terminalDisplay?: { version: 1 };
   terminalHistory?: { version: 1 };
   deviceShells?: { version: 1 };
-  // The service answers permissions.get (PermissionRules.tsx).
-  permissionRules?: { version: 1 };
   // The service takes session.archive (Sidebar.tsx).
   sessionArchive?: { version: 1 };
   sideConversations: boolean;
@@ -713,7 +708,6 @@ export class ProxyClient {
           terminalDisplay: message.terminalDisplay,
           terminalHistory: message.terminalHistory,
           deviceShells: message.deviceShells,
-          permissionRules: message.permissionRules,
           sessionArchive: message.sessionArchive,
           sideConversations: message.sideConversations === true,
           browser: message.browser ?? null,
@@ -786,7 +780,6 @@ export class ProxyClient {
         message.type === 'usage.summary' ||
         message.type === 'usage.page' ||
         message.type === 'session.stats' ||
-        message.type === 'permissions.state' ||
         message.type === 'settings.state' ||
         message.type === 'instructions.state' ||
         message.type === 'web.settings.state' ||

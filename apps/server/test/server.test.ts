@@ -1211,16 +1211,6 @@ test('a project moves to another folder of its computer with all its sessions, a
   );
 });
 
-test('the offline simulation offers no permission rules and refuses to read any', async (t) => {
-  const f = await fixture(t);
-  const client = new Client(f.url, undefined, device);
-  f.clients.push(client);
-  const ready = await client.open();
-  assert.ok(ready.type === 'ready' && ready.permissionRules === undefined);
-  const response = await client.request({ type: 'permissions.get' });
-  assert.ok(response.type === 'response' && !response.ok && response.code === 'native_unavailable');
-});
-
 test('a session put away is told to every connection, keeps its place, is read only, and comes back', async (t) => {
   const f = await fixture(t);
   const client = await f.connect();

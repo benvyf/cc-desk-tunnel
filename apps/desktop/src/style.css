@@ -10950,57 +10950,6 @@ dialog:has(.web-settings-form) {
   clip-path: inset(50%);
   white-space: nowrap;
 }
-/* The permission rules of the Claude Code settings files, read only (PermissionRules.tsx). */
-.permission-rules-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 0 12px;
-}
-.permission-rules-bar label {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-}
-.permission-source {
-  margin-bottom: 12px;
-  padding: 12px 14px;
-}
-.permission-source > header {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
-  margin-bottom: 8px;
-}
-.permission-source > header code {
-  flex-basis: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--muted);
-  font-size: calc(12rem / 14);
-}
-.permission-list {
-  margin: 6px 0;
-}
-.permission-list > span {
-  display: block;
-  color: var(--muted);
-  font-size: calc(12rem / 14);
-}
-.permission-list ul {
-  margin: 4px 0 0;
-  padding-left: 18px;
-}
-.permission-list li code {
-  word-break: break-all;
-}
-.permission-list.deny > span {
-  color: var(--fail);
-}
 /* The command palette (CommandPalette.tsx): a box and its results, near the top of the window. */
 dialog.palette {
   width: min(640px, calc(100vw - 24px));
