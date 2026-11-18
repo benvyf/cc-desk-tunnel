@@ -1,0 +1,15 @@
+--- a/apps/update-service/src/host-updates.ts
++++ b/apps/update-service/src/host-updates.ts
+@@ -54,8 +54,10 @@
+ export function supportsLegacyBridge(release: ServerRelease | null | undefined): boolean {
+   return !!release && release.build >= 22 && (
+     release.runtimeLevel.endsWith('-v4') ||
+-    (release.build >= 26 && release.protocol === 24 &&
+-      release.runtimeLevel === 'node24-cli2.1.325-v5')
++    (release.runtimeLevel === 'node24-cli2.1.325-v5' &&
++      ((release.build >= 26 && release.protocol === 24) ||
++        // Build 30 is the first protocol 25 server; its apply.py upgrades protocol 24 baselines.
++        (release.build >= 30 && release.protocol === 25)))
+   );
+ }
+ 

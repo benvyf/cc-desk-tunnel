@@ -1,6 +1,6 @@
 # Linux 服务端 Build 30 发布记录（协议 25）
 
-2026-11-18（UTC 11:38）发布到服务端 pilot 通道。只发布软件包与升级指令；未升级任何节点（用户选择稍后升级 ubuntu-cc）。
+2026-11-18（UTC 11:38）发布到服务端 pilot 通道。UTC 15:05 **ubuntu-cc-03 升级到 Build 30 并完成宿主机平台接管**，过程见[管理中心协议 25 接入修复](ADMIN-PROTOCOL25-BRIDGE-FIX.md)；ubuntu-cc 与 ubuntu-cc-02 仍为 Build 28。
 
 | 项目 | 值 |
 | --- | --- |
