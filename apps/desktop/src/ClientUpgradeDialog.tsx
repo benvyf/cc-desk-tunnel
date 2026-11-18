@@ -1,6 +1,73 @@
 import { useEffect, useRef, useState } from 'react';
 import { Modal } from './ui.tsx';
-import { useManagedUpdate } from './managed-update.ts';
+import { useManagedUpdate, type ManagedUpdateState } from './managed-update.ts';
+
+type ManagedUpdateApi = NonNullable<NonNullable<Window['desktop']>['managedUpdate']>;
+
+// An update of this client's own protocol the channel offers when the required one is not there (an older
+// client meeting a newer workspace: the bridge build comes first). It installs as any same-protocol update.
+function stepFor(state: ManagedUpdateState, requiredProtocol: number) {
+  const { identity, release } = state;
+  return identity &&
+    release &&
+    release.protocol !== requiredProtocol &&
+    release.protocol === identity.protocol &&
+    release.build > identity.build
+    ? release
+    : null;
+}
+
+// The interim update stays offered once seen: a failed download publishes an error without a release, and the
+// way on is to retry it, not to be told to ask the administrator.
+function useStep(state: ManagedUpdateState, requiredProtocol: number, looking: boolean) {
+  const seen = looking ? stepFor(state, requiredProtocol) : null;
+  const [kept, setKept] = useState<typeof seen>(null);
+  useEffect(() => {
+    if (seen) setKept(seen);
+  }, [seen?.build]);
+  if (!looking) return null;
+  return seen ?? (state.phase === 'error' ? kept : null);
+}
+
+// Install that interim update: the connection is let go first, as an install requires.
+async function installStep(api: ManagedUpdateApi, blocked: () => boolean) {
+  // A requirement held (by this window, or the main process for the management center) has the controller choose
+  // the other protocol's release; this one is the client's own. Letting go of none is a no-op.
+  await api.releaseRequirement?.();
+  await window.desktop!.disconnectProxy();
+  const current = await api.state();
+  if (current.phase !== 'ready') await api.download();
+  if (blocked()) throw new Error('请先结束正在运行的任务、终端和登录流程，再更新。');
+  await api.activity({ blocked: blocked() });
+  await api.install();
+}
+
+function StepNotice({
+  step,
+  state,
+}: {
+  step: NonNullable<ReturnType<typeof stepFor>>;
+  state: ManagedUpdateState;
+}) {
+  const progress = step.size
+    ? Math.min(100, Math.max(0, Math.round(((state.received ?? 0) / step.size) * 100)))
+    : 0;
+  return (
+    <>
+      <p>
+        需要先更新到 {step.appVersion} · Build {step.build}
+        。安装后客户端会自动重启，重新登录时即可一键更新到配套版本。
+      </p>
+      {step.notes && <p className="muted managed-update-notes">{step.notes}</p>}
+      {state.phase === 'downloading' && <p role="status">正在下载… {progress}%</p>}
+      {state.phase === 'ready' && <p role="status">更新已下载，可以安装。</p>}
+      {state.phase === 'preparing' && <p role="status">正在准备安装，请稍候…</p>}
+      {state.phase === 'installing' && <p role="status">安装器即将启动，客户端会自动关闭。</p>}
+    </>
+  );
+}
+const stepLabel = (state: ManagedUpdateState, build: number) =>
+  state.phase === 'ready' ? `安装 Build ${build}` : `先更新到 Build ${build}`;
 
 // The workspace server was upgraded and refused this client as too old. Where this build updates itself, the
 // client the server requires is fetched and installed here, in place, with every check a same-protocol update
@@ -65,6 +132,7 @@ export default function ClientUpgradeDialog({
     onClose();
   };
   const release = state.release?.protocol === requiredProtocol ? state.release : null;
+  const step = useStep(state, requiredProtocol, asked === 'asked' && !release);
   const allowed = state.crossProtocol === requiredProtocol;
   const phase = state.phase;
   const busy = working || ['checking', 'downloading', 'preparing', 'installing'].includes(phase);
@@ -88,15 +156,30 @@ export default function ClientUpgradeDialog({
       setWorking(false);
     }
   }
+  async function updateStep() {
+    setWorking(true);
+    setError(null);
+    try {
+      await installStep(api!, () => blockedRef.current);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '更新失败，请重试。');
+    } finally {
+      setWorking(false);
+    }
+  }
   if (manual || (asked === 'failed' && state.phase === 'disabled'))
-    return <ManualUpgrade requiredProtocol={requiredProtocol} onClose={onClose} />;
+    return (
+      <ManualUpgrade requiredProtocol={requiredProtocol} blocked={blocked} onClose={onClose} />
+    );
   return (
     <Modal title="需要更新客户端" onClose={() => !busy && putOff()}>
       <p>工作空间已升级，需要更新 CC Space 客户端后才能继续使用。你的账号和聊天记录会保留。</p>
       {asked === 'asking' && <p role="status">正在检查配套客户端…</p>}
-      {asked === 'asked' && !release && phase !== 'checking' && (
+      {asked === 'asked' && !release && !step && phase !== 'checking' && (
         <p role="status">更新通道里还没有配套的客户端，请联系管理员发布后重新检查。</p>
       )}
+      {step && <StepNotice step={step} state={state} />}
+      {step && blocked && <p className="muted">请先结束正在运行的任务、终端和登录流程，再更新。</p>}
       {release && (
         <>
           <p>
@@ -116,7 +199,8 @@ export default function ClientUpgradeDialog({
       )}
       {(error || (phase === 'error' && state.message)) && (
         <p className="error-text" role="alert">
-          {error ?? state.message}
+          {/* The controller's own account of a failed update reads better than the IPC rejection. */}
+          {phase === 'error' && state.message ? state.message : error}
         </p>
       )}
       <div className="setting-actions">
@@ -142,6 +226,15 @@ export default function ClientUpgradeDialog({
             {working ? '正在更新…' : '立即更新'}
           </button>
         )}
+        {step && (
+          <button
+            className="button primary"
+            disabled={busy || blocked}
+            onClick={() => void updateStep()}
+          >
+            {working ? '正在更新…' : stepLabel(state, step.build)}
+          </button>
+        )}
       </div>
     </Modal>
   );
@@ -151,19 +244,29 @@ export default function ClientUpgradeDialog({
 // opened for download, as before.
 function ManualUpgrade({
   requiredProtocol,
+  blocked = false,
   onClose,
 }: {
   requiredProtocol: number;
+  blocked?: boolean;
   onClose: () => void;
 }) {
+  const api = window.desktop?.managedUpdate;
+  const state = useManagedUpdate();
+  const blockedRef = useRef(blocked);
+  blockedRef.current = blocked;
   const [release, setRelease] = useState<{ build: number; appVersion: string } | null>();
   const [error, setError] = useState<string | null>(null);
   const [opening, setOpening] = useState(false);
+  const [working, setWorking] = useState(false);
   const [lookupAttempt, setLookupAttempt] = useState(0);
   useEffect(() => {
     let active = true;
     setRelease(undefined);
     setError(null);
+    // Checked now, not at the next scheduled check: an update of this client's own protocol may come first.
+    // Its failure is the update notice's to show; the full installer below stays the way out.
+    void api?.check().catch(() => {});
     void window.desktop!.access.upgradeInfo(requiredProtocol).then(
       (value) => {
         if (active) setRelease(value);
@@ -177,6 +280,23 @@ function ManualUpgrade({
       active = false;
     };
   }, [requiredProtocol, lookupAttempt]);
+  const step = useStep(state, requiredProtocol, release === null && !!api);
+  // An update download under way holds the dialog's actions; a background check does not.
+  const busy =
+    opening ||
+    working ||
+    (!!step && ['downloading', 'preparing', 'installing'].includes(state.phase));
+  async function updateStep() {
+    setWorking(true);
+    setError(null);
+    try {
+      await installStep(api!, () => blockedRef.current);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : '更新失败，请重试。');
+    } finally {
+      setWorking(false);
+    }
+  }
   async function download() {
     setOpening(true);
     setError(null);
@@ -192,7 +312,9 @@ function ManualUpgrade({
     <Modal title="需要升级客户端" onClose={onClose}>
       <p>此工作空间已更新，请升级 CC Space 客户端后重新登录。你的账号和聊天记录会保留。</p>
       {!error && release === undefined && <p role="status">正在检查配套客户端…</p>}
-      {release === null && <p role="status">配套客户端尚未发布，请联系管理员。</p>}
+      {release === null && !step && <p role="status">配套客户端尚未发布，请联系管理员。</p>}
+      {step && <StepNotice step={step} state={state} />}
+      {step && blocked && <p className="muted">请先结束正在运行的任务、终端和登录流程，再更新。</p>}
       {release && (
         <>
           <p>
@@ -201,24 +323,33 @@ function ManualUpgrade({
           <p className="muted">下载后请结束任务并关闭所有 CC Space 窗口，再安装新版。</p>
         </>
       )}
-      {error && (
+      {(error || (step && state.phase === 'error' && state.message)) && (
         <p className="error-text" role="alert">
-          {error}
+          {step && state.phase === 'error' && state.message ? state.message : error}
         </p>
       )}
       <div className="setting-actions">
         {(error || release === null) && (
           <button
             className="button"
-            disabled={opening}
+            disabled={busy}
             onClick={() => setLookupAttempt((value) => value + 1)}
           >
             重新检查
           </button>
         )}
-        <button className="button" disabled={opening} onClick={onClose}>
+        <button className="button" disabled={opening || working} onClick={onClose}>
           稍后升级
         </button>
+        {step && (
+          <button
+            className="button primary"
+            disabled={busy || blocked}
+            onClick={() => void updateStep()}
+          >
+            {working ? '正在更新…' : stepLabel(state, step.build)}
+          </button>
+        )}
         {release && (
           <button className="button primary" disabled={opening} onClick={() => void download()}>
             {opening ? '正在打开下载…' : '下载新版客户端'}

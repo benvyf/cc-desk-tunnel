@@ -71,6 +71,7 @@ import Conversation from './Conversation.tsx';
 import LoginPage from './LoginPage.tsx';
 import EmailLoginPage from './EmailLoginPage.tsx';
 import ClientUpgradeDialog from './ClientUpgradeDialog.tsx';
+import { LoginUpdateNotice, LoginVersion } from './LoginMeta.tsx';
 import ManagedServerUpgrade from './ManagedServerUpgrade.tsx';
 import type { ConnectionForm } from './LoginPage.tsx';
 import { exportSession } from './exportSession.ts';
@@ -576,6 +577,11 @@ export function App({
       <Download />
     </button>
   );
+  // On the sign-in pages: the update as a full-width notice, and this client's version.
+  const loginNotice = (
+    <LoginUpdateNotice notice={managedNotice} open={() => setManagedUpdateOpen(true)} />
+  );
+  const loginVersion = <LoginVersion version={version} build={managedUpdate.identity?.build} />;
   const managedUpdateDialog = (
     <Presence kind="dialog">
       {managedUpdateOpen && (
@@ -2438,7 +2444,6 @@ export function App({
       <>
         {notesDialog}
         {managedUpdateDialog}
-        {loginUpdateButton}
         {clientUpgradeDialog}
         {serverUpgradeOpen && window.desktop?.managedServer && (
           <Modal
@@ -2484,9 +2489,13 @@ export function App({
                 ? openServerUpgrade
                 : undefined
             }
+            notice={loginNotice}
+            footer={loginVersion}
           />
         ) : (
           <LoginPage
+            notice={loginNotice}
+            footer={loginVersion}
             recover={
               state.mismatch && window.desktop?.managedServer && form.mode === 'remote'
                 ? openServerUpgrade

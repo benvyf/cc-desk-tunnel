@@ -1,6 +1,6 @@
 import { ChevronRight, Download, Unplug } from './icons.tsx';
 import Brand from './Brand.tsx';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { thisDevice } from './device.ts';
 import { useConnectionName } from './shared.ts';
 import { Button } from './ui.tsx';
@@ -32,6 +32,8 @@ export default function LoginPage({
   showNotes,
   recover,
   submit,
+  notice,
+  footer,
 }: {
   form: ConnectionForm;
   change: (values: Partial<ConnectionForm>) => void;
@@ -53,6 +55,9 @@ export default function LoginPage({
   showNotes: (version: string) => void;
   recover?: () => void;
   submit: () => void;
+  // An available update, above the card, and the client version, below it (LoginMeta.tsx).
+  notice?: ReactNode;
+  footer?: ReactNode;
 }) {
   const connectionName = useConnectionName();
   const hasFingerprint = !!form.fingerprint;
@@ -98,6 +103,7 @@ export default function LoginPage({
       <div className="window-drag" />
       <div className="login-content">
         <Brand connectionName={connectionName} />
+        {notice}
         <section className="login-card" aria-labelledby="login-heading">
           <div className="login-title">
             <h1 id="login-heading">连接到 CC Space 服务</h1>
@@ -299,6 +305,7 @@ export default function LoginPage({
             )}
           </form>
         </section>
+        {footer}
       </div>
     </main>
   );

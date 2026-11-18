@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Brand from './Brand.tsx';
 import { ArrowRight, ShieldCheck } from './icons.tsx';
 import { Button } from './ui.tsx';
@@ -14,6 +14,8 @@ export default function EmailLoginPage({
   choose,
   back,
   recover,
+  notice,
+  footer,
 }: {
   form: ConnectionForm;
   change: (input: Partial<ConnectionForm>) => void;
@@ -24,6 +26,9 @@ export default function EmailLoginPage({
   choose: (id: string) => void;
   back: () => void;
   recover?: () => void;
+  // An available update, above the card, and the client version, below it (LoginMeta.tsx).
+  notice?: ReactNode;
+  footer?: ReactNode;
 }) {
   const [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
@@ -46,6 +51,7 @@ export default function EmailLoginPage({
       <div className="window-drag" />
       <div className="login-content">
         <Brand />
+        {notice}
         <section
           className="login-card email-login-card"
           aria-labelledby="email-login-heading"
@@ -176,6 +182,7 @@ export default function EmailLoginPage({
           </div>
         </section>
         <p className="email-login-footer">账号与工作空间由 CC 管理中心统一管理</p>
+        {footer}
       </div>
     </main>
   );

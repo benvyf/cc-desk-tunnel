@@ -433,7 +433,7 @@ test('upgrade notice shares CC Space modal tokens in light dark and narrow layou
   await page.setViewportSize({ width: 1280, height: 900 });
   await notice.getByRole('button', { name: '稍后升级', exact: true }).click();
   await page.evaluate(() => window.updateFixture.offer());
-  await page.getByRole('button', { name: '更新', exact: true }).click();
+  await page.locator('.login-update-banner').click();
   const reference = page.getByRole('dialog', { name: '更新', exact: true });
   await expect(reference).toBeVisible();
   await page.mouse.move(0, 0);
@@ -592,7 +592,8 @@ test('a newer Build exposes the update action, downloads, then installs after di
   await expect(page.getByRole('button', { name: '连接', exact: true })).toBeVisible();
   await expect(dialog.getByRole('button', { name: '安装并重启' })).toBeEnabled();
   await dialog.getByRole('button', { name: '关闭', exact: true }).last().click();
-  await update.click();
+  // Signed out, the update is the notice below the sign-in card.
+  await page.locator('.login-update-banner').click();
   await page.getByRole('button', { name: '安装并重启' }).click();
   await expect(page.getByRole('heading', { name: '正在准备安装更新' })).toBeVisible();
   expect(await page.evaluate(() => window.updateFixture.calls.slice(-2))).toEqual([
@@ -769,9 +770,9 @@ test('late initial state cannot erase a newer update notification', async ({ pag
   await page.reload();
   await expect(page.getByRole('button', { name: '连接', exact: true })).toBeVisible();
   await page.evaluate(() => window.updateFixture.offer());
-  await expect(page.getByRole('button', { name: '更新', exact: true })).toBeVisible();
+  await expect(page.locator('.login-update-banner')).toBeVisible();
   await page.evaluate(() => window.finishInitialUpdateRead());
-  await expect(page.getByRole('button', { name: '更新', exact: true })).toBeVisible();
+  await expect(page.locator('.login-update-banner')).toBeVisible();
 });
 
 test('a successful update from another window clears the previous local error', async ({
@@ -800,7 +801,7 @@ test('initial state read failures have a visible retry entry', async ({ page }) 
     };
   });
   await page.reload();
-  await page.getByRole('button', { name: '更新', exact: true }).click();
+  await page.locator('.login-update-banner').click();
   await expect(page.getByRole('alert')).toContainText('无法读取更新状态');
   await page.getByRole('button', { name: '重新检查' }).click();
   await expect(page.getByRole('alert')).toHaveCount(0);
@@ -847,7 +848,7 @@ test('email sign-in survives disconnecting for installation without starting ano
   await expect(page.getByLabel('记住登录', { exact: true })).toBeChecked();
   await expect(page.getByRole('button', { name: '安装并重启' })).toBeEnabled();
   await page.getByRole('button', { name: '关闭', exact: true }).last().click();
-  await page.getByRole('button', { name: '更新', exact: true }).click();
+  await page.locator('.login-update-banner').click();
   await page.getByRole('button', { name: '安装并重启' }).click();
   await expect(page.getByRole('heading', { name: '正在准备安装更新' })).toBeVisible();
   expect(
@@ -1004,10 +1005,10 @@ for (const scenario of ['success', 'lost-response', 'current', 'skip', 'mismatch
 async function requiredByServer(
   page: import('@playwright/test').Page,
   offered: boolean,
-  { refuse = false, held = false } = {},
+  { refuse = false, held = false, step = false, unpublished = false } = {},
 ) {
   await page.addInitScript(
-    ({ protocol, offered, refuse, held }) => {
+    ({ protocol, offered, refuse, held, step }) => {
       const api = window.desktop!.managedUpdate as unknown as Record<string, unknown>;
       // Held already: taken by the main process (the management center's refusal).
       if (held) window.updateFixture.publish({ crossProtocol: protocol + 1 });
@@ -1024,19 +1025,21 @@ async function requiredByServer(
         window.updateFixture.calls.push('check');
         if (offered) window.updateFixture.offer(protocol + 1, 30);
         if (offered) window.updateFixture.publish({ phase: 'available' });
+        // Only an update of this client's own protocol: the bridge build comes first.
+        if (step) window.updateFixture.offer(protocol, 19);
       };
     },
-    { protocol: PROTOCOL_VERSION, offered, refuse, held },
+    { protocol: PROTOCOL_VERSION, offered, refuse, held, step },
   );
   if (refuse)
-    await page.addInitScript(() => {
+    await page.addInitScript((unpublished) => {
       (window.desktop as unknown as Record<string, unknown>).access = {
         load: async () => null,
-        upgradeInfo: async () => ({ build: 30, appVersion: '0.3.7' }),
+        upgradeInfo: async () => (unpublished ? null : { build: 30, appVersion: '0.3.7' }),
         openUpgrade: async () => {},
         onExpired: () => () => {},
       };
-    });
+    }, unpublished);
   await page.routeWebSocket('ws://127.0.0.1:18889/ws', (route) => {
     route.onMessage((raw) => {
       if (JSON.parse(String(raw)).type === 'auth')
@@ -1115,4 +1118,82 @@ test('a requirement already held is checked again only, without asking anew', as
   expect(calls).toContain('check');
   expect(calls.some((call) => call.startsWith('require:'))).toBe(false);
   await expect(dialog.getByRole('button', { name: '立即更新', exact: true })).toBeEnabled();
+});
+
+test('without the required client but with an interim one, the dialog updates to it first', async ({
+  page,
+}) => {
+  const dialog = await requiredByServer(page, false, { step: true });
+  await expect(dialog).toContainText('需要先更新到 0.3.7 · Build 19');
+  await expect(dialog).not.toContainText('联系管理员');
+  // Still checkable: the required client may be published meanwhile.
+  await expect(dialog.getByRole('button', { name: '重新检查', exact: true })).toBeVisible();
+  await dialog.getByRole('button', { name: '先更新到 Build 19', exact: true }).click();
+  await expect(dialog).toContainText('正在下载');
+  // A failed download leaves the interim update offered, with its error, to be retried.
+  await page.evaluate(() => window.updateFixture.fail());
+  await expect(dialog.getByRole('alert')).toContainText('下载连接中断');
+  await expect(dialog).toContainText('需要先更新到 0.3.7 · Build 19');
+  await expect(dialog).not.toContainText('联系管理员');
+  await dialog.getByRole('button', { name: '先更新到 Build 19', exact: true }).click();
+  await page.evaluate(() => window.updateFixture.finish());
+  await expect
+    .poll(() => page.evaluate(() => window.updateFixture.calls.includes('install')))
+    .toBe(true);
+  const calls = await page.evaluate(() => window.updateFixture.calls);
+  // The requirement is let go first: the interim update is of this client's own protocol.
+  expect(calls).toContain('release');
+  expect(calls.lastIndexOf('release')).toBeLessThan(calls.lastIndexOf('download'));
+  expect(calls.slice(calls.lastIndexOf('download'))).toContain('activity:false');
+});
+
+test('a window that cannot take the requirement still offers the interim update', async ({
+  page,
+}) => {
+  await requiredByServer(page, false, { refuse: true, step: true, unpublished: true });
+  const manual = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
+  await expect(manual).toContainText('需要先更新到 0.3.7 · Build 19');
+  await expect(manual).not.toContainText('联系管理员');
+  await manual.getByRole('button', { name: '先更新到 Build 19', exact: true }).click();
+  await page.evaluate(() => window.updateFixture.finish());
+  await expect
+    .poll(() => page.evaluate(() => window.updateFixture.calls.includes('install')))
+    .toBe(true);
+  // Let go of whatever requirement may be held (none here): the interim update is of this client's protocol.
+  const calls = await page.evaluate(() => window.updateFixture.calls);
+  expect(calls.lastIndexOf('release')).toBeLessThan(calls.lastIndexOf('download'));
+});
+
+test('the sign-in page shows the client version and any update as a visible notice', async ({
+  page,
+}, testInfo) => {
+  await page.reload();
+  await expect(page.getByText('CC Space 客户端 0.3.7 · Build 18', { exact: true })).toBeVisible();
+  await expect(page.locator('.login-update-banner')).toHaveCount(0);
+  await page.evaluate(() => window.updateFixture.offer());
+  const notice = page.getByRole('button', { name: /客户端可更新到 0\.3\.7 · Build 19/ });
+  await expect(notice).toBeVisible();
+  for (const [theme, width] of [
+    ['light', 1240],
+    ['dark', 420],
+  ] as const) {
+    await page.setViewportSize({ width, height: 860 });
+    await page.evaluate((theme) => {
+      document.documentElement.dataset.theme = theme;
+    }, theme);
+    const card = await page.locator('.login-card').boundingBox();
+    const banner = await notice.boundingBox();
+    // Within the card's column, above it, never overlapping; the version below it.
+    expect(banner!.x).toBeGreaterThanOrEqual(card!.x - 1);
+    expect(banner!.x + banner!.width).toBeLessThanOrEqual(card!.x + card!.width + 1);
+    expect(banner!.y + banner!.height).toBeLessThanOrEqual(card!.y);
+    const versionBox = await page.getByText('CC Space 客户端 0.3.7 · Build 18').boundingBox();
+    expect(versionBox!.y).toBeGreaterThanOrEqual(card!.y + card!.height);
+    await page.screenshot({ path: testInfo.outputPath(`login-meta-${theme}-${width}.png`) });
+  }
+  // In view without scrolling however short the window.
+  await page.setViewportSize({ width: 900, height: 520 });
+  await expect(notice).toBeInViewport();
+  await notice.click();
+  await expect(page.getByRole('dialog', { name: '更新', exact: true })).toBeVisible();
 });

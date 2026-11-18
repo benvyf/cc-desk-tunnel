@@ -669,6 +669,27 @@ test('a workspace server’s requirement of protocol N lets the signed N release
   assert.equal(installed.state().pending, null);
 });
 
+test('with only an interim build of its own protocol, the requirement is let go and that build installs', async (t) => {
+  const f = fixture(t);
+  // The channel holds a newer build of this client's protocol (the bridge), not the required one.
+  f.index(payload(1, release));
+  f.controller.requireProtocol(21);
+  const checked = await f.controller.check();
+  // Shown for what it is (ClientUpgradeDialog stepFor): this protocol, a higher build.
+  assert.equal(checked.release.protocol, identity.protocol);
+  assert.ok(checked.release.build > identity.build);
+  // While the requirement is held the controller looks for protocol 21 only.
+  await assert.rejects(f.controller.download(), /兼容/);
+  f.controller.clearRequirement();
+  assert.equal((await f.controller.download()).phase, 'ready');
+  await f.controller.install();
+  assert.equal(f.launches(), 1);
+  assert.equal(
+    JSON.parse(readFileSync(f.controller.file('pending.json'))).targetProtocol,
+    identity.protocol,
+  );
+});
+
 test('a requirement is refused for this protocol or below, and is no licence for another protocol', async (t) => {
   const f = fixture(t);
   for (const bad of [20, 19, 0, -1, 1.5, Number.NaN, '21'])
