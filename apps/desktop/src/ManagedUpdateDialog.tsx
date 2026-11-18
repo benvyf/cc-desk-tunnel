@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { installable } from './managed-update.ts';
 import type { ManagedUpdateState } from './managed-update.ts';
 import RichText from './RichText.tsx';
 import { Modal } from './ui.tsx';
@@ -24,7 +25,8 @@ export default function ManagedUpdateDialog({
   const [error, setError] = useState<string | null>(null);
   const { phase, identity, release } = state;
   useEffect(() => setError(null), [phase, state.message, release?.build]);
-  const incompatible = !!release && !!identity && release.protocol !== identity.protocol;
+  // Another protocol's client is installed here only when the workspace server required it.
+  const incompatible = !!release && !!identity && !installable(state);
   const working = pending || ['checking', 'downloading', 'preparing', 'installing'].includes(phase);
   const progress = release?.size
     ? Math.min(100, Math.max(0, Math.round(((state.received ?? 0) / release.size) * 100)))

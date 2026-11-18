@@ -171,6 +171,8 @@ contextBridge.exposeInMainWorld('desktop', {
     install: () => ipcRenderer.invoke('managed-update:install'),
     cancel: () => ipcRenderer.invoke('managed-update:cancel'),
     activity: (value) => ipcRenderer.invoke('managed-update:activity', value),
+    requireProtocol: (protocol) => ipcRenderer.invoke('managed-update:require-protocol', protocol),
+    releaseRequirement: () => ipcRenderer.invoke('managed-update:release-requirement'),
     subscribe: (callback) => {
       const listener = (_event, state) => callback(state);
       ipcRenderer.on('managed-update:changed', listener);

@@ -571,6 +571,7 @@ export function App({
       {state.clientUpgrade && (
         <ClientUpgradeDialog
           requiredProtocol={state.clientUpgrade.requiredProtocol}
+          blocked={updateBlocked}
           onClose={() => client.update({ clientUpgrade: null, error: null })}
         />
       )}

@@ -261,6 +261,12 @@ declare global {
         install: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
         cancel: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
         activity: (value: { blocked: boolean }) => Promise<void>;
+        // The workspace server refused this client for needing protocol N: updates may then target N. Absent in a
+        // window from before it.
+        requireProtocol?: (
+          protocol: number,
+        ) => Promise<import('./managed-update.ts').ManagedUpdateState>;
+        releaseRequirement?: () => Promise<import('./managed-update.ts').ManagedUpdateState>;
         subscribe: (
           callback: (state: import('./managed-update.ts').ManagedUpdateState) => void,
         ) => () => void;

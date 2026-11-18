@@ -25,14 +25,24 @@ export type ManagedUpdateState = {
   reusedBytes?: number;
   message?: string;
   pending?: { targetBuild: number; status: string } | null;
+  // The protocol a connected workspace server required of this client, while that requirement stands: an update
+  // to it may then be installed here (managed-controller.cjs requireProtocol).
+  crossProtocol?: number | null;
 };
+// Whether an update may be installed in place: the same protocol, or the one the workspace server required.
+export const installable = (state: ManagedUpdateState) =>
+  !!state.release &&
+  !!state.identity &&
+  (state.release.protocol === state.identity.protocol ||
+    state.release.protocol === state.crossProtocol);
 
 export function managedUpdateNotice(state: ManagedUpdateState): string | null {
   if (state.phase === 'disabled') return null;
   if (state.phase === 'error') return '更新检查或安装失败，点击重试';
   const { identity, release } = state;
   if (!identity || !release || release.build <= identity.build) return null;
-  if (release.protocol !== identity.protocol) return '新版客户端需要配套升级服务端';
+  if (release.protocol !== identity.protocol && release.protocol !== state.crossProtocol)
+    return '新版客户端需要配套升级服务端';
   if (state.phase === 'downloading') return '正在下载客户端更新';
   if (state.phase === 'ready') return '客户端更新已下载，可以安装';
   return `客户端可更新到 ${release.appVersion} · Build ${release.build}`;

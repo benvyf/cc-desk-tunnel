@@ -24,6 +24,17 @@ exports.registerClientUpdates = (handle, runtime) => {
       return runtime[action]();
     });
   handle('managed-update:activity', (_event, activity) => runtime.report(activity));
+  // The workspace server refused this client for needing protocol N: one integer, nothing a renderer could use
+  // to name a file, address or build. What may then be installed is the signed release for N alone.
+  handle('managed-update:require-protocol', (_event, protocol, ...rest) => {
+    if (rest.length || !Number.isSafeInteger(protocol) || protocol < 1)
+      throw new Error('无效的客户端协议要求');
+    return runtime.requireProtocol(protocol);
+  });
+  handle('managed-update:release-requirement', (_event, ...args) => {
+    if (args.length) throw new Error('更新操作不接受参数');
+    return runtime.clearRequirement();
+  });
 };
 
 exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => false }) => {
@@ -131,6 +142,11 @@ exports.createManagedRuntime = ({ app, net, notify, quit, log, isBusy = () => fa
       if (!controller) throw new Error(disabled.message);
       return controller[action]();
     };
+  runtime.requireProtocol = (protocol) => {
+    if (!controller) throw new Error(disabled.message);
+    return controller.requireProtocol(protocol);
+  };
+  runtime.clearRequirement = () => (controller ? controller.clearRequirement() : disabled);
   runtime.clientDownload = (protocol) => {
     if (!controller) throw new Error(disabled.message);
     return controller.clientDownload(protocol);

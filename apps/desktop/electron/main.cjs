@@ -50,6 +50,11 @@ const { spawn } = require('node:child_process');
 const { mkdir, readdir, rmdir, unlink } = require('node:fs/promises');
 const { pathToFileURL } = require('node:url');
 let bridge;
+// When this window last had a workspace connection: a server's requirement of a newer client (which refuses the
+// connection and closes it) is taken only from a window that just had one.
+let bridgeSeenAt = 0;
+// The connection a requirement was taken for, and its protocol (managed-update:require-protocol).
+let requiredFor;
 let sshTargetsActive = false;
 let sshTargetsLoading;
 function sshTargets() {
@@ -630,6 +635,8 @@ handle('proxy:connect', async (event, config) => {
     if (!config || typeof config.url !== 'string' || typeof config.fingerprint !== 'string')
       throw new Error('Invalid proxy configuration');
     const generation = ++connectionGeneration;
+    // A new connection asks anew: what the last server required no longer stands.
+    managedClient.clearRequirement();
     await (await sshTargets()).prepareService(config);
     const previous = bridge;
     bridge = null;
@@ -682,6 +689,7 @@ handle('proxy:connect', async (event, config) => {
       () => {
         if (bridge !== connection) return;
         bridge = null;
+        bridgeSeenAt = Date.now();
         // SSH targets have independent authenticated channels. A main-window
         // reconnect must not turn their temporary absence into an explicit leave.
         keepAwake(sshTargetsActive);
@@ -693,6 +701,7 @@ handle('proxy:connect', async (event, config) => {
       throw new Error('Connection cancelled');
     }
     bridge = connection;
+    bridgeSeenAt = Date.now();
     keepAwake(true);
     return { url: bridge.url };
   } finally {
@@ -738,6 +747,18 @@ managedUpdates.registerClientUpdates(
     handle(channel, (...args) => {
       if (channel === 'managed-update:install' && serverManagementBusy())
         throw new Error('请等待配套服务端升级结束。');
+      if (channel === 'managed-update:require-protocol') {
+        if (!bridge && Date.now() - bridgeSeenAt > 60_000)
+          throw new Error('只有刚连接的工作空间可以要求更新客户端。');
+        // One requirement a connection: asked again for the same protocol, nothing is renewed; for another, no.
+        if (requiredFor?.generation === connectionGeneration) {
+          if (requiredFor.protocol !== args[1]) throw new Error('这次连接已提出过不同的要求。');
+          return managedClient.state();
+        }
+        const state = listener(...args);
+        requiredFor = { generation: connectionGeneration, protocol: args[1] };
+        return state;
+      }
       return listener(...args);
     }),
   managedClient,
@@ -802,6 +823,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   },
   onExpired: (message) => {
     serverClient?.cancel();
+    managedClient.clearRequirement();
     void disconnectProxy().catch((error) =>
       log(`Close expired email connection: ${error.message}`),
     );
@@ -809,6 +831,7 @@ const desktopAccess = require('./desktop-access.cjs').createDesktopAccess({
   },
   onAccountChanged: async () => {
     serverClient?.cancel();
+    managedClient.clearRequirement();
     await (await sshTargets()).setService(null);
   },
 });
@@ -828,6 +851,13 @@ handle('access:ticket', async (_event, nodeId) => {
     return await desktopAccess.ticket(nodeId);
   } catch (error) {
     // Electron does not preserve custom Error properties across IPC.
+    // The management center refused this client as too old for the workspace: as good as the server's word,
+    // and heard here in the main process.
+    const required = error.clientUpgrade?.requiredProtocol;
+    if (Number.isSafeInteger(required))
+      try {
+        managedClient.requireProtocol(required);
+      } catch {}
     return {
       error: error.message,
       retryable: error.retryable === true,
@@ -846,6 +876,7 @@ handle('access:open-upgrade', async (_event, requiredProtocol) => {
 });
 handle('access:logout', async () => {
   serverClient?.cancel();
+  managedClient.clearRequirement();
   await (await sshTargets()).setService(null);
   return desktopAccess.logout();
 });
@@ -1119,6 +1150,7 @@ async function disconnectProxy() {
   connectionGeneration++;
   const previous = bridge;
   bridge = null;
+  if (previous) bridgeSeenAt = Date.now();
   await (await sshTargets()).setService(null);
   await previous?.close();
 }

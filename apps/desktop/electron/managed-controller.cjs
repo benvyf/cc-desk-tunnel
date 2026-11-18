@@ -5,6 +5,8 @@ const net = require('node:net');
 const { createHash, randomUUID } = require('node:crypto');
 const { setTimeout: delay } = require('node:timers/promises');
 const { validateIdentity, installationId } = require('./managed-identity.cjs');
+// How long a workspace server's requirement of a newer client protocol stays usable (requireProtocol).
+const REQUIREMENT_MS = 30 * 60 * 1000;
 
 const alive = (pid) => {
   if (!Number.isSafeInteger(pid) || pid <= 0) return false;
@@ -58,6 +60,8 @@ class ManagedController {
     seedPaths = [],
     processes,
     now = Date.now,
+    // For how long a requirement lasts: a clock the system time cannot set back.
+    monotonic = () => performance.now(),
     lockName,
   }) {
     this.identity = validateIdentity(identity);
@@ -70,6 +74,7 @@ class ManagedController {
     this.seedPaths = seedPaths;
     this.processes = processes;
     this.now = now;
+    this.monotonic = monotonic;
     this.directory = path.join(
       localAppData,
       'CC-Desk-Tunnel',
@@ -89,6 +94,9 @@ class ManagedController {
       if (fs.lstatSync(folder).isSymbolicLink()) throw new Error('更新缓存不能是符号链接');
     this.directory = fs.realpathSync.native(this.directory);
     this.activity = null;
+    // The workspace server this window connected to required a newer client protocol (requireProtocol). Held in
+    // this process's memory only: never written to the shared state, so no other window or later run inherits it.
+    this.requirement = null;
     this.startedAt = this.now();
     this.memberFile = path.join(this.directory, `instance-${process.pid}.json`);
     this.writeMember();
@@ -103,7 +111,37 @@ class ManagedController {
     // A dead download owner cannot leave the interface permanently stuck.
     if (['checking', 'downloading', 'preparing'].includes(value.phase) && !alive(value.owner))
       return { ...value, phase: 'error', message: '上次更新已中断，可以重试。' };
-    return { ...value, identity: this.identity, pending: read(this.file('pending.json')) };
+    return {
+      ...value,
+      identity: this.identity,
+      pending: read(this.file('pending.json')),
+      crossProtocol:
+        this.grantedProtocol() === this.identity.protocol ? null : this.grantedProtocol(),
+    };
+  }
+  // A cross-protocol install is allowed only after the authenticated workspace server refused this client for
+  // needing protocol N, for that N alone, for half an hour at most, and once: any new connection, sign-out, a
+  // different N or the installer's start ends it. What it can install is still only the release the signed index
+  // offers for N, with every check of a same-protocol update (docs/UPDATE-RELEASE-RULES.md, section 二).
+  requireProtocol(protocol) {
+    if (!Number.isSafeInteger(protocol) || protocol <= this.identity.protocol)
+      throw new Error('无效的客户端协议要求');
+    this.requirement = { protocol, until: this.monotonic() + REQUIREMENT_MS };
+    this.notify(this.state());
+    return this.state();
+  }
+  clearRequirement() {
+    if (!this.requirement) return this.state();
+    this.requirement = null;
+    this.notify(this.state());
+    return this.state();
+  }
+  // The protocol updates are chosen for: the required one while the requirement lasts, else this client's own.
+  grantedProtocol() {
+    const requirement = this.requirement;
+    if (requirement && this.monotonic() < requirement.until) return requirement.protocol;
+    this.requirement = null;
+    return this.identity.protocol;
   }
   publish(value) {
     atomic(this.file('state.json'), { ...value, owner: process.pid });
@@ -265,7 +303,8 @@ class ManagedController {
         });
       atomic(this.file('last-check.json'), { at: this.now() });
       this.publish({ phase: 'checking' });
-      const selected = await this.loadIndex(signal);
+      const protocol = this.grantedProtocol();
+      const selected = await this.loadIndex(signal, protocol);
       const ready = read(this.file('ready.json'));
       const alreadyReady =
         selected.status === 'available' &&
@@ -278,7 +317,9 @@ class ManagedController {
           selected.status === 'protocol-mismatch'
             ? '此更新需要管理员配套迁移服务端。'
             : selected.status === 'available'
-              ? '有新的定制客户端可下载。'
+              ? protocol === this.identity.protocol
+                ? '有新的定制客户端可下载。'
+                : '工作空间已升级，可以更新到配套的客户端。'
               : '当前没有可用更新。',
       });
       return this.state();
@@ -286,9 +327,11 @@ class ManagedController {
   }
   async download() {
     return this.operation(async (signal) => {
-      const selected = await this.loadIndex(signal);
+      const protocol = this.grantedProtocol();
+      const selected = await this.loadIndex(signal, protocol);
       if (selected.status !== 'available') throw new Error('当前没有兼容的更新');
       const release = selected.release;
+      if (release.protocol !== protocol) throw new Error('当前没有兼容的更新');
       this.startedDownload = this.now();
       let progressAt = 0;
       const fullFile = this.file(`download-${release.build}-${release.sha256}.part`);
@@ -397,7 +440,12 @@ class ManagedController {
       throw new Error('安装包路径不安全');
   }
   async assertReady(release, signal) {
-    const selected = await this.loadIndex(signal);
+    // Another protocol's installer needs the requirement still in force, for exactly its protocol.
+    const protocol =
+      release.protocol === this.identity.protocol ? this.identity.protocol : this.grantedProtocol();
+    if (release.protocol !== protocol)
+      throw new Error('跨协议更新需要工作空间服务端的要求，请重新连接工作空间后再更新。');
+    const selected = await this.loadIndex(signal, protocol);
     if (
       selected.status !== 'available' ||
       selected.release.build !== release.build ||
@@ -457,6 +505,7 @@ class ManagedController {
         throw new Error('仍有客户端窗口运行，已取消安装');
       const pending = {
         targetBuild: release.build,
+        targetProtocol: release.protocol,
         originalBuild: this.identity.build,
         sha256: release.sha256,
         at: this.now(),
@@ -470,6 +519,8 @@ class ManagedController {
         pending: this.file('pending.json'),
         parentPid: process.pid,
       });
+      // Spent: the requirement installed one client and allows no other.
+      this.requirement = null;
       atomic(this.file('pending.json'), { ...pending, helperPid });
       this.quit();
       return this.state();

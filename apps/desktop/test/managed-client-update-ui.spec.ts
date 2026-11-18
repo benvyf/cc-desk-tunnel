@@ -999,3 +999,120 @@ for (const scenario of ['success', 'lost-response', 'current', 'skip', 'mismatch
     ).toBe(2);
   });
 }
+
+// The workspace server refused this client for an older protocol; this build may then update to it in place.
+async function requiredByServer(
+  page: import('@playwright/test').Page,
+  offered: boolean,
+  { refuse = false, held = false } = {},
+) {
+  await page.addInitScript(
+    ({ protocol, offered, refuse, held }) => {
+      const api = window.desktop!.managedUpdate as unknown as Record<string, unknown>;
+      // Held already: taken by the main process (the management center's refusal).
+      if (held) window.updateFixture.publish({ crossProtocol: protocol + 1 });
+      api.requireProtocol = async (required: number) => {
+        window.updateFixture.calls.push(`require:${required}`);
+        if (refuse) throw Error('只有刚连接的工作空间可以要求更新客户端。');
+        window.updateFixture.publish({ crossProtocol: required });
+      };
+      api.releaseRequirement = async () => {
+        window.updateFixture.calls.push('release');
+        window.updateFixture.publish({ crossProtocol: null });
+      };
+      api.check = async () => {
+        window.updateFixture.calls.push('check');
+        if (offered) window.updateFixture.offer(protocol + 1, 30);
+        if (offered) window.updateFixture.publish({ phase: 'available' });
+      };
+    },
+    { protocol: PROTOCOL_VERSION, offered, refuse, held },
+  );
+  if (refuse)
+    await page.addInitScript(() => {
+      (window.desktop as unknown as Record<string, unknown>).access = {
+        load: async () => null,
+        upgradeInfo: async () => ({ build: 30, appVersion: '0.3.7' }),
+        openUpgrade: async () => {},
+        onExpired: () => () => {},
+      };
+    });
+  await page.routeWebSocket('ws://127.0.0.1:18889/ws', (route) => {
+    route.onMessage((raw) => {
+      if (JSON.parse(String(raw)).type === 'auth')
+        route.send(
+          JSON.stringify({
+            type: 'connection.error',
+            code: 'version_mismatch',
+            message: '工作空间已升级，需要更新客户端。',
+            requiredProtocol: PROTOCOL_VERSION + 1,
+          }),
+        );
+    });
+  });
+  await page.reload();
+  await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18889/ws');
+  await page
+    .getByLabel('服务凭据', { exact: true })
+    .fill('managed-fixture-token-with-enough-length');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  return page.getByRole('dialog', { name: '需要更新客户端', exact: true });
+}
+
+test('a workspace server that requires a newer client has it updated in place, with one click', async ({
+  page,
+}) => {
+  const dialog = await requiredByServer(page, true);
+  await expect(dialog).toContainText('配套版本：0.3.7 · Build 30');
+  await expect(dialog.getByRole('button', { name: /下载新版客户端/ })).toHaveCount(0);
+  await dialog.getByRole('button', { name: '立即更新', exact: true }).click();
+  await expect(dialog).toContainText('正在下载');
+  await page.evaluate(() => window.updateFixture.finish());
+  // In order (the window's own activity reports aside): required, checked, downloaded, reported idle, installed.
+  await expect
+    .poll(() => page.evaluate(() => window.updateFixture.calls.includes('install')))
+    .toBe(true);
+  const calls = await page.evaluate(() => window.updateFixture.calls);
+  const at = (call: string) => calls.lastIndexOf(call);
+  expect(calls.indexOf(`require:${PROTOCOL_VERSION + 1}`)).toBeGreaterThanOrEqual(0);
+  expect(at('download')).toBeGreaterThan(calls.indexOf('check'));
+  expect(calls.slice(at('download'), at('install'))).toContain('activity:false');
+  // The requirement is still held as the install runs.
+  expect(calls.slice(at('download'))).not.toContain('release');
+});
+
+test('without the required client in the channel, the user is told to ask for it and can check again', async ({
+  page,
+}) => {
+  const dialog = await requiredByServer(page, false);
+  await expect(dialog).toContainText('更新通道里还没有配套的客户端');
+  await expect(dialog.getByRole('button', { name: '立即更新' })).toHaveCount(0);
+  const before = await page.evaluate(
+    () => window.updateFixture.calls.filter((call) => call === 'check').length,
+  );
+  await dialog.getByRole('button', { name: '重新检查', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => window.updateFixture.calls.filter((call) => call === 'check')))
+    .toHaveLength(before + 1);
+  // Put off: the requirement is let go.
+  await dialog.getByRole('button', { name: '稍后更新', exact: true }).click();
+  await expect.poll(() => page.evaluate(() => window.updateFixture.calls.at(-1))).toBe('release');
+});
+
+test('a window that cannot take the requirement offers the full installer instead of a dead end', async ({
+  page,
+}) => {
+  await requiredByServer(page, true, { refuse: true });
+  const manual = page.getByRole('dialog', { name: '需要升级客户端', exact: true });
+  await expect(manual.getByRole('button', { name: '下载新版客户端', exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: '立即更新' })).toHaveCount(0);
+});
+
+test('a requirement already held is checked again only, without asking anew', async ({ page }) => {
+  const dialog = await requiredByServer(page, true, { held: true });
+  await expect(dialog).toContainText('配套版本：0.3.7 · Build 30');
+  const calls = await page.evaluate(() => window.updateFixture.calls);
+  expect(calls).toContain('check');
+  expect(calls.some((call) => call.startsWith('require:'))).toBe(false);
+  await expect(dialog.getByRole('button', { name: '立即更新', exact: true })).toBeEnabled();
+});

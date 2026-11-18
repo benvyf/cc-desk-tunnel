@@ -118,6 +118,7 @@ function fixture(t, overrides = {}) {
         ? `\\\\.\\pipe\\cc-test-${randomUUID()}`
         : join(root, 'lock.sock'),
     now: () => clock,
+    monotonic: () => clock,
     processes: async () => [process.pid],
     network: {
       index: async () => index,
@@ -628,6 +629,125 @@ test('Range resume, 200 restart, size bounds and redirect restrictions', async (
         assert.deepEqual(readFileSync(file), bytes);
         assert.equal(seen.headers.Range, 'bytes=5-');
       } else await assert.rejects(download, /Range|重定向|大小/);
+    });
+  }
+});
+
+test('a workspace server’s requirement of protocol N lets the signed N release install in place, once', async (t) => {
+  const f = fixture(t);
+  const next = { ...release, protocol: 21 };
+  f.index(payload(1, next));
+  // Without the requirement, as before: shown, not installable.
+  assert.equal((await f.controller.check()).phase, 'idle');
+  await assert.rejects(f.controller.download(), /兼容/);
+  f.controller.requireProtocol(21);
+  assert.equal(f.controller.state().crossProtocol, 21);
+  // Held in memory only: nothing shared or kept across runs says so.
+  assert.ok(!readFileSync(f.controller.file('state.json'), 'utf8').includes('crossProtocol'));
+  f.advance(31000);
+  const checked = await f.controller.check();
+  assert.equal(checked.phase, 'available');
+  assert.equal(checked.release.protocol, 21);
+  assert.equal(
+    managedUpdateNotice(checked),
+    `客户端可更新到 ${next.appVersion} · Build ${next.build}`,
+  );
+  assert.equal((await f.controller.download()).phase, 'ready');
+  await f.controller.install();
+  assert.equal(f.launches(), 1);
+  const pending = JSON.parse(readFileSync(f.controller.file('pending.json')));
+  assert.equal(pending.targetProtocol, 21);
+  // Spent once the installer started.
+  assert.equal(f.controller.state().crossProtocol, null);
+  // The new build, of protocol 21, confirms it as any update.
+  const installed = new ManagedController({
+    ...f.options,
+    identity: { ...identity, build: 2, protocol: 21 },
+  });
+  t.after(() => installed.stop());
+  await installed.recover();
+  assert.equal(installed.state().pending, null);
+});
+
+test('a requirement is refused for this protocol or below, and is no licence for another protocol', async (t) => {
+  const f = fixture(t);
+  for (const bad of [20, 19, 0, -1, 1.5, Number.NaN, '21'])
+    assert.throws(() => f.controller.requireProtocol(bad), /无效/);
+  // Required 22, but the channel offers 21: nothing to install.
+  f.index(payload(1, { ...release, protocol: 21 }));
+  f.controller.requireProtocol(22);
+  assert.equal((await f.controller.check()).phase, 'idle');
+  await assert.rejects(f.controller.download(), /兼容/);
+  // An empty channel: nothing either.
+  f.index(payload(2, null));
+  f.advance(31000);
+  assert.equal((await f.controller.check()).phase, 'idle');
+  assert.equal(f.launches(), 0);
+});
+
+test('a requirement lapses after half an hour, when cleared, or in another process; the download stays', async (t) => {
+  for (const scenario of ['expired', 'cleared', 'other-process', 'revoked', 'protocol-changed']) {
+    await t.test(scenario, async (t) => {
+      const f = fixture(t);
+      f.index(payload(1, { ...release, protocol: 21 }));
+      f.controller.requireProtocol(21);
+      assert.equal((await f.controller.download()).phase, 'ready');
+      let installer = f.controller;
+      if (scenario === 'expired') f.advance(31 * 60 * 1000);
+      if (scenario === 'cleared') f.controller.clearRequirement();
+      if (scenario === 'other-process') {
+        installer = new ManagedController(f.options);
+        installer.report({ blocked: false });
+        f.controller.stop();
+        t.after(() => installer.stop());
+      }
+      if (scenario === 'revoked') f.index(payload(2, null));
+      if (scenario === 'protocol-changed') f.controller.requireProtocol(22);
+      await assert.rejects(installer.install());
+      assert.equal(f.launches(), 0);
+      if (scenario === 'cleared') {
+        // Required again (a new connection), the verified download is installed without fetching it anew.
+        f.controller.requireProtocol(21);
+        f.advance(31000);
+        assert.equal((await f.controller.check()).phase, 'ready');
+        await f.controller.install();
+        assert.equal(f.launches(), 1);
+      }
+    });
+  }
+});
+
+test('the requirement IPC takes one integer and nothing else', async () => {
+  const handlers = new Map();
+  const asked = [];
+  registerClientUpdates((name, fn) => handlers.set(name, fn), {
+    requireProtocol: (protocol) => asked.push(protocol),
+    clearRequirement: () => asked.push('cleared'),
+  });
+  const require = handlers.get('managed-update:require-protocol');
+  for (const bad of [[], ['21'], [21, 'https://attacker.invalid'], [{ protocol: 21 }], [1.5], [0]])
+    assert.throws(() => require({}, ...bad), /无效/);
+  require({}, 21);
+  assert.throws(() => handlers.get('managed-update:release-requirement')({}, 21), /参数/);
+  handlers.get('managed-update:release-requirement')({});
+  assert.deepEqual(asked, [21, 'cleared']);
+});
+
+test('a requirement withdrawn while the windows are being asked to close stops the install at the second check', async (t) => {
+  for (const scenario of ['cleared', 'other-protocol']) {
+    await t.test(scenario, async (t) => {
+      const f = fixture(t);
+      f.index(payload(1, { ...release, protocol: 21 }));
+      f.controller.requireProtocol(21);
+      await f.controller.download();
+      const install = f.controller.install();
+      // The install waits about a second for the windows to close, between its two checks.
+      await delay(300);
+      if (scenario === 'cleared') f.controller.clearRequirement();
+      else f.controller.requireProtocol(22);
+      f.controller.report({ blocked: false });
+      await assert.rejects(install, /跨协议更新需要/);
+      assert.equal(f.launches(), 0);
     });
   }
 });

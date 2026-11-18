@@ -160,6 +160,22 @@ test('requires authentication, rejects wrong token/version/origin and accepts he
   await assert.rejects(denied.open(), /403/);
 });
 
+test('an older client is told which protocol it needs, only once its credentials are accepted', async (t) => {
+  const f = await fixture(t);
+  const cases = [
+    ['wrong-token-with-enough-length', PROTOCOL_VERSION - 1, 'unauthorized', undefined],
+    [token, PROTOCOL_VERSION - 1, 'version_mismatch', PROTOCOL_VERSION],
+    [token, PROTOCOL_VERSION + 1, 'version_mismatch', undefined],
+  ] as const;
+  for (const [badToken, version, code, required] of cases) {
+    const client = new Client(f.url);
+    f.clients.push(client);
+    const message = await client.open(badToken, version);
+    assert.ok(message.type === 'connection.error' && message.code === code);
+    assert.equal(message.requiredProtocol, required);
+  }
+});
+
 test('desktop account login, code submission, cancellation and logout are server-managed', async (t) => {
   const f = await fixture(t);
   const client = await f.connect();
@@ -1175,7 +1191,9 @@ test('cached client installers are neither announced nor served by the managed s
   assert.ok(refused.type === 'connection.error');
   assert.equal(refused.client, undefined);
   assert.equal(refused.preparing, undefined);
-  assert.match(refused.message, /管理员/);
+  // It is told to update itself from its own channel, never offered an installer from here.
+  assert.match(refused.message, /需要更新客户端/);
+  assert.equal(refused.requiredProtocol, PROTOCOL_VERSION);
 });
 
 test('a project moves to another folder of its computer with all its sessions, and every window hears of each', async (t) => {

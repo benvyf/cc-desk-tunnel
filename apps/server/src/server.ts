@@ -2350,13 +2350,19 @@ export function createProxyServer(options: ServerOptions) {
       peer.socket.close(4001, 'Unauthorized');
       return false;
     }
-    // A mismatched client is directed to its administrator; no installer is advertised.
+    // A mismatched client is told so, and an older one which protocol it needs: it may then update itself to the
+    // signed client for that protocol from its own update channel (managed-controller.cjs requireProtocol). No
+    // installer is advertised from here. This is said only after the credentials were accepted.
     if (auth.data.protocolVersion !== PROTOCOL_VERSION) {
+      const older = auth.data.protocolVersion < PROTOCOL_VERSION;
       send(peer, {
         type: 'connection.error',
         code: 'version_mismatch',
-        message: `客户端与服务端（${version}）的版本不一致，请联系管理员安装匹配的定制版。`,
+        message: older
+          ? `工作空间（${version}）已升级，需要更新客户端。`
+          : `客户端与服务端（${version}）的版本不一致，请联系管理员安装匹配的定制版。`,
         service: version,
+        ...(older ? { requiredProtocol: PROTOCOL_VERSION } : {}),
       });
       peer.socket.close(4002, 'Version mismatch');
       return false;
