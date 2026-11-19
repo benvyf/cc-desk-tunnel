@@ -148,6 +148,15 @@ test('links are followed by the conversation and pictures from the web are not f
   expect(
     await page.evaluate(() => (window as unknown as { opened?: string }).opened),
   ).toBeUndefined();
+  // The menu's 打开链接 asks the same.
+  await misleading.click({ button: 'right' });
+  await page
+    .getByRole('menu', { name: '对话文字操作' })
+    .getByRole('menuitem', { name: '打开链接', exact: true })
+    .click();
+  await expect(leave.locator('.leave-url')).toHaveText('https://evil.example/login');
+  await leave.getByRole('button', { name: '取消', exact: true }).click();
+  await expect(leave).toHaveCount(0);
   await misleading.click();
   await leave.getByRole('button', { name: '打开', exact: true }).click();
   await expect

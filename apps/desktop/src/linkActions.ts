@@ -25,15 +25,17 @@ const fileManager = () =>
     window.desktop?.platform ?? 'win32'
   ];
 
+// `guard` stands before opening a web link: it may ask first (see `useLinkDoubt`).
 export async function linkMenu(
   link: Link,
   tell: Tell,
   copy: (text: string) => void,
+  guard: (go: () => void) => void = (go) => go(),
 ): Promise<{ heading?: string; items: MenuItem[] }> {
   if (link.kind === 'web')
     return {
       items: [
-        { label: '打开链接', run: () => void followLink(link, tell) },
+        { label: '打开链接', run: () => guard(() => void followLink(link, tell)) },
         { label: '复制链接地址', run: () => copy(link.url) },
       ],
     };

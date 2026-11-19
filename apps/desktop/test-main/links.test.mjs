@@ -98,11 +98,26 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.equal(linkDoubt('www.Example.com', 'https://example.com/x'), null);
   assert.equal(linkDoubt('example.com/docs。', 'https://www.example.com/docs'), null);
   assert.equal(linkDoubt('a@b.c', 'mailto:a@b.c'), null);
+  assert.equal(linkDoubt('main.cc', 'https://github.com/o/r/blob/main/src/main.cc'), null);
+  assert.equal(linkDoubt('README.org', 'https://github.com/o/r/blob/main/README.org'), null);
+  assert.equal(linkDoubt('ASP.NET', 'https://dotnet.microsoft.com/apps/aspnet'), null);
+  assert.equal(linkDoubt('Socket.IO 文档', 'https://socket.io/docs/'), null);
+  assert.equal(linkDoubt('localhost:3000', 'http://localhost:3000/'), null);
+  assert.equal(linkDoubt('v2.0.1', 'https://github.com/o/r/releases/tag/v2.0.1'), null);
+  assert.equal(linkDoubt('@types/node', 'https://www.npmjs.com/package/@types/node'), null);
+  assert.equal(linkDoubt('在 example.com 查看', 'https://example.com/x'), null);
   // Text that reads as another address than the one it leads to.
   assert.ok(linkDoubt('https://bank.com/login', 'https://evil.example/login'));
   assert.ok(linkDoubt('bank.com', 'https://evil.example/'));
   assert.ok(linkDoubt('www.bank.cn', 'https://bank.cn.evil.example/'));
   assert.ok(linkDoubt('docs.rs/serde', 'https://evil.example/serde'));
+  // Words around it, wrapping marks or hidden characters do not hide the address.
+  assert.ok(linkDoubt('bank.com 登录', 'https://evil.example/'));
+  assert.ok(linkDoubt('(bank.com)', 'https://evil.example/'));
+  assert.ok(linkDoubt('`bank.com`', 'https://evil.example/'));
+  assert.ok(linkDoubt('「bank.com」', 'https://evil.example/'));
+  assert.ok(linkDoubt('bank.com?x=1', 'https://evil.example/'));
+  assert.ok(linkDoubt('bank​.com', 'https://evil.example/'));
   // An address that hides where it goes.
   assert.ok(linkDoubt('看这里', 'https://bank.com@evil.example/'));
   assert.ok(linkDoubt('apple.com', new URL('https://аpple.com/').href), 'Cyrillic а');

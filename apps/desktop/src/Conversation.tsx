@@ -52,7 +52,7 @@ import { CopyButton, copyText } from './copy.tsx';
 import { messageTime } from './messageTime.ts';
 import TurnStats from './TurnStats.tsx';
 import ConversationFind, { SearchExpanded } from './ConversationFind.tsx';
-import { Button, IconButton, Menu, Modal } from './ui.tsx';
+import { IconButton, Menu } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
 import { MessageAttachments } from './AttachmentTiles.tsx';
@@ -63,6 +63,7 @@ import {
   splitPastedText,
 } from './attachments.ts';
 import { LinkPlace, linkDoubt, linkTarget } from './links.ts';
+import { useLinkDoubt } from './LinkDoubt.tsx';
 import { FileMentionPaths, producedFiles } from './fileMentions.ts';
 import type { Link } from './links.ts';
 import { followLink, linkMenu } from './linkActions.ts';
@@ -211,42 +212,6 @@ function LinkCardView({ card }: { card: LinkCard }) {
         </small>
       )}
     </div>
-  );
-}
-
-// A web link whose text or address may mislead is opened only once its whole address has been seen. The address
-// is as the browser will take it, so a look-alike name shows as the xn-- it really is.
-function LeaveDialog({
-  url,
-  doubt,
-  open,
-  close,
-}: {
-  url: string;
-  doubt: string;
-  open: () => void;
-  close: () => void;
-}) {
-  return (
-    <Modal title="打开这个链接？" onClose={close} initialFocus=".leave-cancel">
-      <p className="leave-doubt">{doubt}</p>
-      <p className="leave-lead">将在浏览器中打开：</p>
-      <p className="leave-url">{url}</p>
-      <div className="dialog-actions">
-        <Button className="leave-cancel" onClick={close}>
-          取消
-        </Button>
-        <Button
-          variant="primary"
-          onClick={() => {
-            close();
-            open();
-          }}
-        >
-          打开
-        </Button>
-      </div>
-    </Modal>
   );
 }
 
@@ -1126,10 +1091,7 @@ export default function Conversation({
     [session?.projectPath, here],
   );
   const [linkCard, setLinkCard] = useState<LinkCard | null>(null);
-  // The web link a click asks about (see `LeaveDialog`).
-  const [leaving, setLeaving] = useState<{ link: Link; doubt: string; anchor: Element } | null>(
-    null,
-  );
+  const doubtful = useLinkDoubt();
   const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
   const showLink = (element: Element, link: Link, note?: string) => {
     const box = element.getBoundingClientRect();
@@ -1143,6 +1105,9 @@ export default function Conversation({
       doubt: link.kind === 'web' ? linkDoubt(element.textContent ?? '', link.url) : null,
     });
   };
+  // What came of following a link, told beside it; a link the page has redrawn meanwhile is told as a status.
+  const tellAt = (element: Element, link: Link) => (note: string) =>
+    element.isConnected ? showLink(element, link, note) : setCopyStatus(note);
   const transcriptRoot = useRef<HTMLDivElement>(null);
   const lastFindRequest = useRef(findRequest);
   const searching = findOpen && query.length > 0;
@@ -1160,7 +1125,7 @@ export default function Conversation({
     setContextMenu(null);
     setCopyStatus('');
     setLinkCard(null);
-    setLeaving(null);
+    doubtful.dismiss();
   }, [session?.id]);
   // What came of a click stays a while, then goes.
   useEffect(() => {
@@ -1528,7 +1493,9 @@ export default function Conversation({
                 return;
               }
               // A link's own choices come first; what is done to the text follows.
-              void linkMenu(link, (note) => showLink(element, link, note), copy).then(
+              const guarded = (go: () => void) =>
+                doubtful.guard(link, element.textContent ?? '', go);
+              void linkMenu(link, tellAt(element, link), copy, guarded).then(
                 (menu) =>
                   setContextMenu({
                     x,
@@ -1540,9 +1507,7 @@ export default function Conversation({
                         ? [
                             {
                               label: '在侧栏预览',
-                              run: () => {
-                                preview(link);
-                              },
+                              run: () => guarded(() => void preview(link)),
                             },
                           ]
                         : []),
@@ -1561,13 +1526,11 @@ export default function Conversation({
               event.preventDefault();
               const link = anchor.dataset.link ? linkTarget(anchor.dataset.link, place) : null;
               clearTimeout(resting.current);
-              const doubt =
-                link?.kind === 'web' ? linkDoubt(anchor.textContent ?? '', link.url) : null;
-              if (link && doubt) {
-                setLinkCard(null);
-                setLeaving({ link, doubt, anchor });
-              } else if (link && !preview?.(link))
-                void followLink(link, (note) => showLink(anchor, link, note));
+              if (!link) return;
+              setLinkCard(null);
+              doubtful.guard(link, anchor.textContent ?? '', () => {
+                if (!preview?.(link)) void followLink(link, tellAt(anchor, link));
+              });
             }}
             onPointerOver={(event) => {
               const anchor = (event.target as HTMLElement).closest<HTMLElement>('a[data-link]');
@@ -1838,39 +1801,7 @@ export default function Conversation({
           )}
         </Presence>
         {linkCard && !contextMenu && <LinkCardView card={linkCard} />}
-        {leaving?.link.kind === 'web' && (
-          <LeaveDialog
-            url={leaving.link.url}
-            doubt={leaving.doubt}
-            close={() => setLeaving(null)}
-            open={() => {
-              const { link, anchor } = leaving;
-              if (!preview?.(link)) void followLink(link, (note) => showLink(anchor, link, note));
-            }}
-          />
-        )}
-        <QuoteSelection key={session?.id} root={scroll} />
-        {dock &&
-          waitingOn.length > 0 &&
-          createPortal(
-            <ApprovalDock
-              key={waitingOn[0].approvalId}
-              tool={waitingOn[0]}
-              more={waitingOn.length - 1}
-              disabled={live.busy || live.answered(waitingOn[0])}
-              reply={(allowed, answers) => live.reply(waitingOn[0], allowed, answers)}
-              stop={
-                session?.activeRun &&
-                session.activeRun.surface !== 'terminal' &&
-                session.activeRun.waiting !== 'background'
-                  ? { run: stop, disabled: live.busy }
-                  : undefined
-              }
-              folded={foldedFor === waitingOn[0].approvalId}
-              fold={(folded) => setFoldedFor(folded ? waitingOn[0].approvalId! : null)}
-            />,
-            dock,
-          )}
+        {doubtful.dialog}
       </SearchExpanded.Provider>
     </QuoteActionsContext.Provider>
   );

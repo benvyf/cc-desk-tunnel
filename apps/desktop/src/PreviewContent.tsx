@@ -14,6 +14,7 @@ import PreviewCode from './PreviewCode.tsx';
 import { CopyButton } from './copy.tsx';
 import { LinkPlace, linkTarget } from './links.ts';
 import { followLink } from './linkActions.ts';
+import { useLinkDoubt } from './LinkDoubt.tsx';
 import { previewWebsite } from './preview.ts';
 import { isInside } from './paths.ts';
 import { usePreviewReading } from './usePreviewReading.ts';
@@ -192,6 +193,7 @@ export default function PreviewContent({
 }) {
   const [file, setFile] = useState<PreviewFile | null>(null);
   const [error, setError] = useState('');
+  const doubtful = useLinkDoubt();
   const [watchError, setWatchError] = useState('');
   const [revision, setRevision] = useState(0);
   const reading = workspace.reading;
@@ -554,10 +556,15 @@ export default function PreviewContent({
               here: true,
               browser: false,
             });
-            if (link && !workspace.follow(link, tab.root, tab.restricted))
-              void followLink(link, setError);
+            // A document's links are no more to be trusted than a reply's.
+            if (link)
+              doubtful.guard(link, anchor.textContent ?? '', () => {
+                if (!workspace.follow(link, tab.root, tab.restricted))
+                  void followLink(link, setError);
+              });
           }}
         >
+          {doubtful.dialog}
           {!file && !error && (
             <div className="preview-loading" role="status">
               <LoaderCircle className="spinning" />
