@@ -61,20 +61,25 @@ const products = new Set([
   'java.net',
   'java.io',
   'system.net',
+  'system.io',
 ]);
 const invisible = /\p{Cf}/gu;
-// An address with its scheme (or a protocol-relative one) runs to the next space, path and query included, so
+// A web address with its scheme, or a protocol-relative one, runs to the next space, path and query included, so
 // nothing after its host is read again as a site of its own; its host is the ASCII run after "//", which ends at
-// punctuation such as 、》” that follows it in Chinese text.
-const withScheme = /(?:https?:)?\/\/([a-z0-9.\-:[\]%@]*)\S*/giu;
+// punctuation such as 、》” that follows it in Chinese text. Other schemes (s3://, ssh://) name no site. A host
+// spelled in other letters (https://银行.com) names a site other than any that opens without asking (one whose host
+// is spelled so is asked about for its xn--).
+const withScheme = /(?:\bhttps?:|(?<![\p{L}\p{N}+.:-]))\/\/([a-z0-9.\-:[\]%@]*)(\S*)/giu;
 // Not inside a longer name, a path, or an address (after "@"); "//" is read above.
 const bare = /(?<![a-z0-9.@_-])(?<![^/]\/)((?:[a-z0-9-]+\.)+([a-z]{2,}))(?::\d+)?([/?#][^\s]*)?/giu;
 function namedHosts(text: string) {
   const plain = text.replace(invisible, '');
   const hosts: { host: string; word: string; ending: string; hidden?: boolean }[] = [];
-  const rest = plain.replace(withScheme, (_found, authority: string) => {
+  const rest = plain.replace(withScheme, (_found, authority: string, after: string) => {
     // A user name before the host shows one site and names another: http://bank.com:80@evil.com.
     if (authority.includes('@')) hosts.push({ host: '', word: '', ending: '', hidden: true });
+    else if (/^\p{L}/u.test(after) && /[^\x00-\x7f]/.test(after.slice(0, 1)))
+      hosts.push({ host: after.split(/[/?#]/)[0]!, word: '', ending: '' });
     else
       try {
         hosts.push({
@@ -105,10 +110,47 @@ function namedHosts(text: string) {
   }
   return hosts;
 }
-const bareHost = (host: string) => host.toLowerCase().replace(/^www\./, '');
-// The file a link's address ends in, which a word of its text may name: README.org, main.cc. Only for endings files
-// have as often as sites: a word ending in .com or .cn that the path repeats is still another site.
+const bareHost = (host: string) =>
+  host
+    .toLowerCase()
+    .replace(/^www\./, '')
+    .replace(/\.$/, '');
+// Endings under which anyone may have a site of their own: a name under one is not the site of the ending.
+const shared = new Set([
+  'github.io',
+  'gitlab.io',
+  'vercel.app',
+  'netlify.app',
+  'pages.dev',
+  'herokuapp.com',
+  'blogspot.com',
+  'co.uk',
+  'com.cn',
+  'com.hk',
+  'com.tw',
+  'co.jp',
+]);
+// Whether a named host is the site a link leads to, or one of its own names: google.com and mail.google.com.
+function sameSite(named: string, site: string) {
+  const a = bareHost(named),
+    b = bareHost(site);
+  if (a === b) return true;
+  const [short, long] = a.length < b.length ? [a, b] : [b, a];
+  return short.includes('.') && !shared.has(short) && long.endsWith(`.${short}`);
+}
+// The file a link's address ends in, which a word of its text may name: README.org, main.cc. Only on sites that
+// show files of a repository, and for endings files have as often as sites: anywhere else the path is the other
+// site's to choose (evil.example/claude.ai), and a word ending in .com or .cn is still another site.
 const fileEndings = new Set(['cc', 'org', 'dev', 'ai', 'io']);
+const fileSites = new Set([
+  'github.com',
+  'gitlab.com',
+  'gitee.com',
+  'bitbucket.org',
+  'codeberg.org',
+  'raw.githubusercontent.com',
+  'gist.github.com',
+]);
 function fileOf(url: URL) {
   const last = url.pathname.split('/').pop() ?? '';
   try {
@@ -136,13 +178,15 @@ export function linkDoubt(text: string, url: string): string | null {
     return '地址里的网站名用了特殊字符，可能是模仿其他网站的名字。';
   const site = bareHost(target.hostname),
     file = fileOf(target);
+  const files = fileSites.has(site);
   const named = namedHosts(text).filter(
-    ({ word, ending }) => !(word && fileEndings.has(ending) && word.toLowerCase() === file),
+    ({ word, ending }) =>
+      !(files && word && fileEndings.has(ending) && word.toLowerCase() === file),
   );
   if (named.some(({ hidden }) => hidden))
     return '链接显示的地址带有用户名，实际打开的网站可能和看上去的不同。';
   // A text that names the site it leads to shows where it goes, whatever else it names.
-  if (named.some(({ host }) => bareHost(host) === site)) return null;
+  if (named.some(({ host }) => sameSite(host, site))) return null;
   if (named.length) return '链接显示的地址和实际打开的地址不同。';
   return null;
 }

@@ -250,7 +250,7 @@ const CONTINUE =
 // Whether the restart of a server update would cut off work: a turn under way or waiting on the user, or a terminal
 // whose CLI works, waits for the user, or has not said yet (its hooks may be off or unread, so silence is not rest).
 // A terminal the CLI says is idle, and a turn over but for the background tasks it left, are ended by the update
-// itself (see `managedMaintenance.enter`); the session goes on after it. (After upstream 7004dad6.)
+// itself, just before its restart (see `endForUpdate`); the session goes on after it. (After upstream 7004dad6.)
 export function atWork(run: Session['activeRun']) {
   if (!run) return false;
   if (run.surface === 'terminal') return run.activity !== 'idle';
@@ -380,10 +380,11 @@ export function createProxyServer(options: ServerOptions) {
       }
     };
     for (const run of [...runs.values()]) {
-      // Said now, not when the run's end is recorded: the restart may come first.
+      // Said now, not when the run's end is recorded: the restart may come first. The end itself says only
+      // what ended it, so the conversation does not read the same sentence twice.
       said(run.sessionId, run.id);
       try {
-        cancel(run, why);
+        cancel(run, '服务端更新');
       } catch (error) {
         console.error('Run could not be ended before the update', { error: String(error) });
       }
@@ -391,7 +392,8 @@ export function createProxyServer(options: ServerOptions) {
     for (const terminal of [...terminals.values()]) {
       if (terminal.closing) continue;
       terminal.closing = true;
-      said(terminal.sessionId, terminal.id);
+      // A terminal still starting has shown nothing yet: it is stopped without a word.
+      if (terminal.process) said(terminal.sessionId, terminal.id);
       try {
         if (terminal.process) track(terminal.process.close('disconnected').catch(() => {}));
       } catch (error) {

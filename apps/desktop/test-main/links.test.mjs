@@ -158,3 +158,21 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.ok(linkDoubt('apple.com', new URL('https://аpple.com/').href), 'Cyrillic а');
   assert.ok(linkDoubt('下载', 'https://xn--80ak6aa92e.com/'));
 });
+
+test('a file name in the text passes only on a repository site; subdomains are one site; other schemes name none', () => {
+  // Elsewhere the path is the other site's to choose.
+  assert.ok(linkDoubt('claude.ai', 'https://evil.example/claude.ai'));
+  assert.ok(linkDoubt('numpy.org', 'https://evil.example/x/numpy.org'));
+  assert.equal(linkDoubt('main.cc', 'https://github.com/o/r/blob/main/main.cc'), null);
+  assert.equal(linkDoubt('README.org', 'https://gitlab.com/o/r/-/blob/main/README.org'), null);
+  // A host spelled in other letters names a site that never opens without asking.
+  assert.ok(linkDoubt('https://银行.com', 'https://evil.example/'));
+  assert.equal(linkDoubt('google.com', 'https://mail.google.com/'), null);
+  assert.equal(linkDoubt('mail.google.com', 'https://google.com/'), null);
+  assert.equal(linkDoubt('example.com', 'https://example.com./'), null);
+  // A shared ending is not the site of everyone under it.
+  assert.ok(linkDoubt('github.io', 'https://attacker.github.io/'));
+  assert.ok(linkDoubt('bank.com', 'https://bank.com.evil.io/'));
+  for (const text of ['s3://bucket/key', 'ssh://git@host', 'C://x', 'System.IO'])
+    assert.equal(linkDoubt(text, 'https://example.com/'), null, text);
+});
