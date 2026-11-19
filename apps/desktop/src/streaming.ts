@@ -75,37 +75,45 @@ export function revealStreaming({ source, start, revision }: Reveal) {
 // Where a streaming answer's Markdown may be cut into blocks that no later text can change: after a blank line,
 // before a line that starts a block of its own at the margin. Never inside a fenced code block or a $$ formula,
 // nor before an indented line (a list item's or quote's continuation), a list item (one list stays one list) or
-// a footnote or link definition (it may serve text above). The offsets are ascending starts of lines.
+// a definition. An answer with a link or footnote definition, or an HTML comment, is not cut at all: they reach
+// across blocks. The offsets are ascending starts of lines.
 export function blockStarts(source: string): number[] {
+  if (/^ {0,3}\[[^\]\n]+\]:/m.test(source) || source.includes('<!--')) return [];
   const starts: number[] = [];
-  let fence: string | null = null;
+  // The open fence: its character and length (CommonMark: closed by a line of at least as many of the same
+  // character, indented at most three spaces, with nothing after but white space).
+  let fence: { mark: string; length: number } | null = null;
   let formula = false;
   let blank = false;
   let at = 0;
   while (at < source.length) {
     const end = source.indexOf('\n', at);
-    const line = source.slice(at, end < 0 ? source.length : end);
+    const line = source.slice(at, end < 0 ? source.length : end).replace(/\r$/, '');
     const lineEnd = end < 0 ? source.length : end + 1;
     if (fence) {
-      if (line.trimStart().startsWith(fence)) fence = null;
+      const close = new RegExp(`^ {0,3}\\${fence.mark}{${fence.length},}[ \\t]*$`);
+      if (close.test(line)) fence = null;
     } else if (formula) {
-      if (line.includes('$$')) formula = false;
+      if (withoutCode(line).includes('$$')) formula = false;
     } else {
       if (
         blank &&
         end >= 0 &&
         line.trim() &&
         !/^\s/.test(line) &&
-        !/^([-*+]|\d+[.)])(\s|$)/.test(line) &&
-        !/^\[[^\]]*\]:/.test(line)
+        !/^([-*+]|\d+[.)])(\s|$)/.test(line)
       )
         starts.push(at);
-      const opened = /^\s{0,3}(`{3,}|~{3,})/.exec(line);
-      if (opened) fence = opened[1]!;
-      else if ((line.match(/\$\$/g)?.length ?? 0) % 2) formula = true;
+      // A backtick fence's info may not hold a backtick: ```x``` is code in a line, not a fence.
+      const opened = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (opened && !(opened[1]![0] === '`' && opened[2]!.includes('`')))
+        fence = { mark: opened[1]![0]!, length: opened[1]!.length };
+      else if ((withoutCode(line).match(/\$\$/g)?.length ?? 0) % 2) formula = true;
     }
     blank = !fence && !formula && !line.trim();
     at = lineEnd;
   }
   return starts;
 }
+// A line without its code spans, whose dollars are not math.
+const withoutCode = (line: string) => line.replace(/(`+)[^`]*?\1/g, '');

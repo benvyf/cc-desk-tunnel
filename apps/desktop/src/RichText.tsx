@@ -297,6 +297,8 @@ function subscribeMotion(listener: () => void) {
 // A block of a streaming answer that no later piece can change (see `blockStarts`): parsed once, while the rest
 // of the answer keeps coming. Once the answer is complete it is drawn whole again, by one parse.
 const SettledBlock = memo(function SettledBlock({ source }: { source: string }) {
+  // Test-only (long-session-performance.spec.ts); nothing sets it in use.
+  (globalThis as { ccPerf?: { settled?: () => void } }).ccPerf?.settled?.();
   return (
     <Markdown
       remarkPlugins={remarkPlugins}

@@ -834,15 +834,18 @@ function useProducedFiles(turn: Turn) {
   return kept.current;
 }
 
-// Whether a turn shows a running clock: it is under way, or a call or compaction in it has not ended.
-function ticking(turn: Turn) {
+// Whether a turn shows a running clock: it is under way, or a call or compaction of the run going on has not
+// ended. A call of an earlier run that was cut off never ends, and has no clock.
+function ticking(turn: Turn, run: string | undefined) {
   return (
     !turn.endedAt ||
-    turn.steps.some(
-      (step) =>
-        (step.kind === 'compact' && !step.endedAt) ||
-        (step.kind === 'work' && calls(step.items).some((tool) => !tool.endedAt)),
-    )
+    (!!run &&
+      turn.steps.some(
+        (step) =>
+          (step.kind === 'compact' && !step.endedAt && step.runId === run) ||
+          (step.kind === 'work' &&
+            calls(step.items).some((tool) => !tool.endedAt && tool.runId === run)),
+      ))
   );
 }
 
@@ -865,6 +868,8 @@ const TurnView = memo(function TurnView({
   // Given to the latest turn while it stands stopped or failed: its last notice offers to go on.
   resume?: () => void;
 }) {
+  // Test-only (long-session-performance.spec.ts); nothing sets it in use.
+  (globalThis as { ccPerf?: { turn?: () => void } }).ccPerf?.turn?.();
   const files = useProducedFiles(turn);
   const active = !turn.endedAt;
   const expanded = usePrefs().view.mode === 'expanded';
@@ -1700,7 +1705,7 @@ export default function Conversation({
                       key={turn.id}
                       turn={turn}
                       native={native}
-                      live={ticking(turn) ? live : atRest}
+                      live={ticking(turn, activeRunId) ? live : atRest}
                       latest={index === turns.length - 1}
                       held={heldOpen(turns, index)}
                       resume={index === turns.length - 1 ? resume : undefined}

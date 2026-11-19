@@ -6,7 +6,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { DatabaseSync } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { SessionStore } from '../src/store.ts';
+import { SessionStore, USER_MESSAGE } from '../src/store.ts';
 import type { EventPayload } from '@cc-desk-tunnel/protocol';
 
 function fixture(t: TestContext) {
@@ -407,9 +407,7 @@ test('a user message is found by its ID through the index, not by reading the wh
   assert.equal(store.userMessage(session.id, randomUUID()), undefined);
   assert.equal(store.userMessage(randomUUID(), asked[0]!), undefined, 'only in its own session');
   const plan = store.database
-    .prepare(
-      "EXPLAIN QUERY PLAN SELECT data FROM events WHERE session_id = ? AND json_extract(data, '$.payload.messageId') = ? AND json_extract(data, '$.payload.type') = 'message.user' LIMIT 1",
-    )
+    .prepare(`EXPLAIN QUERY PLAN ${USER_MESSAGE}`)
     .all(session.id, asked[0]!)
     .map((row) => String(row.detail))
     .join('\n');

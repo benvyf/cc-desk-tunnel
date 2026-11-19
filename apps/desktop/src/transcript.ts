@@ -540,8 +540,12 @@ function same(a: unknown, b: unknown): boolean {
   if (Array.isArray(b)) return false;
   const keys = Object.keys(a);
   if (keys.length !== Object.keys(b).length) return false;
+  // A key left out and a key set to undefined are not the same here: conversation() writes both.
   for (const key of keys)
-    if (!same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+    if (
+      !Object.hasOwn(b, key) ||
+      !same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key])
+    )
       return false;
   return true;
 }

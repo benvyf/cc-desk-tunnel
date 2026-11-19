@@ -570,3 +570,11 @@ test('turns drawn again are taken back as they were unless they changed', () => 
   assert.deepEqual(after, replaced);
   assert.equal(after.length, 1);
 });
+
+test('a key set to undefined is not taken for a key left out', () => {
+  const kept = [{ id: 'a', steps: [], endedAt: 't', outcome: undefined }];
+  const next = [{ id: 'a', steps: [], endedAt: 't', stats: { requests: 1 } }];
+  const result = keepTurns(kept, next);
+  assert.notEqual(result, kept);
+  assert.equal(result[0], next[0]);
+});

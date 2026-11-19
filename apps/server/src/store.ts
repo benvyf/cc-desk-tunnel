@@ -87,6 +87,10 @@ const sideContextTypes = [
   'tool.result',
 ];
 
+// A user message by its ID, served by the partial index events_user_message: its WHERE must stay as the index's.
+export const USER_MESSAGE =
+  "SELECT data FROM events WHERE session_id = ? AND json_extract(data, '$.payload.messageId') = ? AND json_extract(data, '$.payload.type') = 'message.user' LIMIT 1";
+
 export class SessionStore {
   // Runs that reported an error before they ended (see lastRun).
   private erroredRuns = new Set<string>();
@@ -433,11 +437,7 @@ export class SessionStore {
     return payload?.type === 'native.metrics' ? payload : null;
   }
   userMessage(sessionId: string, messageId: string) {
-    const row = this.database
-      .prepare(
-        "SELECT data FROM events WHERE session_id = ? AND json_extract(data, '$.payload.messageId') = ? AND json_extract(data, '$.payload.type') = 'message.user' LIMIT 1",
-      )
-      .get(sessionId, messageId);
+    const row = this.database.prepare(USER_MESSAGE).get(sessionId, messageId);
     return row ? (JSON.parse(String(row.data)) as SessionEvent) : undefined;
   }
 

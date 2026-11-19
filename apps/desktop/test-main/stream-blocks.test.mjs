@@ -21,7 +21,10 @@ test('a streaming answer is cut only where later text cannot change what is befo
   assert.deepEqual(cuts('1. a\n\n2) b\n\nc\n'), ['c']);
   assert.deepEqual(cuts('- a\n\n    code in item\n\nc\n'), ['c']);
   assert.deepEqual(cuts('> a\n\n  b\n\nc\n'), ['c']);
-  assert.deepEqual(cuts('see [x][1]\n\n[1]: https://example.com\n\nc\n'), ['c']);
+  // A definition reaches across blocks: the answer is not cut at all.
+  assert.deepEqual(cuts('see [x][1]\n\nmiddle\n\n[1]: https://example.com\n\nc\n'), []);
+  assert.deepEqual(cuts('a[^1]\n\nb\n\n[^1]: note\n\nc\n'), []);
+  assert.deepEqual(cuts('a\n\n<!-- note\n\nhidden\n\n-->\n\nb\n'), []);
   // A table or heading after a blank line starts its own block.
   assert.deepEqual(cuts('a\n\n| a | b |\n| - | - |\n\n## h\n'), ['| a | b |', '## h']);
 });
@@ -36,4 +39,58 @@ test('the blocks put back together are the answer', () => {
       .join(''),
     source,
   );
+});
+
+test('a fence closes only as CommonMark closes it, and code spans hold no math', () => {
+  // An indented fence line, or one with an info string, does not close; a longer fence holds a shorter one.
+  assert.deepEqual(cuts('a\n\n```sh\ncat <<EOF\n    ```\n\nstill code\nEOF\n```\n\nb\n'), [
+    '```sh',
+    'b',
+  ]);
+  assert.deepEqual(cuts('a\n\n````md\n```js\n\nconst a = 1;\n```\n\nmore code\n````\n\nb\n'), [
+    '````md',
+    'b',
+  ]);
+  assert.deepEqual(cuts('a\n\n```\nx\n\n~~~\n\ny\n```\n\nb\n'), ['```', 'b']);
+  // ```x``` at the start of a line is code in a line, not a fence.
+  assert.deepEqual(cuts('```x``` here\n\nb\n\nc\n'), ['b', 'c']);
+  // $$ in a code span is not a formula.
+  assert.deepEqual(cuts('run `echo $$` now\n\np2\n\n$$\na = 1\n\nb = 1\n$$\n\np3\n'), [
+    'p2',
+    '$$',
+    'p3',
+  ]);
+});
+
+// The property the cuts must keep: each falls between top-level blocks of the whole document, as the Markdown
+// parser the answers are drawn with sees them, for every length the answer passes through while it streams.
+test('every cut falls between top-level blocks of the whole answer, at every length', async () => {
+  const { fromMarkdown } = await import('mdast-util-from-markdown');
+  const { gfm } = await import('micromark-extension-gfm');
+  const { gfmFromMarkdown } = await import('mdast-util-gfm');
+  const { math } = await import('micromark-extension-math');
+  const { mathFromMarkdown } = await import('mdast-util-math');
+  const parse = (text) =>
+    fromMarkdown(text, {
+      extensions: [gfm(), math()],
+      mdastExtensions: [gfmFromMarkdown(), mathFromMarkdown()],
+    });
+  const answers = [
+    '# 标题\n\n段落一，带 $x$ 与 **强调**。\n\n```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n- 一\n- 二\n\n  续行\n\n- 三\n\n1. 甲\n\n2. 乙\n\n> 引用\n\n  续\n\n| a | b |\n| - | - |\n| 1 | 2 |\n\n$$\n\\int_0^1 x\\,dx\n\n= \\frac12\n$$\n\n结尾。\n',
+    'a\n\n```sh\ncat <<EOF\n    ```\n\nstill\nEOF\n```\n\nb\n\n````md\n```js\n\nx\n```\n````\n\nc\n',
+    'Title\n=====\n\ntext\n\n    indented code\n\n    more\n\nafter\n\n* * *\n\n~~~\n\n~~~\n\nend\n',
+    'run `echo $$` now\n\np2\n\n$$\na = 1\n\nb = 1\n$$\n\n```x``` inline\n\np3\n\n\tTabbed\n\nlast\n',
+    '第一段\r\n\r\n第二段\r\n\r\n```\r\ncode\r\n\r\nmore\r\n```\r\n\r\n第三段\r\n',
+  ];
+  for (const answer of answers)
+    for (let length = 1; length <= answer.length; length++) {
+      const text = answer.slice(0, length);
+      const tree = parse(text);
+      const bounds = new Set(tree.children.map((node) => node.position.start.offset));
+      for (const at of blockStarts(text))
+        assert.ok(
+          bounds.has(at),
+          `cut at ${at} is inside a block of ${JSON.stringify(text)}: ${JSON.stringify(text.slice(at, at + 20))}`,
+        );
+    }
 });

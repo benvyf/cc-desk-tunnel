@@ -113,12 +113,19 @@ function fixture() {
 async function openLong(page: Page) {
   await installPerformanceProbe(page);
   await page.addInitScript(() => {
-    const counts = ((window as any).richTextRenders = { finished: 0, streaming: 0 });
+    const counts = ((window as any).richTextRenders = {
+      finished: 0,
+      streaming: 0,
+      turns: 0,
+      settled: 0,
+    });
     (globalThis as any).ccPerf = {
       richText: (streaming: boolean) => {
         if (streaming) counts.streaming++;
         else counts.finished++;
       },
+      turn: () => counts.turns++,
+      settled: () => counts.settled++,
     };
     localStorage.setItem('proxy-prefs', JSON.stringify({ view: { mode: 'standard' } }));
   });
@@ -243,7 +250,12 @@ test('a long session streams without parsing its finished answers again', async 
   await expect(page.locator('.message.user').last()).toContainText('再来一轮');
   await page.waitForTimeout(500);
   await page.evaluate(() =>
-    Object.assign((window as any).richTextRenders, { finished: 0, streaming: 0 }),
+    Object.assign((window as any).richTextRenders, {
+      finished: 0,
+      streaming: 0,
+      turns: 0,
+      settled: 0,
+    }),
   );
   await resetPerformanceProbe(page);
   await page.evaluate(() => {
@@ -257,7 +269,9 @@ test('a long session streams without parsing its finished answers again', async 
     requestAnimationFrame(tick);
   });
   const piece = (n: number) =>
-    `第 ${n} 段：继续说明 $x_${n}$ 的取值，并补充一个 **要点**。${n % 20 === 19 ? '\n\n' : ''}`;
+    n % 100 === 50
+      ? '```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n- 一\n- 二\n\n$\nx^2\n\n+ 1\n$\n\n'
+      : `第 ${n} 段：继续说明 $x_${n}$ 的取值，并补充一个 **要点**。${n % 20 === 19 ? '\n\n' : ''}`;
   const began = Date.now();
   for (let n = 0; n < PIECES; n++) {
     send({
@@ -300,6 +314,9 @@ test('a long session streams without parsing its finished answers again', async 
   // The count is the gate: what streams is the new answer only.
   expect(renders.finished).toBe(0);
   expect(renders.streaming).toBeGreaterThan(0);
+  // Only the turn at work draws again, about once a flush; each settled block is parsed about once.
+  expect(renders.turns).toBeLessThanOrEqual(renders.streaming * 2 + 10);
+  expect(renders.settled).toBeLessThanOrEqual(2 * Math.ceil(PIECES / 20) + 20);
   // Loose backstops, for a machine under other load: frames keep coming while it streams. A development build
   // (the usual test server) draws about five times slower than a release; its budget only catches the seconds-long
   // stalls this test was written for.
