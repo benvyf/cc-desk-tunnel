@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { linkTarget, localPicture } from '../src/links.ts';
+import { linkDoubt, linkTarget, localPicture } from '../src/links.ts';
 import { pictureNote, toolPictures } from '../src/pictures.ts';
 
 const windows = { projectPath: 'C:\\Work\\App', here: true, browser: false };
@@ -86,4 +86,25 @@ test('pictures a tool looked at are taken out of its output', () => {
     toolPictures(JSON.stringify([{ type: 'image', source: { type: 'url', url: 'https://x' } }])),
     null,
   );
+});
+
+test('a web link asks first only when its text or address may mislead', () => {
+  // Words, a file name or the same site: opened at once, the card shows where.
+  assert.equal(linkDoubt('官方文档', 'https://docs.example.com/a'), null);
+  assert.equal(linkDoubt('README.md', 'https://github.com/o/r/blob/main/README.md'), null);
+  assert.equal(linkDoubt('main.rs', 'https://github.com/o/r/blob/main/src/main.rs'), null);
+  assert.equal(linkDoubt('README.md#usage', 'https://github.com/o/r#usage'), null);
+  assert.equal(linkDoubt('https://example.com', 'https://example.com/'), null);
+  assert.equal(linkDoubt('www.Example.com', 'https://example.com/x'), null);
+  assert.equal(linkDoubt('example.com/docs。', 'https://www.example.com/docs'), null);
+  assert.equal(linkDoubt('a@b.c', 'mailto:a@b.c'), null);
+  // Text that reads as another address than the one it leads to.
+  assert.ok(linkDoubt('https://bank.com/login', 'https://evil.example/login'));
+  assert.ok(linkDoubt('bank.com', 'https://evil.example/'));
+  assert.ok(linkDoubt('www.bank.cn', 'https://bank.cn.evil.example/'));
+  assert.ok(linkDoubt('docs.rs/serde', 'https://evil.example/serde'));
+  // An address that hides where it goes.
+  assert.ok(linkDoubt('看这里', 'https://bank.com@evil.example/'));
+  assert.ok(linkDoubt('apple.com', new URL('https://аpple.com/').href), 'Cyrillic а');
+  assert.ok(linkDoubt('下载', 'https://xn--80ak6aa92e.com/'));
 });

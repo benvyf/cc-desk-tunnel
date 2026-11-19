@@ -3868,6 +3868,27 @@ a.link-elsewhere {
 .link-card small.link-card-warn {
   color: var(--warn-text);
 }
+/* Asked before a web link that may mislead opens: why, then the whole address as the browser will take it. */
+.leave-doubt {
+  margin: 0 0 12px;
+  color: var(--warn-text);
+}
+.leave-lead {
+  margin: 0 0 8px;
+  color: var(--text-2);
+}
+.leave-url {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  font-family: var(--font-mono);
+  font-size: calc(12.5rem / 14);
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow-y: auto;
+}
 .link-card strong {
   font-weight: 600;
 }

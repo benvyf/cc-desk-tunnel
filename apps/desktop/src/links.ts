@@ -49,6 +49,53 @@ function joined(base: string, relative: string) {
 // What a link in a reply leads to, as written in its Markdown (which may have percent-encoded it). A web address
 // opens anywhere. A path is on the computer the session's project is on, unless it is plainly of another system:
 // a reply may name a file on the service, where Claude Code runs, which is no file of the user's.
+// The host a link's text names, when the text reads as a web address: https://a.b/c, www.a.b, a.b/c, or a bare
+// a.com among the common endings. Text in words names none, and neither does a file name: README.md, main.rs.
+const commonEndings = new Set(
+  'com net org io cn dev ai app co gov edu me info xyz top cc tv uk de jp hk tw'.split(' '),
+);
+function namedHost(text: string) {
+  const written = text.trim().replace(/[.,;:!?。，；：！？)）\]】」』>]+$/u, '');
+  if (!written || /\s/.test(written)) return null;
+  const domain = /^((?:[\p{L}\p{N}-]+\.)+([\p{L}]{2,}))(?::\d+)?(\/.*)?$/u.exec(written);
+  if (
+    !/^https?:\/\//i.test(written) &&
+    !(
+      domain &&
+      (/^www\./i.test(written) || domain[3] || commonEndings.has(domain[2]!.toLowerCase()))
+    )
+  )
+    return null;
+  try {
+    return new URL(/^https?:\/\//i.test(written) ? written : `https://${written}`).hostname;
+  } catch {
+    return null;
+  }
+}
+const bareHost = (host: string) => host.toLowerCase().replace(/^www\./, '');
+
+// Why a click on a web link is asked about before the browser opens, or null when it is not: its text reads as
+// another address than the one it leads to, the address it leads to spells its host in look-alike letters
+// (punycode, xn--), or it carries a user name before the host (https://bank.com@evil.example). A link in words
+// opens at once: the card over it shows where. (After upstream 19720842, which asks on every click.)
+export function linkDoubt(text: string, url: string): string | null {
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    return '这个地址无法识别。';
+  }
+  if (!/^https?:$/.test(target.protocol)) return null;
+  if (target.username || target.password)
+    return '地址里在网站名前带有用户名，实际打开的网站可能和看上去的不同。';
+  if (target.hostname.split('.').some((label) => label.startsWith('xn--')))
+    return '地址里的网站名用了特殊字符，可能是模仿其他网站的名字。';
+  const named = namedHost(text);
+  if (named && bareHost(named) !== bareHost(target.hostname))
+    return '链接显示的地址和实际打开的地址不同。';
+  return null;
+}
+
 export function linkTarget(href: string, place: Place | null): Link | null {
   const written = href.trim();
   if (/^(?:https?|mailto):/i.test(written)) {

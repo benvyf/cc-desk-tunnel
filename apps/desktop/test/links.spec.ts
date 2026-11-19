@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
 import type { Session } from '@cc-desk-tunnel/protocol';
 
@@ -49,7 +50,7 @@ async function open(page: import('@playwright/test').Page) {
     {
       type: 'text.delta',
       messageId: randomUUID(),
-      text: '见 [配置](src/config.ts:12)、[服务端文件](/data/state/x.txt) 和 [文档](https://example.com/docs)。\n\n![截图](D:\\shots\\a.png) ![远程图](https://example.com/a.png)',
+      text: '见 [配置](src/config.ts:12)、[服务端文件](/data/state/x.txt) 和 [文档](https://example.com/docs)，登录 [bank.com](https://evil.example/login)。\n\n![截图](D:\\shots\\a.png) ![远程图](https://example.com/a.png)',
     },
     { type: 'run.status', status: 'completed', connectionId },
   ];
@@ -122,7 +123,7 @@ test('links are followed by the conversation and pictures from the web are not f
   });
   const answer = page.locator('.message.assistant');
   const links = answer.locator('a[data-link]');
-  await expect(links).toHaveCount(5);
+  await expect(links).toHaveCount(6);
   await expect(answer.locator('a[target]')).toHaveCount(0);
   // A browser opens no file of a computer; such links read quieter and say why when clicked.
   const config = answer.getByRole('link', { name: '配置', exact: true });
@@ -130,9 +131,31 @@ test('links are followed by the conversation and pictures from the web are not f
   await expect(answer.getByRole('link', { name: '文档', exact: true })).not.toHaveClass(
     /link-elsewhere/,
   );
+  // A link whose text reads as another address says so, and opens only once its address was seen.
+  const card = page.getByRole('tooltip');
+  const misleading = answer.getByRole('link', { name: 'bank.com', exact: true });
+  await misleading.hover();
+  await expect(card).toContainText('https://evil.example/login');
+  await expect(card).toContainText('实际打开的地址不同');
+  await misleading.click();
+  const leave = page.getByRole('dialog', { name: '打开这个链接？' });
+  await expect(leave).toContainText('链接显示的地址和实际打开的地址不同');
+  await expect(leave.locator('.leave-url')).toHaveText('https://evil.example/login');
+  await expect(leave.getByRole('button', { name: '取消', exact: true })).toBeFocused();
+  await page.screenshot({ path: resolve('.local/screenshots/link-doubt.png') });
+  await page.keyboard.press('Escape');
+  await expect(leave).toHaveCount(0);
+  expect(
+    await page.evaluate(() => (window as unknown as { opened?: string }).opened),
+  ).toBeUndefined();
+  await misleading.click();
+  await leave.getByRole('button', { name: '打开', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { opened?: string }).opened))
+    .toBe('https://evil.example/login');
+  await page.mouse.move(0, 0);
   // Resting on a link tells where it leads, and why it cannot be opened, beside it.
   await config.hover();
-  const card = page.getByRole('tooltip');
   await expect(card).toContainText('D:\\工作\\链接\\src\\config.ts');
   await expect(card).toContainText('浏览器');
   await config.click();

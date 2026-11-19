@@ -52,7 +52,7 @@ import { CopyButton, copyText } from './copy.tsx';
 import { messageTime } from './messageTime.ts';
 import TurnStats from './TurnStats.tsx';
 import ConversationFind, { SearchExpanded } from './ConversationFind.tsx';
-import { IconButton, Menu } from './ui.tsx';
+import { Button, IconButton, Menu, Modal } from './ui.tsx';
 import type { MenuItem, MenuPosition } from './ui.tsx';
 import Presence from './Presence.tsx';
 import { MessageAttachments } from './AttachmentTiles.tsx';
@@ -62,7 +62,7 @@ import {
   splitAttachmentMessage,
   splitPastedText,
 } from './attachments.ts';
-import { LinkPlace, linkTarget } from './links.ts';
+import { LinkPlace, linkDoubt, linkTarget } from './links.ts';
 import { FileMentionPaths, producedFiles } from './fileMentions.ts';
 import type { Link } from './links.ts';
 import { followLink, linkMenu } from './linkActions.ts';
@@ -171,9 +171,17 @@ function Fold({
 
 // What a link leads to, beside it: shown while the pointer rests on the link, and after a click with what came of
 // it (a note), so that why a path cannot be opened is read where it was clicked.
-type LinkCard = { top: number; left: number; above: boolean; link: Link; note?: string };
+type LinkCard = {
+  top: number;
+  left: number;
+  above: boolean;
+  link: Link;
+  note?: string;
+  // Why a click on this web link asks first (see `linkDoubt`).
+  doubt?: string | null;
+};
 function LinkCardView({ card }: { card: LinkCard }) {
-  const { link, note } = card;
+  const { link, note, doubt } = card;
   const target =
     link.kind === 'web'
       ? link.url
@@ -182,7 +190,9 @@ function LinkCardView({ card }: { card: LinkCard }) {
         : link.path;
   const hint =
     link.kind === 'web'
-      ? '点击在浏览器中打开 · 右键可复制地址'
+      ? doubt
+        ? `${doubt}点击先确认地址 · 右键可复制地址`
+        : '点击在浏览器中打开 · 右键可复制地址'
       : link.kind === 'path'
         ? '点击打开 · 右键查看更多操作'
         : `${link.reason}右键可复制路径。`;
@@ -196,9 +206,47 @@ function LinkCardView({ card }: { card: LinkCard }) {
       {note ? (
         <strong>{note}</strong>
       ) : (
-        <small className={link.kind === 'elsewhere' ? 'link-card-warn' : undefined}>{hint}</small>
+        <small className={link.kind === 'elsewhere' || doubt ? 'link-card-warn' : undefined}>
+          {hint}
+        </small>
       )}
     </div>
+  );
+}
+
+// A web link whose text or address may mislead is opened only once its whole address has been seen. The address
+// is as the browser will take it, so a look-alike name shows as the xn-- it really is.
+function LeaveDialog({
+  url,
+  doubt,
+  open,
+  close,
+}: {
+  url: string;
+  doubt: string;
+  open: () => void;
+  close: () => void;
+}) {
+  return (
+    <Modal title="打开这个链接？" onClose={close} initialFocus=".leave-cancel">
+      <p className="leave-doubt">{doubt}</p>
+      <p className="leave-lead">将在浏览器中打开：</p>
+      <p className="leave-url">{url}</p>
+      <div className="dialog-actions">
+        <Button className="leave-cancel" onClick={close}>
+          取消
+        </Button>
+        <Button
+          variant="primary"
+          onClick={() => {
+            close();
+            open();
+          }}
+        >
+          打开
+        </Button>
+      </div>
+    </Modal>
   );
 }
 
@@ -1078,6 +1126,10 @@ export default function Conversation({
     [session?.projectPath, here],
   );
   const [linkCard, setLinkCard] = useState<LinkCard | null>(null);
+  // The web link a click asks about (see `LeaveDialog`).
+  const [leaving, setLeaving] = useState<{ link: Link; doubt: string; anchor: Element } | null>(
+    null,
+  );
   const resting = useRef<ReturnType<typeof setTimeout>>(undefined);
   const showLink = (element: Element, link: Link, note?: string) => {
     const box = element.getBoundingClientRect();
@@ -1088,6 +1140,7 @@ export default function Conversation({
       above,
       link,
       note,
+      doubt: link.kind === 'web' ? linkDoubt(element.textContent ?? '', link.url) : null,
     });
   };
   const transcriptRoot = useRef<HTMLDivElement>(null);
@@ -1107,6 +1160,7 @@ export default function Conversation({
     setContextMenu(null);
     setCopyStatus('');
     setLinkCard(null);
+    setLeaving(null);
   }, [session?.id]);
   // What came of a click stays a while, then goes.
   useEffect(() => {
@@ -1507,7 +1561,12 @@ export default function Conversation({
               event.preventDefault();
               const link = anchor.dataset.link ? linkTarget(anchor.dataset.link, place) : null;
               clearTimeout(resting.current);
-              if (link && !preview?.(link))
+              const doubt =
+                link?.kind === 'web' ? linkDoubt(anchor.textContent ?? '', link.url) : null;
+              if (link && doubt) {
+                setLinkCard(null);
+                setLeaving({ link, doubt, anchor });
+              } else if (link && !preview?.(link))
                 void followLink(link, (note) => showLink(anchor, link, note));
             }}
             onPointerOver={(event) => {
@@ -1779,6 +1838,17 @@ export default function Conversation({
           )}
         </Presence>
         {linkCard && !contextMenu && <LinkCardView card={linkCard} />}
+        {leaving?.link.kind === 'web' && (
+          <LeaveDialog
+            url={leaving.link.url}
+            doubt={leaving.doubt}
+            close={() => setLeaving(null)}
+            open={() => {
+              const { link, anchor } = leaving;
+              if (!preview?.(link)) void followLink(link, (note) => showLink(anchor, link, note));
+            }}
+          />
+        )}
         <QuoteSelection key={session?.id} root={scroll} />
         {dock &&
           waitingOn.length > 0 &&
