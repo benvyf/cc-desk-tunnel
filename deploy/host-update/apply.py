@@ -23,8 +23,8 @@ import http.client
 ROOT = Path('/var/lib/cc-runtime-upgrade')
 PROGRAM = Path(__file__).resolve().parents[2]
 IDENTITY = json.loads((PROGRAM / 'deploy/managed-server.json').read_bytes())
-# The target protocol. The protocol a baseline runs is in its BASELINES entry: Build 30 is the first
-# image upgrade across protocols on this path (24 to 25).
+# The target protocol. The protocol a baseline runs is in its BASELINES entry: Build 30 was the first
+# image upgrade across protocols on this path (24 to 25); Build 31 keeps 25.
 BUILD, PROTOCOL = IDENTITY['build'], 25
 RUNTIME = IDENTITY['runtimeLevel']
 RUNTIME_LEVEL = (PROGRAM / 'deploy/docker/runtime-level').read_text().strip()
@@ -44,6 +44,7 @@ IMAGE_SIZE_LIMIT = 3 * 1024**3
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'fa5779e29341d16cf71da34ef68810cf7436c94135e856f13b78a522863e1a47': (30, 25),
     '7480a9d35f41479dc25d7197a14757794f72e23514f22b2d4aacbaf0fce9d01a': (29, 24),
     '2f7fc483b313d4b196fffc060a7ff035ae7568902a4dba1530820c5c8a2ba353': (28, 24),
     'be243f2689a4d6c9446dd3869c3eb08cafff623539a77be2d44bbc47f4472c4d': (27, 24),
@@ -191,7 +192,9 @@ const u=new URL(m.endpoint);a(u.protocol==='https:'&&!u.username&&!u.password&&!
 const p=JSON.parse(f.readFileSync('/etc/claude-code/managed-settings.json'));a(p.disableAllHooks!==true);
 const hook={hooks:[{type:'command',command:'/opt/runtime/node/bin/node /app/apps/server/src/native-moderation-hook.ts',timeout:10,onFailure:'block'}]};a(p.hooks.UserPromptSubmit.some(g=>require('util').isDeepStrictEqual(g,hook)));
 for(const p of [process.env.HOME||'/data/home',process.env.PROXY_DATA_DIR||'/data/state',process.env.CLAUDE_CONFIG_DIR||'/data/home/.claude'])a(require('path').resolve(p).startsWith('/data/'));
-const jp='/data/managed-server/journal.json',js=f.lstatSync(jp);a(js.isFile()&&!js.isSymbolicLink()&&js.size<32768);const journal=JSON.parse(f.readFileSync(jp));
+const jp='/data/managed-server/journal.json';let js=null,journal;try{js=f.lstatSync(jp)}catch(e){if(e.code!=='ENOENT')throw e}
+if(js===null&&f.readdirSync('/data/managed-server/releases').length===0)journal=JSON.parse(process.argv[3]);
+else{a(js&&js.isFile()&&!js.isSymbolicLink()&&js.size<32768);journal=JSON.parse(f.readFileSync(jp))}
 let root='/app';if(journal.current!==null){const e=journal.current;a(e&&typeof e.payload==='string');const r=JSON.parse(Buffer.from(e.payload,'base64url')).release;a(/^[a-f0-9]{64}$/.test(r.sha256));root='/data/managed-server/releases/'+r.sha256}
 a.equal(f.realpathSync(root),root);const owners=root==='/app'?[0]:[0,1000],selectedBytes=sourceRegular(root,'SERVER-RELEASE.json',owners),selected=JSON.parse(selectedBytes);
 for(const[p,v]of Object.entries(selected.files)){a(/^[A-Za-z0-9_.@/+-]{1,200}$/.test(p)&&!p.split('/').some(x=>['','..','.','node_modules'].includes(x)));const path=root+'/'+p;a.equal(f.realpathSync(path),path);const b=sourceRegular(root,p,owners);a.equal(b.length,v.size);a.equal(hash(b),v.sha256)}
@@ -199,11 +202,27 @@ a.equal(hash(f.readFileSync('/usr/local/bin/proxy-entrypoint')),d.files['deploy/
 console.log(JSON.stringify({descriptor:hash(bytes),build:d.build,protocol:d.protocol,node:process.versions.node,cli,lock:hash(f.readFileSync('/app/package-lock.json')),journal,selectedDescriptor:hash(selectedBytes),selectedBuild:selected.build,selectedProtocol:selected.protocol,policySha256:hash(Buffer.concat([f.readFileSync('/etc/claude-code/managed-settings.json'),f.readFileSync('/etc/claude-code/moderation-node.json')]))}));"""
 
 
+# What the supervisor holds when /data/managed-server/journal.json does not exist: idle, nothing installed in
+# the container. It writes the file only on an in-container install, so a manually installed program, and every
+# image cutover (which starts an empty state directory), leave none.
+DEFAULT_JOURNAL = {'schema': 1, 'phase': 'idle', 'current': None, 'previous': None, 'target': None, 'backup': None, 'attempts': 0}
+
+
 def verify_runtime(container, node):
     result = subprocess.run(['docker', 'exec', container, '/opt/runtime/node/bin/node',
-        '--env-file=/data/config/service.env', '-e', VERIFY_RUNTIME, json.dumps([BASE_CLI, CLI]), node],
+        '--env-file=/data/config/service.env', '-e', VERIFY_RUNTIME, json.dumps([BASE_CLI, CLI]), node,
+        json.dumps(DEFAULT_JOURNAL)],
         check=True, capture_output=True, timeout=90)
     return json.loads(result.stdout)
+
+
+def ensure_default_journal(container):
+    """Write the supervisor's own default journal after a cutover, never over an existing one: the host
+    platform's recovery checks read the file and would otherwise ask for maintenance."""
+    script = ("const f=require('fs'),p='/data/managed-server/journal.json';try{f.writeFileSync(p,process.argv[1]+'\\n',"
+              "{flag:'wx',mode:0o600})}catch(e){if(e.code!=='EEXIST')throw e}")
+    subprocess.run(['docker', 'exec', '-u', '1000:1000', container, '/opt/runtime/node/bin/node', '-e', script,
+        json.dumps(DEFAULT_JOURNAL, separators=(',', ':'))], check=True, capture_output=True, timeout=30)
 
 
 def check_baseline(baseline, release):
@@ -212,7 +231,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28, 29) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] == 29 else RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28, 29, 30) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (29, 30) else RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
@@ -290,8 +309,10 @@ def repair_process_reader(core,boot,program,data,sources,hashes,keys):
     path=program/'host-operations.py'
     if not path.exists():return
     core._protect(path)
+    # The last is signed Build 27's, staged on ubuntu-cc by its failed 2026-11-16 adoption.
     previous=('19e58afde09b05889ebe85e3e8997d4da105b13c2225e3cdc077a6746da0500b',
-              '1e1a73624aa2d500bd6040d40f2d46d013a6e648cc97111c24c84decccd05f1a')
+              '1e1a73624aa2d500bd6040d40f2d46d013a6e648cc97111c24c84decccd05f1a',
+              '95cbe6d3a4ac67618c6f9e2a4e116b2293d7fe473eb2d15d3ecf0cb6dd7aa2f3')
     current=core._digest(path.read_bytes());target=hashes['host-operations.py']
     receipt=program/'source-hashes.json'
     core._protect(receipt)
@@ -692,6 +713,11 @@ def main():
                 core._write(HOST_DATA/'agent-platform'/'image-transaction.json',core._canonical(reference))
             legacy.save=save_owned
         legacy.install(b, disconnect_clients=True)
+        try:
+            ensure_default_journal(b.CONTAINER)
+        except Exception as error:
+            # The service is installed and healthy; the journal can be written by hand (docs/ADMIN-PROTOCOL25-BRIDGE-FIX.md).
+            print(f'WARN: default supervisor journal not written: {type(error).__name__}; host adoption may ask for maintenance.', flush=True)
         retain_previous_backup(b.CONTAINER, keep_image)
         print(f'CC_HOST_STAGE: verify; 4/4 SUCCESS: {node} / Build {BUILD} / protocol {PROTOCOL} / Node {NODE_VERSION}.',flush=True)
 

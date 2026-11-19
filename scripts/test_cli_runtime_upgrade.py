@@ -2,6 +2,8 @@
 import hashlib
 import importlib.util
 import io
+import json
+import subprocess
 from pathlib import Path
 import tarfile
 import tempfile
@@ -80,6 +82,14 @@ class CliUpgradeTests(unittest.TestCase):
                 upgrade.check_baseline({**before, 'cli': upgrade.BASE_CLI}, release)
             with self.assertRaisesRegex(RuntimeError, 'Unknown original'):
                 upgrade.check_baseline({**before, 'lock': upgrade.LOCK}, release)
+        # Build 30 runs the target protocol, CLI and dependencies: an ordinary baseline for Build 31.
+        descriptor = next(k for k, v in upgrade.BASELINES.items() if v == (30, 25))
+        before = dict(descriptor=descriptor, build=30, protocol=25, node=upgrade.NODE_VERSION,
+                      lock=upgrade.LOCK, cli=upgrade.CLI)
+        self.assertFalse(upgrade.check_baseline(before, release))
+        for change in ({'lock': upgrade.RUNTIME_LOCK}, {'cli': upgrade.BASE_CLI}, {'protocol': 24}):
+            with self.assertRaisesRegex(RuntimeError, 'Unknown original'):
+                upgrade.check_baseline({**before, **change}, release)
         # Build 29 already runs the target CLI and dependencies; only its protocol differs from Build 30's.
         descriptor = next(k for k, v in upgrade.BASELINES.items() if v == (29, 24))
         before = dict(descriptor=descriptor, build=29, protocol=24, node=upgrade.NODE_VERSION,
@@ -93,6 +103,39 @@ class CliUpgradeTests(unittest.TestCase):
         self.assertTrue(upgrade.check_baseline(target, release))
         with self.assertRaises(RuntimeError):
             upgrade.check_baseline({**target, 'cli': upgrade.BASE_CLI}, release)
+
+    def test_a_missing_journal_reads_as_the_supervisors_default_only_with_nothing_installed(self):
+        start = upgrade.VERIFY_RUNTIME.index("const jp='/data/managed-server/journal.json'")
+        end = upgrade.VERIFY_RUNTIME.index('\n', upgrade.VERIFY_RUNTIME.index('else{a(js', start))
+        snippet = upgrade.VERIFY_RUNTIME[start:end]
+        self.assertTrue(upgrade.settled_journal(upgrade.DEFAULT_JOURNAL))
+        harness = r'''
+const [snippet, fixture, fallback] = process.argv.slice(1); const files = JSON.parse(fixture);
+const f = { lstatSync: (p) => { if (!(p in files.stat)) throw Object.assign(Error('missing'), { code: files.error || 'ENOENT' });
+    return { isFile: () => files.stat[p] === 'file', isSymbolicLink: () => files.stat[p] === 'link', size: 10 }; },
+  readdirSync: () => files.releases, readFileSync: () => '{"schema":1,"phase":"committed"}' };
+const a = (ok) => { if (!ok) throw Error('assert'); }; process.argv[3] = fallback;
+let result; try { eval(snippet + ';result=journal'); console.log(JSON.stringify(result)); } catch (e) { console.log('THROW ' + e.message); }'''
+        def run(stat, releases, error=None):
+            fixture = json.dumps({'stat': stat, 'releases': releases, 'error': error})
+            out = subprocess.run(['node', '-e', harness, snippet, fixture, json.dumps(upgrade.DEFAULT_JOURNAL)],
+                                 capture_output=True, text=True, check=True).stdout.strip()
+            return out
+        jp = '/data/managed-server/journal.json'
+        self.assertEqual(json.loads(run({}, [])), upgrade.DEFAULT_JOURNAL)
+        self.assertTrue(run({}, ['abc']).startswith('THROW'))
+        self.assertTrue(run({}, [], error='EACCES').startswith('THROW'))
+        self.assertTrue(run({jp: 'link'}, []).startswith('THROW'))
+        self.assertEqual(json.loads(run({jp: 'file'}, [])), {'schema': 1, 'phase': 'committed'})
+
+    def test_after_a_cutover_the_default_journal_is_written_but_never_over_one(self):
+        calls = []
+        with patch.object(upgrade.subprocess, 'run', side_effect=lambda command, **options: calls.append(command)):
+            upgrade.ensure_default_journal('proxy')
+        command = calls[0]
+        self.assertEqual(command[:5], ['docker', 'exec', '-u', '1000:1000', 'proxy'])
+        self.assertIn("flag:'wx'", command[command.index('-e') + 1])
+        self.assertEqual(json.loads(command[-1]), upgrade.DEFAULT_JOURNAL)
 
     def test_live_server_is_probed_in_its_own_protocol(self):
         current = {'build': 28, 'protocol': 24, 'sha256': None}
