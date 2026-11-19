@@ -66,7 +66,7 @@ const invisible = /\p{Cf}/gu;
 // An address with its scheme (or a protocol-relative one) runs to the next space, path and query included, so
 // nothing after its host is read again as a site of its own; its host is the ASCII run after "//", which ends at
 // punctuation such as 、》” that follows it in Chinese text.
-const withScheme = /(?:https?:)?\/\/([a-z0-9.\-:[\]%@_~!$&'()*+,;=]*)\S*/giu;
+const withScheme = /(?:https?:)?\/\/([a-z0-9.\-:[\]%@]*)\S*/giu;
 // Not inside a longer name, a path, or an address (after "@"); "//" is read above.
 const bare = /(?<![a-z0-9.@_-])(?<![^/]\/)((?:[a-z0-9-]+\.)+([a-z]{2,}))(?::\d+)?([/?#][^\s]*)?/giu;
 function namedHosts(text: string) {
@@ -77,7 +77,12 @@ function namedHosts(text: string) {
     if (authority.includes('@')) hosts.push({ host: '', word: '', ending: '', hidden: true });
     else
       try {
-        hosts.push({ host: new URL(`https://${authority}`).hostname, word: '', ending: '' });
+        hosts.push({
+          // A sentence's full stop or colon after the address is not its host's.
+          host: new URL(`https://${authority.replace(/[.:]+$/, '')}`).hostname,
+          word: '',
+          ending: '',
+        });
       } catch {}
     return ' ';
   });

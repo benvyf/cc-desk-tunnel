@@ -116,6 +116,16 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.equal(linkDoubt('《https://example.com》', 'https://example.com/'), null);
   assert.equal(linkDoubt('https://example.com”', 'https://example.com/'), null);
   assert.equal(linkDoubt('https://example.com：说明', 'https://example.com/'), null);
+  for (const text of [
+    '(https://example.com)',
+    'https://example.com,',
+    'https://example.com; 说明',
+    "'https://example.com'",
+    'https://example.com.',
+    'https://example.com!',
+    'https://example.com: 说明',
+  ])
+    assert.equal(linkDoubt(text, 'https://example.com/'), null, text);
   assert.equal(linkDoubt('java.net', 'https://docs.oracle.com/javase/net.html'), null);
   assert.equal(linkDoubt('192.168.1.1:8080', 'http://192.168.1.1:8080/'), null);
   // Text that reads as another address than the one it leads to.
