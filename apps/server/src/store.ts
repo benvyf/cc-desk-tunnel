@@ -116,11 +116,6 @@ export class SessionStore {
         PRIMARY KEY (session_id, sequence)
       );
       CREATE INDEX IF NOT EXISTS events_run ON events(session_id, run_id, sequence);
-      -- The user messages of a session by their ID (userMessage): every message sent looks its ID up, which
-      -- otherwise reads all the session's events. Partial, so it holds only those messages.
-      CREATE INDEX IF NOT EXISTS events_user_message
-        ON events(session_id, json_extract(data, '$.payload.messageId'))
-        WHERE json_extract(data, '$.payload.type') = 'message.user';
       CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY);
       CREATE TABLE IF NOT EXISTS terminal_creations (
         request_id TEXT PRIMARY KEY, signature TEXT NOT NULL, session_id TEXT NOT NULL
@@ -143,6 +138,27 @@ export class SessionStore {
         device_id TEXT PRIMARY KEY, shell TEXT NOT NULL
       );
     `);
+    // The user messages of a session by their ID (USER_MESSAGE): every message sent looks its ID up, which
+    // otherwise reads all the session's events. Partial, so it holds only those messages. Made once, on the first
+    // start with it, by reading every event; should that fail (an event that is not JSON), the service starts
+    // without it and looks up as before.
+    try {
+      const began = Date.now();
+      const made = !this.database
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_user_message'",
+        )
+        .get();
+      this.database.exec(`
+        CREATE INDEX IF NOT EXISTS events_user_message
+          ON events(session_id, json_extract(data, '$.payload.messageId'))
+          WHERE json_extract(data, '$.payload.type') = 'message.user';
+      `);
+      const ms = Date.now() - began;
+      if (made && ms > 100) console.info('Indexed user messages', { ms });
+    } catch (error) {
+      console.error('User messages could not be indexed', { error: String(error) });
+    }
     try {
       this.importJson();
       this.restoreUpdatedAt();

@@ -43,3 +43,27 @@ test('only a latest run above 4 MB is skipped; older oversized runs do not preve
     [2],
   );
 });
+test('each event is measured once, however often the window is worked out', (t) => {
+  const events = Array.from({ length: 40 }, (_, i) =>
+    event(i + 1, `run-${Math.floor(i / 4)}`, 2000),
+  );
+  const stringify = JSON.stringify;
+  let calls = 0;
+  JSON.stringify = ((...args: Parameters<typeof JSON.stringify>) => {
+    calls++;
+    return stringify(...args);
+  }) as typeof JSON.stringify;
+  t.after(() => {
+    JSON.stringify = stringify;
+  });
+  const first = historyWindow(events, false);
+  const once = calls;
+  assert.equal(once, events.length);
+  // A new event later: only it is measured.
+  const more = [...events, event(41, 'run-10', 2000)];
+  const second = historyWindow(more, false);
+  assert.equal(calls, once + 1);
+  JSON.stringify = stringify;
+  assert.deepEqual(first!.events, events);
+  assert.deepEqual(second!.events, more);
+});

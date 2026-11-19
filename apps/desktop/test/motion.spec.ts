@@ -637,3 +637,53 @@ test('with reduced motion surfaces still fade briefly while nothing unfolds or s
       .evaluate((element) => getComputedStyle(element, '::after').transitionDuration),
   ).toBe('0s');
 });
+
+test('a block of a streaming answer stays the same element when it settles, and so does a selection in it', async ({
+  page,
+}) => {
+  await page.goto('/');
+  await page.evaluate(async () => {
+    // Paths the page's development server serves, kept out of the type checker's sight as the test above does.
+    const reactPath = '/node_modules/.vite/deps/react.js';
+    const domPath = '/node_modules/.vite/deps/react-dom_client.js';
+    const richPath = '/src/RichText.tsx';
+    const React = (await import(reactPath)).default;
+    const { createRoot } = (await import(domPath)).default;
+    const { default: RichText } = await import(richPath);
+    const host = document.createElement('main');
+    host.className = 'message-content streaming';
+    document.body.replaceChildren(host);
+    const root = createRoot(host);
+    (window as any).renderMotionText = (text: string, streaming: boolean) =>
+      root.render(React.createElement(RichText, { text, streaming }));
+  });
+  const render = (text: string, streaming: boolean) =>
+    page.evaluate(({ text, streaming }) => (window as any).renderMotionText(text, streaming), {
+      text,
+      streaming,
+    });
+  await render('第一段正文，可以选中。', true);
+  await render('第一段正文，可以选中。\n\n第二段', true);
+  const first = page.locator('main > p').first();
+  await expect(first).toHaveText('第一段正文，可以选中。');
+  await page.evaluate(() => {
+    const paragraph = document.querySelector('main > p')!;
+    paragraph.setAttribute('data-kept', 'yes');
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    getSelection()!.removeAllRanges();
+    getSelection()!.addRange(range);
+  });
+  // The second block's line is whole now: the first settles, the second goes on.
+  await render('第一段正文，可以选中。\n\n第二段继续。\n\n第三', true);
+  await expect(page.locator('main > p')).toHaveCount(3);
+  await expect(page.locator('main > p[data-kept="yes"]')).toHaveText('第一段正文，可以选中。');
+  expect(await page.evaluate(() => getSelection()!.toString())).toBe('第一段正文，可以选中。');
+  // Complete, the answer is drawn whole by one parse: the same text.
+  await render('第一段正文，可以选中。\n\n第二段继续。\n\n第三段。', false);
+  await expect(page.locator('main > p')).toHaveText([
+    '第一段正文，可以选中。',
+    '第二段继续。',
+    '第三段。',
+  ]);
+});

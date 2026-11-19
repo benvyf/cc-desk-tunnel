@@ -25,6 +25,8 @@ test('a streaming answer is cut only where later text cannot change what is befo
   assert.deepEqual(cuts('see [x][1]\n\nmiddle\n\n[1]: https://example.com\n\nc\n'), []);
   assert.deepEqual(cuts('a[^1]\n\nb\n\n[^1]: note\n\nc\n'), []);
   assert.deepEqual(cuts('a\n\n<!-- note\n\nhidden\n\n-->\n\nb\n'), []);
+  assert.deepEqual(cuts('a\n\n<pre>\n\nfoo\n\n</pre>\n\nb\n'), []);
+  assert.deepEqual(cuts('a\n\n<div>\n\nb\n'), ['<div>', 'b']);
   // A table or heading after a blank line starts its own block.
   assert.deepEqual(cuts('a\n\n| a | b |\n| - | - |\n\n## h\n'), ['| a | b |', '## h']);
 });
@@ -81,6 +83,9 @@ test('every cut falls between top-level blocks of the whole answer, at every len
     'Title\n=====\n\ntext\n\n    indented code\n\n    more\n\nafter\n\n* * *\n\n~~~\n\n~~~\n\nend\n',
     'run `echo $$` now\n\np2\n\n$$\na = 1\n\nb = 1\n$$\n\n```x``` inline\n\np3\n\n\tTabbed\n\nlast\n',
     '第一段\r\n\r\n第二段\r\n\r\n```\r\ncode\r\n\r\nmore\r\n```\r\n\r\n第三段\r\n',
+    'a\n\n<pre>\n\nfoo\n\n</pre>\n\nb\n',
+    'a\n\n<script>\nx\n\ny\n</script>\n\nb\n',
+    'a\n\n<!DOCTYPE html>\n\nb\n',
   ];
   for (const answer of answers)
     for (let length = 1; length <= answer.length; length++) {

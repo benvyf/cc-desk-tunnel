@@ -75,10 +75,17 @@ export function revealStreaming({ source, start, revision }: Reveal) {
 // Where a streaming answer's Markdown may be cut into blocks that no later text can change: after a blank line,
 // before a line that starts a block of its own at the margin. Never inside a fenced code block or a $$ formula,
 // nor before an indented line (a list item's or quote's continuation), a list item (one list stays one list) or
-// a definition. An answer with a link or footnote definition, or an HTML comment, is not cut at all: they reach
-// across blocks. The offsets are ascending starts of lines.
+// a definition. An answer with a link or footnote definition, an HTML comment or a raw <pre>, <script>, <style>,
+// <textarea>, <?…> or <!…> block is not cut at all: they reach across blocks. The offsets are ascending starts of
+// lines.
 export function blockStarts(source: string): number[] {
-  if (/^ {0,3}\[[^\]\n]+\]:/m.test(source) || source.includes('<!--')) return [];
+  if (
+    /^ {0,3}\[[^\]\n]+\]:/m.test(source) ||
+    source.includes('<!--') ||
+    // HTML blocks that blank lines do not end (CommonMark kinds 1 to 5).
+    /^ {0,3}<(?:pre|script|style|textarea)(?:[\s>]|$)|^ {0,3}<[?!]/im.test(source)
+  )
+    return [];
   const starts: number[] = [];
   // The open fence: its character and length (CommonMark: closed by a line of at least as many of the same
   // character, indented at most three spaces, with nothing after but white space).

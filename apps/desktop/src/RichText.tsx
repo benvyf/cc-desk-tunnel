@@ -294,15 +294,24 @@ function subscribeMotion(listener: () => void) {
   return () => motionPreference?.removeEventListener('change', listener);
 }
 
-// A block of a streaming answer that no later piece can change (see `blockStarts`): parsed once, while the rest
-// of the answer keeps coming. Once the answer is complete it is drawn whole again, by one parse.
-const SettledBlock = memo(function SettledBlock({ source }: { source: string }) {
+// One block of a streaming answer, keyed by where it starts. The last is still growing and reveals what is new
+// (`reveal`); the others no later piece can change (see `blockStarts`) and are parsed once each. When the last
+// settles it keeps its key, so React updates its DOM where it is (a selection in it, a picture or a code block's
+// state stay) rather than drawing it anew; the next block starts as a new one. Once the answer is complete it is
+// drawn whole again by one parse, the same as a reply read later.
+const StreamBlock = memo(function StreamBlock({
+  source,
+  reveal,
+}: {
+  source: string;
+  reveal?: { source: string; start: number; revision: number };
+}) {
   // Test-only (long-session-performance.spec.ts); nothing sets it in use.
-  (globalThis as { ccPerf?: { settled?: () => void } }).ccPerf?.settled?.();
+  if (!reveal) (globalThis as { ccPerf?: { settled?: () => void } }).ccPerf?.settled?.();
   return (
     <Markdown
       remarkPlugins={remarkPlugins}
-      rehypePlugins={rehypePlugins}
+      rehypePlugins={reveal ? [...rehypePlugins, [revealStreaming, reveal]] : rehypePlugins}
       skipHtml
       urlTransform={urlTransform}
       components={components}
@@ -356,38 +365,42 @@ export default memo(function RichText({
     };
   }
   const frame = frames.current;
-  // While it streams, every block but the last is settled and parsed once (a block ends only where the line after
-  // it is whole and starts a block of its own, see `blockStarts`); only the rest is parsed again for each piece.
-  // Only blocks shown whole before this piece settle, so what is new (`frame.start` on) is all in the rest and
-  // revealed there, however much one piece brings.
-  const starts =
-    streaming && !question ? blockStarts(source).filter((at) => at <= frame.start) : [];
-  const settled = starts.at(-1) ?? 0;
-  const cuts = [0, ...starts.filter((start) => start <= settled)];
-  const rest = settled ? source.slice(settled) : source;
-  const restFrame = settled
-    ? { source: rest, start: Math.max(0, frame.start - settled), revision: frame.revision }
-    : frame;
-  const markdown = (
+  if (streaming && !question) {
+    // While it streams, every block but the last is settled and parsed once (a block ends only where the line
+    // after it is whole and starts a block of its own, see `blockStarts`); only the last is parsed again for each
+    // piece. Only blocks shown whole before this piece settle, so what is new (`frame.start` on) is all in the
+    // last and revealed there, however much one piece brings.
+    const cuts = [0, ...blockStarts(source).filter((at) => at <= frame.start)];
+    const last = cuts.at(-1)!;
+    return (
+      <>
+        {cuts.map((from, at) => (
+          <StreamBlock
+            key={from}
+            source={source.slice(from, cuts[at + 1])}
+            reveal={
+              from === last && reveal
+                ? {
+                    source: source.slice(last),
+                    start: Math.max(0, frame.start - last),
+                    revision: frame.revision,
+                  }
+                : undefined
+            }
+          />
+        ))}
+      </>
+    );
+  }
+  return (
     <Markdown
       remarkPlugins={plugins}
-      rehypePlugins={
-        question ? [] : reveal ? [...rehypePlugins, [revealStreaming, restFrame]] : rehypePlugins
-      }
+      rehypePlugins={question ? [] : rehypePlugins}
       skipHtml
       urlTransform={urlTransform}
       components={question ? questionComponents : components}
     >
-      {rest}
+      {source}
     </Markdown>
-  );
-  if (!settled) return markdown;
-  return (
-    <>
-      {cuts.slice(0, -1).map((from, at) => (
-        <SettledBlock key={from} source={source.slice(from, cuts[at + 1])} />
-      ))}
-      {markdown}
-    </>
   );
 });
