@@ -270,7 +270,7 @@ test('a long session streams without parsing its finished answers again', async 
   });
   const piece = (n: number) =>
     n % 100 === 50
-      ? '```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n- 一\n- 二\n\n$\nx^2\n\n+ 1\n$\n\n'
+      ? '```ts\nconst a = 1;\n\nconst b = 2;\n```\n\n- 一\n- 二\n\n$$\nx^2\n\n+ 1\n$$\n\n'
       : `第 ${n} 段：继续说明 $x_${n}$ 的取值，并补充一个 **要点**。${n % 20 === 19 ? '\n\n' : ''}`;
   const began = Date.now();
   for (let n = 0; n < PIECES; n++) {
