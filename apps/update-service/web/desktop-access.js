@@ -77,8 +77,11 @@ export function setupDesktopAccess({ request, action, notice, date, monitor }) {
       const checkbox = document.createElement('input');
       checkbox.type = 'checkbox';
       checkbox.value = workspace.id;
-      checkbox.checked = user ? user.nodes.includes(workspace.id) : workspace.id === nodeId;
-      label.append(checkbox, document.createTextNode(`${workspace.name}（${workspace.id}）`));
+      const configured = !!workspace.url?.trim();
+      checkbox.checked = user ? user.nodes.includes(workspace.id) : configured && workspace.id === nodeId;
+      checkbox.disabled = !configured && !checkbox.checked;
+      const status = configured ? '' : ' · 未配置连接';
+      label.append(checkbox, document.createTextNode(`${workspace.name}（${workspace.id}）${status}`));
       $('access-user-nodes').append(label);
     }
     $('access-user-form').hidden = false;

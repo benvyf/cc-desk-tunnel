@@ -65,7 +65,7 @@
     "docs/JEV-SUB2API-REFERENCE.md": "c3a5305961cf3a75460fe0da87164b7328ee769db48d24c66c5965cedee4a7e7",
     "docs/MODERATION-NODE-GATE.md": "ef8709de4478954a54c4fb4a54ba5a6799958cfd065f39750a4b2b459a2aa810",
     "apps/update-service/src/host-updater-package.ts": "0342ea01f22c5bf3d7c0c7da31a1b097fdd5bce0ae059cc73892caf9422cbc29",
-    "apps/update-service/src/host-updates.ts": "ae42241f82b51873d21befcdded2f0436793120ee74ffa0ff3c9e5a39eb10d15",
+    "apps/update-service/src/host-updates.ts": "371b1e0f21f582d4c714007ca57b1c8a23ff2c87430d1283e97488a0d772bd5c",
     "apps/update-service/src/agent-packages.ts": "34c6904624eb669d24466b096388bdc52d36fb7ad9a4dbe3b08b43329b3b892e",
     "apps/update-service/src/host-workflows.ts": "19436fcb377dbe665f9dbe8ea3fcfe73120e1d8cb03f40758236a7614760f457",
     "scripts/host-agent-publication.mjs": "166bbe13659a387b9eaa62054eca2641ba41ecd2146307516de0f4a0dbfc5954",
@@ -117,6 +117,13 @@
       "files": [
         "apps/update-service/src/host-updates.ts",
         "apps/update-service/src/host-workflows.ts"
+      ]
+    },
+    {
+      "sourceCommit": "4d4a89d72b6313611930369f52e556c45ac49789",
+      "purpose": "Admit the reviewed v5 protocol 25 legacy bridge (Linux Build 30+)",
+      "files": [
+        "apps/update-service/src/host-updates.ts"
       ]
     }
   ]

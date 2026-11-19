@@ -212,6 +212,14 @@ export class DesktopAccess {
     const userId = id ?? randomUUID();
     this.db.exec('BEGIN');
     try {
+      if (input.enabled) {
+        if (!id && !input.nodes.length)
+          throw new UpdateError(400, '请至少选择一个已配置连接的工作空间。');
+        const configured = this.db.prepare("SELECT 1 FROM nodes WHERE id=? AND trim(url)<>''");
+        const missing = [...new Set(input.nodes as string[])].filter((node) => !configured.get(node));
+        if (missing.length)
+          throw new UpdateError(400, `工作空间 ${missing.join('、')} 尚未配置连接，请先保存连接配置。`);
+      }
       this.db
         .prepare(
           'INSERT INTO users(id,email,salt,password,enabled) VALUES(?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,salt=excluded.salt,password=excluded.password,enabled=excluded.enabled',
