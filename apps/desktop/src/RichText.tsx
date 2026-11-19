@@ -303,6 +303,10 @@ export default memo(function RichText({
   streaming?: boolean;
   question?: boolean;
 }) {
+  // Test-only: counts the renders that parse Markdown again (long-session-performance.spec.ts). Nothing sets it in use.
+  (globalThis as { ccPerf?: { richText?: (streaming: boolean) => void } }).ccPerf?.richText?.(
+    streaming,
+  );
   const paths = useContext(FileMentionPaths);
   const place = useContext(LinkPlace);
   const plugins = useMemo<PluggableList>(() => {
