@@ -24,8 +24,16 @@ test('a streaming answer is cut only where later text cannot change what is befo
   // A definition reaches across blocks: the answer is not cut at all.
   assert.deepEqual(cuts('see [x][1]\n\nmiddle\n\n[1]: https://example.com\n\nc\n'), []);
   assert.deepEqual(cuts('a[^1]\n\nb\n\n[^1]: note\n\nc\n'), []);
-  assert.deepEqual(cuts('a\n\n<!-- note\n\nhidden\n\n-->\n\nb\n'), []);
-  assert.deepEqual(cuts('a\n\n<pre>\n\nfoo\n\n</pre>\n\nb\n'), []);
+  // Nothing after the start of an HTML block that blank lines do not end.
+  assert.deepEqual(cuts('a\n\n<!-- note\n\nhidden\n\n-->\n\nb\n'), ['<!-- note']);
+  assert.deepEqual(cuts('a\n\n<pre>\n\nfoo\n\n</pre>\n\nb\n'), ['<pre>']);
+  // In code, HTML and definitions are only text: the cutting goes on.
+  assert.deepEqual(
+    cuts(
+      'a\n\n```vue\n<script setup>\n\nx\n</script>\n```\n\n```html\n<!DOCTYPE html>\n```\n\n```md\n[1]: x\n```\n\nb\n',
+    ),
+    ['```vue', '```html', '```md', 'b'],
+  );
   assert.deepEqual(cuts('a\n\n<div>\n\nb\n'), ['<div>', 'b']);
   // A table or heading after a blank line starts its own block.
   assert.deepEqual(cuts('a\n\n| a | b |\n| - | - |\n\n## h\n'), ['| a | b |', '## h']);

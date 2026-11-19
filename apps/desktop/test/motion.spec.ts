@@ -679,11 +679,20 @@ test('a block of a streaming answer stays the same element when it settles, and 
   await expect(page.locator('main > p')).toHaveCount(3);
   await expect(page.locator('main > p[data-kept="yes"]')).toHaveText('第一段正文，可以选中。');
   expect(await page.evaluate(() => getSelection()!.toString())).toBe('第一段正文，可以选中。');
+  // The second block, settling in turn, keeps its element too once its own first line was drawn in it.
+  await page.evaluate(() =>
+    document.querySelectorAll('main > p')[1]!.setAttribute('data-kept', 'second'),
+  );
+  await render('第一段正文，可以选中。\n\n第二段继续。\n\n第三段。\n\n第四', true);
+  await expect(page.locator('main > p')).toHaveCount(4);
+  await expect(page.locator('main > p[data-kept="second"]')).toHaveText('第二段继续。');
+  await expect(page.locator('main > p[data-kept="yes"]')).toHaveText('第一段正文，可以选中。');
   // Complete, the answer is drawn whole by one parse: the same text.
-  await render('第一段正文，可以选中。\n\n第二段继续。\n\n第三段。', false);
+  await render('第一段正文，可以选中。\n\n第二段继续。\n\n第三段。\n\n第四段。', false);
   await expect(page.locator('main > p')).toHaveText([
     '第一段正文，可以选中。',
     '第二段继续。',
     '第三段。',
+    '第四段。',
   ]);
 });

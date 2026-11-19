@@ -144,7 +144,7 @@ export class SessionStore {
     // without it and looks up as before.
     try {
       const began = Date.now();
-      const made = !this.database
+      const missing = !this.database
         .prepare(
           "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'events_user_message'",
         )
@@ -155,7 +155,7 @@ export class SessionStore {
           WHERE json_extract(data, '$.payload.type') = 'message.user';
       `);
       const ms = Date.now() - began;
-      if (made && ms > 100) console.info('Indexed user messages', { ms });
+      if (missing && ms > 100) console.info('Indexed user messages', { ms });
     } catch (error) {
       console.error('User messages could not be indexed', { error: String(error) });
     }

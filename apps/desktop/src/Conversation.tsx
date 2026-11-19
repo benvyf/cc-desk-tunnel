@@ -1175,26 +1175,9 @@ export default function Conversation({
     if (findRequest !== lastFindRequest.current) openFind();
     lastFindRequest.current = findRequest;
   }, [findRequest]);
-  // The clock of running timers: it ticks once a second while something runs (see below), and is set again at
-  // local midnight and when the window resumes. Turns at rest show no clock (see `ticking`).
+  // The clock of running timers: it ticks once a second, and only while something runs (see below). Turns at rest
+  // show no clock (see `ticking`).
   const [now, setNow] = useState(Date.now);
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>;
-    const refresh = () => {
-      clearTimeout(timer);
-      const current = new Date();
-      setNow(current.getTime());
-      const nextDay = new Date(current);
-      nextDay.setHours(24, 0, 0, 0);
-      timer = setTimeout(refresh, nextDay.getTime() - current.getTime());
-    };
-    refresh();
-    window.addEventListener('focus', refresh);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener('focus', refresh);
-    };
-  }, []);
   const running = !!session?.activeRun;
   // Running timers tick once a second, and only while something runs.
   useEffect(() => {
