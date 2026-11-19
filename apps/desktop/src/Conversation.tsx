@@ -1,5 +1,6 @@
 import {
   createContext,
+  memo,
   lazy,
   Suspense,
   useContext,
@@ -42,7 +43,7 @@ import { approvalQuestion, toolInput } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import ApprovalDock from './ApprovalDock.tsx';
-import { calls, conversation, manyModels as answeredByMany } from './transcript.ts';
+import { calls, conversation, keepTurns, manyModels as answeredByMany } from './transcript.ts';
 import { modelName } from './modelName.ts';
 import SubagentSteps from './SubagentSteps.tsx';
 import { usePrefs } from './prefs.ts';
@@ -833,7 +834,19 @@ function useProducedFiles(turn: Turn) {
   return kept.current;
 }
 
-function TurnView({
+// Whether a turn shows a running clock: it is under way, or a call or compaction in it has not ended.
+function ticking(turn: Turn) {
+  return (
+    !turn.endedAt ||
+    turn.steps.some(
+      (step) =>
+        (step.kind === 'compact' && !step.endedAt) ||
+        (step.kind === 'work' && calls(step.items).some((tool) => !tool.endedAt)),
+    )
+  );
+}
+
+const TurnView = memo(function TurnView({
   turn,
   native,
   live,
@@ -965,7 +978,7 @@ function TurnView({
       )}
     </TurnPictures.Provider>
   );
-}
+});
 
 export default function Conversation({
   projectControl,
@@ -1036,7 +1049,11 @@ export default function Conversation({
   // What the session's background tasks last said of themselves, by task.
   progress: Record<string, TaskProgress> | undefined;
 }) {
-  const turns = useMemo(() => conversation(events), [events]);
+  const drawn = useRef<Turn[]>([]);
+  const turns = useMemo(
+    () => (drawn.current = keepTurns(drawn.current, conversation(events))),
+    [events],
+  );
   // Replies name their model once two have answered in what is loaded of the session; with one, it would be noise.
   // Named as people read them, so a dated snapshot and its base are one model. A subagent's words are not counted.
   const manyModels = useMemo(
@@ -1153,13 +1170,16 @@ export default function Conversation({
     if (findRequest !== lastFindRequest.current) openFind();
     lastFindRequest.current = findRequest;
   }, [findRequest]);
-  // Date labels refresh at local midnight and when the window resumes.
+  // Date labels refresh at local midnight and when the window resumes: the clock of turns at rest.
+  const [day, setDay] = useState(Date.now);
+  // The clock of running timers: it ticks once a second, and only while something runs (see below).
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout>;
     const refresh = () => {
       clearTimeout(timer);
       const current = new Date();
+      setDay(current.getTime());
       setNow(current.getTime());
       const nextDay = new Date(current);
       nextDay.setHours(24, 0, 0, 0);
@@ -1198,7 +1218,15 @@ export default function Conversation({
       5000,
     );
   };
-  const live: Live = {
+  // What the rows are given of the session (Live), the same object while nothing they show changes: a turn's view
+  // is drawn again only when its turn or this changes (memo, TurnView). Its actions call the latest handlers through
+  // a ref, so new handler functions from above draw nothing again. Turns at work get the ticking clock; the others
+  // the day's, so the timer of a run does not draw the turns before it every second.
+  const actions = useRef({ replyApproval, stopTask, backgroundTask, edit });
+  actions.current = { replyApproval, stopTask, backgroundTask, edit };
+  const activeRunId = session?.activeRun?.id;
+  const editable = !!edit;
+  const makeLive = (now: number): Live => ({
     now,
     busy,
     docked: !!dock,
@@ -1214,7 +1242,7 @@ export default function Conversation({
       if (answering.current.has(id)) return;
       answering.current.add(id);
       setAnswered((value) => new Set(value).add(id));
-      void replyApproval(tool.runId, id, allowed, answers).then((sent) => {
+      void actions.current.replyApproval(tool.runId, id, allowed, answers).then((sent) => {
         if (sent) return;
         answering.current.delete(id);
         setAnswered((value) => {
@@ -1224,7 +1252,7 @@ export default function Conversation({
         });
       });
     },
-    edit: edit && !running ? (item) => edit(item.id, item.text) : undefined,
+    edit: edit && !running ? (item) => actions.current.edit?.(item.id, item.text) : undefined,
     taskControl: (tool) =>
       connected &&
       ownsRun &&
@@ -1239,13 +1267,27 @@ export default function Conversation({
         : undefined,
     endTool: (tool) => {
       sendTask(tool.id);
-      stopTask(tool.taskId!);
+      actions.current.stopTask(tool.taskId!);
     },
     backgroundTool: (tool) => {
       sendTask(tool.id);
-      backgroundTask(tool.id);
+      actions.current.backgroundTask(tool.id);
     },
-  };
+  });
+  // What makeLive reads, its actions aside (through the ref).
+  const liveKeys = [
+    busy,
+    !!dock,
+    answered,
+    connected,
+    ownsRun,
+    activeRunId,
+    running,
+    editable,
+    taskSent,
+  ];
+  const live = useMemo(() => makeLive(now), [now, ...liveKeys]);
+  const atRest = useMemo(() => makeLive(day), [day, ...liveKeys]);
   // The calls that wait on an answer from here, in the order they were asked: the dock shows the first, and the next
   // once that one is answered. All turns are looked at: a message sent while one waits can join the run in a turn
   // of its own, and the call above it must still be answerable.
@@ -1658,7 +1700,7 @@ export default function Conversation({
                       key={turn.id}
                       turn={turn}
                       native={native}
-                      live={live}
+                      live={ticking(turn) ? live : atRest}
                       latest={index === turns.length - 1}
                       held={heldOpen(turns, index)}
                       resume={index === turns.length - 1 ? resume : undefined}

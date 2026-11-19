@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { conversation } from '../src/transcript.ts';
+import { conversation, keepTurns } from '../src/transcript.ts';
 
 let sequence = 0;
 const at = (second) => new Date(Date.UTC(2026, 9, 26, 12, 0, second)).toISOString();
@@ -494,4 +494,79 @@ test('two models among a session’s replies, a step’s included, are many; a s
     ...run('s2', 20, [['a2', 'claude-opus-4-7-20260101']]),
   ]);
   assert.equal(manyModels(same, name), false);
+});
+
+test('turns drawn again are taken back as they were unless they changed', () => {
+  const turn = (run, second) => [
+    event(run, second, { type: 'run.status', status: 'running', connectionId: 'c' }),
+    event(run, second, {
+      type: 'message.user',
+      messageId: `q-${run}`,
+      text: run,
+      scenario: 'chat',
+    }),
+    event(run, second + 1, {
+      type: 'tool.requested',
+      toolId: `t-${run}`,
+      name: 'Write',
+      input: JSON.stringify({ file_path: `D:\\${run}.ts` }),
+      target: 'Windows',
+    }),
+  ];
+  const done = (run, second) => [
+    event(run, second, {
+      type: 'tool.result',
+      toolId: `t-${run}`,
+      status: 'completed',
+      output: 'ok',
+      exitCode: null,
+    }),
+    said(run, second, `a-${run}`, `回答 ${run}`),
+    event(run, second + 1, { type: 'run.status', status: 'completed', connectionId: 'c' }),
+  ];
+  let events = [...turn('one', 0), ...done('one', 2), ...turn('two', 10)];
+  const first = conversation(events);
+  const again = keepTurns(first, conversation(events));
+  assert.equal(again, first, 'nothing changed: the same list');
+
+  // The second turn's call returns: only that turn is another.
+  events = [
+    ...events,
+    event('two', 12, {
+      type: 'tool.result',
+      toolId: 't-two',
+      status: 'completed',
+      output: 'ok',
+      exitCode: null,
+    }),
+  ];
+  const drawn = conversation(events);
+  const kept = keepTurns(again, drawn);
+  assert.notEqual(kept, again);
+  assert.equal(kept[0], again[0], 'the finished turn is kept');
+  assert.notEqual(kept[1], again[1]);
+  assert.deepEqual(kept, drawn, 'what is kept is what was drawn');
+
+  // Stats arriving late, and a new turn, change only what they touch.
+  events = [
+    ...events,
+    ...done('two', 13).slice(1),
+    event('one', 20, {
+      type: 'turn.stats',
+      messageId: 'q-one',
+      durationMs: 1000,
+      inputTokens: 1,
+      outputTokens: 1,
+    }),
+  ];
+  const later = conversation(events);
+  const next = keepTurns(kept, later);
+  assert.deepEqual(next, later);
+  assert.ok(later[0].stats, 'the stats reach the first turn');
+  assert.notEqual(next[0], kept[0], 'a turn whose stats came is another');
+  // A turn gone (history replaced) is not taken back.
+  const replaced = conversation(turn('three', 30));
+  const after = keepTurns(next, replaced);
+  assert.deepEqual(after, replaced);
+  assert.equal(after.length, 1);
 });

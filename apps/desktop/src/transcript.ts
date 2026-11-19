@@ -526,3 +526,36 @@ function combined(parts: TurnStats[]): TurnStats {
     partial: parts.some((part) => part.partial),
   };
 }
+
+// Whether two values drawn from the events are the same: plain data (objects, arrays, strings, numbers), compared
+// in depth.
+function same(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false;
+  if (Array.isArray(a)) {
+    if (!Array.isArray(b) || a.length !== b.length) return false;
+    for (let at = 0; at < a.length; at++) if (!same(a[at], b[at])) return false;
+    return true;
+  }
+  if (Array.isArray(b)) return false;
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys)
+    if (!same((a as Record<string, unknown>)[key], (b as Record<string, unknown>)[key]))
+      return false;
+  return true;
+}
+// The turns as `conversation` drew them again, each one that is the same as before taken back as it was, and the
+// list too when none changed: a turn's view is drawn again only when the turn is another, so a reply streaming at
+// the end leaves the turns before it alone. `conversation` itself stays whole and simple; this only compares.
+export function keepTurns(previous: Turn[], next: Turn[]): Turn[] {
+  const before = new Map(previous.map((turn) => [turn.id, turn]));
+  let changed = previous.length !== next.length;
+  const kept = next.map((turn, at) => {
+    const old = before.get(turn.id);
+    const result = old && same(old, turn) ? old : turn;
+    if (result !== previous[at]) changed = true;
+    return result;
+  });
+  return changed ? kept : previous;
+}
