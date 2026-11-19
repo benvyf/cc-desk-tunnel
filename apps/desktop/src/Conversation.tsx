@@ -1177,7 +1177,8 @@ export default function Conversation({
   }, [findRequest]);
   // The day: a reply's footer says its date as seen from now (messageTime, read as it is drawn), so every turn is
   // drawn again at local midnight and when the window resumes, when "today" may have become "yesterday".
-  const [day, setDay] = useState(Date.now);
+  // The start of the day, so that a refresh on the same day draws nothing.
+  const [day, setDay] = useState(() => new Date().setHours(0, 0, 0, 0));
   // The clock of running timers: it ticks once a second, and only while something runs (see below).
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -1185,17 +1186,21 @@ export default function Conversation({
     const refresh = () => {
       clearTimeout(timer);
       const current = new Date();
-      setDay(current.getTime());
+      setDay(new Date(current).setHours(0, 0, 0, 0));
       setNow(current.getTime());
       const nextDay = new Date(current);
       nextDay.setHours(24, 0, 0, 0);
       timer = setTimeout(refresh, nextDay.getTime() - current.getTime());
     };
     refresh();
+    // Waking from sleep without the focus: the midnight timer may come late.
+    const shown = () => document.visibilityState === 'visible' && refresh();
     window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', shown);
     return () => {
       clearTimeout(timer);
       window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', shown);
     };
   }, []);
   const running = !!session?.activeRun;
