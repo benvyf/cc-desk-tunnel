@@ -823,6 +823,16 @@ function useTurnPictures(turn: Turn | undefined) {
   return kept.current;
 }
 
+// The files a turn wrote, the same array while they stay the same: it is what every answer of the turn reads (see
+// RichText), and a new array each time the conversation is drawn would parse every answer's Markdown again.
+function useProducedFiles(turn: Turn) {
+  const kept = useRef<string[]>([]);
+  const next = producedFiles(turn);
+  if (next.length !== kept.current.length || next.some((path, at) => path !== kept.current[at]))
+    kept.current = next;
+  return kept.current;
+}
+
 function TurnView({
   turn,
   native,
@@ -842,7 +852,7 @@ function TurnView({
   // Given to the latest turn while it stands stopped or failed: its last notice offers to go on.
   resume?: () => void;
 }) {
-  const files = useMemo(() => producedFiles(turn), [turn]);
+  const files = useProducedFiles(turn);
   const active = !turn.endedAt;
   const expanded = usePrefs().view.mode === 'expanded';
   const notes = turn.steps.filter((step) => step.kind === 'assistant').length;
