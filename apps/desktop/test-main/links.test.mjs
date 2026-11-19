@@ -176,6 +176,11 @@ test('a file name in the text passes only on a repository site; subdomains are o
   assert.equal(linkDoubt('https://example.com查看详情', 'https://example.com/'), null);
   assert.equal(linkDoubt('访问https://example.com即可', 'https://example.com/'), null);
   assert.ok(linkDoubt('s3://bank.com/key', 'https://evil.example/'));
+  // Letters going on to a dot are a host, and m. under a shared ending is someone else's site.
+  assert.ok(linkDoubt('https://a.cn工商银行.com/login', 'https://a.cn/'));
+  assert.ok(linkDoubt('https://evil.cn。paypal.com/', 'https://evil.cn/'));
+  for (const shared of ['github.io', 'pages.dev', 'co.uk'])
+    assert.ok(linkDoubt(shared, `https://m.${shared}/`), shared);
   assert.equal(linkDoubt('mail.google.com', 'https://google.com/'), null);
   assert.equal(linkDoubt('example.com', 'https://example.com./'), null);
   // A shared ending is not the site of everyone under it.

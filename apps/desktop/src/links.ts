@@ -79,9 +79,13 @@ function namedHosts(text: string) {
   const rest = plain.replace(withScheme, (_found, authority: string, after: string) => {
     // A user name before the host shows one site and names another: http://bank.com:80@evil.com.
     if (authority.includes('@')) hosts.push({ host: '', word: '', ending: '', hidden: true });
-    // Other letters right after "//" (or after a name ending in a dot) are the host; after a whole host they are
-    // the sentence going on (https://example.com查看详情).
-    else if ((!authority || authority.endsWith('.')) && /^[^\x00-\x7f]/.test(after))
+    // Other letters right after "//", after a name ending in a dot, or going on to a dot (a.cn工商银行.com, or an
+    // ideographic full stop, which is a dot in a host) are the host; with no dot after a whole host they are the
+    // sentence going on (https://example.com查看详情).
+    else if (
+      /^[^\x00-\x7f]/.test(after) &&
+      (!authority || authority.endsWith('.') || /^[。．｡]|^[^/?#\s]*[.。．｡]\p{L}/u.test(after))
+    )
       hosts.push({ host: authority + after.split(/[/?#]/)[0]!, word: '', ending: '' });
     else
       try {
@@ -121,10 +125,33 @@ const bareHost = (host: string) =>
 // Whether a named host is the site a link leads to: the same, or a site under it that the text names more exactly
 // (text mail.google.com, link google.com), or the link's www. or m. form of it. Not the other way: a link to a name
 // under the named site may be anyone's (sites.google.com, a bucket of amazonaws.com, a page of github.io).
+// Endings under which anyone may have a site of their own: their m. is someone's site, not theirs.
+const shared = new Set([
+  'github.io',
+  'gitlab.io',
+  'vercel.app',
+  'netlify.app',
+  'pages.dev',
+  'workers.dev',
+  'web.app',
+  'herokuapp.com',
+  'blogspot.com',
+  'wordpress.com',
+  'co.uk',
+  'com.cn',
+  'com.hk',
+  'com.tw',
+  'com.au',
+  'co.jp',
+  'org.cn',
+  'net.cn',
+  'gov.cn',
+  'edu.cn',
+]);
 function sameSite(named: string, site: string) {
   const a = bareHost(named),
     b = bareHost(site);
-  return a === b || (b.includes('.') && a.endsWith(`.${b}`)) || b === `m.${a}`;
+  return a === b || (b.includes('.') && a.endsWith(`.${b}`)) || (b === `m.${a}` && !shared.has(a));
 }
 // The file a link's address ends in, which a word of its text may name: README.org, main.cc. Only on sites that
 // show files of a repository, and for endings files have as often as sites: anywhere else the path is the other
