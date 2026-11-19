@@ -106,6 +106,12 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.equal(linkDoubt('v2.0.1', 'https://github.com/o/r/releases/tag/v2.0.1'), null);
   assert.equal(linkDoubt('@types/node', 'https://www.npmjs.com/package/@types/node'), null);
   assert.equal(linkDoubt('在 example.com 查看', 'https://example.com/x'), null);
+  assert.equal(linkDoubt('访问example.com', 'https://example.com/x'), null);
+  assert.equal(linkDoubt('详见docs.rs/serde', 'https://docs.rs/serde'), null);
+  assert.equal(linkDoubt('console.info()', 'https://developer.mozilla.org/x'), null);
+  assert.equal(linkDoubt('window.top', 'https://developer.mozilla.org/x'), null);
+  assert.equal(linkDoubt('main.cc 第 12 行', 'https://github.com/o/r/blob/main/main.cc'), null);
+  assert.equal(linkDoubt('从 github.com 迁移到 gitlab.com', 'https://gitlab.com/'), null);
   // Text that reads as another address than the one it leads to.
   assert.ok(linkDoubt('https://bank.com/login', 'https://evil.example/login'));
   assert.ok(linkDoubt('bank.com', 'https://evil.example/'));
@@ -117,6 +123,14 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.ok(linkDoubt('`bank.com`', 'https://evil.example/'));
   assert.ok(linkDoubt('「bank.com」', 'https://evil.example/'));
   assert.ok(linkDoubt('bank.com?x=1', 'https://evil.example/'));
+  assert.ok(linkDoubt('bank.com登录', 'https://evil.example/'));
+  assert.ok(linkDoubt('BANK.COM', 'https://evil.example/'));
+  assert.ok(linkDoubt('paypal.COM/login', 'https://evil.example/'));
+  assert.ok(linkDoubt('bank‮.com', 'https://evil.example/'), 'a bidirectional mark');
+  assert.ok(linkDoubt('//bank.com', 'https://evil.example/'));
+  // A path the other site chose does not make its text a file name.
+  assert.ok(linkDoubt('bank.com', 'https://evil.example/bank.com'));
+  assert.ok(linkDoubt('paypal.com', 'https://evil.example/x/paypal.com'));
   assert.ok(linkDoubt('bank​.com', 'https://evil.example/'));
   // An address that hides where it goes.
   assert.ok(linkDoubt('看这里', 'https://bank.com@evil.example/'));

@@ -564,7 +564,6 @@ export default function PreviewContent({
               });
           }}
         >
-          {doubtful.dialog}
           {!file && !error && (
             <div className="preview-loading" role="status">
               <LoaderCircle className="spinning" />
@@ -630,6 +629,7 @@ export default function PreviewContent({
           )}
         </div>
       )}
+      {doubtful.dialog}
     </>
   );
 }

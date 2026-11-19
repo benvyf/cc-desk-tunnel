@@ -46,45 +46,51 @@ function joined(base: string, relative: string) {
   return parts.join(windows ? '\\' : '/') || '/';
 }
 
-// The hosts a link's text names: each word of it that reads as a web address, https://a.b/c, www.a.b, a.b/c, or a
-// bare a.com (or a.com?x, a.com#y) among the common endings. Words name none, and neither does a file name
-// (README.md, main.rs) or a product's (ASP.NET, Socket.IO).
+// The hosts a link's text names: every web address in it, https://a.b/c or //a.b, and every bare one, www.a.b,
+// a.b/c, or a.com (a.com?x, a.com#y) among the common endings, also where Chinese runs on without a space
+// (访问example.com). Words name none, and neither do a file name (README.md, main.rs), code (console.info()) or a
+// product's name (ASP.NET, Socket.IO). Format characters (zero-width, bidirectional) are dropped first.
 const commonEndings = new Set(
-  'com net org io cn dev ai app co gov edu me info xyz top cc tv uk de jp hk tw'.split(' '),
+  'com net org io cn dev ai gov edu cc tv uk de jp hk tw xyz'.split(' '),
 );
-// Marks a host may hide behind or be wrapped in: invisible characters, quotes, brackets and punctuation.
-const invisible = /[\u00ad\u200b-\u200f\u2060\ufeff]/g;
-const wrapping = /^[\p{P}\p{S}]+|[\p{P}\p{S}]+$/gu;
-function wordHost(word: string) {
-  const scheme = /^https?:\/\//i.test(word);
-  const domain = /^((?:[\p{L}\p{N}-]+\.)+([\p{L}]{2,}))(?::\d+)?([/?#].*)?$/u.exec(word);
-  if (!scheme) {
-    if (!domain) return null;
-    const [, name, ending, rest = ''] = domain;
-    const www = /^www\./i.test(word);
-    // A capitalised ending is a product's name, not a site's: ASP.NET, Socket.IO.
-    if (!www && /^\p{Lu}{2,}$/u.test(ending!)) return null;
-    if (!www && !rest.startsWith('/') && !commonEndings.has(ending!.toLowerCase())) return null;
-    if (!name) return null;
-  }
-  try {
-    return new URL(scheme ? word : `https://${word}`).hostname;
-  } catch {
-    return null;
-  }
-}
+const products = new Set(['asp.net', 'vb.net', 'ado.net', 'socket.io']);
+const invisible = /\p{Cf}/gu;
+const withScheme = /(?:https?:)?\/\/[^\s/?#<>"'`）)】」』，。；！？]+/giu;
+// Not inside a longer name, a path, or an address (after "@"); "//" is read above.
+const bare = /(?<![a-z0-9.@_-])(?<![^/]\/)((?:[a-z0-9-]+\.)+([a-z]{2,}))(?::\d+)?([/?#][^\s]*)?/giu;
 function namedHosts(text: string) {
-  return text
-    .replace(invisible, '')
-    .split(/\s+/)
-    .map((word) => word.replace(wrapping, (mark) => (mark.endsWith('/') ? mark : '')))
-    .flatMap((word) => {
-      const host = word && wordHost(word);
-      return host ? [host] : [];
-    });
+  const plain = text.replace(invisible, '');
+  const hosts: { host: string; word: string; ending: string }[] = [];
+  const rest = plain.replace(withScheme, (found) => {
+    try {
+      const url = new URL(found.startsWith('//') ? `https:${found}` : found);
+      hosts.push({ host: url.hostname, word: '', ending: '' });
+    } catch {}
+    return ' ';
+  });
+  for (const [found, name, ending, after = ''] of rest.matchAll(bare)) {
+    const lower = name!.toLowerCase();
+    if (
+      !/^www\./.test(lower) &&
+      !after.startsWith('/') &&
+      !commonEndings.has(ending!.toLowerCase())
+    )
+      continue;
+    if (!after && products.has(lower)) continue;
+    try {
+      hosts.push({
+        host: new URL(`https://${name}`).hostname,
+        word: found,
+        ending: ending!.toLowerCase(),
+      });
+    } catch {}
+  }
+  return hosts;
 }
 const bareHost = (host: string) => host.toLowerCase().replace(/^www\./, '');
-// The file a link's address ends in, as a file name its text may be: README.md, main.cc.
+// The file a link's address ends in, which a word of its text may name: README.org, main.cc. Only for endings files
+// have as often as sites: a word ending in .com or .cn that the path repeats is still another site.
+const fileEndings = new Set(['cc', 'org', 'dev', 'ai', 'io']);
 function fileOf(url: URL) {
   const last = url.pathname.split('/').pop() ?? '';
   try {
@@ -110,10 +116,14 @@ export function linkDoubt(text: string, url: string): string | null {
     return '地址里在网站名前带有用户名，实际打开的网站可能和看上去的不同。';
   if (target.hostname.split('.').some((label) => label.startsWith('xn--')))
     return '地址里的网站名用了特殊字符，可能是模仿其他网站的名字。';
-  const shown = text.replace(invisible, '').trim().toLowerCase();
-  if (shown && shown === fileOf(target)) return null;
-  if (namedHosts(text).some((host) => bareHost(host) !== bareHost(target.hostname)))
-    return '链接显示的地址和实际打开的地址不同。';
+  const site = bareHost(target.hostname),
+    file = fileOf(target);
+  const named = namedHosts(text).filter(
+    ({ word, ending }) => !(word && fileEndings.has(ending) && word.toLowerCase() === file),
+  );
+  // A text that names the site it leads to shows where it goes, whatever else it names.
+  if (named.some(({ host }) => bareHost(host) === site)) return null;
+  if (named.length) return '链接显示的地址和实际打开的地址不同。';
   return null;
 }
 
