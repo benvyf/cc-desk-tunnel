@@ -93,7 +93,82 @@ test('Claude Code settings load from the service and save each change at once', 
       { fallbackModel: null },
     ]);
   await expect(panel.getByLabel('自动压缩窗口', { exact: true })).toHaveValue('1000000');
+  // A service that does not send the permission settings does not know them: they are not offered.
+  await expect(panel.getByRole('heading', { name: '权限', exact: true })).toHaveCount(0);
   await page.screenshot({ path: resolve('.local/screenshots/settings.png') });
+});
+
+test('the permission settings are offered by a service that sends them', async ({ page }) => {
+  const values = {
+    autoCompactEnabled: null,
+    autoCompactWindow: null,
+    alwaysThinkingEnabled: null,
+    showThinkingSummaries: null,
+    fastMode: null,
+    autoContinueAtUsageLimit: null,
+    switchModelsOnFlag: null,
+    autoMemoryEnabled: null,
+    fileCheckpointingEnabled: null,
+    promptCacheTtl: null,
+    language: null,
+    precomputeCompactionEnabled: null,
+    autoDreamEnabled: null,
+    subagentPromptCacheTtl: null,
+    fallbackModel: null,
+    askUserQuestionTimeout: null,
+    bashOutputMaxChars: null,
+    attribution: null,
+    includeGitInstructions: null,
+    toolSearch: null,
+    denyInsteadOfPrompting: null,
+    blockWritesOutsideWorkingDirectories: true,
+  } satisfies NativeSettings;
+  const updates: unknown[] = [];
+  await page.routeWebSocket('ws://127.0.0.1:18889/ws', (route) => {
+    const send = (value: unknown) => route.send(JSON.stringify(value));
+    route.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'device') return;
+      if (message.type === 'auth') {
+        send({
+          type: 'ready',
+          protocolVersion: PROTOCOL_VERSION,
+          version: '0.0.1',
+          connectionId: randomUUID(),
+          adapter: 'claude-code',
+          sessions: [],
+        });
+        return;
+      }
+      if (message.type === 'settings.update') {
+        updates.push(message.values);
+        Object.assign(values, message.values);
+      }
+      if (message.type.startsWith('settings.'))
+        send({ type: 'settings.state', requestId: message.requestId, values });
+      send({ type: 'response', requestId: message.requestId, ok: true });
+    });
+  });
+  await page.goto('/');
+  await page.getByLabel('服务地址', { exact: true }).fill('ws://127.0.0.1:18889/ws');
+  await page
+    .getByLabel('服务凭据', { exact: true })
+    .fill('test-only-settings-token-with-enough-length');
+  await page.getByRole('button', { name: '连接', exact: true }).click();
+  await page.getByRole('button', { name: '设置与账号', exact: true }).click();
+  await page.getByRole('menuitem', { name: '设置', exact: true }).click();
+  const panel = page.getByRole('region', { name: 'Claude Code 设置' });
+  await expect(panel.getByRole('heading', { name: '权限', exact: true })).toBeVisible();
+  await expect(panel.getByLabel('不等审批，直接拒绝', { exact: true })).toHaveValue('');
+  await expect(panel.getByLabel('禁止在工作目录外写文件', { exact: true })).toHaveValue('true');
+  await panel.getByLabel('不等审批，直接拒绝', { exact: true }).selectOption('true');
+  await panel.getByLabel('禁止在工作目录外写文件', { exact: true }).selectOption('');
+  await expect
+    .poll(() => updates)
+    .toEqual([{ denyInsteadOfPrompting: true }, { blockWritesOutsideWorkingDirectories: null }]);
+  await expect(panel.getByLabel('不等审批，直接拒绝', { exact: true })).toHaveValue('true');
+  await panel.getByRole('heading', { name: '权限', exact: true }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: resolve('.local/screenshots/settings-permissions.png') });
 });
 
 test('the settings of this computer open by keyboard from login without a connection', async ({

@@ -209,3 +209,41 @@ test('a selected provider must exist before session settings can be generated', 
       error instanceof Error && error.message.includes('ENOENT') && error.message.includes(source),
   );
 });
+
+test('the two permission settings live under permissions, beside the rules kept there', (t) => {
+  const root = mkdtempSync(join(tmpdir(), 'cc-permission-settings-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const path = join(root, 'settings.json');
+  writeFileSync(path, JSON.stringify({ permissions: { allow: ['Read'] }, model: 'opus' }));
+  const before = readNativeSettings(path);
+  // Sent as null (not left out), so a client knows this service offers them.
+  assert.equal(before.denyInsteadOfPrompting, null);
+  assert.equal(before.blockWritesOutsideWorkingDirectories, null);
+
+  updateNativeSettings({ denyInsteadOfPrompting: true }, path);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    permissions: { allow: ['Read'], denyInsteadOfPrompting: true },
+    model: 'opus',
+  });
+  assert.equal(readNativeSettings(path).denyInsteadOfPrompting, true);
+  assert.equal('denyInsteadOfPrompting' in JSON.parse(readFileSync(path, 'utf8')), false);
+
+  updateNativeSettings({ blockWritesOutsideWorkingDirectories: false }, path);
+  assert.equal(readNativeSettings(path).blockWritesOutsideWorkingDirectories, false);
+  updateNativeSettings(
+    { denyInsteadOfPrompting: null, blockWritesOutsideWorkingDirectories: null },
+    path,
+  );
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {
+    permissions: { allow: ['Read'] },
+    model: 'opus',
+  });
+
+  // With no rules left, the emptied section goes too.
+  writeFileSync(path, JSON.stringify({ permissions: { denyInsteadOfPrompting: true } }));
+  updateNativeSettings({ denyInsteadOfPrompting: null }, path);
+  assert.deepEqual(JSON.parse(readFileSync(path, 'utf8')), {});
+  // A hand-written value of another type shows as unset.
+  writeFileSync(path, JSON.stringify({ permissions: { denyInsteadOfPrompting: 'yes' } }));
+  assert.equal(readNativeSettings(path).denyInsteadOfPrompting, null);
+});

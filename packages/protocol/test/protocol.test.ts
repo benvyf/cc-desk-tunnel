@@ -244,3 +244,47 @@ test('a turn report names the message it answered, or none for a turn a backgrou
   assert.equal(eventSchema.safeParse(event({ ...stats, requests: -1 })).success, false);
   assert.equal(eventSchema.safeParse(event({ ...stats, partial: undefined })).success, false);
 });
+
+test('the permission settings came without a protocol change: absent from an older service', () => {
+  const older = {
+    autoCompactEnabled: null,
+    autoCompactWindow: null,
+    alwaysThinkingEnabled: null,
+    showThinkingSummaries: null,
+    fastMode: null,
+    autoContinueAtUsageLimit: null,
+    switchModelsOnFlag: null,
+    autoMemoryEnabled: null,
+    fileCheckpointingEnabled: null,
+    promptCacheTtl: null,
+    language: null,
+    precomputeCompactionEnabled: null,
+    autoDreamEnabled: null,
+    subagentPromptCacheTtl: null,
+    fallbackModel: null,
+    askUserQuestionTimeout: null,
+    bashOutputMaxChars: null,
+    attribution: null,
+    includeGitInstructions: null,
+    toolSearch: null,
+  };
+  const state = serverMessageSchema.parse({
+    type: 'settings.state',
+    requestId: randomUUID(),
+    values: older,
+  });
+  assert.equal(state.type === 'settings.state' && 'denyInsteadOfPrompting' in state.values, false);
+  const newer = serverMessageSchema.parse({
+    type: 'settings.state',
+    requestId: randomUUID(),
+    values: { ...older, denyInsteadOfPrompting: true, blockWritesOutsideWorkingDirectories: null },
+  });
+  assert.equal(newer.type === 'settings.state' && newer.values.denyInsteadOfPrompting, true);
+  assert.ok(
+    commandSchema.safeParse({
+      type: 'settings.update',
+      requestId: randomUUID(),
+      values: { denyInsteadOfPrompting: true },
+    }).success,
+  );
+});

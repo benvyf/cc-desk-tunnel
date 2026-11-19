@@ -109,6 +109,11 @@ export const nativeSettingsSchema = z.object({
   // Not a key of its own in the file: ENABLE_TOOL_SEARCH under `env`. Tools are then described to the model
   // only when it looks for them, instead of all of them with every request.
   toolSearch: toggle,
+  // Under `permissions` in the file (CLI 2.1.319 and 2.1.314 on). Absent, not null, from a service before them,
+  // which would refuse an update naming them: a client offers them only when the service sends them. So they
+  // came without a protocol change.
+  denyInsteadOfPrompting: toggle.optional(),
+  blockWritesOutsideWorkingDirectories: toggle.optional(),
 });
 export type NativeSettings = z.infer<typeof nativeSettingsSchema>;
 export const contextUsageSchema = z.object({

@@ -194,6 +194,25 @@ const groups = (values: NativeSettings): { name: string; fields: Field[] }[] => 
     ],
   },
   {
+    name: '权限',
+    fields: [
+      {
+        key: 'denyInsteadOfPrompting',
+        kind: 'toggle',
+        title: '不等审批，直接拒绝',
+        detail:
+          '需要你批准的工具调用不再等你，立即拒绝并告诉 Claude，这一轮接着做；适合无人值守的定时任务。开启后所有会话都不再弹出审批，Claude 也不会向你提问，计划模式不可用；允许规则和权限模式照常先判断',
+      },
+      {
+        key: 'blockWritesOutsideWorkingDirectories',
+        kind: 'toggle',
+        title: '禁止在工作目录外写文件',
+        detail:
+          '写文件和编辑工具不能改工作目录以外的文件，也不能改 Claude Code 的设置文件，任何权限模式和允许规则都不能放开；不限制命令和 MCP 工具，Claude 自己的计划和记忆文件不受影响',
+      },
+    ],
+  },
+  {
     name: 'Git',
     fields: [
       {
@@ -315,22 +334,26 @@ export default function SettingsPanel({ client }: { client: ProxyClient }) {
           </p>
         )}
         {values &&
-          groups(values).map((group) => (
-            <div key={group.name}>
-              <h2 className="page-heading">{group.name}</h2>
-              <div className="settings-list card">
-                {group.fields.map((field) => (
-                  <label key={field.key}>
-                    <span>
-                      <strong>{field.title}</strong>
-                      <small>{field.detail}</small>
-                    </span>
-                    {control(field, values[field.key])}
-                  </label>
-                ))}
+          groups(values).map((group) => {
+            // A setting the service does not send is one it does not know yet (an older server): not offered.
+            const fields = group.fields.filter((field) => values[field.key] !== undefined);
+            return fields.length ? (
+              <div key={group.name}>
+                <h2 className="page-heading">{group.name}</h2>
+                <div className="settings-list card">
+                  {fields.map((field) => (
+                    <label key={field.key}>
+                      <span>
+                        <strong>{field.title}</strong>
+                        <small>{field.detail}</small>
+                      </span>
+                      {control(field, values[field.key] ?? null)}
+                    </label>
+                  ))}
+                </div>
               </div>
-            </div>
-          ))}
+            ) : null;
+          })}
         <GlobalInstructions client={client} />
       </div>
     </section>
