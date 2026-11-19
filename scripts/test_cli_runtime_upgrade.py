@@ -3,6 +3,7 @@ import hashlib
 import importlib.util
 import io
 import json
+import os
 import subprocess
 from pathlib import Path
 import tarfile
@@ -134,8 +135,24 @@ let result; try { eval(snippet + ';result=journal'); console.log(JSON.stringify(
             upgrade.ensure_default_journal('proxy')
         command = calls[0]
         self.assertEqual(command[:5], ['docker', 'exec', '-u', '1000:1000', 'proxy'])
-        self.assertIn("flag:'wx'", command[command.index('-e') + 1])
         self.assertEqual(json.loads(command[-1]), upgrade.DEFAULT_JOURNAL)
+        # The script itself, in a scratch directory: written durably, never over an existing journal.
+        # Linux only, as in production: Windows cannot fsync a directory.
+        if os.name != 'posix':
+            return
+        script = command[command.index('-e') + 1]
+        with tempfile.TemporaryDirectory() as directory:
+            local = script.replace("d='/data/managed-server'", 'd=' + json.dumps(directory))
+            self.assertNotEqual(local, script)
+            run = lambda: subprocess.run(['node', '-e', local, command[-1]], check=True, capture_output=True)
+            run()
+            journal = Path(directory) / 'journal.json'
+            self.assertEqual(json.loads(journal.read_text()), upgrade.DEFAULT_JOURNAL)
+            self.assertTrue(journal.read_text().endswith('}\n'))
+            journal.write_text('{"kept":true}\n')
+            run()
+            self.assertEqual(journal.read_text(), '{"kept":true}\n')
+            self.assertEqual(sorted(p.name for p in Path(directory).iterdir()), ['journal.json'])
 
     def test_live_server_is_probed_in_its_own_protocol(self):
         current = {'build': 28, 'protocol': 24, 'sha256': None}

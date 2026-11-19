@@ -217,10 +217,13 @@ def verify_runtime(container, node):
 
 
 def ensure_default_journal(container):
-    """Write the supervisor's own default journal after a cutover, never over an existing one: the host
-    platform's recovery checks read the file and would otherwise ask for maintenance."""
-    script = ("const f=require('fs'),p='/data/managed-server/journal.json';try{f.writeFileSync(p,process.argv[1]+'\\n',"
-              "{flag:'wx',mode:0o600})}catch(e){if(e.code!=='EEXIST')throw e}")
+    """Write the supervisor's own default journal where there is none, never over one: the frozen-source check,
+    the cold backup and the host platform's recovery checks read the file. Durable before it appears: written
+    to a temporary file, synced, then linked into place (a link never replaces an existing file)."""
+    script = ("const f=require('fs'),d='/data/managed-server',p=d+'/journal.json',t=p+'.default-'+process.pid;"
+              "const fd=f.openSync(t,'wx',0o600);try{f.writeSync(fd,process.argv[1]+'\\n');f.fsyncSync(fd)}finally{f.closeSync(fd)}"
+              "try{f.linkSync(t,p)}catch(e){if(e.code!=='EEXIST')throw e}finally{f.unlinkSync(t)}"
+              "const dd=f.openSync(d,'r');try{f.fsyncSync(dd)}finally{f.closeSync(dd)}")
     subprocess.run(['docker', 'exec', '-u', '1000:1000', container, '/opt/runtime/node/bin/node', '-e', script,
         json.dumps(DEFAULT_JOURNAL, separators=(',', ':'))], check=True, capture_output=True, timeout=30)
 
@@ -587,6 +590,11 @@ def main():
         b.validate_runtime(original)
         need(original.get('State',{}).get('Health',{}).get('Status')=='healthy','Original container is not healthy; no image preparation requested')
         baseline = verify_runtime(b.CONTAINER, node)
+        # No journal and nothing installed in the container read as the supervisor's default: give the running
+        # service that very file now, so the frozen-source check before cutover, the cold backup and a rollback
+        # all see it. Its content is what the supervisor already holds; reauthentication reads the same.
+        if baseline['journal'] == DEFAULT_JOURNAL:
+            ensure_default_journal(b.CONTAINER)
         core=load('signed_platform_verifier',PROGRAM/'apps/update-service/web/host-platform.py')
         boot=load('signed_adoption_bootstrap',PROGRAM/'apps/update-service/web/host-bootstrap.py')
         status=live_probe(b.CONTAINER,baseline['protocol'])
