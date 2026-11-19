@@ -380,3 +380,38 @@ test('a run that reported an error before it completed is recorded as failed, as
   f.store.append(f.session.id, next, { type: 'run.status', status: 'completed', connectionId });
   assert.equal(f.store.get(f.session.id).session.lastRun?.status, 'completed');
 });
+
+test('a user message is found by its ID through the index, not by reading the whole session', (t) => {
+  const f = fixture(t);
+  const { session, store } = f;
+  const connectionId = randomUUID();
+  const asked: string[] = [];
+  for (let turn = 0; turn < 50; turn++) {
+    const runId = randomUUID(),
+      messageId = randomUUID();
+    asked.push(messageId);
+    store.append(session.id, runId, { type: 'run.status', status: 'running', connectionId });
+    store.append(session.id, runId, {
+      type: 'message.user',
+      messageId,
+      text: `问 ${turn}`,
+      scenario: 'chat',
+    });
+    // Another event naming the same ID must not be taken for the message.
+    store.append(session.id, runId, { type: 'text.delta', messageId, text: '答' });
+    store.append(session.id, runId, { type: 'run.status', status: 'completed', connectionId });
+  }
+  const found = store.userMessage(session.id, asked[37]!);
+  assert.equal(found?.payload.type, 'message.user');
+  assert.equal(found?.payload.type === 'message.user' && found.payload.text, '问 37');
+  assert.equal(store.userMessage(session.id, randomUUID()), undefined);
+  assert.equal(store.userMessage(randomUUID(), asked[0]!), undefined, 'only in its own session');
+  const plan = store.database
+    .prepare(
+      "EXPLAIN QUERY PLAN SELECT data FROM events WHERE session_id = ? AND json_extract(data, '$.payload.messageId') = ? AND json_extract(data, '$.payload.type') = 'message.user' LIMIT 1",
+    )
+    .all(session.id, asked[0]!)
+    .map((row) => String(row.detail))
+    .join('\n');
+  assert.match(plan, /USING INDEX events_user_message/);
+});
