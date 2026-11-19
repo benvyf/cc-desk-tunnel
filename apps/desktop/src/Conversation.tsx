@@ -1175,9 +1175,29 @@ export default function Conversation({
     if (findRequest !== lastFindRequest.current) openFind();
     lastFindRequest.current = findRequest;
   }, [findRequest]);
-  // The clock of running timers: it ticks once a second, and only while something runs (see below). Turns at rest
-  // show no clock (see `ticking`).
+  // The day: a reply's footer says its date as seen from now (messageTime, read as it is drawn), so every turn is
+  // drawn again at local midnight and when the window resumes, when "today" may have become "yesterday".
+  const [day, setDay] = useState(Date.now);
+  // The clock of running timers: it ticks once a second, and only while something runs (see below).
   const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const refresh = () => {
+      clearTimeout(timer);
+      const current = new Date();
+      setDay(current.getTime());
+      setNow(current.getTime());
+      const nextDay = new Date(current);
+      nextDay.setHours(24, 0, 0, 0);
+      timer = setTimeout(refresh, nextDay.getTime() - current.getTime());
+    };
+    refresh();
+    window.addEventListener('focus', refresh);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('focus', refresh);
+    };
+  }, []);
   const running = !!session?.activeRun;
   // Running timers tick once a second, and only while something runs.
   useEffect(() => {
@@ -1207,7 +1227,7 @@ export default function Conversation({
   // What the rows are given of the session (Live), the same object while nothing they show changes: a turn's view
   // is drawn again only when its turn or this changes (memo, TurnView). Its actions call the latest handlers through
   // a ref, so new handler functions from above draw nothing again. Turns at work get the ticking clock; the others
-  // a fixed one, so the timer of a run does not draw the turns before it every second.
+  // the day's, so the timer of a run does not draw the turns before it every second.
   const actions = useRef({ replyApproval, stopTask, backgroundTask, edit });
   actions.current = { replyApproval, stopTask, backgroundTask, edit };
   const activeRunId = session?.activeRun?.id;
@@ -1273,8 +1293,8 @@ export default function Conversation({
     taskSent,
   ];
   const live = useMemo(() => makeLive(now), [now, ...liveKeys]);
-  // Turns at rest read no clock: theirs is fixed, so a tick, midnight or the window's focus draws none of them.
-  const atRest = useMemo(() => makeLive(0), liveKeys);
+  // Turns at rest show no running clock, so a tick draws none of them; the day, for their dates, does.
+  const atRest = useMemo(() => makeLive(day), [day, ...liveKeys]);
   // The calls that wait on an answer from here, in the order they were asked: the dock shows the first, and the next
   // once that one is answered. All turns are looked at: a message sent while one waits can join the run in a turn
   // of its own, and the call above it must still be answerable.
