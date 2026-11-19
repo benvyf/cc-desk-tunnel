@@ -221,8 +221,16 @@ function createHistoryCache(root, options = {}) {
       await removeFile(file);
       return;
     }
+    // A window over its limits is cut to three quarters of them, so that the appends after it fit for a while
+    // instead of rewriting the whole file again with nearly every one.
+    const over = value.events.length > maxEvents || bytes > maxBytes;
+    const eventTarget = over ? Math.floor(maxEvents * 0.75) : maxEvents;
+    const byteTarget = over ? Math.floor(maxBytes * 0.75) : maxBytes;
     let start = 0;
-    while (start < latestStart && (value.events.length - start > maxEvents || bytes > maxBytes)) {
+    while (
+      start < latestStart &&
+      (value.events.length - start > eventTarget || bytes > byteTarget)
+    ) {
       const run = value.events[start].runId;
       do {
         bytes -= Buffer.byteLength(lines[start++]);

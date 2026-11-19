@@ -494,3 +494,18 @@ test('orphan cleanup never removes an atomic temporary file still being written'
   }
   assert.equal((await cache.read(id)).events.length, 1);
 });
+test('a window cut for its limits leaves room, so the appends after it do not rewrite it each time', async (t) => {
+  const { cache, replace } = await fixture(t, { maxEvents: 20, maxBytes: 1024 * 1024 });
+  await replace(Array.from({ length: 20 }, (_, at) => event(at + 1)));
+  const firsts = [];
+  for (let sequence = 21; sequence <= 40; sequence++) {
+    await cache.append(id, [event(sequence)]);
+    firsts.push((await cache.read(id)).firstSequence);
+  }
+  // Over the limit once, the window is cut to 15 events; the next five appends fit without a rewrite.
+  assert.deepEqual(firsts.slice(0, 6), [7, 7, 7, 7, 7, 7]);
+  assert.ok(new Set(firsts).size <= 4, `rewrites: ${[...new Set(firsts)]}`);
+  const last = await cache.read(id);
+  assert.equal(last.events.at(-1).sequence, 40);
+  assert.ok(last.events.length <= 20);
+});
