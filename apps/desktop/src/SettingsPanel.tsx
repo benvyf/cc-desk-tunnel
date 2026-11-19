@@ -208,7 +208,7 @@ const groups = (values: NativeSettings): { name: string; fields: Field[] }[] => 
         kind: 'toggle',
         title: '禁止在工作目录外写文件',
         detail:
-          '写文件和编辑工具不能改工作目录以外的文件，也不能改 Claude Code 的设置文件，任何权限模式和允许规则都不能放开；不限制命令和 MCP 工具，Claude 自己的计划和记忆文件不受影响',
+          '只管云端服务器上的文件：写文件和编辑工具不能改会话目录以外的文件，也不能改 Claude Code 的设置文件，任何权限模式和允许规则都不能放开。不限制命令和 MCP 工具，所以 Claude 通过命令在你电脑上做的修改不受它限制；Claude 自己的计划和记忆文件不受影响',
       },
     ],
   },
