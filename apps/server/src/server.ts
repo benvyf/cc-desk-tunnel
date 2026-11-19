@@ -370,13 +370,33 @@ export function createProxyServer(options: ServerOptions) {
   // cut off by the restart. Not on entering maintenance: a relay's maintenance restarts nothing, and an update
   // whose preparation fails leaves the sessions as they were.
   function endForUpdate() {
+    // Ending one must not stop the others, nor the update: the restart ends them anyway, only less tidily.
     const why = '服务端开始更新，这里的运行随之结束；更新完成后可以继续这个会话。';
-    for (const run of runs.values()) cancel(run, why);
-    for (const terminal of terminals.values()) {
+    const said = (sessionId: string, runId: string) => {
+      try {
+        record(sessionId, runId, { type: 'native.notice', text: why });
+      } catch (error) {
+        console.error('Update notice could not be recorded', { sessionId, error: String(error) });
+      }
+    };
+    for (const run of [...runs.values()]) {
+      // Said now, not when the run's end is recorded: the restart may come first.
+      said(run.sessionId, run.id);
+      try {
+        cancel(run, why);
+      } catch (error) {
+        console.error('Run could not be ended before the update', { error: String(error) });
+      }
+    }
+    for (const terminal of [...terminals.values()]) {
       if (terminal.closing) continue;
       terminal.closing = true;
-      record(terminal.sessionId, terminal.id, { type: 'native.notice', text: why });
-      if (terminal.process) track(terminal.process.close('disconnected').catch(() => {}));
+      said(terminal.sessionId, terminal.id);
+      try {
+        if (terminal.process) track(terminal.process.close('disconnected').catch(() => {}));
+      } catch (error) {
+        console.error('Terminal could not be closed before the update', { error: String(error) });
+      }
     }
   }
   function maintenanceBusy(disconnectClients: boolean) {
