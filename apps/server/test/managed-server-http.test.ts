@@ -143,3 +143,54 @@ test(
     await activation;
   },
 );
+test('sessions are ended only once an update is about to restart, not by a failed preparation or a relay', async (t) => {
+  let ended = 0,
+    maintenance = false,
+    failing = true;
+  const handler = managedServerHandler({
+    token,
+    backend: {
+      check: async (clientProtocol: number) => ({ clientProtocol }),
+      status: async () => ({ phase: 'idle' }),
+      prepare: async () => {
+        if (failing) throw new Error('not installable');
+      },
+      activate: () => {},
+    } as unknown as ManagedBackend,
+    admission: {
+      enter: () => {
+        if (maintenance) return false;
+        maintenance = true;
+        return true;
+      },
+      leave: () => {
+        maintenance = false;
+      },
+      endForUpdate: () => {
+        ended++;
+      },
+    },
+  });
+  const server = createServer((req, res) => {
+    if (!handler(req, res)) res.writeHead(404).end();
+  });
+  await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
+  t.after(() => {
+    server.close();
+  });
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const post = (path: string, body: unknown) =>
+    fetch(`http://127.0.0.1:${address.port}/cc-managed/server/v1/${path}`, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  const request = { clientProtocol: 999, build: 2, sha256: 'a'.repeat(64), confirmed: true };
+  assert.equal((await post('install', request)).status, 409);
+  assert.equal(ended, 0, 'a preparation that failed leaves the sessions as they were');
+  assert.equal(maintenance, false);
+  failing = false;
+  assert.equal((await post('install', request)).status, 202);
+  assert.equal(ended, 1);
+});

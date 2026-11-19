@@ -76,6 +76,8 @@ export type MaintenanceAdmission = {
   enter(disconnectClients?: boolean): boolean;
   recoverRelay?(): boolean;
   leave(): void;
+  // Ends the runs and terminals still going, just before the restart (see server.ts `endForUpdate`).
+  endForUpdate?(): void;
   busy?(): boolean;
   serving?(): boolean;
   activity?(): NonNullable<ServerStatus['hostDiagnostics']>['activity'];
@@ -329,6 +331,7 @@ export function managedServerHandler(options: {
           }
           install.gated = true;
         }
+        options.admission.endForUpdate?.();
         let activated = false;
         const activate = () => {
           if (!activated) {

@@ -365,22 +365,18 @@ export function createProxyServer(options: ServerOptions) {
       connections: bounded([...peers].filter((peer) => peer.authenticated).length),
     };
   }
-  function endAtRest() {
-    let sessions: Session[];
-    try {
-      sessions = store.list();
-    } catch {
-      return;
-    }
-    for (const session of sessions) {
-      if (!session.activeRun || atWork(session.activeRun)) continue;
-      const run = runs.get(session.id);
-      if (run) cancel(run, '服务端开始更新，后台任务随之结束；更新完成后可以继续这个会话。');
-      const terminal = terminals.get(session.id);
-      if (terminal && !terminal.closing) {
-        terminal.closing = true;
-        void terminal.process?.close().catch(() => {});
-      }
+  // The update's last step before the restart: what is still going (what did not hold it back, or a turn a
+  // background task started since maintenance began) is ended now, at a known point and saying why, rather than
+  // cut off by the restart. Not on entering maintenance: a relay's maintenance restarts nothing, and an update
+  // whose preparation fails leaves the sessions as they were.
+  function endForUpdate() {
+    const why = '服务端开始更新，这里的运行随之结束；更新完成后可以继续这个会话。';
+    for (const run of runs.values()) cancel(run, why);
+    for (const terminal of terminals.values()) {
+      if (terminal.closing) continue;
+      terminal.closing = true;
+      record(terminal.sessionId, terminal.id, { type: 'native.notice', text: why });
+      if (terminal.process) track(terminal.process.close('disconnected').catch(() => {}));
     }
   }
   function maintenanceBusy(disconnectClients: boolean) {
@@ -418,15 +414,15 @@ export function createProxyServer(options: ServerOptions) {
         maintenance = false;
         return false;
       }
-      // What did not hold the update back is ended now, at a known point, rather than by the restart: a
-      // background task that finished during the install would start a turn no one could answer.
-      endAtRest();
       if (disconnectClients)
         for (const peer of peers) {
           peer.left = true;
           peer.socket.close(1012, 'Server update; reconnect after maintenance');
         }
       return true;
+    },
+    endForUpdate() {
+      if (maintenance) endForUpdate();
     },
     leave() {
       maintenance = false;
