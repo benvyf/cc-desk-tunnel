@@ -1,10 +1,24 @@
 // Search rendered text, including text split by inline Markdown formatting. Ranges highlight without changing
 // React's DOM or the user's selection. Separate paragraphs/cells do not form an accidental joined match.
-export function matchingRanges(root: HTMLElement, query: string): Range[] {
+// `known` keeps the matches of each content block for the same query: a block not in `changed` (and found before)
+// is not searched again, so a reply streaming at the end does not have the whole conversation searched each frame.
+export function matchingRanges(
+  root: HTMLElement,
+  query: string,
+  known?: Map<Element, Range[]>,
+  changed?: Set<Element>,
+): Range[] {
   if (!query) return [];
   const pattern = new RegExp(query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'giu');
-  const ranges: Range[] = [];
-  for (const content of root.querySelectorAll<HTMLElement>('[data-search-content]')) {
+  const all: Range[] = [];
+  const blocks = root.querySelectorAll<HTMLElement>('[data-search-content]');
+  for (const content of blocks) {
+    const kept = known?.get(content);
+    if (kept && !changed?.has(content)) {
+      all.push(...kept);
+      continue;
+    }
+    const ranges: Range[] = [];
     const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) =>
         node.parentElement?.closest('button, [data-search-ignore]')
@@ -40,6 +54,9 @@ export function matchingRanges(root: HTMLElement, query: string): Range[] {
       text += node.data;
     }
     collect();
+    known?.set(content, ranges);
+    all.push(...ranges);
   }
-  return ranges;
+  if (known) for (const block of known.keys()) if (!block.isConnected) known.delete(block);
+  return all;
 }

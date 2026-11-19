@@ -62,7 +62,21 @@ export default function ConversationFind({
     active.current = 0;
     let frame = 0;
     let navigate = true;
-    const refresh = () => {
+    // The matches of each content block for this query, and the blocks changed since they were found.
+    const known = new Map<Element, Range[]>();
+    const changed = new Set<Element>();
+    const refresh = (records: MutationRecord[] = []) => {
+      for (const record of records) {
+        const at = record.target instanceof Element ? record.target : record.target.parentElement;
+        const block = at?.closest('[data-search-content]');
+        if (block) changed.add(block);
+        // A block put in or taken out whole is found anew or dropped by the next search.
+        for (const node of [...record.addedNodes, ...record.removedNodes])
+          if (node instanceof Element) {
+            if (node.matches('[data-search-content]')) changed.add(node);
+            for (const inner of node.querySelectorAll('[data-search-content]')) changed.add(inner);
+          }
+      }
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         // A box that is fading out after closing marks nothing more.
@@ -72,7 +86,8 @@ export default function ConversationFind({
           return;
         }
         const previous = ranges.current[active.current];
-        ranges.current = matchingRanges(content, query);
+        ranges.current = matchingRanges(content, query, known, changed);
+        changed.clear();
         const retained = ranges.current.findIndex(
           (range) =>
             previous &&
@@ -89,7 +104,7 @@ export default function ConversationFind({
       });
     };
     refresh();
-    const observer = new MutationObserver(refresh);
+    const observer = new MutationObserver((records) => refresh(records));
     observer.observe(content, { childList: true, characterData: true, subtree: true });
     return () => {
       observer.disconnect();

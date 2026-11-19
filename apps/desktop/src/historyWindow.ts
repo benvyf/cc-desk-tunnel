@@ -5,6 +5,17 @@ const encoder = new TextEncoder();
 const softBytes = 1024 * 1024;
 const hardBytes = 4 * 1024 * 1024;
 const maxEvents = 2000;
+// An event's size as a cached line, measured once: the window is worked out about once a second while a reply
+// streams, and recorded events do not change.
+const sizes = new WeakMap<SessionEvent, number>();
+function lineBytes(event: SessionEvent) {
+  let size = sizes.get(event);
+  if (size === undefined) {
+    size = encoder.encode(JSON.stringify(event) + '\n').byteLength;
+    sizes.set(event, size);
+  }
+  return size;
+}
 
 // Keep complete runs at the tail. The newest run is useful even above the soft
 // window budgets, but a single run above the IPC budget is not cached.
@@ -25,7 +36,7 @@ export function historyWindow(
     let runBytes = 0;
     const limit = newest ? hardBytes : softBytes - bytes;
     for (let i = first; i < start; i++) {
-      runBytes += encoder.encode(JSON.stringify(events[i]) + '\n').byteLength;
+      runBytes += lineBytes(events[i]);
       if (runBytes > limit) {
         if (newest) return null;
         return {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { PROTOCOL_VERSION } from '@cc-desk-tunnel/protocol';
@@ -109,10 +109,8 @@ function fixture() {
   return { session, events, add, connectionId };
 }
 
-test('a long session streams without parsing its finished answers again', async ({
-  page,
-}, info) => {
-  test.setTimeout(240_000);
+// Opens the long session in a window whose desktop bridge and service are faked, and waits for it to settle.
+async function openLong(page: Page) {
   await installPerformanceProbe(page);
   await page.addInitScript(() => {
     const counts = ((window as any).richTextRenders = { finished: 0, streaming: 0 });
@@ -217,6 +215,13 @@ test('a long session streams without parsing its finished answers again', async 
   const openMs = Date.now() - opened;
   // Let what opening the session started settle before counting.
   await page.waitForTimeout(1500);
+  return { session, add, send: (value: unknown) => send(value), connectionId, openMs };
+}
+test('a long session streams without parsing its finished answers again', async ({
+  page,
+}, info) => {
+  test.setTimeout(240_000);
+  const { session, add, send, connectionId, openMs } = await openLong(page);
 
   const runId = randomUUID(),
     messageId = randomUUID();
@@ -303,4 +308,52 @@ test('a long session streams without parsing its finished answers again', async 
   );
   expect(result.frameGapP95).toBeLessThanOrEqual(development ? 1000 : 100);
   expect(result.longTaskP95).toBeLessThanOrEqual(development ? 1500 : 250);
+});
+
+test('find keeps its matches across a long session while a new answer streams in', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const { session, add, send, connectionId } = await openLong(page);
+  await page.keyboard.press('Control+f');
+  await page.getByLabel('查找对话内容', { exact: true }).fill('结论');
+  const count = page.locator('.find-count');
+  // Each finished answer is headed "第 n 轮的结论".
+  await expect(count).toHaveText(new RegExp(`^1 / ${TURNS}`), { timeout: 60_000 });
+  const runId = randomUUID(),
+    messageId = randomUUID();
+  session.activeRun = { id: runId, connectionId, status: 'running' };
+  send({ type: 'session.updated', session });
+  send({
+    type: 'session.event',
+    event: add(runId, {
+      type: 'message.user',
+      messageId: randomUUID(),
+      text: '再来一轮',
+      scenario: 'chat',
+    }),
+  });
+  send({
+    type: 'session.event',
+    event: add(runId, { type: 'run.status', status: 'running', connectionId }),
+  });
+  for (let n = 0; n < 30; n++) {
+    send({
+      type: 'session.fragment',
+      sessionId: session.id,
+      runId,
+      payload: {
+        type: 'text.delta',
+        messageId,
+        text: `第 ${n} 条结论。${n % 10 === 9 ? '\n\n' : ''}`,
+      },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 16));
+  }
+  // The new answer's matches join, the earlier ones stay, and the current one is kept.
+  await expect(count).toHaveText(new RegExp(`^1 / ${TURNS + 30}`), { timeout: 30_000 });
+  await page.getByLabel('查找对话内容', { exact: true }).press('Enter');
+  await expect(count).toHaveText(new RegExp(`^2 / ${TURNS + 30}`));
+  await page.getByLabel('查找对话内容', { exact: true }).fill('条结论');
+  await expect(count).toHaveText(/^1 \/ 30/);
 });
