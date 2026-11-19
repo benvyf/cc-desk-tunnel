@@ -167,7 +167,15 @@ test('a file name in the text passes only on a repository site; subdomains are o
   assert.equal(linkDoubt('README.org', 'https://gitlab.com/o/r/-/blob/main/README.org'), null);
   // A host spelled in other letters names a site that never opens without asking.
   assert.ok(linkDoubt('https://银行.com', 'https://evil.example/'));
-  assert.equal(linkDoubt('google.com', 'https://mail.google.com/'), null);
+  // A name under the named site may be anyone's.
+  assert.ok(linkDoubt('google.com', 'https://sites.google.com/view/evil'));
+  assert.ok(linkDoubt('amazonaws.com', 'https://evil.s3.amazonaws.com/'));
+  assert.equal(linkDoubt('google.com', 'https://m.google.com/'), null);
+  assert.equal(linkDoubt('google.com', 'https://www.google.com/'), null);
+  // The sentence going on after an address is not its host.
+  assert.equal(linkDoubt('https://example.com查看详情', 'https://example.com/'), null);
+  assert.equal(linkDoubt('访问https://example.com即可', 'https://example.com/'), null);
+  assert.ok(linkDoubt('s3://bank.com/key', 'https://evil.example/'));
   assert.equal(linkDoubt('mail.google.com', 'https://google.com/'), null);
   assert.equal(linkDoubt('example.com', 'https://example.com./'), null);
   // A shared ending is not the site of everyone under it.

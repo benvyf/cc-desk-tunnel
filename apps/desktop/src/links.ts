@@ -66,7 +66,8 @@ const products = new Set([
 const invisible = /\p{Cf}/gu;
 // A web address with its scheme, or a protocol-relative one, runs to the next space, path and query included, so
 // nothing after its host is read again as a site of its own; its host is the ASCII run after "//", which ends at
-// punctuation such as 、》” that follows it in Chinese text. Other schemes (s3://, ssh://) name no site. A host
+// punctuation such as 、》” that follows it in Chinese text. Other schemes (s3://, ssh://) are not read as such
+// addresses, though a name in them that reads as a site is still one (s3://bank.com/key). A host
 // spelled in other letters (https://银行.com) names a site other than any that opens without asking (one whose host
 // is spelled so is asked about for its xn--).
 const withScheme = /(?:\bhttps?:|(?<![\p{L}\p{N}+.:-]))\/\/([a-z0-9.\-:[\]%@]*)(\S*)/giu;
@@ -78,8 +79,10 @@ function namedHosts(text: string) {
   const rest = plain.replace(withScheme, (_found, authority: string, after: string) => {
     // A user name before the host shows one site and names another: http://bank.com:80@evil.com.
     if (authority.includes('@')) hosts.push({ host: '', word: '', ending: '', hidden: true });
-    else if (/^\p{L}/u.test(after) && /[^\x00-\x7f]/.test(after.slice(0, 1)))
-      hosts.push({ host: after.split(/[/?#]/)[0]!, word: '', ending: '' });
+    // Other letters right after "//" (or after a name ending in a dot) are the host; after a whole host they are
+    // the sentence going on (https://example.com查看详情).
+    else if ((!authority || authority.endsWith('.')) && /^[^\x00-\x7f]/.test(after))
+      hosts.push({ host: authority + after.split(/[/?#]/)[0]!, word: '', ending: '' });
     else
       try {
         hosts.push({
@@ -115,28 +118,13 @@ const bareHost = (host: string) =>
     .toLowerCase()
     .replace(/^www\./, '')
     .replace(/\.$/, '');
-// Endings under which anyone may have a site of their own: a name under one is not the site of the ending.
-const shared = new Set([
-  'github.io',
-  'gitlab.io',
-  'vercel.app',
-  'netlify.app',
-  'pages.dev',
-  'herokuapp.com',
-  'blogspot.com',
-  'co.uk',
-  'com.cn',
-  'com.hk',
-  'com.tw',
-  'co.jp',
-]);
-// Whether a named host is the site a link leads to, or one of its own names: google.com and mail.google.com.
+// Whether a named host is the site a link leads to: the same, or a site under it that the text names more exactly
+// (text mail.google.com, link google.com), or the link's www. or m. form of it. Not the other way: a link to a name
+// under the named site may be anyone's (sites.google.com, a bucket of amazonaws.com, a page of github.io).
 function sameSite(named: string, site: string) {
   const a = bareHost(named),
     b = bareHost(site);
-  if (a === b) return true;
-  const [short, long] = a.length < b.length ? [a, b] : [b, a];
-  return short.includes('.') && !shared.has(short) && long.endsWith(`.${short}`);
+  return a === b || (b.includes('.') && a.endsWith(`.${b}`)) || b === `m.${a}`;
 }
 // The file a link's address ends in, which a word of its text may name: README.org, main.cc. Only on sites that
 // show files of a repository, and for endings files have as often as sites: anywhere else the path is the other
