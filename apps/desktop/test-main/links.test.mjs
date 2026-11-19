@@ -112,6 +112,12 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.equal(linkDoubt('window.top', 'https://developer.mozilla.org/x'), null);
   assert.equal(linkDoubt('main.cc 第 12 行', 'https://github.com/o/r/blob/main/main.cc'), null);
   assert.equal(linkDoubt('从 github.com 迁移到 gitlab.com', 'https://gitlab.com/'), null);
+  assert.equal(linkDoubt('https://example.com、https://b.com', 'https://example.com/'), null);
+  assert.equal(linkDoubt('《https://example.com》', 'https://example.com/'), null);
+  assert.equal(linkDoubt('https://example.com”', 'https://example.com/'), null);
+  assert.equal(linkDoubt('https://example.com：说明', 'https://example.com/'), null);
+  assert.equal(linkDoubt('java.net', 'https://docs.oracle.com/javase/net.html'), null);
+  assert.equal(linkDoubt('192.168.1.1:8080', 'http://192.168.1.1:8080/'), null);
   // Text that reads as another address than the one it leads to.
   assert.ok(linkDoubt('https://bank.com/login', 'https://evil.example/login'));
   assert.ok(linkDoubt('bank.com', 'https://evil.example/'));
@@ -128,6 +134,11 @@ test('a web link asks first only when its text or address may mislead', () => {
   assert.ok(linkDoubt('paypal.COM/login', 'https://evil.example/'));
   assert.ok(linkDoubt('bank‮.com', 'https://evil.example/'), 'a bidirectional mark');
   assert.ok(linkDoubt('//bank.com', 'https://evil.example/'));
+  // Nothing after an address's host is read as a site of its own, and a user name before it is a trick.
+  assert.ok(linkDoubt('https://bank.com/login?u=evil.com', 'https://evil.com/'));
+  assert.ok(linkDoubt('https://bank.com/#evil.com', 'https://evil.com/'));
+  assert.ok(linkDoubt('http://bank.com:80@evil.com/', 'https://evil.com/'));
+  assert.ok(linkDoubt('http://192.168.1.1', 'http://192.168.1.2/'));
   // A path the other site chose does not make its text a file name.
   assert.ok(linkDoubt('bank.com', 'https://evil.example/bank.com'));
   assert.ok(linkDoubt('paypal.com', 'https://evil.example/x/paypal.com'));

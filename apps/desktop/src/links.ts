@@ -53,19 +53,32 @@ function joined(base: string, relative: string) {
 const commonEndings = new Set(
   'com net org io cn dev ai gov edu cc tv uk de jp hk tw xyz'.split(' '),
 );
-const products = new Set(['asp.net', 'vb.net', 'ado.net', 'socket.io']);
+const products = new Set([
+  'asp.net',
+  'vb.net',
+  'ado.net',
+  'socket.io',
+  'java.net',
+  'java.io',
+  'system.net',
+]);
 const invisible = /\p{Cf}/gu;
-const withScheme = /(?:https?:)?\/\/[^\s/?#<>"'`）)】」』，。；！？]+/giu;
+// An address with its scheme (or a protocol-relative one) runs to the next space, path and query included, so
+// nothing after its host is read again as a site of its own; its host is the ASCII run after "//", which ends at
+// punctuation such as 、》” that follows it in Chinese text.
+const withScheme = /(?:https?:)?\/\/([a-z0-9.\-:[\]%@_~!$&'()*+,;=]*)\S*/giu;
 // Not inside a longer name, a path, or an address (after "@"); "//" is read above.
 const bare = /(?<![a-z0-9.@_-])(?<![^/]\/)((?:[a-z0-9-]+\.)+([a-z]{2,}))(?::\d+)?([/?#][^\s]*)?/giu;
 function namedHosts(text: string) {
   const plain = text.replace(invisible, '');
-  const hosts: { host: string; word: string; ending: string }[] = [];
-  const rest = plain.replace(withScheme, (found) => {
-    try {
-      const url = new URL(found.startsWith('//') ? `https:${found}` : found);
-      hosts.push({ host: url.hostname, word: '', ending: '' });
-    } catch {}
+  const hosts: { host: string; word: string; ending: string; hidden?: boolean }[] = [];
+  const rest = plain.replace(withScheme, (_found, authority: string) => {
+    // A user name before the host shows one site and names another: http://bank.com:80@evil.com.
+    if (authority.includes('@')) hosts.push({ host: '', word: '', ending: '', hidden: true });
+    else
+      try {
+        hosts.push({ host: new URL(`https://${authority}`).hostname, word: '', ending: '' });
+      } catch {}
     return ' ';
   });
   for (const [found, name, ending, after = ''] of rest.matchAll(bare)) {
@@ -121,6 +134,8 @@ export function linkDoubt(text: string, url: string): string | null {
   const named = namedHosts(text).filter(
     ({ word, ending }) => !(word && fileEndings.has(ending) && word.toLowerCase() === file),
   );
+  if (named.some(({ hidden }) => hidden))
+    return '链接显示的地址带有用户名，实际打开的网站可能和看上去的不同。';
   // A text that names the site it leads to shows where it goes, whatever else it names.
   if (named.some(({ host }) => bareHost(host) === site)) return null;
   if (named.length) return '链接显示的地址和实际打开的地址不同。';
