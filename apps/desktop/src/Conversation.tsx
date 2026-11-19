@@ -1802,6 +1802,28 @@ export default function Conversation({
         </Presence>
         {linkCard && !contextMenu && <LinkCardView card={linkCard} />}
         {doubtful.dialog}
+        <QuoteSelection key={session?.id} root={scroll} />
+        {dock &&
+          waitingOn.length > 0 &&
+          createPortal(
+            <ApprovalDock
+              key={waitingOn[0].approvalId}
+              tool={waitingOn[0]}
+              more={waitingOn.length - 1}
+              disabled={live.busy || live.answered(waitingOn[0])}
+              reply={(allowed, answers) => live.reply(waitingOn[0], allowed, answers)}
+              stop={
+                session?.activeRun &&
+                session.activeRun.surface !== 'terminal' &&
+                session.activeRun.waiting !== 'background'
+                  ? { run: stop, disabled: live.busy }
+                  : undefined
+              }
+              folded={foldedFor === waitingOn[0].approvalId}
+              fold={(folded) => setFoldedFor(folded ? waitingOn[0].approvalId! : null)}
+            />,
+            dock,
+          )}
       </SearchExpanded.Provider>
     </QuoteActionsContext.Provider>
   );
