@@ -221,6 +221,7 @@ def ensure_default_journal(container):
     the cold backup and the host platform's recovery checks read the file. Durable before it appears: written
     to a temporary file, synced, then linked into place (a link never replaces an existing file)."""
     script = ("const f=require('fs'),d='/data/managed-server',p=d+'/journal.json',t=p+'.default-'+process.pid;"
+              "try{f.lstatSync(p);process.exit(0)}catch(e){if(e.code!=='ENOENT')throw e}"
               "const fd=f.openSync(t,'wx',0o600);try{f.writeSync(fd,process.argv[1]+'\\n');f.fsyncSync(fd)}finally{f.closeSync(fd)}"
               "try{f.linkSync(t,p)}catch(e){if(e.code!=='EEXIST')throw e}finally{f.unlinkSync(t)}"
               "const dd=f.openSync(d,'r');try{f.fsyncSync(dd)}finally{f.closeSync(dd)}")
@@ -594,7 +595,10 @@ def main():
         # service that very file now, so the frozen-source check before cutover, the cold backup and a rollback
         # all see it. Its content is what the supervisor already holds; reauthentication reads the same.
         if baseline['journal'] == DEFAULT_JOURNAL:
-            ensure_default_journal(b.CONTAINER)
+            try:
+                ensure_default_journal(b.CONTAINER)
+            except subprocess.CalledProcessError as error:
+                raise RuntimeError('Cannot write the default supervisor journal into the running service; no change made') from error
         core=load('signed_platform_verifier',PROGRAM/'apps/update-service/web/host-platform.py')
         boot=load('signed_adoption_bootstrap',PROGRAM/'apps/update-service/web/host-bootstrap.py')
         status=live_probe(b.CONTAINER,baseline['protocol'])
