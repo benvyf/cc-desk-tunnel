@@ -247,6 +247,15 @@ const OPEN_LIMIT = 64 * 1024;
 const CONTINUE =
   'Continue from where the last turn stopped. A command that was running when it stopped may or may not have taken effect: check its result before repeating it.';
 
+// Whether the restart of a server update would cut off work: a turn under way or waiting on the user, or a terminal
+// whose CLI works or waits for the user. A terminal at rest (or that has not yet said what it does: nothing was asked
+// of it), and a turn over but for the background tasks it left, only end with the restart; the session goes on after
+// it. (After upstream 7004dad6.)
+export function atWork(run: Session['activeRun']) {
+  if (!run) return false;
+  if (run.surface === 'terminal') return run.activity === 'working' || run.activity === 'waiting';
+  return run.waiting !== 'background';
+}
 export function createProxyServer(options: ServerOptions) {
   if (options.token.length < 24)
     throw new Error('PROXY_TOKEN must contain at least 24 characters.');
@@ -324,17 +333,30 @@ export function createProxyServer(options: ServerOptions) {
   let maintenance = options.managed?.initialMaintenance ?? false;
   let webRequests = 0;
   let cancelInstall: ((operationId: string) => void) | undefined;
+  // What the restart of a server update holds back for (see `atWork`). A terminal at rest, and a turn over but for
+  // its background tasks, count in neither `tasks` nor `terminals`: the restart only ends them. Runs and terminals
+  // are counted by their session, so one no session record names yet stays at work. The keys are fixed: the
+  // management center refuses a report with any other.
   function maintenanceActivity() {
     const bounded = (n: number) => Math.max(0, Math.min(1_000_000, n));
-    let active = 0;
+    let active = 0,
+      runsAtWork = runs.size,
+      terminalsAtWork = terminals.size;
     try {
-      active = store.list().filter((session) => session.activeRun).length;
+      const rest = new Set<string>();
+      for (const session of store.list()) {
+        if (!session.activeRun) continue;
+        if (atWork(session.activeRun)) active++;
+        else rest.add(session.id);
+      }
+      runsAtWork = [...runs.keys()].filter((id) => !rest.has(id)).length;
+      terminalsAtWork = [...terminals.keys()].filter((id) => !rest.has(id)).length;
     } catch {
       active = 1_000_000;
     }
     return {
-      tasks: bounded(runs.size + active + tasks.size + tunnelTasks.size),
-      terminals: bounded(terminals.size),
+      tasks: bounded(runsAtWork + active + tasks.size + tunnelTasks.size),
+      terminals: bounded(terminalsAtWork),
       reviews: bounded(reviewing.size),
       pending: bounded(mutations.size + inputQueues.size + webRequests),
       registering: bounded(
