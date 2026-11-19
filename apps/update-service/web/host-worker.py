@@ -498,6 +498,8 @@ class Worker:
             poll_backoff=5;poll_next=0
             self.require_unexpired(job)
             dependency_env={'NEEDRESTART_MODE':'l','DEBIAN_FRONTEND':'noninteractive'} if stage=='dependencies' else {}
+            if stage=='apply' and len(args)>1 and Path(args[1]).name=='apply.py' and Path(args[1]).parent.name=='host-update':
+                args=[sys.executable,str(PROGRAM/'runtime-support/apply.py'),args[1],*args[2:]]
             child=subprocess.Popen(args,stdout=stream,stderr=subprocess.STDOUT,pass_fds=(lock_fd,) if lock_fd is not None else (),env={**os.environ,'DOCKER_BUILDKIT':'1',**dependency_env,**({'CC_HOST_OPERATION_LOCK_FD':str(lock_fd)} if lock_fd is not None else {})})
             if stage=='apply':self.application_child=child
             image_runner=stage=='apply' and len(args)>1 and Path(args[1]).name=='apply.py'

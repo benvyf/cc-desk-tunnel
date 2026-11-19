@@ -16,6 +16,7 @@ import {
 
 const sourceFiles = {
   'worker.py': 'apps/update-service/web/host-worker.py',
+  'runtime-support/apply.py': 'apps/update-service/web/host-runtime-support.py',
   'operations.py': 'apps/update-service/web/host-operations.py',
   'agent.py': 'apps/update-service/web/host-updater-agent.py',
   'relay-agent.py': 'apps/update-service/web/relay-agent.py',
