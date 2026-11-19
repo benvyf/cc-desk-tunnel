@@ -248,12 +248,12 @@ const CONTINUE =
   'Continue from where the last turn stopped. A command that was running when it stopped may or may not have taken effect: check its result before repeating it.';
 
 // Whether the restart of a server update would cut off work: a turn under way or waiting on the user, or a terminal
-// whose CLI works or waits for the user. A terminal at rest (or that has not yet said what it does: nothing was asked
-// of it), and a turn over but for the background tasks it left, only end with the restart; the session goes on after
-// it. (After upstream 7004dad6.)
+// whose CLI works, waits for the user, or has not said yet (its hooks may be off or unread, so silence is not rest).
+// A terminal the CLI says is idle, and a turn over but for the background tasks it left, are ended by the update
+// itself (see `managedMaintenance.enter`); the session goes on after it. (After upstream 7004dad6.)
 export function atWork(run: Session['activeRun']) {
   if (!run) return false;
-  if (run.surface === 'terminal') return run.activity === 'working' || run.activity === 'waiting';
+  if (run.surface === 'terminal') return run.activity !== 'idle';
   return run.waiting !== 'background';
 }
 export function createProxyServer(options: ServerOptions) {
@@ -365,6 +365,24 @@ export function createProxyServer(options: ServerOptions) {
       connections: bounded([...peers].filter((peer) => peer.authenticated).length),
     };
   }
+  function endAtRest() {
+    let sessions: Session[];
+    try {
+      sessions = store.list();
+    } catch {
+      return;
+    }
+    for (const session of sessions) {
+      if (!session.activeRun || atWork(session.activeRun)) continue;
+      const run = runs.get(session.id);
+      if (run) cancel(run, '服务端开始更新，后台任务随之结束；更新完成后可以继续这个会话。');
+      const terminal = terminals.get(session.id);
+      if (terminal && !terminal.closing) {
+        terminal.closing = true;
+        void terminal.process?.close().catch(() => {});
+      }
+    }
+  }
   function maintenanceBusy(disconnectClients: boolean) {
     const a = maintenanceActivity();
     return !!(
@@ -400,6 +418,9 @@ export function createProxyServer(options: ServerOptions) {
         maintenance = false;
         return false;
       }
+      // What did not hold the update back is ended now, at a known point, rather than by the restart: a
+      // background task that finished during the install would start a turn no one could answer.
+      endAtRest();
       if (disconnectClients)
         for (const peer of peers) {
           peer.left = true;
@@ -1700,6 +1721,10 @@ export function createProxyServer(options: ServerOptions) {
       active.input.assertWritable();
       subscribe(peer, command.sessionId);
       emit(active, { type: 'message.user', messageId: command.requestId, text, scenario });
+      // A run left with only background tasks is at work again from here, not once the CLI starts the turn: an
+      // update in between would cut this message off.
+      if (session.activeRun.waiting === 'background')
+        emit(active, { type: 'run.status', status: 'running', connectionId: active.connectionId });
       active.input.submit(
         command.requestId,
         store.notice(

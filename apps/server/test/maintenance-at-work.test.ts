@@ -15,7 +15,7 @@ test('what holds a server update back: work, not a terminal at rest or backgroun
   assert.equal(atWork(run({ status: 'awaiting_approval', waiting: 'approval' })), true);
   assert.equal(atWork(run({ status: 'awaiting_approval', waiting: 'question' })), true);
   assert.equal(atWork(run({ waiting: 'background' })), false, 'only background tasks go on');
-  assert.equal(atWork(run({ surface: 'terminal' })), false, 'a terminal nothing was asked of');
+  assert.equal(atWork(run({ surface: 'terminal' })), true, 'a terminal that has not said yet');
   assert.equal(atWork(run({ surface: 'terminal', activity: 'idle' })), false);
   assert.equal(atWork(run({ surface: 'terminal', activity: 'working' })), true);
   assert.equal(atWork(run({ surface: 'terminal', activity: 'waiting' })), true);
@@ -48,6 +48,8 @@ test('the maintenance report counts only sessions at work, under the keys the ce
 
   status(terminal.id, { surface: 'terminal' });
   status(chat.id, { waiting: 'background' });
+  assert.equal(maintenance.busy(), true, 'a terminal that has not said what it does holds it');
+  status(terminal.id, { surface: 'terminal', activity: 'idle' });
   assert.deepEqual(Object.keys(maintenance.activity()).sort(), [
     'connections',
     'pending',
