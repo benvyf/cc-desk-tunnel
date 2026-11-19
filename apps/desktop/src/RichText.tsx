@@ -18,7 +18,7 @@ import type { ReactNode } from 'react';
 import type { PluggableList } from 'unified';
 import { FileCode, Eye, Image } from './icons.tsx';
 import { CopyButton } from './copy.tsx';
-import { revealStreaming } from './streaming.ts';
+import { blockStarts, revealStreaming } from './streaming.ts';
 import { isPicture, LinkPlace, linkTarget, localPicture } from './links.ts';
 import { Picture } from './Picture.tsx';
 import { FileMentionPaths, remarkFileMentions } from './fileMentions.ts';
@@ -294,6 +294,22 @@ function subscribeMotion(listener: () => void) {
   return () => motionPreference?.removeEventListener('change', listener);
 }
 
+// A block of a streaming answer that no later piece can change (see `blockStarts`): parsed once, while the rest
+// of the answer keeps coming. Once the answer is complete it is drawn whole again, by one parse.
+const SettledBlock = memo(function SettledBlock({ source }: { source: string }) {
+  return (
+    <Markdown
+      remarkPlugins={remarkPlugins}
+      rehypePlugins={rehypePlugins}
+      skipHtml
+      urlTransform={urlTransform}
+      components={components}
+    >
+      {source}
+    </Markdown>
+  );
+});
+
 export default memo(function RichText({
   text,
   streaming = false,
@@ -324,31 +340,52 @@ export default memo(function RichText({
   );
   const reveal = streaming && !reduced;
   const source = question ? text : dollars(text);
-  const [frame, setFrame] = useState({
-    source,
-    streaming: reveal,
-    start: source.length,
-    revision: 0,
-  });
-  if (frame.source !== source || frame.streaming !== reveal) {
-    setFrame({
+  // What is new since the last draw, for the reveal. Kept in a ref rather than state: setting state while drawing
+  // made React draw (and parse) the whole text twice for every piece. Drawing twice with the same text (strict
+  // mode) finds the frame already current and keeps it.
+  const frames = useRef({ source, streaming: reveal, start: source.length, revision: 0 });
+  if (frames.current.source !== source || frames.current.streaming !== reveal) {
+    const last = frames.current;
+    frames.current = {
       source,
       streaming: reveal,
-      start: reveal && source.startsWith(frame.source) ? frame.source.length : source.length,
-      revision: frame.revision + 1,
-    });
+      start: reveal && source.startsWith(last.source) ? last.source.length : source.length,
+      revision: last.revision + 1,
+    };
   }
-  return (
+  const frame = frames.current;
+  // While it streams, every block but the last is settled and parsed once (a block ends only where the line after
+  // it is whole and starts a block of its own, see `blockStarts`); only the rest is parsed again for each piece.
+  // Only blocks shown whole before this piece settle, so what is new (`frame.start` on) is all in the rest and
+  // revealed there, however much one piece brings.
+  const starts =
+    streaming && !question ? blockStarts(source).filter((at) => at <= frame.start) : [];
+  const settled = starts.at(-1) ?? 0;
+  const cuts = [0, ...starts.filter((start) => start <= settled)];
+  const rest = settled ? source.slice(settled) : source;
+  const restFrame = settled
+    ? { source: rest, start: Math.max(0, frame.start - settled), revision: frame.revision }
+    : frame;
+  const markdown = (
     <Markdown
       remarkPlugins={plugins}
       rehypePlugins={
-        question ? [] : reveal ? [...rehypePlugins, [revealStreaming, frame]] : rehypePlugins
+        question ? [] : reveal ? [...rehypePlugins, [revealStreaming, restFrame]] : rehypePlugins
       }
       skipHtml
       urlTransform={urlTransform}
       components={question ? questionComponents : components}
     >
-      {source}
+      {rest}
     </Markdown>
+  );
+  if (!settled) return markdown;
+  return (
+    <>
+      {cuts.slice(0, -1).map((from, at) => (
+        <SettledBlock key={from} source={source.slice(from, cuts[at + 1])} />
+      ))}
+      {markdown}
+    </>
   );
 });
