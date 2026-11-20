@@ -15,7 +15,18 @@ const zero = {
   cacheCreationTokens: 0,
   costUsd: 0,
 };
-async function usage(page: Page) {
+// Days of very different size, so that the line telling a day differs in length from one to the next.
+const day = (back: number, requests: number, costUsd: number) => ({
+  at: new Date(Date.now() - back * 86400_000).toISOString(),
+  requests,
+  tokens: requests * 30_000,
+  inputTokens: requests * 1000,
+  outputTokens: requests * 500,
+  cacheReadTokens: requests * 28_000,
+  cacheCreationTokens: requests * 500,
+  costUsd,
+});
+async function usage(page: Page, daily = false) {
   const queries: { from: string; to: string; limit: number }[] = [];
   await page.routeWebSocket(url, (route) => {
     const send = (value: object) => route.send(JSON.stringify(value));
@@ -75,7 +86,10 @@ async function usage(page: Page) {
           totals: { ...zero, durationMs: 0, ttftMs: null, outputPerSecond: null },
           models: [],
           byModel: [],
-          series: [],
+          series:
+            daily && (command as { bucketMinutes?: number }).bucketMinutes === 1440
+              ? [day(1, 1, 0.01), day(2, 1300, 160), day(3, 54321, 12345.67), day(5, 12, 1.5)]
+              : [],
         });
       }
       if (command.requestId) send({ type: 'response', requestId: command.requestId, ok: true });
@@ -201,4 +215,29 @@ test('a task is set to the hour and minute in 24-hour time, on days chosen as pi
   await time.getByRole('combobox', { name: '分', exact: true }).selectOption('05');
   await page.getByRole('button', { name: '保存任务', exact: true }).click();
   await expect.poll(saved).toEqual({ type: 'once', at: '2030-05-06T07:05' });
+});
+
+test('moving over the days of the activity card leaves the card and the facts where they are', async ({
+  page,
+}) => {
+  await usage(page, true);
+  const card = page.locator('.usage-activity');
+  const cells = card.locator('.usage-heat i[aria-label*="次请求"]');
+  await expect(cells).toHaveCount(4);
+  const facts = card.locator('.usage-facts');
+  const detail = card.locator('.usage-heat-detail');
+  const legend = card.locator('.usage-heat-legend');
+  const where = async () =>
+    JSON.stringify(
+      await Promise.all([facts, detail, legend, card].map((item) => item.boundingBox())),
+    );
+  const before = await where();
+  for (const index of [0, 1, 2, 3, 0]) {
+    await cells.nth(index).hover();
+    await expect(detail).toContainText('次请求');
+    expect(await where()).toBe(before);
+  }
+  // A line too long for its place is cut off, and told whole under the pointer.
+  expect(await detail.evaluate((node) => getComputedStyle(node).textOverflow)).toBe('ellipsis');
+  await expect(detail).toHaveAttribute('title', /次请求/);
 });

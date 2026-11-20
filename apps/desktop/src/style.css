@@ -8140,6 +8140,22 @@ dialog:has(.pasted-view) {
 .usage-heat-foot .usage-heat-legend {
   margin: 0;
 }
+/* The day under the pointer is told on one line that never changes the card's shape: a longer or shorter line
+   would widen the squares' column and push the facts beside it. The column keeps one width, the line is cut
+   off with an ellipsis where it does not fit, and the legend keeps its place at the end. */
+.usage-activity-body:not(.year) .usage-heat-wrap {
+  width: min(100%, 440px);
+}
+.usage-heat-foot .usage-heat-detail {
+  flex: 1 1 220px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.usage-heat-foot .usage-heat-legend {
+  flex: none;
+}
 .usage-heat i,
 .usage-heat-legend i {
   display: block;

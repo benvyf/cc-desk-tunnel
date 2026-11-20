@@ -489,7 +489,11 @@ export function ActivityCard({
             </div>
             {/* The day under the pointer or the keys, in a line of its own: a tip would be cut off by the scroll. */}
             <div className="usage-heat-foot">
-              <p className="usage-heat-detail" aria-live="polite">
+              <p
+                className="usage-heat-detail"
+                aria-live="polite"
+                title={shown ? describe(shown) : undefined}
+              >
                 {shown ? describe(shown) : '悬停或用方向键查看每天的用量'}
               </p>
               <div className="usage-heat-legend" aria-hidden="true">
