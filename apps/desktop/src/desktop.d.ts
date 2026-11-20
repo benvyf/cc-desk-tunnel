@@ -98,6 +98,8 @@ declare global {
           path: string;
           root?: string;
           restricted?: boolean;
+          // Skip reusing an unchanged file's earlier Office conversion.
+          fresh?: boolean;
         }) => Promise<import('./preview.ts').PreviewFile>;
         releaseFile: (token: string) => Promise<void>;
         pick: (surface?: import('./preview.ts').PreviewSurface) => Promise<string | null>;

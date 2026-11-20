@@ -37,7 +37,7 @@ export default function PreviewSpreadsheet({ data, format }: { data: string; for
       setLoaded({ source: data, format, error });
     };
     try {
-      if (data.length > 28 * 1024 * 1024) throw new Error('表格超过 20 MiB 预览大小限制。');
+      if (data.length > 28 * 1024 * 1024) throw new Error('表格超过 20 MB 预览大小限制。');
       const bytes = Uint8Array.from(atob(data), (character) => character.charCodeAt(0));
       worker = new Worker(new URL('./spreadsheet.worker.ts', import.meta.url), { type: 'module' });
       worker.onmessage = (event: MessageEvent<{ book?: Spreadsheet; error?: string }>) => {

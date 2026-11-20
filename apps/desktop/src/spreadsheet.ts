@@ -12,6 +12,16 @@ const maxRows = 10000,
 const tooLarge = () =>
   new Error('表格过大：预览最多支持 50 个工作表、10000 行、256 列和共 200000 个单元格。');
 
+const controlCharacters = (text: string) => {
+  let count = 0;
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
+    if (code < 32 && code !== 9 && code !== 10 && code !== 12 && code !== 13 && code !== 27)
+      count++;
+  }
+  return count;
+};
+
 export function parseSpreadsheet(bytes: Uint8Array, format: string): Spreadsheet {
   if (bytes.byteLength > 20 * 1024 * 1024) throw tooLarge();
   if (format === 'csv' || format === 'tsv') {
@@ -26,7 +36,11 @@ export function parseSpreadsheet(bytes: Uint8Array, format: string): Spreadsheet
     let text: string | undefined;
     for (const label of encoding === 'utf-8' ? ['utf-8', 'gb18030'] : [encoding]) {
       try {
-        text = new TextDecoder(label, { fatal: true }).decode(bytes);
+        const decoded = new TextDecoder(label, { fatal: true }).decode(bytes);
+        // Bytes GB18030 happens to accept are not a table when they decode to control characters.
+        if (label === 'gb18030' && controlCharacters(decoded) > Math.max(2, decoded.length * 0.01))
+          continue;
+        text = decoded;
         break;
       } catch {}
     }

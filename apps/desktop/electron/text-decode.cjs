@@ -36,17 +36,58 @@ function looksUtf16le(data) {
   return highZeros / pairs >= 0.6 && lowZeros / pairs <= 0.02;
 }
 
-// Control characters other than tab, line breaks, form feed and escape (ANSI colours in logs) mark
-// bytes that a fallback encoding happened to accept but that are not text.
+// A zero character anywhere, or control characters other than tab, line breaks, form feed and escape
+// (ANSI colours in logs) in more than a trace of the text, mark bytes that an encoding happened to
+// accept but that are not text.
 function looksBinary(text) {
-  const sample = text.slice(0, sampleBytes);
   let controls = 0;
-  for (let index = 0; index < sample.length; index++) {
-    const code = sample.charCodeAt(index);
+  for (let index = 0; index < text.length; index++) {
+    const code = text.charCodeAt(index);
     if (code === 0) return true;
-    if (code < 32 && ![9, 10, 11, 12, 13, 27].includes(code)) controls++;
+    if (
+      code < 32 &&
+      code !== 9 &&
+      code !== 10 &&
+      code !== 11 &&
+      code !== 12 &&
+      code !== 13 &&
+      code !== 27
+    )
+      controls++;
   }
-  return controls > Math.max(2, sample.length * 0.01);
+  return controls > Math.max(2, text.length * 0.01);
+}
+
+// Counts well-formed multibyte UTF-8 sequences and malformed ones. A file that is UTF-8 almost
+// everywhere and broken in a few places is a damaged UTF-8 file, not GBK.
+function utf8Shape(data) {
+  let valid = 0,
+    invalid = 0;
+  for (let index = 0; index < data.length;) {
+    const byte = data[index];
+    if (byte < 0x80) {
+      index++;
+      continue;
+    }
+    const length =
+      byte >= 0xc2 && byte <= 0xdf
+        ? 2
+        : byte >= 0xe0 && byte <= 0xef
+          ? 3
+          : byte >= 0xf0 && byte <= 0xf4
+            ? 4
+            : 0;
+    let ok = length > 0 && index + length <= data.length;
+    for (let next = 1; ok && next < length; next++) ok = (data[index + next] & 0xc0) === 0x80;
+    if (ok) {
+      valid++;
+      index += length;
+    } else {
+      invalid++;
+      index++;
+    }
+  }
+  return { valid, invalid };
 }
 
 // Decodes strictly. A cut file may end inside a character; then up to three trailing bytes (two
@@ -75,10 +116,15 @@ function endCut(text) {
 
 const unsupported = () => new Error('此文件暂不支持预览，请在系统应用中打开。');
 
-// Returns { text, encoding } where encoding is 'utf-8', 'utf-16le', 'utf-16be' or 'gb18030'.
-// `cut` says the bytes are the start of a longer file.
+// Returns { text, encoding, guessed } where encoding is 'utf-8', 'utf-16le', 'utf-16be' or
+// 'gb18030', and guessed says it was inferred from the content rather than valid UTF-8 or a byte
+// order mark. `cut` says the bytes are the start of a longer file.
 function decodeText(data, { cut = false } = {}) {
-  const finish = (text, encoding) => ({ text: cut ? endCut(text) : text, encoding });
+  const finish = (text, encoding, guessed = false) => ({
+    text: cut ? endCut(text) : text,
+    encoding,
+    guessed,
+  });
   let utf16;
   if (data[0] === 0xff && data[1] === 0xfe) utf16 = 'utf-16le';
   else if (data[0] === 0xfe && data[1] === 0xff) utf16 = 'utf-16be';
@@ -90,7 +136,7 @@ function decodeText(data, { cut = false } = {}) {
     } catch {
       throw unsupported();
     }
-    if (text.includes('\0')) throw unsupported();
+    if (looksBinary(text)) throw unsupported();
     return finish(text, utf16);
   }
   if (data[0] === 0xef && data[1] === 0xbb && data[2] === 0xbf) {
@@ -104,7 +150,7 @@ function decodeText(data, { cut = false } = {}) {
   if (looksUtf16le(data)) {
     try {
       const text = decodeStrict('utf-16le', data, cut);
-      if (!looksBinary(text)) return finish(text, 'utf-16le');
+      if (!looksBinary(text)) return finish(text, 'utf-16le', true);
     } catch {}
   }
   // After UTF-16 is ruled out, a zero byte means a binary file (an image, an archive, a program).
@@ -112,10 +158,11 @@ function decodeText(data, { cut = false } = {}) {
   try {
     return finish(decodeStrict('utf-8', data, cut), 'utf-8');
   } catch {}
-  if (gb18030()) {
+  const shape = utf8Shape(cut ? data.subarray(0, data.length - 3) : data);
+  if (gb18030() && !(shape.valid >= 8 && shape.invalid <= 3)) {
     try {
       const text = decodeStrict('gb18030', data, cut);
-      if (!looksBinary(text)) return finish(text, 'gb18030');
+      if (!looksBinary(text)) return finish(text, 'gb18030', true);
     } catch {}
   }
   throw new Error('此文件不是 UTF-8 文本，请在系统应用中打开。');

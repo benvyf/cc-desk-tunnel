@@ -26,6 +26,7 @@ type ReadOptions = {
   codeText?: string;
   codeLines?: number;
   aliasMarkdown?: boolean;
+  size?: number;
 };
 type Watch = { key: string; path: string; file?: boolean };
 const changed = new Set<(event: { key: string; path: string }) => void>();
@@ -206,7 +207,7 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
           kind: 'text',
           text: Array.from({ length: 300 }, (_, i) => `log line ${i + 1}`).join('\n') + '\n',
           truncated: true,
-          size: 12.5 * 1024 * 1024,
+          size: options.size ?? 12.5 * 1024 * 1024,
         };
       if (path.includes('长错误'))
         throw new Error(

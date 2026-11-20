@@ -142,6 +142,11 @@ test('a CSV saved as GBK is read as GBK, and undecodable bytes are still refused
     ['00123', '中文'],
   ]);
   assert.throws(() => parseSpreadsheet(new Uint8Array([0x80, 0xff, 0x2c]), 'csv'), /GBK/);
+  // Bytes GB18030 accepts but that decode to control characters are not a table.
+  assert.throws(
+    () => parseSpreadsheet(new Uint8Array([0xd6, 0xd0, 1, 2, 3, 4, 5, 6, 7, 8]), 'csv'),
+    /GBK/,
+  );
 });
 
 test('hidden sheets stay hidden and sheet count limits do not truncate files silently', () => {

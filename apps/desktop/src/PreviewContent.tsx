@@ -225,6 +225,9 @@ export default function PreviewContent({
   // The file read on screen: which tab target it belongs to and how to give up its resources (an
   // HTML page's local address and native view). A refresh replaces it only once the new read is in.
   const shown = useRef<{ key: string; release: (view: boolean) => void } | undefined>(undefined);
+  // The refresh button asks for a new read rather than a cached Office conversion; a change on
+  // disk does not need one when the file's version is unchanged.
+  const freshRead = useRef(false);
   // A PDF replaces the file-loading placeholder; reader intent must survive that handoff.
   const readingInterrupted = useRef(false);
   const navigation =
@@ -325,6 +328,8 @@ export default function PreviewContent({
     if (tab.kind !== 'file') return;
     let disposed = false;
     const key = JSON.stringify([surface, tab.id, tab.target, tab.root, !!tab.restricted]);
+    const fresh = freshRead.current;
+    freshRead.current = false;
     captureReading();
     readingInterrupted.current = false;
     // A change on disk or the refresh button keeps the current content until the new read is in;
@@ -340,7 +345,12 @@ export default function PreviewContent({
       shown.current = next;
     };
     void window
-      .desktop!.preview.read({ path: tab.target, root: tab.root, restricted: tab.restricted })
+      .desktop!.preview.read({
+        path: tab.target,
+        root: tab.root,
+        restricted: tab.restricted,
+        ...(fresh && { fresh }),
+      })
       .then(
         (result) => {
           const token = result.token;
@@ -535,9 +545,13 @@ export default function PreviewContent({
         <IconButton
           title="刷新预览"
           size="sm"
-          onClick={() =>
-            tab.kind === 'web' ? action('reload') : setRevision((value) => value + 1)
-          }
+          onClick={() => {
+            if (tab.kind === 'web') action('reload');
+            else {
+              freshRead.current = true;
+              setRevision((value) => value + 1);
+            }
+          }}
         >
           <RefreshCw className={browser?.loading && native ? 'spinning' : ''} />
         </IconButton>
@@ -554,7 +568,9 @@ export default function PreviewContent({
       {file?.truncated && (
         <div className="preview-notice">
           <span>
-            文件较大（{megabytes(file.size ?? 0)} MB），只显示前 {megabytes(previewTextLimit)} MB
+            {megabytes(file.size ?? 0) === megabytes(previewTextLimit)
+              ? `文件超过 ${megabytes(previewTextLimit)} MB，只显示前 ${megabytes(previewTextLimit)} MB`
+              : `文件较大（${megabytes(file.size ?? 0)} MB），只显示前 ${megabytes(previewTextLimit)} MB`}
           </span>
           <Button size="sm" variant="ghost" onClick={openInSystem}>
             在系统应用中打开

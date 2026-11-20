@@ -215,6 +215,12 @@ test('a text in another encoding names it, and a large file says only its beginn
   await expect
     .poll(() => page.evaluate(() => (window as any).fixtureActs))
     .toEqual([['open', 'C:\\工作\\网站预览\\大日志.log']]);
+  // Just over the limit, the notice does not claim a size that reads the same as the limit.
+  await page.evaluate(() => {
+    (window as any).fixturePreview.configure('大日志.log', { size: 4 * 1024 * 1024 + 10 });
+    (window as any).fixturePreview.emit('大日志.log');
+  });
+  await expect(notice).toContainText('文件超过 4 MB，只显示前 4 MB');
   // A line past the shown part goes to its end and says why.
   await pane.getByLabel('跳转到行', { exact: true }).fill('5000');
   await pane.getByRole('button', { name: '跳转', exact: true }).click();

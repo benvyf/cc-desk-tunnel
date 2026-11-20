@@ -131,7 +131,7 @@ test('file preview handles Markdown and text without executing scripts, and reje
   assert.equal(large.truncated, true);
   assert.equal(large.size, 4 * 1024 * 1024 + 1);
   assert.equal(large.text.length, 4 * 1024 * 1024);
-  await assert.rejects(files.read({ path: join(project, 'large.png') }), /大小限制（20 MiB）/);
+  await assert.rejects(files.read({ path: join(project, 'large.png') }), /大小限制（20 MB）/);
   await assert.rejects(files.read({ path: '\\\\server\\share\\file.html' }), /本机/);
   await assert.rejects(files.read({ path: 'relative.txt' }), /绝对路径/);
 });
@@ -143,6 +143,8 @@ test('an unchanged Office file is not converted again; a changed one or a reset 
     async render(file, authorize) {
       authorize(file);
       renders++;
+      // A conversion takes a while, so overlapping reads find it under way.
+      await new Promise((resolve) => setTimeout(resolve, 50));
       return { data: Buffer.from(`%PDF-${renders}`).toString('base64'), missingFonts: [] };
     },
     reset() {},
@@ -163,11 +165,39 @@ test('an unchanged Office file is not converted again; a changed one or a reset 
   files.reset();
   await read();
   assert.equal(renders, 3);
+  // The refresh button asks for a new conversion; overlapping reads of one version share one.
+  await files.read({ path: document, root: project, fresh: true });
+  assert.equal(renders, 4);
+  await Promise.all([
+    files.read({ path: document, root: project, fresh: true }),
+    files.read({ path: document, root: project, fresh: true }),
+  ]);
+  assert.equal(renders, 5);
   // The cached conversion is still subject to the workspace restriction.
   await assert.rejects(
     files.read({ path: document, root: join(root, 'elsewhere'), restricted: true }),
     /工作区/,
   );
+});
+test('a page read in a guessed encoding is labelled with it unless it declares its own', async (t) => {
+  const { files, project } = await fixture(t);
+  // "中文" in GBK.
+  const gbk = Buffer.from([0xd6, 0xd0, 0xce, 0xc4]);
+  const page = join(project, 'gbk.html');
+  await writeFile(page, Buffer.concat([Buffer.from('<h1>'), gbk, Buffer.from('</h1>')]));
+  const plain = await files.read({ path: page, root: project });
+  assert.equal(plain.encoding, 'gb18030');
+  assert.equal((await resource(plain.url)).type, 'text/html; charset=gb18030');
+  await writeFile(
+    page,
+    Buffer.concat([Buffer.from('<meta charset="gbk"><h1>'), gbk, Buffer.from('</h1>')]),
+  );
+  assert.equal(
+    (await resource((await files.read({ path: page, root: project })).url)).type,
+    'text/html',
+  );
+  const utf8 = await files.read({ path: join(project, 'index.html'), root: project });
+  assert.equal((await resource(utf8.url)).type, 'text/html; charset=utf-8');
 });
 test('website addresses allow only explicit local HTTP(S) services', () => {
   for (const value of ['http://localhost:5173', 'http://127.0.0.1:3000/a?b=1', 'http://[::1]:8080'])

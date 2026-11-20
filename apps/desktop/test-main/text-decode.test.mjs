@@ -15,35 +15,63 @@ test('byte order marks select UTF-8 or UTF-16 and are not part of the text', () 
   const sample = 'Write-Output 中文\r\n';
   assert.deepEqual(
     decodeText(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(sample, 'utf16le')])),
-    { text: sample, encoding: 'utf-16le' },
+    { text: sample, encoding: 'utf-16le', guessed: false },
   );
   const big = Buffer.from(sample, 'utf16le').swap16();
   assert.deepEqual(decodeText(Buffer.concat([Buffer.from([0xfe, 0xff]), big])), {
     text: sample,
     encoding: 'utf-16be',
+    guessed: false,
   });
   assert.deepEqual(
     decodeText(Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(sample)])),
     {
       text: sample,
       encoding: 'utf-8',
+      guessed: false,
     },
   );
-  assert.deepEqual(decodeText(Buffer.alloc(0)), { text: '', encoding: 'utf-8' });
+  assert.deepEqual(decodeText(Buffer.alloc(0)), { text: '', encoding: 'utf-8', guessed: false });
+  // UTF-16 with a byte order mark is still refused when it decodes to binary content.
+  assert.throws(
+    () =>
+      decodeText(
+        Buffer.concat([
+          Buffer.from([0xff, 0xfe]),
+          Buffer.from('text\u0001\u0002\u0003\u0004\u0005\u0006', 'utf16le'),
+        ]),
+      ),
+    /不支持/,
+  );
 });
 
 test('UTF-16LE without a byte order mark is recognised only when it clearly looks like it', () => {
   const text = 'Name    Value\r\n----    -----\r\nPath    C:\\工作\r\n';
-  assert.deepEqual(decodeText(Buffer.from(text, 'utf16le')), { text, encoding: 'utf-16le' });
+  assert.deepEqual(decodeText(Buffer.from(text, 'utf16le')), {
+    text,
+    encoding: 'utf-16le',
+    guessed: true,
+  });
+  // A zero character beyond the sampled start still marks it as binary.
+  const late = Buffer.from('A'.repeat(5000) + '\0', 'utf16le');
+  assert.throws(() => decodeText(late), /不支持/);
   // A few zero bytes in an otherwise binary file are not UTF-16.
   assert.throws(() => decodeText(Buffer.from([1, 0, 2, 0, 3, 0, 4, 0, 5, 0, 6, 0])), /不支持/);
 });
 
 test('text that is not UTF-8 falls back to GB18030, and binaries are still refused', () => {
-  assert.deepEqual(decodeText(gbk), { text: '中文测试', encoding: 'gb18030' });
+  assert.deepEqual(decodeText(gbk), { text: '中文测试', encoding: 'gb18030', guessed: true });
+  // UTF-8 broken in a single place is reported as such rather than shown as GBK mojibake.
+  const damaged = Buffer.concat([
+    Buffer.from('这是一个 UTF-8 文件，'),
+    Buffer.from([0xff]),
+    Buffer.from('结尾。'),
+  ]);
+  assert.throws(() => decodeText(damaged), /不是 UTF-8/);
   assert.deepEqual(decodeText(Buffer.concat([Buffer.from('标题 '), Buffer.from('ok\n')])), {
     text: '标题 ok\n',
     encoding: 'utf-8',
+    guessed: false,
   });
   const png = Buffer.from([
     0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,

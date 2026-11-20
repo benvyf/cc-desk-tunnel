@@ -333,11 +333,15 @@ test('user wheel input during delayed PDF refresh is kept by the recreated PDF r
       }),
     )
     .toBe(300);
+  const before = await counts(page);
   await change(page, '多页报告.pdf', { delayMs: 1000 });
   await refreshPending(page);
   // The old PDF stays in view, so the wheel scrolls it; the new revision keeps that position.
   await pages.hover();
   await page.mouse.wheel(0, -200);
+  await expect
+    .poll(async () => (await counts(page)).completedReads)
+    .toBe(before.completedReads + 1);
   await expect(pages).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
   await expect(page.locator('.preview-pdf')).toContainText('125%');

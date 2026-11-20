@@ -46,7 +46,7 @@ function localWebsite(value) {
     throw new Error('请输入本机网站地址，例如 http://localhost:5173。');
   return url.href;
 }
-const megabytes = (size) => `${Math.round((size / 1024 / 1024) * 10) / 10} MiB`;
+const megabytes = (size) => `${Math.round((size / 1024 / 1024) * 10) / 10} MB`;
 const tooLarge = (limit) => new Error(`文件超过预览大小限制（${megabytes(limit)}）。`);
 // Reads the start of a file, at most `limit` bytes and one more to tell whether there is more;
 // `whole` refuses a file over the limit instead.
@@ -84,6 +84,8 @@ function createPreviewFiles() {
   // Recent Office conversions by path, reused while the file's size and modification time are
   // unchanged (a refresh, a repeated change notification, reopening the tab).
   const conversions = new Map();
+  // Conversions under way by path and version, so overlapping reads of one file convert it once.
+  const converting = new Map();
   async function start() {
     if (starting) return starting;
     starting = (async () => {
@@ -126,11 +128,12 @@ function createPreviewFiles() {
             return;
           }
           const data = await bytes(file, 20 * 1024 * 1024);
-          // The opened page itself is labelled with the encoding its preview was read in; other
-          // files of the site stay UTF-8.
+          // The opened page itself is labelled with the encoding its preview was read in, or not at
+          // all when that was a guess and the page names its own; other files of the site stay UTF-8.
+          const charset = file === mount.file ? mount.charset : 'utf-8';
           const contentType =
-            mime.startsWith('text/') || mime === 'application/json'
-              ? `${mime}; charset=${(file === mount.file && mount.charset) || 'utf-8'}`
+            (mime.startsWith('text/') || mime === 'application/json') && charset
+              ? `${mime}; charset=${charset}`
               : mime;
           response.writeHead(200, {
             'content-type': contentType,
@@ -191,15 +194,29 @@ function createPreviewFiles() {
           )
             throw new Error('文件不在原预览工作区内或位于私有目录。');
         };
-        const version = (info) => info.isFile() && `${info.size}:${info.mtimeMs}`;
+        const version = (info) => info.isFile() && `${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
         const before = version(await stat(file));
         const known = conversions.get(file);
-        if (before && known?.version === before) {
+        // The refresh button asks for a new conversion (fonts may have been installed meanwhile).
+        if (before && known?.version === before && !input.fresh) {
           authorize(file);
           return { path: file, kind: 'pdf', ...known.result };
         }
-        office ??= require('./preview-office.cjs').createPreviewOffice();
-        const result = await office.render(file, authorize);
+        const pending = before && `${before}:${file}`;
+        let job = pending && converting.get(pending);
+        if (job) authorize(file);
+        else {
+          office ??= require('./preview-office.cjs').createPreviewOffice();
+          job = office.render(file, authorize);
+          if (pending) {
+            converting.set(pending, job);
+            const done = () => {
+              if (converting.get(pending) === job) converting.delete(pending);
+            };
+            void job.then(done, done);
+          }
+        }
+        const result = await job;
         if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
         // A file that changed while it was converted is not remembered under either version.
         if (before && version(await stat(file).catch(() => null)) === before) {
@@ -229,9 +246,12 @@ function createPreviewFiles() {
       // A text file larger than the limit shows its beginning, cut at a character boundary.
       const read = await head(file, textLimit);
       const cut = read.data.length > textLimit;
-      const { text, encoding } = decodeText(cut ? read.data.subarray(0, textLimit) : read.data, {
-        cut,
-      });
+      const { text, encoding, guessed } = decodeText(
+        cut ? read.data.subarray(0, textLimit) : read.data,
+        {
+          cut,
+        },
+      );
       const result = {
         path: file,
         // The beginning of a document is shown as source: half a page is not rendered.
@@ -244,7 +264,11 @@ function createPreviewFiles() {
         await start();
         if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
         const token = randomBytes(24).toString('hex');
-        mounts.set(token, { root, file, charset: encoding });
+        // A guessed encoding gives way to the page's own declaration.
+        const declared = /<meta\s[^>]*(?:charset\s*=|http-equiv\s*=\s*["']?content-type)/i.test(
+          text.slice(0, 1024),
+        );
+        mounts.set(token, { root, file, charset: guessed && declared ? '' : encoding });
         const relative = path
           .relative(root, file)
           .split(path.sep)
@@ -266,6 +290,7 @@ function createPreviewFiles() {
       office?.reset();
       mounts.clear();
       conversions.clear();
+      converting.clear();
     },
     owns(url) {
       try {

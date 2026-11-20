@@ -32,7 +32,7 @@ async function boundedBytes(file) {
   try {
     const stat = await handle.stat();
     if (!stat.isFile()) throw new Error('请选择普通文件。');
-    if (stat.size > limit) throw new Error('文件超过预览大小限制（20 MiB）。');
+    if (stat.size > limit) throw new Error('文件超过预览大小限制（20 MB）。');
     const data = Buffer.alloc(Math.min(stat.size + 1, limit + 1));
     let length = 0;
     while (length < data.length) {
