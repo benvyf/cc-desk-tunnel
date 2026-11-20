@@ -168,7 +168,7 @@ for (const running of [false, true]) {
     const { emit, connectionId } = await open(page, true, evening.getTime());
     if (running) {
       emit({ type: 'run.status', status: 'running', connectionId });
-      await expect(page.getByRole('button', { name: '编辑重发', exact: true })).toHaveCount(0);
+      await expect(page.getByRole('button', { name: '编辑消息', exact: true })).toHaveCount(0);
     }
     const time = page.locator('.message.user').first().locator('.message-time');
     await expect(time).toHaveText('23:19');
@@ -187,14 +187,14 @@ test('a question has no heading either; its line is under it at the right', asyn
   const [first, second] = await page.locator('.message.user').all();
   const line = first.locator('.message-footer');
   await expect(line.locator('.message-time')).toContainText(clock.format(minutesAgo(40)));
-  await expect(line.getByRole('button', { name: '编辑重发', exact: true })).toHaveCount(1);
+  await expect(line.getByRole('button', { name: '编辑消息', exact: true })).toHaveCount(1);
   await expect(line.locator('.copy-button')).toHaveCount(1);
   const bubble = (await first.locator('.message-content').boundingBox())!;
   const under = (await line.boundingBox())!;
   expect(Math.abs(bubble.x + bubble.width - (under.x + under.width))).toBeLessThanOrEqual(2);
   // A question put in on the running run is a smaller bubble, and cannot be edited.
   await expect(second).toHaveClass(/joined/);
-  await expect(second.getByRole('button', { name: '编辑重发', exact: true })).toHaveCount(0);
+  await expect(second.getByRole('button', { name: '编辑消息', exact: true })).toHaveCount(0);
   await page.mouse.move(2, 2);
   // Plainly received is quiet; a delivery left unconfirmed stays in sight without the pointer.
   await expect(line.locator('.message-delivery')).toHaveText('原生已接收');
@@ -234,7 +234,7 @@ test('user controls reveal over the bubble in reference order without moving mes
     await question.locator('.message-content').hover();
     await expect(line.locator('.message-time')).toHaveCSS('opacity', '1');
     const copy = line.getByRole('button', { name: '复制消息', exact: true });
-    const edit = line.getByRole('button', { name: '编辑重发', exact: true });
+    const edit = line.getByRole('button', { name: '编辑消息', exact: true });
     await expect(copy).toHaveCSS('opacity', '1');
     await expect(edit).toHaveCSS('opacity', '1');
     await expect(copy).toHaveCSS('pointer-events', 'auto');
@@ -258,7 +258,7 @@ test('user controls reveal over the bubble in reference order without moving mes
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   await line.scrollIntoViewIfNeeded();
   await question.locator('.message-content').hover();
-  await expect(line.getByRole('button', { name: '编辑重发', exact: true })).toBeInViewport();
+  await expect(line.getByRole('button', { name: '编辑消息', exact: true })).toBeInViewport();
   await question.screenshot({
     path: resolve('.local/screenshots/user-controls-narrow.png'),
     animations: 'disabled',
@@ -303,7 +303,7 @@ test('keyboard focus reveals user controls and keeps them visible until focus le
   await page.mouse.move(2, 2);
   const question = page.locator('.message.user').first();
   const copy = question.getByRole('button', { name: '复制消息', exact: true });
-  const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  const edit = question.getByRole('button', { name: '编辑消息', exact: true });
   await expect(copy).toHaveCSS('opacity', '0');
   await copy.focus();
   await expect(copy).toHaveCSS('opacity', '1');
@@ -364,7 +364,7 @@ test('a focus-revealed footer remains visible when the pointer enters and its fo
   await page.mouse.move(2, 2);
   const question = page.locator('.message.user').first();
   const copy = question.locator('.message-footer .copy-button');
-  const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  const edit = question.getByRole('button', { name: '编辑消息', exact: true });
   await edit.focus();
   await expect(copy).toHaveCSS('opacity', '1');
   await copy.hover();
@@ -405,7 +405,7 @@ test('copy and time stay available while running; edit returns only after the ru
   );
   const question = page.locator('.message.user').first();
   const copy = question.getByRole('button', { name: '复制消息', exact: true });
-  const edit = question.getByRole('button', { name: '编辑重发', exact: true });
+  const edit = question.getByRole('button', { name: '编辑消息', exact: true });
   await question.locator('.message-content').hover();
   for (const status of ['running', 'awaiting_approval'] as const) {
     emit({ type: 'run.status', status, connectionId });

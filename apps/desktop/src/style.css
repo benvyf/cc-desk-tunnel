@@ -4978,6 +4978,92 @@ details[open] > summary > .fold-chevron {
 .message.user.joined .user-bubble {
   padding: 7px 12px;
 }
+/* A question open in the editor (MessageEditor.tsx) takes the conversation's whole width, in the colour of its
+   bubble, with its buttons at its foot. What was said after it is dimmed: sending the edit carries the conversation
+   on from here instead. Off screen it stays laid out, so that it keeps the keyboard. */
+.message.user.editing {
+  align-items: stretch;
+  margin-left: 0;
+  margin-bottom: 12px;
+  content-visibility: visible;
+}
+.message-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 12px 10px 16px;
+  border-radius: var(--radius-2xl);
+  background: var(--user-bubble);
+  box-shadow: 0 0 0 0.5px var(--line-strong);
+  transition: box-shadow var(--cds-dur-base) var(--cds-ease-out);
+  animation: message-editor-in var(--cds-dur-snap) var(--cds-ease-out);
+}
+.message-editor:focus-within {
+  box-shadow:
+    var(--shadow-composer-focus),
+    0 0 0 0.5px light-dark(rgb(31 30 29 / 45%), rgb(222 220 209 / 40%));
+}
+.message-editor > :is(.quote-references, .attachment-tiles) {
+  margin: 0;
+}
+.message-editor textarea {
+  display: block;
+  width: 100%;
+  min-height: calc(1.6em * 2);
+  /* About twelve lines; a longer question scrolls inside the box. */
+  max-height: min(40vh, 320px);
+  overflow-y: auto;
+  padding: 2px 4px 0 0;
+  border: 0;
+  resize: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: calc(15rem / 14);
+  line-height: 1.6;
+}
+.message-editor textarea:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+.message-editor-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.message-editor-hint {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+.message-editor-actions .button {
+  --button-radius: 999px;
+}
+.transcript .message.editing ~ * {
+  opacity: 0.45;
+  transition: opacity var(--cds-dur-base) var(--cds-ease-out);
+}
+@keyframes message-editor-in {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .message-editor {
+    animation: none;
+  }
+}
+@media (forced-colors: active) {
+  .message-editor {
+    border: 1px solid CanvasText;
+  }
+  .message-editor:focus-within {
+    outline: 2px solid Highlight;
+    outline-offset: 2px;
+  }
+}
 .message-footer .message-time {
   padding: 0 4px;
 }

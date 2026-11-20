@@ -87,13 +87,17 @@ test('Electron chooses real files, generates bounded previews, restores and send
     await page
       .locator('.message.user')
       .last()
-      .getByRole('button', { name: '编辑重发', exact: true })
+      .getByRole('button', { name: '编辑消息', exact: true })
       .click();
-    await expect(composer.locator('.attachment-tile')).toHaveCount(1);
-    await expect(composer.getByAltText('附件图片.png')).toBeVisible();
-    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
-    await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
-    await expect(page.locator('.message.user')).toHaveCount(0);
+    // The question opens where it stands, with its picture still on it and removable.
+    const editor = page.locator('.message-editor');
+    await expect(editor.locator('.attachment-tile')).toHaveCount(1);
+    await expect(editor.getByAltText('附件图片.png')).toBeVisible();
+    await expect(page.getByRole('textbox', { name: '编辑内容', exact: true })).toHaveValue('');
+    await expect(page.getByRole('textbox', { name: '编辑内容', exact: true })).toBeFocused();
+    await expect(editor.getByRole('button', { name: '发送', exact: true })).toBeDisabled();
+    await editor.getByRole('button', { name: '取消', exact: true }).click();
+    await expect(message.locator('.attachment-tile')).toHaveCount(1);
     expect(errors).toEqual([]);
     expect(
       await page.evaluate((file) => window.desktop!.attachmentPreview(file), document),

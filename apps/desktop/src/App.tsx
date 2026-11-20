@@ -51,19 +51,14 @@ import { isBlank } from './transcript.ts';
 import { useStopShortcut } from './useStopShortcut.ts';
 import SideConversation from './SideConversation.tsx';
 import { latest } from './nativeState.ts';
-import { appendQuote, makeQuote, quoteMessage, splitQuoteMessage, quoteLimit } from './quotes.ts';
+import { appendQuote, makeQuote, quoteMessage, quoteLimit } from './quotes.ts';
 import type { QuoteDestination } from './QuoteActions.tsx';
 import SessionBar from './SessionBar.tsx';
 import { isHere, thisDevice } from './device.ts';
 import { isMac, selfUpdating } from './platform.ts';
 import { useDrafts } from './drafts.ts';
-import {
-  attachmentMessage,
-  messageLimit,
-  splitAttachmentMessage,
-  splitPastedText,
-  withPastedText,
-} from './attachments.ts';
+import { attachmentMessage, messageLimit, withPastedText } from './attachments.ts';
+import { messageParts } from './messageParts.ts';
 import SchedulePanel from './SchedulePanel.tsx';
 import { taskMessage, useSchedules } from './schedules.ts';
 import type { Scenario } from './Composer.tsx';
@@ -428,7 +423,8 @@ export function App({
   const [batchFailures, setBatchFailures] = useState<BatchFailure[]>([]);
   const [batchProgress, setBatchProgress] = useState<string | null>(null);
   // What was just put away, offered back for a few seconds: archiving asks nothing first, so it can be undone.
-  const [undoArchive, setUndoArchive] = useState<{ ids: string[] } | null>(null);
+  // `edited`: put away by editing a question in it, which carried the conversation on in a copy (resend).
+  const [undoArchive, setUndoArchive] = useState<{ ids: string[]; edited?: boolean } | null>(null);
   // It waits while the pointer or the keyboard is on it, so that it does not go from under a hand reaching for it.
   // Pointer and focus each hold it; both let go when it goes, however it went (a removed node tells no leave).
   const [undoHovered, setUndoHovered] = useState(false);
@@ -1489,9 +1485,8 @@ export function App({
       setProjects((value) => withProject(value, projectPath));
     });
   }
-  // A fork continues from the same context in a session of its own. Forking before a message brings that
-  // message back as a draft, which is how an earlier message is edited and sent again.
-  async function fork(session: Session, before?: { id: string; text: string }) {
+  // A fork continues from the same context in a session of its own.
+  async function fork(session: Session) {
     if (terminalOwns(session.id) || session.activeRun) return;
     if (client.historyPending(session.id)) return;
     const startedAt = navigation.current;
@@ -1502,34 +1497,94 @@ export function App({
       if (projectPath === null) return;
       const response = session.device?.viaSsh
         ? {
+            sessionId: await window.desktop!.ssh!.forkSession(session.device.id, session.id),
+          }
+        : await client.request({
+            type: 'session.fork',
+            sessionId: session.id,
+            ...(projectPath ? { projectPath } : {}),
+          });
+      if (!response.sessionId) return;
+      // A slow fork must not take the reader away from a page they have since chosen.
+      if (navigation.current === startedAt) show(response.sessionId);
+    });
+  }
+  // A question edited where it stands (MessageEditor.tsx) is sent again in its place. The service keeps a
+  // conversation as it was said, so the place is a copy of the session up to just before the question
+  // (session.fork); the edit is sent there, and the copy takes over the original's name, pin and unsent words
+  // while the original is put away, where it stays readable and can be restored. Resolves whether the edit went:
+  // once the copy exists, the editor is done with, and what goes wrong after is said and kept in the copy.
+  async function resend(session: Session, messageId: string, text: string) {
+    if (terminalOwns(session.id) || session.activeRun || client.historyPending(session.id))
+      return false;
+    const startedAt = navigation.current;
+    let forked: string | undefined;
+    await act(async () => {
+      const response = session.device?.viaSsh
+        ? {
             sessionId: await window.desktop!.ssh!.forkSession(
               session.device.id,
               session.id,
-              before?.id,
+              messageId,
             ),
           }
         : await client.request({
             type: 'session.fork',
             sessionId: session.id,
-            ...(before ? { beforeMessageId: before.id } : {}),
-            ...(projectPath ? { projectPath } : {}),
+            beforeMessageId: messageId,
           });
-      if (!response.sessionId) return;
-      if (before) {
-        const attached = splitAttachmentMessage(before.text);
-        const referenced = splitQuoteMessage(attached.text);
-        // Pasted blocks come back as blocks, not as their tags in the box.
-        const pasted = splitPastedText(referenced.text);
-        setDraft(response.sessionId, pasted.text);
-        setQuotes(response.sessionId, () => referenced.quotes);
-        setAttachments(response.sessionId, () => [...pasted.blocks, ...attached.files]);
+      forked = response.sessionId;
+      if (!forked) return;
+      const copy = forked;
+      // A slow edit must not take the reader away from a page they have since chosen.
+      const here = () => navigation.current === startedAt;
+      // The copy is named "…（分叉）" by the service; this is the same conversation, under its own name. Before the
+      // run starts, which holds names still.
+      await client
+        .request({ type: 'session.rename', sessionId: copy, title: session.title })
+        .catch(() => {});
+      try {
+        await client.request({ type: 'message.send', sessionId: copy, text, scenario });
+      } catch (error) {
+        // The copy stands without the edit, which waits in its input box as it was written.
+        const parts = messageParts(text);
+        setDraft(copy, parts.body);
+        setQuotes(copy, () => parts.quotes);
+        setAttachments(copy, () => [...parts.blocks, ...parts.files]);
+        if (here()) {
+          show(copy);
+          setFocusDraftSession(copy);
+        }
+        throw error;
       }
-      // A slow fork must not take the reader away from a page they have since chosen.
-      if (navigation.current === startedAt) {
-        show(response.sessionId);
-        if (before) setFocusDraftSession(response.sessionId);
+      if (here()) show(copy);
+      // What belongs to the conversation rather than to one copy of it goes along: its pin, and words written
+      // but not sent (files still being read stay behind, where their reading ends).
+      setPrefs((value) =>
+        value.pinnedSessions.includes(session.id)
+          ? {
+              ...value,
+              pinnedSessions: [...value.pinnedSessions.filter((id) => id !== session.id), copy],
+            }
+          : value,
+      );
+      const unsent = drafts[session.id] ?? '';
+      const quotes = quoteDrafts[session.id] ?? [];
+      const files = (attachmentDrafts[session.id] ?? []).filter((item) => item.status === 'ready');
+      if (unsent || quotes.length || files.length) {
+        setDraft(copy, unsent);
+        setQuotes(copy, () => quotes);
+        setAttachments(copy, () => files);
+        setDraft(session.id, '', unsent);
+        setQuotes(session.id, () => []);
+        const moved = new Set(files.map((item) => item.id));
+        setAttachments(session.id, (current) => current.filter((item) => !moved.has(item.id)));
       }
+      // Put away last: if that fails, both stand in the list, and nothing is lost.
+      await client.request({ type: 'session.archive', sessionId: session.id, archived: true });
+      setUndoArchive({ ids: [session.id], edited: true });
     });
+    return !!forked;
   }
   async function referenceAnswer(
     source: Session,
@@ -2802,24 +2857,43 @@ export function App({
                 onFocus={() => setUndoFocused(true)}
                 onBlur={() => setUndoFocused(false)}
               >
-                <span>已归档 {undoArchive.ids.length} 个会话</span>
-                <button
-                  type="button"
-                  className="button secondary"
-                  disabled={!connected || busy}
-                  onClick={() => {
-                    // Only those still put away: one restored meanwhile, or deleted, is left alone.
-                    const targets = state.sessions.filter(
-                      (session) => undoArchive.ids.includes(session.id) && session.archivedAt,
-                    );
-                    setUndoArchive(null);
-                    void act(async () => {
-                      await archiveSessions(targets, false);
-                    });
-                  }}
-                >
-                  撤销
-                </button>
+                <span>
+                  {undoArchive.edited
+                    ? '已按修改重新发送，原对话已归档'
+                    : `已归档 ${undoArchive.ids.length} 个会话`}
+                </span>
+                {undoArchive.edited ? (
+                  // The original is read where it was put away, and restored from there if wanted.
+                  <button
+                    type="button"
+                    className="button secondary"
+                    onClick={() => {
+                      const original = undoArchive.ids[0]!;
+                      setUndoArchive(null);
+                      show(original);
+                    }}
+                  >
+                    查看原对话
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    disabled={!connected || busy}
+                    onClick={() => {
+                      // Only those still put away: one restored meanwhile, or deleted, is left alone.
+                      const targets = state.sessions.filter(
+                        (session) => undoArchive.ids.includes(session.id) && session.archivedAt,
+                      );
+                      setUndoArchive(null);
+                      void act(async () => {
+                        await archiveSessions(targets, false);
+                      });
+                    }}
+                  >
+                    撤销
+                  </button>
+                )}
                 <IconButton title="关闭提示" onClick={() => setUndoArchive(null)}>
                   <X />
                 </IconButton>
@@ -2924,9 +2998,7 @@ export function App({
                 controlsDisabled ||
                 (away && !(selected?.device?.viaSsh && window.desktop?.ssh && remote))
                   ? undefined
-                  : (id, text) => {
-                      void fork(selected!, { id, text });
-                    }
+                  : (id, text) => resend(selected!, id, text)
               }
               stopTask={(taskId) => {
                 void act(async () => {

@@ -90,6 +90,7 @@ import {
 import { updatePictures } from './PictureViewer.tsx';
 import type { PictureEntry } from './PictureViewer.tsx';
 import TurnNavigator from './TurnNavigator.tsx';
+import MessageEditor from './MessageEditor.tsx';
 
 const RichText = lazy(() => import('./RichText.tsx'));
 const Rich = ({
@@ -124,8 +125,16 @@ type Live = {
   taskControl: (tool: Tool) => 'ready' | 'sent' | undefined;
   endTool: (tool: Tool) => void;
   backgroundTool: (tool: Tool) => void;
-  // Absent while a fork cannot be made.
+  // Opens a question in the editor where it stands (MessageEditor.tsx); absent while it could not be sent again.
   edit?: (item: Text) => void;
+  // The question open in the editor: why it cannot be sent just now, how it is sent, and how it is left.
+  editor?: Editor;
+};
+type Editor = {
+  id: string;
+  blocked?: string;
+  send: (text: string) => Promise<boolean>;
+  cancel: () => void;
 };
 const icons: Record<Category, typeof Wrench> = {
   command: SquareTerminal,
@@ -592,6 +601,7 @@ function Message({
   item,
   native,
   edit,
+  editor,
   footer,
   closing = false,
   latest = false,
@@ -604,6 +614,8 @@ function Message({
   // The model that wrote the reply, beside its time: shown where more than one answered in the session.
   model?: string;
   edit?: (item: Text) => void;
+  // Present while this question is open in the editor, which takes the place of its bubble and its line.
+  editor?: Editor;
   footer?: ReactNode;
   closing?: boolean;
   latest?: boolean;
@@ -651,7 +663,17 @@ function Message({
       under.removeEventListener('pointerenter', enterLine);
       under.removeEventListener('pointerleave', leaveControls);
     };
-  }, [user]);
+  }, [user, !!editor]);
+  // Leaving the editor gives the keyboard back to the pencil that opened it, unless it has gone somewhere else.
+  const pencil = useRef<HTMLButtonElement>(null);
+  const wasEditing = useRef(false);
+  useEffect(() => {
+    if (wasEditing.current && !editor) {
+      const active = document.activeElement;
+      if (!active || active === document.body) pencil.current?.focus({ preventScroll: true });
+    }
+    wasEditing.current = !!editor;
+  }, [!!editor]);
   const attached = user ? splitAttachmentMessage(item.text) : null;
   const referenced = attached ? splitQuoteMessage(attached.text) : null;
   // Pasted blocks show as cards above the bubble, which keeps the typed text.
@@ -676,6 +698,17 @@ function Message({
       )}
     </>
   );
+  if (user && editor)
+    return (
+      <article className="message user editing" data-message-id={item.id}>
+        <MessageEditor
+          text={item.text}
+          blocked={editor.blocked}
+          send={editor.send}
+          cancel={editor.cancel}
+        />
+      </article>
+    );
   return (
     <article
       className={`message ${item.kind}${latest ? ' latest' : ''}${joined ? ' joined' : ''}`}
@@ -726,8 +759,9 @@ function Message({
             <button
               type="button"
               className="message-action"
-              aria-label="编辑重发"
-              title="编辑重发：从这条消息之前分叉出新会话，原会话保留"
+              aria-label="编辑消息"
+              title="编辑消息"
+              ref={pencil}
               onClick={() => edit(item)}
             >
               <Pencil />
@@ -920,6 +954,7 @@ const TurnView = memo(function TurnView({
           item={turn.question}
           native={native}
           edit={turn.joined ? undefined : live.edit}
+          editor={live.editor?.id === turn.question.id ? live.editor : undefined}
           joined={turn.joined}
         />
       )}
@@ -1049,7 +1084,8 @@ export default function Conversation({
     answers?: Record<string, string>,
     // Whether the answer reached the service.
   ) => Promise<boolean>;
-  edit?: (messageId: string, text: string) => void;
+  // Sends a question again as edited; resolves whether it went, or the editor stays open.
+  edit?: (messageId: string, text: string) => Promise<boolean>;
   clock: Clock;
   // What the session's background tasks last said of themselves, by task.
   progress: Record<string, TaskProgress> | undefined;
@@ -1237,6 +1273,17 @@ export default function Conversation({
   actions.current = { replyApproval, stopTask, backgroundTask, edit };
   const activeRunId = session?.activeRun?.id;
   const editable = !!edit;
+  // The question open in the editor, one at a time, in the session it was opened in.
+  const [editing, setEditing] = useState<{ sessionId?: string; id: string } | null>(null);
+  const editingId = editing && editing.sessionId === session?.id ? editing.id : undefined;
+  // While open, the editor keeps what is written even when it cannot be sent, and says why.
+  const editBlocked = running
+    ? '任务运行中，结束后可以发送'
+    : !connected
+      ? '连接已断开，恢复后可以发送'
+      : !edit
+        ? '现在不能发送'
+        : undefined;
   const makeLive = (now: number): Live => ({
     now,
     busy,
@@ -1263,7 +1310,26 @@ export default function Conversation({
         });
       });
     },
-    edit: edit && !running ? (item) => actions.current.edit?.(item.id, item.text) : undefined,
+    edit:
+      edit && !running
+        ? (item) => {
+            setEditing({ sessionId: session?.id, id: item.id });
+            // Reading where the question is: the view no longer keeps to the end under the editor.
+            leave();
+          }
+        : undefined,
+    editor: editingId
+      ? {
+          id: editingId,
+          blocked: editBlocked,
+          send: async (text) => {
+            const sent = (await actions.current.edit?.(editingId, text)) ?? false;
+            if (sent) setEditing(null);
+            return sent;
+          },
+          cancel: () => setEditing(null),
+        }
+      : undefined,
     taskControl: (tool) =>
       connected &&
       ownsRun &&
@@ -1295,6 +1361,8 @@ export default function Conversation({
     activeRunId,
     running,
     editable,
+    editingId,
+    editBlocked,
     taskSent,
   ];
   const live = useMemo(() => makeLive(now), [now, ...liveKeys]);
@@ -1730,7 +1798,7 @@ export default function Conversation({
                     </div>
                     {/* The run is still on, so the controls that need it over are greyed out; this says why. */}
                     <p className="background-hint">
-                      任务结束前不能更改模型、思考强度和审批模式，也不能改名、分叉或编辑重发
+                      任务结束前不能更改模型、思考强度和审批模式，也不能改名、分叉或编辑消息
                       {ownsRun && '；消息可以照常发送'}。
                     </p>
                     <ul>

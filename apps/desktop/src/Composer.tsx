@@ -49,7 +49,7 @@ export type Scenario = 'chat' | 'tool' | 'question' | 'error' | 'agent';
 // A draft that is only a slash and an optional command name opens the command menu.
 const slashDraft = /^[/\\][^ \n]*$/;
 
-function fitDraft(box: HTMLTextAreaElement | null) {
+export function fitDraft(box: HTMLTextAreaElement | null) {
   if (!box) return;
   box.style.height = 'auto';
   box.style.height = `${box.scrollHeight}px`;

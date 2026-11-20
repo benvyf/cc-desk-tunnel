@@ -294,13 +294,13 @@ async function fixture(
   };
 }
 
-test('SSH edit-resend follows target readiness without attempting an offline fork', async ({
+test('SSH message editing follows target readiness without attempting an offline fork', async ({
   page,
 }) => {
   const errors: string[] = [];
   page.on('pageerror', (error) => errors.push(error.message));
   const f = await fixture(page, { ssh: true });
-  const edit = page.getByRole('button', { name: '编辑重发', exact: true });
+  const edit = page.getByRole('button', { name: '编辑消息', exact: true });
   await expect(edit).toHaveCount(0);
   f.updateSshReady(true);
   await expect(edit).toBeVisible();
