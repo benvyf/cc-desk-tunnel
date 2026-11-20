@@ -255,3 +255,49 @@ test('the temporary flag is saved and restored; layouts without it restore kept 
   assert.equal(old.tabs.length, 2);
   assert.ok(old.tabs.every((t) => t.temporary === undefined));
 });
+
+test('a temporary opening replaces the temporary tab of the focused floating pane, not another pane’s', () => {
+  let board = openTab(emptyBoard(), { id: 'keep', kind: 'file', target: 'C:\\w\\keep.ts' });
+  board = openTab(board, { id: 'a', kind: 'file', target: 'C:\\w\\a.ts', temporary: true });
+  board = floatTab(board, 'keep', 'floating');
+  board = openTab(board, { id: 'b', kind: 'file', target: 'C:\\w\\b.ts', temporary: true });
+  assert.deepEqual(board.panes.find((p) => p.id === 'floating')?.tabs, ['keep', 'b']);
+  board = openTab(board, { id: 'c', kind: 'file', target: 'C:\\w\\c.ts', temporary: true });
+  assert.deepEqual(board.panes.find((p) => p.id === 'floating')?.tabs, ['keep', 'c']);
+  assert.deepEqual(board.panes.find((p) => p.id === 'primary')?.tabs, ['a']);
+  assert.equal(board.focused, 'floating');
+});
+
+test('a full board takes over a temporary tab in a pane that is not focused', () => {
+  let board = emptyBoard();
+  for (let i = 0; i < previewTabLimit - 1; i++)
+    board = openTab(board, { id: `t${i}`, kind: 'file', target: `C:\\w\\${i}.ts` });
+  board = openTab(board, { id: 'temp', kind: 'file', target: 'C:\\w\\temp.ts', temporary: true });
+  board = splitPane(board, 'primary', 'temp', 'second');
+  board = {
+    ...board,
+    tabs: board.tabs.map((t) => (t.id === 'temp' ? { ...t, temporary: true } : t)),
+  };
+  board = { ...board, focused: 'primary' };
+  const opened = openTab(board, {
+    id: 'more',
+    kind: 'file',
+    target: 'C:\\w\\more.ts',
+    temporary: true,
+  });
+  assert.equal(opened.tabs.length, previewTabLimit);
+  assert.deepEqual(opened.panes.find((p) => p.id === 'second')?.tabs, ['more']);
+  assert.equal(opened.focused, 'second');
+});
+
+test('opening the tab already shown as asked keeps the same board', () => {
+  let board = openTab(emptyBoard(), { id: 'a', kind: 'file', target: 'C:\\w\\a.ts' });
+  board = openTab(board, { id: 'b', kind: 'file', target: 'C:\\w\\b.ts', temporary: true });
+  assert.equal(
+    openTab(board, { id: 'x', kind: 'file', target: 'C:\\w\\b.ts', temporary: true }),
+    board,
+  );
+  assert.notEqual(openTab(board, { id: 'x', kind: 'file', target: 'C:\\w\\b.ts' }), board);
+  assert.notEqual(openTab(board, { id: 'x', kind: 'file', target: 'C:\\w\\a.ts' }), board);
+  assert.equal(pinTab(board, 'a'), board);
+});

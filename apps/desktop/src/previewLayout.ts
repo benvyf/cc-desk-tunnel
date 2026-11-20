@@ -92,6 +92,14 @@ export function openTab(board: PreviewBoard, tab: PreviewTab): PreviewBoard {
   const existing = board.tabs.find((t) => sameTab(t, tab));
   if (existing) {
     const pane = board.panes.find((p) => p.tabs.includes(existing.id))!;
+    // Already shown as asked: the same board, so nothing renders or is saved again.
+    if (
+      board.expanded &&
+      board.focused === pane.id &&
+      pane.active === existing.id &&
+      (tab.temporary || !existing.temporary)
+    )
+      return board;
     return {
       // Opening a temporary tab's file to keep it (the file picker, a double-click) keeps the tab.
       ...(tab.temporary ? board : pinTab(board, existing.id)),

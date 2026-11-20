@@ -30,6 +30,8 @@ type ReadOptions = {
 };
 type Watch = { key: string; path: string; file?: boolean };
 const changed = new Set<(event: { key: string; path: string }) => void>();
+// The key of the page last shown natively, which a page's own window.open is told for (openFromPage).
+let lastShown = '';
 const watches = new Map<string, Watch>();
 const readOptions = new Map<string, ReadOptions>();
 const sourceTexts = new Map<string, string>();
@@ -61,6 +63,21 @@ const metrics = {
   },
   source(suffix: string) {
     return [...sourceTexts].find(([path]) => path.endsWith(suffix))?.[1];
+  },
+  // A shown page asks to open a link (window.open): the main process says so in the page's state.
+  openFromPage(open: PreviewBrowserState['open']) {
+    for (const callback of listeners)
+      callback({
+        surface: 'main',
+        key: lastShown,
+        url: 'http://localhost:5173/',
+        title: '',
+        loading: false,
+        back: false,
+        forward: false,
+        error: '',
+        open,
+      });
   },
   emit(suffix: string) {
     for (const watch of watches.values())
@@ -272,6 +289,7 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
     },
     async show(input: { surface: 'main'; key: string; url: string }) {
       metrics.nativeShows++;
+      lastShown = input.key;
       queueMicrotask(() =>
         listeners.forEach((callback) =>
           callback({
@@ -390,6 +408,22 @@ function Fixture() {
           {label}
         </Button>
       ))}
+      <Button
+        onClick={() => {
+          setOpened(true);
+          board.openFile(folder + '\\链接.md', folder, true, undefined, true);
+        }}
+      >
+        临时链接文档
+      </Button>
+      <Button
+        onClick={() => {
+          setOpened(true);
+          void board.follow({ kind: 'web', url: 'http://localhost:5173' }, folder);
+        }}
+      >
+        临时网站
+      </Button>
       <input
         aria-label="测试输入"
         value={draft}

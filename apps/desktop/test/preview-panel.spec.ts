@@ -90,6 +90,7 @@ test('a tree row’s menu reveals it, copies its path or puts it in the message 
   await row.click({ button: 'right' });
   const menu = page.getByRole('menu', { name: '文件操作' });
   await expect(menu.getByRole('menuitem')).toHaveText([
+    '打开并固定',
     '添加到输入框',
     '在资源管理器中显示',
     '复制路径',

@@ -105,9 +105,10 @@ export function usePreviewWorkspace(
   const current = useRef(boards);
   current.current = boards;
   const board = session ? (boards[session] ?? emptyBoard()) : emptyBoard();
-  // Whether an opening was refused for want of room (every one of the 64 tabs kept) since a tab last closed; the
-  // sidebar says so.
-  const [full, setFull] = useState(false);
+  // The workspace and session ([storageKey, session]) where an opening was refused for want of room (every one of
+  // the 64 tabs kept) since a tab of its last closed; the sidebar there says so.
+  const scope = JSON.stringify([storageKey, session]);
+  const [full, setFull] = useState<string | null>(null);
   const release = useCallback(
     (tab: PreviewTab) => {
       if (tab.kind === 'chat') return;
@@ -130,7 +131,7 @@ export function usePreviewWorkspace(
         if (!kept.has(tab.id)) {
           tabViews.current.delete(JSON.stringify([id, tab.id]));
           release(tab);
-          if (full) setFull(false);
+          if (full === JSON.stringify([state.key, id])) setFull(null);
         }
     }
   }, [state, release, full]);
@@ -185,11 +186,13 @@ export function usePreviewWorkspace(
   const change = useCallback(
     (update: (board: PreviewBoard) => PreviewBoard) => {
       if (!session || !storageKey) return;
-      setState((s) =>
-        s.key === storageKey
-          ? { ...s, boards: { ...s.boards, [session]: update(s.boards[session] ?? emptyBoard()) } }
-          : s,
-      );
+      setState((s) => {
+        if (s.key !== storageKey) return s;
+        const before = s.boards[session];
+        const next = update(before ?? emptyBoard());
+        // An update that changes nothing keeps the state, so nothing renders or is saved again.
+        return before && next === before ? s : { ...s, boards: { ...s.boards, [session]: next } };
+      });
     },
     [session, storageKey],
   );
@@ -213,10 +216,18 @@ export function usePreviewWorkspace(
     title?: string,
     position?: { line?: number; column?: number; find?: FindTarget[] },
     temporary = false,
+    // The tab whose link this follows: kept first, so a temporary tab's own link never takes its place.
+    source?: string,
   ) {
-    if (session && previewTabsFull(current.current[session] ?? emptyBoard(), { kind, target })) {
-      setFull(true);
-      change((b) => ({ ...b, expanded: true }));
+    if (
+      session &&
+      previewTabsFull(pinTab(current.current[session] ?? emptyBoard(), source ?? ''), {
+        kind,
+        target,
+      })
+    ) {
+      setFull(scope);
+      change((b) => (b.expanded ? b : { ...b, expanded: true }));
       return;
     }
     const find = position?.find?.length ? position.find : undefined;
@@ -239,7 +250,7 @@ export function usePreviewWorkspace(
       // Keep restoredTabs: switching from source to an executable page still needs confirmation.
     }
     change((b) => {
-      const next = openTab(b, {
+      const next = openTab(source ? pinTab(b, source) : b, {
         id: crypto.randomUUID(),
         kind,
         target,
@@ -264,10 +275,10 @@ export function usePreviewWorkspace(
   );
   return {
     ...board,
-    scope: JSON.stringify([storageKey, session]),
+    scope,
     active,
     width: state.width,
-    full,
+    full: full === scope,
     pending,
     restoredTabs,
     reading,
@@ -302,11 +313,13 @@ export function usePreviewWorkspace(
       restricted?: boolean,
       position?: { line?: number; column?: number },
       temporary?: boolean,
-    ) => open('file', path, root, restricted, undefined, position, temporary),
+      source?: string,
+    ) => open('file', path, root, restricted, undefined, position, temporary, source),
     openChat: (id: string, title = '侧边对话') => open('chat', id, undefined, undefined, title),
-    openWebsite: (url: string, temporary?: boolean) => {
+    openWebsite: (url: string, temporary?: boolean, source?: string) => {
       const target = previewWebsite(url);
-      if (target) open('web', target, undefined, undefined, undefined, undefined, temporary);
+      if (target)
+        open('web', target, undefined, undefined, undefined, undefined, temporary, source);
     },
     // Whether the link is shown here (true); one that is not (false) is opened as it would be without a preview
     // (followLink). A folder, or a file the preview cannot show, is declined: what it is comes back, for the
@@ -317,6 +330,8 @@ export function usePreviewWorkspace(
       root?: string,
       restricted?: boolean,
       find?: FindTarget[],
+      // The preview tab the link is in, if any (open's `source`).
+      source?: string,
     ): Promise<boolean | Declined> {
       if (!window.desktop?.preview || !session || !workspace) return false;
       if (link.kind === 'path') {
@@ -327,19 +342,19 @@ export function usePreviewWorkspace(
             return { kind: 'unpreviewable', runs: info.runs };
         }
         // A followed link, from the conversation, a tool card or a document, opens a temporary tab.
-        open('file', link.path, root, restricted, undefined, { ...link, find }, true);
+        open('file', link.path, root, restricted, undefined, { ...link, find }, true, source);
         return true;
       }
       if (link.kind === 'web') {
         const target = previewWebsite(link.url);
         if (target) {
-          open('web', target, undefined, undefined, undefined, undefined, true);
+          open('web', target, undefined, undefined, undefined, undefined, true, source);
           return true;
         }
       }
       return false;
     },
-    focus: (id: string) => change((b) => ({ ...b, focused: id })),
+    focus: (id: string) => change((b) => (b.focused === id ? b : { ...b, focused: id })),
     select: (id: string) =>
       change((b) => ({
         ...b,

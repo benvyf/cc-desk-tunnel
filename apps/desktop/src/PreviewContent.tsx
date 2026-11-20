@@ -315,8 +315,9 @@ export default function PreviewContent({
               state.open.restricted,
               undefined,
               true,
+              tab.id,
             );
-          else workspaceRef.current.openWebsite(state.open.target, true);
+          else workspaceRef.current.openWebsite(state.open.target, true, tab.id);
           return;
         }
         setBrowser((previous) => ({
@@ -642,7 +643,7 @@ export default function PreviewContent({
             if (link)
               doubtful.guard(link, anchor.textContent ?? '', () => {
                 void workspace
-                  .follow(link, tab.root, tab.restricted)
+                  .follow(link, tab.root, tab.restricted, undefined, tab.id)
                   .catch(() => false)
                   .then((shown) => {
                     if (shown === true) return;

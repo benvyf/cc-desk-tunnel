@@ -164,6 +164,17 @@ function Directory({
                 menu({ x: box.left + 24, y: box.bottom }, entry);
                 return;
               }
+              // Enter on the file already shown keeps its tab, as a double-click does.
+              if (
+                event.key === 'Enter' &&
+                !event.shiftKey &&
+                entry.kind === 'file' &&
+                keyOf(active ?? '') === keyOf(entry.path)
+              ) {
+                event.preventDefault();
+                open(entry.path, false);
+                return;
+              }
               if (entry.kind === 'directory' && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
                 event.preventDefault();
                 setExpanded((old) => {
@@ -265,6 +276,9 @@ export default function PreviewTree({
     setMenu({
       ...at,
       items: [
+        ...(entry.kind === 'file'
+          ? [{ label: '打开并固定', run: () => open(entry.path, false) }]
+          : []),
         ...(attach
           ? [
               {

@@ -369,3 +369,114 @@ test('with all 64 tabs kept an opening says so; a temporary tab is taken over in
   );
   await expect(notice).toHaveCount(0);
 });
+
+test('a link followed from inside a temporary tab opens beside it and keeps it', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  const pane = page.getByRole('complementary', { name: '文件与网站预览' });
+  const tabs = pane.getByRole('tab');
+  await page.getByRole('button', { name: '临时链接文档', exact: true }).click();
+  await expect(pane.getByRole('tab', { name: '链接.md', exact: true })).toHaveAttribute(
+    'aria-description',
+    '临时标签，双击固定',
+  );
+  // A restricted document's folder link stays in the preview, as a new temporary tab.
+  await pane.getByRole('link', { name: '文件夹', exact: true }).click();
+  await expect(tabs).toHaveText(['链接.md', 'src']);
+  await expect(pane.getByRole('tab', { name: '链接.md', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+  await expect(pane.getByRole('tab', { name: 'src', exact: true })).toHaveAttribute(
+    'aria-description',
+    '临时标签，双击固定',
+  );
+  await pane.getByRole('tab', { name: 'src', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '关闭全部' }).click();
+  await expect(tabs).toHaveCount(0);
+
+  // A temporary page's window.open keeps the page and opens its target beside it.
+  await page.getByRole('button', { name: '临时网站', exact: true }).click();
+  await expect(tabs).toHaveText(['localhost:5173/']);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixturePreview.counts().nativeShows))
+    .toBeGreaterThan(0);
+  await page.evaluate(() =>
+    (window as any).fixturePreview.openFromPage({
+      kind: 'file',
+      target: 'C:\\工作\\网站预览\\说明.md',
+      root: 'C:\\工作\\网站预览',
+    }),
+  );
+  await expect(tabs).toHaveText(['localhost:5173/', '说明.md']);
+  await expect(pane.getByRole('tab', { name: 'localhost:5173/', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+});
+
+test('closing several tabs releases each closed tab’s view', async ({ page }) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  for (const name of ['打开文档', '图片状态', '长文本', 'GBK 文本'])
+    await page.getByRole('button', { name, exact: true }).click();
+  // Releases per key so far; a tab switched away from releases its native view already.
+  const counts = () =>
+    page.evaluate(() => {
+      const counts: Record<string, number> = {};
+      for (const key of (window as any).fixtureReleased ?? []) counts[key] = (counts[key] ?? 0) + 1;
+      return counts;
+    });
+  const releasedSince = async (before: Record<string, number>) =>
+    Object.entries(await counts()).filter(([key, n]) => n > (before[key] ?? 0)).length;
+  let before = await counts();
+  await page.getByRole('tab', { name: '说明.md', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '关闭右侧标签' }).click();
+  await expect(page.getByRole('tab')).toHaveText(['说明.md']);
+  await expect.poll(() => releasedSince(before)).toBe(3);
+  before = await counts();
+  await page.getByRole('tab', { name: '说明.md', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '关闭全部' }).click();
+  await expect.poll(() => releasedSince(before)).toBe(1);
+});
+
+test('the full-strip notice belongs to the session where the opening was refused', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '填满标签', exact: true }).click();
+  await expect(page.getByRole('tab')).toHaveCount(64);
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  const notice = page.getByRole('alert').filter({ hasText: '预览标签已满（64 个）' });
+  await expect(notice).toBeVisible();
+  await page.getByRole('button', { name: '切换预览会话', exact: true }).click();
+  await page.getByRole('button', { name: '填满标签', exact: true }).click();
+  await expect(page.getByRole('tab')).toHaveCount(64);
+  await expect(notice).toHaveCount(0);
+  await page.getByRole('button', { name: '切换预览会话', exact: true }).click();
+  await expect(notice).toBeVisible();
+});
+
+test('the tree row menu opens a file to keep, and Enter on the shown file keeps its tab', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const tree = page.getByRole('tree', { name: '工作区文件' });
+  const row = tree.getByRole('treeitem', { name: '说明.md', exact: true });
+  await row.focus();
+  await page.keyboard.press('Enter');
+  const tab = page.getByRole('tab', { name: '说明.md', exact: true });
+  await expect(tab).toHaveAttribute('aria-description', '临时标签，双击固定');
+  await row.focus();
+  await page.keyboard.press('Enter');
+  await expect(tab).not.toHaveAttribute('aria-description');
+  await tree.getByRole('treeitem', { name: 'src', exact: true }).click();
+  await tree.getByRole('treeitem', { name: 'index.ts', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '打开并固定' }).click();
+  await expect(page.getByRole('tab')).toHaveText(['说明.md', 'index.ts']);
+  await expect(page.getByRole('tab', { name: 'index.ts', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+  await tree.getByRole('treeitem', { name: 'src', exact: true }).click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: '打开并固定' })).toHaveCount(0);
+});
