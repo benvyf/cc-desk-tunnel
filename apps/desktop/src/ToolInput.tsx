@@ -2,6 +2,8 @@ import { createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { diffLines } from './lineDiff.ts';
 import { LinkPlace, linkTarget } from './links.ts';
+import { editTargets, requestedLine } from './previewCode.ts';
+import type { FindTarget } from './previewCode.ts';
 import type { Line } from './lineDiff.ts';
 
 // What a tool call was given, in the shape its tool reads (spec §5.8): a command with what it is for, a change
@@ -45,18 +47,26 @@ function Diff({ lines }: { lines: Line[] }) {
 export const ToolPaths = createContext(false);
 
 // Where in its file a card's path leads: a line, or text to look for there — an edit's, as its call does not say
-// on which line it is. The longest text looked for is cut short, which still finds where it starts.
-type At = { line?: number; find?: string[] };
-const longestFind = 2000;
+// on which line it is (editTargets). Neither: the file opens as it would.
+type At = { line?: number; find?: FindTarget[] };
+
+// Encoded, so nothing in the path itself reads as a line (a.ts:12) or a web address; a path that cannot be (a
+// lone surrogate) is no link.
+function pathHref(value: string, line?: number) {
+  try {
+    return encodeURIComponent(value) + (line ? `:${line}` : '');
+  } catch {
+    return '';
+  }
+}
 
 // A file's path is written as a reply's link is, so a click on it goes the way a reply's does (Conversation.tsx):
 // the session's project decides whether it is on this computer, and the preview shows it.
 function Path({ value, note, at }: { value: string; note?: string; at?: At }) {
   const place = useContext(LinkPlace);
   const linked = useContext(ToolPaths);
-  // Encoded, so nothing in the path itself reads as a line (a.ts:12) or a web address.
-  const href = encodeURIComponent(value) + (at?.line ? `:${at.line}` : '');
-  const link = at && linked && place ? linkTarget(href, place) : null;
+  const href = at && linked && place ? pathHref(value, at.line) : '';
+  const link = href ? linkTarget(href, place) : null;
   return (
     <p className="tool-input-path" data-search-content>
       {link ? (
@@ -66,6 +76,7 @@ function Path({ value, note, at }: { value: string; note?: string; at?: At }) {
           data-find={at?.find?.length ? JSON.stringify(at.find) : undefined}
           className={link.kind === 'elsewhere' ? 'link-elsewhere' : undefined}
           title={link.kind === 'path' ? '在预览中打开' : undefined}
+          draggable={false}
         >
           {value}
         </a>
@@ -75,29 +86,6 @@ function Path({ value, note, at }: { value: string; note?: string; at?: At }) {
       {note && <small>{note}</small>}
     </p>
   );
-}
-// What to look for to find an edit in its file, the likeliest first: the new text from its first changed line
-// (the lines before it are the old text's too), the whole new text, then the old text, for an edit not made
-// yet; then the first line of each, should the file have changed since. A short first line ("}") would be found
-// anywhere, so it is not looked for.
-function editFind(before: string, after: string, lines: Line[]): string[] {
-  const unchanged = lines.findIndex((line) => line.kind !== ' ');
-  const changed = after
-    .split('\n')
-    .slice(unchanged < 0 ? 0 : unchanged)
-    .join('\n');
-  const first = (value: string) => {
-    const line =
-      value
-        .split('\n')
-        .find((part) => part.trim())
-        ?.trim() ?? '';
-    return line.length >= 8 ? line : '';
-  };
-  const found = [changed, after, before, first(changed), first(before)]
-    .filter((value) => value.trim())
-    .map((value) => value.slice(0, longestFind));
-  return [...new Set(found)];
 }
 const Meta = ({ items }: { items: (string | false | undefined)[] }) => {
   const shown = items.filter(Boolean);
@@ -169,7 +157,11 @@ export function toolInput(name: string, input: string): ToolInputView {
             <Path
               value={path}
               at={{
-                find: editFind(text(edits[0]!.old_string), text(edits[0]!.new_string), diffs[0]!),
+                find: editTargets(
+                  text(edits[0]!.old_string),
+                  text(edits[0]!.new_string),
+                  diffs[0]!,
+                ),
               }}
               note={
                 edits.length > 1
@@ -195,7 +187,7 @@ export function toolInput(name: string, input: string): ToolInputView {
         label: '写入',
         body: (
           <>
-            <Path value={path} note={`${lines.length} 行`} at={{ line: 1 }} />
+            <Path value={path} note={`${lines.length} 行`} at={{}} />
             <Diff lines={lines} />
           </>
         ),
@@ -248,7 +240,7 @@ export function toolInput(name: string, input: string): ToolInputView {
                 : undefined;
       return {
         label: '文件',
-        body: <Path value={path} note={range} at={{ line: offset }} />,
+        body: <Path value={path} note={range} at={{ line: requestedLine(offset) }} />,
         copy: path,
       };
     }

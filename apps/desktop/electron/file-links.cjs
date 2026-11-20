@@ -20,14 +20,16 @@ function editorUrl(scheme, file, line, column) {
 // instead. The system says most of it itself: on Windows the types it runs as commands (PATHEXT, which an
 // installed interpreter adds its own to), elsewhere the permission to execute, and on macOS an application
 // bundle. The kinds it does not count there, though opening them installs, runs a script or goes where a
-// shortcut points, are listed here, after the dangerous types of Chromium's download protection.
+// shortcut points, are listed here, after the dangerous types of Chromium's download protection; and those it
+// hands to an interpreter, or mounts or opens as a database that may run what it holds (Python bytecode and
+// archives, disk images, Access databases).
 const fallbackPathext = '.COM;.EXE;.BAT;.CMD;.VBS;.VBE;.JS;.JSE;.WSF;.WSH;.MSC;.CPL';
 const unlisted = {
   win32: `.appinstaller .application .appref-ms .appx .appxbundle .chm .diagcab .gadget .hta .inf .jar .library-ms
     .lnk .msi .msix .msixbundle .msp .mst .pif .ps1 .psd1 .psm1 .reg .scf .scr .search-ms .searchconnector-ms
-    .settingcontent-ms .url .website .ws .wsc .xll`,
+    .settingcontent-ms .url .website .ws .wsc .xll .pyc .pyo .pyz .pyzw .iso .img .vhd .vhdx .mdb .accdb`,
   darwin:
-    '.action .app .command .fileloc .inetloc .jar .mpkg .pkg .terminal .tool .webloc .workflow',
+    '.action .app .command .dmg .fileloc .inetloc .iso .img .jar .mpkg .pkg .terminal .tool .webloc .workflow',
   linux: '.appimage .desktop .jar .run',
 };
 const extensionOf = (file) => /\.[^.\\/]+$/.exec(file)?.[0].toLowerCase() ?? '';

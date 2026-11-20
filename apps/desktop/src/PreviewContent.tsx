@@ -1,4 +1,5 @@
-import { lazy, Suspense, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { foundLine } from './previewCode.ts';
 import {
   ArrowLeft,
   ArrowRight,
@@ -13,7 +14,7 @@ import RichText from './RichText.tsx';
 import PreviewCode from './PreviewCode.tsx';
 import { CopyButton } from './copy.tsx';
 import { LinkPlace, linkTarget } from './links.ts';
-import { followLink } from './linkActions.ts';
+import { followLink, openDeclined } from './linkActions.ts';
 import { useLinkDoubt } from './LinkDoubt.tsx';
 import { previewWebsite } from './preview.ts';
 import { isInside } from './paths.ts';
@@ -200,7 +201,9 @@ export default function PreviewContent({
   const [chosenSource, setSource] = useState(() => {
     const saved = reading.get(tab.id);
     return (
-      (!!tab.navigation && !workspace.navigated.has(tab.id, tab.navigation.id)) ||
+      (!!tab.navigation &&
+        !tab.navigation.find &&
+        !workspace.navigated.has(tab.id, tab.navigation.id)) ||
       (workspace.sourceMode.get(tab.id) ?? (saved?.kind === 'markdown' && saved.source))
     );
   });
@@ -217,13 +220,22 @@ export default function PreviewContent({
     tab.navigation && !workspace.navigated.has(tab.id, tab.navigation.id)
       ? tab.navigation
       : undefined;
+  // Whether the navigation goes anywhere: text to look for (a tool card's edit) goes nowhere where it is not in
+  // the file, and then a document stays shown as it is rather than as its source.
+  const seeks = useMemo(
+    () =>
+      !!navigation &&
+      (!navigation.find ||
+        (typeof file?.text === 'string' && foundLine(file.text, navigation.find) !== undefined)),
+    [navigation, file],
+  );
   // Choose the safe branch during render: a child native-view layout effect runs
   // before this component can commit a source choice in its own layout effect.
-  const source =
-    chosenSource || (!!navigation && (file?.kind === 'markdown' || file?.kind === 'html'));
+  const source = chosenSource || (seeks && (file?.kind === 'markdown' || file?.kind === 'html'));
   useLayoutEffect(() => {
     if (file && (file.kind === 'markdown' || file.kind === 'html')) {
-      if (navigation) {
+      if (navigation && !seeks) workspace.navigated.mark(tab.id, navigation.id);
+      if (seeks) {
         setSource(true);
         workspace.sourceMode.set(tab.id, true);
       } else if (workspace.sourceMode.get(tab.id) === undefined) {
@@ -563,7 +575,9 @@ export default function PreviewContent({
                   .follow(link, tab.root, tab.restricted)
                   .catch(() => false)
                   .then((shown) => {
-                    if (!shown) void followLink(link, setError);
+                    if (shown === true) return;
+                    if (shown && link.kind === 'path') void openDeclined(link, shown, setError);
+                    else void followLink(link, setError);
                   });
               });
           }}

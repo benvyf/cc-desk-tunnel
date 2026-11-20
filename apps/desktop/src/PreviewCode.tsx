@@ -240,9 +240,12 @@ export default function PreviewCode({
     // A moved/closed view cancels this explicit intent instead of replaying it later.
     const frame = win.requestAnimationFrame(() => {
       consumed.current = navigation.id;
-      const found = navigation.find && foundLine(text, navigation.find);
-      if (found) navigateCurrent.current(found);
-      else navigateCurrent.current(navigation.line, navigation.column);
+      // Text that is not found leaves the view where it is.
+      if (!navigation.find) navigateCurrent.current(navigation.line, navigation.column);
+      else {
+        const found = foundLine(text, navigation.find);
+        if (found) navigateCurrent.current(found);
+      }
       onNavigated(navigation.id);
     });
     return () => win.cancelAnimationFrame(frame);

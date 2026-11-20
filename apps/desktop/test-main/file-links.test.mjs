@@ -20,6 +20,13 @@ test('what would run is told from what the system says, and from the kinds it do
   assert.equal(runs('C:\\a\\go.lnk', windows), true);
   assert.equal(runs('C:\\a\\x.ps1', windows), true);
   assert.equal(runs('C:\\a\\report.pdf', windows), false);
+  // Handed to an interpreter, mounted, or opened as a database that may run what it holds.
+  for (const name of ['x.pyc', 'x.PYO', 'x.pyz', 'x.pyzw', 'd.iso', 'd.img', 'd.vhd', 'd.vhdx'])
+    assert.equal(runs(`C:\\a\\${name}`, windows), true, name);
+  for (const name of ['data.mdb', 'data.accdb'])
+    assert.equal(runs(`C:\\a\\${name}`, windows), true, name);
+  assert.equal(runs('/a/setup.dmg', { platform: 'darwin', mode: 0o100644 }), true);
+  assert.equal(runs('/a/disk.iso', { platform: 'darwin', mode: 0o100644 }), true);
   assert.equal(runs('C:\\a\\Makefile', windows), false);
   // Without PATHEXT, Windows' own list stands in.
   assert.equal(runs('C:\\a\\x.vbs', { platform: 'win32' }), true);

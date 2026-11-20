@@ -1,4 +1,4 @@
-import type { Link } from './links.ts';
+import type { Declined, Link } from './links.ts';
 import type { MenuItem } from './ui.tsx';
 
 // What a click on a link does, and what its menu offers. `tell` shows a short message to the user.
@@ -20,6 +20,25 @@ export async function followLink(link: Link, tell: Tell) {
   }
 }
 
+// A path the preview declined (preview.ts `follow`) is shown in the file manager: a folder opens there, and a
+// file is shown in its folder — a click never hands a file to the system to open, as that may run it; the
+// menu still offers the ways to open it (linkMenu).
+export async function openDeclined(
+  link: Extract<Link, { kind: 'path' }>,
+  declined: Declined,
+  tell: Tell,
+) {
+  const folder = declined.kind === 'directory' && !declined.runs;
+  try {
+    const said = await window.desktop!.actOnPath(folder ? 'open' : 'reveal', link.path);
+    if (said) tell(said);
+    else if (declined.runs) tell('它会运行程序，不直接打开，已在文件夹中显示。');
+    else if (!folder) tell('此类型无法在预览中查看，已在文件夹中显示；右键可选择打开方式。');
+  } catch {
+    tell('没能打开这个链接。');
+  }
+}
+
 export const fileManager = () =>
   ({ win32: '资源管理器', darwin: '访达', linux: '文件管理器' })[
     window.desktop?.platform ?? 'win32'
@@ -31,7 +50,8 @@ export async function linkMenu(
   tell: Tell,
   copy: (text: string) => void,
   guard: (go: () => void) => void = (go) => go(),
-): Promise<{ heading?: string; items: MenuItem[] }> {
+  // `kind`: what the path is on this computer, where the desktop said so.
+): Promise<{ heading?: string; items: MenuItem[]; kind?: 'file' | 'directory' | 'missing' }> {
   if (link.kind === 'web')
     return {
       items: [
@@ -51,9 +71,11 @@ export async function linkMenu(
         () => tell('操作失败，请重试。'),
       );
   const reveal: MenuItem = { label: `在${fileManager()}中显示`, run: act('reveal') };
-  if (info.kind === 'missing') return { heading: '本机找不到这个路径', items: [copyPath] };
+  if (info.kind === 'missing')
+    return { heading: '本机找不到这个路径', items: [copyPath], kind: 'missing' };
   if (info.kind === 'directory')
     return {
+      kind: 'directory',
       heading: info.runs ? '它会运行程序，不直接打开' : undefined,
       items: [...(info.runs ? [] : [{ label: '打开文件夹', run: act('open') }]), reveal, copyPath],
     };
@@ -71,6 +93,7 @@ export async function linkMenu(
     ...(!info.runs && info.openWith ? [{ label: '打开方式…', run: act('with') }] : []),
   ];
   return {
+    kind: 'file',
     heading: info.runs ? '它会运行程序，不直接打开' : undefined,
     items: [
       ...items,

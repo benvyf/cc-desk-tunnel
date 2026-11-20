@@ -13,6 +13,8 @@ import {
   navigateFile,
 } from './previewLayout.ts';
 import { requestedLine } from './previewCode.ts';
+import type { FindTarget } from './previewCode.ts';
+import type { Declined } from './links.ts';
 import { pathKey } from './paths.ts';
 import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
 import { createPreviewPersistence } from './previewPersistence.ts';
@@ -178,7 +180,7 @@ export function usePreviewWorkspace(
     root?: string,
     restricted?: boolean,
     title?: string,
-    position?: { line?: number; column?: number; find?: string[] },
+    position?: { line?: number; column?: number; find?: FindTarget[] },
   ) {
     const find = position?.find?.length ? position.find : undefined;
     // Text to look for goes to its line, or to the top where it is not found.
@@ -257,18 +259,24 @@ export function usePreviewWorkspace(
       const target = previewWebsite(url);
       if (target) open('web', target);
     },
-    // Whether the link is shown here; one that is not is opened as it would be without a preview (followLink).
-    // A folder, or a file the preview cannot show, is not: it is opened by the system, under its rules.
-    async follow(link: Link, root?: string, restricted?: boolean, find?: string[]) {
+    // Whether the link is shown here (true); one that is not (false) is opened as it would be without a preview
+    // (followLink). A folder, or a file the preview cannot show, is declined: what it is comes back, for the
+    // caller to show it in the file manager (openDeclined). A link from a restricted document is always shown
+    // here, where the preview keeps it inside its workspace (preview-files.cjs), and never handed to the system.
+    async follow(
+      link: Link,
+      root?: string,
+      restricted?: boolean,
+      find?: FindTarget[],
+    ): Promise<boolean | Declined> {
       if (!window.desktop?.preview || !session || !workspace) return false;
       if (link.kind === 'path') {
-        const desktop = window.desktop;
-        // A path that cannot be looked at is shown as before: the preview says what is wrong with it.
-        const info = await Promise.resolve()
-          .then(() => desktop.inspectPath(link.path))
-          .catch(() => null);
-        if (info?.kind === 'directory' || (info?.kind === 'file' && !previewable(link.path)))
-          return false;
+        if (!restricted) {
+          const info = await inspectQuickly(link.path);
+          if (info?.kind === 'directory') return { kind: 'directory', runs: info.runs };
+          if (info?.kind === 'file' && !previewable(link.path))
+            return { kind: 'unpreviewable', runs: info.runs };
+        }
         open('file', link.path, root, restricted, undefined, { ...link, find });
         return true;
       }
@@ -309,6 +317,18 @@ export function usePreviewWorkspace(
   };
 }
 export type PreviewWorkspace = ReturnType<typeof usePreviewWorkspace>;
+
+// What a path is, if the desktop says so soon: a path it cannot look at, or not in time, opens in the preview as
+// before, which says what is wrong with it.
+async function inspectQuickly(path: string) {
+  const desktop = window.desktop!;
+  return Promise.race([
+    Promise.resolve()
+      .then(() => desktop.inspectPath(path))
+      .catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 400)),
+  ]);
+}
 
 // Kinds of file the preview cannot show (preview-files.cjs reads text, pictures, PDF, office documents and
 // spreadsheets): programs, archives, media, fonts, databases. Any other file is tried, and one that turns out

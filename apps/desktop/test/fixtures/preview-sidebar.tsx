@@ -86,6 +86,13 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
     ((window as any).fixtureCopied ??= []).push(text);
   },
   openLink: async () => {},
+  // A folder is named src; everything else is a file.
+  inspectPath: async (path: string) => ({
+    kind: /[\\/]src$/.test(path) ? 'directory' : 'file',
+    runs: false,
+    editors: [],
+    openWith: true,
+  }),
   actOnPath: async (action: string, path: string) => {
     ((window as any).fixtureActs ??= []).push([action, path]);
     if ((window as any).fixtureFailOpen) {
@@ -215,6 +222,8 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
           data: btoa(String.fromCharCode(...previewPdf())),
         };
       if (path.endsWith('.png')) return { path, kind: 'image', image };
+      if (path.endsWith('链接.md'))
+        return { path, kind: 'markdown', text: '见 [文件夹](src) 和 [压缩包](a.zip)。' };
       if (path.endsWith('.md'))
         return {
           path,
@@ -352,6 +361,20 @@ function Fixture() {
         >
           {href}
         </a>
+      ))}
+      {[
+        ['链接文档', false],
+        ['受限链接文档', true],
+      ].map(([label, restricted]) => (
+        <Button
+          key={String(label)}
+          onClick={() => {
+            setOpened(true);
+            board.openFile(folder + '\\链接.md', folder, !!restricted);
+          }}
+        >
+          {label}
+        </Button>
       ))}
       <input
         aria-label="测试输入"

@@ -6,6 +6,10 @@ import { isWindowsPath } from '@cc-desk-tunnel/protocol';
 export type Place = { projectPath: string; here: boolean; browser: boolean };
 export const LinkPlace = createContext<Place | null>(null);
 
+// A path the preview did not show, and what it is: a folder, or a file it cannot show. `runs`: opening it would
+// run something.
+export type Declined = { kind: 'directory' | 'unpreviewable'; runs: boolean };
+
 export type Link =
   | { kind: 'web'; url: string }
   | { kind: 'path'; path: string; line?: number; column?: number }

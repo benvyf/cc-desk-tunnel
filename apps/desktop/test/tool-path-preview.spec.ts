@@ -46,9 +46,12 @@ async function open(page: Page) {
         openLink: noop,
         inspectPath: async (path: string) => {
           calls.inspected.push(path);
+          // One the desktop cannot look at, and one it takes too long to.
+          if (path.endsWith('broken.txt')) throw new Error('inspect failed');
+          if (path.endsWith('slow.txt')) return new Promise(() => {});
           return {
             kind: /\\(?:src|dist)$/.test(path) ? 'directory' : 'file',
-            runs: false,
+            runs: path.endsWith('.exe'),
             editors: [],
             openWith: true,
           };
@@ -108,10 +111,18 @@ async function open(page: Page) {
       old_string: 'a',
       new_string: 'b',
     }),
+    ...tool('multi', 'MultiEdit', {
+      file_path: `${project}\\multi.ts`,
+      edits: [
+        { old_string: '// 第 20 行（旧）', new_string: '// 第 20 行' },
+        { old_string: 'x', new_string: 'y' },
+      ],
+    }),
+    ...tool('write', 'Write', { file_path: `${project}\\out.txt`, content: '// 第 1 行\n' }),
     {
       type: 'text.delta',
       messageId: randomUUID(),
-      text: '改好了，见 [源码目录](src) 和 [打包文件](build.zip)。',
+      text: '改好了，见 [源码目录](src)、[打包文件](build.zip)、[安装程序](setup.exe)、[笔记](note.txt)、[坏路径](broken.txt) 和 [慢路径](slow.txt)。',
     },
     { type: 'run.status', status: 'completed', connectionId },
   ];
@@ -178,9 +189,12 @@ const calls = (page: Page) =>
 async function card(page: Page, text: string) {
   const tool = page.locator('details.tool').filter({ hasText: text });
   // The turn's steps are folded under how long it took, and its edits and reads under what they did.
-  if (!(await tool.isVisible()))
-    for (const fold of ['3 步', '编辑了 2 个文件，读取了 1 个文件'])
-      await page.getByText(fold, { exact: false }).first().click();
+  for (let fold = 0; fold < 3 && !(await tool.isVisible()); fold++)
+    await page
+      .locator('.workspace details:not([open]) > summary')
+      .filter({ hasText: /步|个文件/ })
+      .first()
+      .click();
   if (!(await tool.evaluate((element: HTMLDetailsElement) => element.open)))
     await tool.locator('> summary').click();
   return tool;
@@ -209,6 +223,16 @@ test('a tool card path opens its file in the preview, where the edit or the read
   await read.locator('.tool-input-path a').click();
   await expect(page.getByRole('tab', { name: /notes\.txt/ })).toBeVisible();
   await expect(highlight(page, 30)).toBeVisible();
+  // A MultiEdit goes to its first edit.
+  const multi = await card(page, 'multi.ts');
+  await multi.locator('.tool-input-path a').click();
+  await expect(page.getByRole('tab', { name: /multi\.ts/ })).toBeVisible();
+  await expect(highlight(page, 20)).toBeVisible();
+  // A write just opens its file: nothing is marked.
+  const write = await card(page, 'out.txt');
+  await write.locator('.tool-input-path a').click();
+  await expect(page.getByRole('tab', { name: /out\.txt/ })).toBeVisible();
+  await expect(page.locator('.preview-code-highlight')).toHaveCount(0);
   expect((await calls(page)).acts).toEqual([]);
 });
 
@@ -226,23 +250,51 @@ test('a tool card path that is not on this computer is not opened here', async (
   expect(seen.inspected).toEqual([]);
 });
 
-test('a link to a folder opens it in the file manager, and one to an archive opens by the system', async ({
+test('a link to a folder opens it in the file manager; a file the preview cannot show is shown in its folder', async ({
   page,
 }) => {
   await open(page);
   const answer = page.locator('.workspace .message.assistant');
   await answer.getByRole('link', { name: '源码目录', exact: true }).click();
   await expect.poll(async () => (await calls(page)).acts).toEqual([['open', `${project}\\src`]]);
+  // A click never hands such a file to the system to open: it is shown in its folder, and says so.
   await answer.getByRole('link', { name: '打包文件', exact: true }).click();
+  await expect(page.getByRole('tooltip')).toContainText('此类型无法在预览中查看');
+  await page.mouse.move(0, 0);
+  await answer.getByRole('link', { name: '安装程序', exact: true }).click();
   await expect
     .poll(async () => (await calls(page)).acts)
     .toEqual([
       ['open', `${project}\\src`],
-      ['open', `${project}\\build.zip`],
+      ['reveal', `${project}\\build.zip`],
+      ['reveal', `${project}\\setup.exe`],
     ]);
-  // Neither became a preview tab that could only say it is no file it can show.
+  // None became a preview tab that could only say it is no file it can show.
   expect((await calls(page)).reads).toEqual([]);
-  await expect(
-    page.locator('.preview-tab, [role="tab"]').filter({ hasText: /src|build\.zip/ }),
-  ).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: /src|build\.zip|setup\.exe/ })).toHaveCount(0);
+  // Its menu does not offer the preview for a folder; it does for a file it can show.
+  const menu = page.getByRole('menu', { name: '对话文字操作' });
+  await answer.getByRole('link', { name: '源码目录', exact: true }).click({ button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: '打开文件夹', exact: true })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: '在侧栏预览', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await answer.getByRole('link', { name: '打包文件', exact: true }).click({ button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: '复制路径', exact: true })).toBeVisible();
+  await expect(menu.getByRole('menuitem', { name: '在侧栏预览', exact: true })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await answer.getByRole('link', { name: '笔记', exact: true }).click({ button: 'right' });
+  await expect(menu.getByRole('menuitem', { name: '在侧栏预览', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
+});
+
+test('a path the desktop cannot look at, or not in time, still opens in the preview', async ({
+  page,
+}) => {
+  await open(page);
+  const answer = page.locator('.workspace .message.assistant');
+  await answer.getByRole('link', { name: '坏路径', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /broken\.txt/ })).toBeVisible();
+  await answer.getByRole('link', { name: '慢路径', exact: true }).click();
+  await expect(page.getByRole('tab', { name: /slow\.txt/ })).toBeVisible();
+  expect((await calls(page)).acts).toEqual([]);
 });

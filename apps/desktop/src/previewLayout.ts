@@ -1,4 +1,5 @@
 import { pathKey } from './paths.ts';
+import type { FindTarget } from './previewCode.ts';
 
 export type PreviewTab = {
   id: string;
@@ -9,8 +10,8 @@ export type PreviewTab = {
   restricted?: boolean;
   wrap?: boolean;
   // One explicit user navigation; filtered out when a layout is restored.
-  // `find`: text to look for in the file, whose line is gone to instead where it is found.
-  navigation?: { id: string; line: number; column?: number; find?: string[] };
+  // `find`: text to look for in the file, whose line is gone to instead; nowhere, where it is not found.
+  navigation?: { id: string; line: number; column?: number; find?: FindTarget[] };
 };
 export type FloatRect = { x: number; y: number; width: number; height: number };
 export type PreviewPane = { id: string; tabs: string[]; active: string; floating?: FloatRect };

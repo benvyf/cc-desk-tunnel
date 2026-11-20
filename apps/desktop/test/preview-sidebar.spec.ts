@@ -2,6 +2,35 @@ import { expect, test } from '@playwright/test';
 import { mkdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
+// A document's link to a folder, or to a file the preview cannot show, goes to the file manager; one in a
+// restricted document stays in the preview, which keeps it inside its workspace, and is never handed to the system.
+test('links in a previewed document to a folder or an archive follow the document’s restriction', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  const pane = page.getByRole('complementary', { name: '文件与网站预览' });
+  await page.getByRole('button', { name: '受限链接文档', exact: true }).click();
+  await pane.getByRole('link', { name: '文件夹', exact: true }).click();
+  await expect(pane.getByRole('tab', { name: /^src/ })).toBeVisible();
+  await pane.getByRole('tab', { name: /链接\.md/ }).click();
+  await pane.getByRole('link', { name: '压缩包', exact: true }).click();
+  await expect(pane.getByRole('tab', { name: /a\.zip/ })).toBeVisible();
+  expect(await page.evaluate(() => (window as any).fixtureActs)).toBeUndefined();
+
+  // Again, in a layout of its own (the first is saved as the page goes).
+  await page.goto('/test/fixtures/preview-sidebar.html?connection=unrestricted');
+  await page.getByRole('button', { name: '链接文档', exact: true }).click();
+  await pane.getByRole('link', { name: '文件夹', exact: true }).click();
+  await pane.getByRole('link', { name: '压缩包', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixtureActs))
+    .toEqual([
+      ['open', 'C:\\工作\\网站预览\\src'],
+      ['reveal', 'C:\\工作\\网站预览\\a.zip'],
+    ]);
+  await expect(pane.getByRole('tab', { name: /^src|a\.zip/ })).toHaveCount(0);
+});
+
 const output = resolve('.local/screenshots/preview-ui');
 mkdirSync(output, { recursive: true });
 for (const theme of ['light', 'dark'])

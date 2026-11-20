@@ -66,9 +66,10 @@ import {
 import { LinkPlace, linkDoubt, linkTarget } from './links.ts';
 import { useLinkDoubt } from './LinkDoubt.tsx';
 import { FileMentionPaths, producedFiles } from './fileMentions.ts';
-import type { Link } from './links.ts';
-import { followLink, linkMenu } from './linkActions.ts';
-import { previewWebsite } from './preview.ts';
+import type { Declined, Link } from './links.ts';
+import type { FindTarget } from './previewCode.ts';
+import { followLink, linkMenu, openDeclined } from './linkActions.ts';
+import { previewable, previewWebsite } from './preview.ts';
 import QuoteChips from './QuoteChips.tsx';
 import { splitQuoteMessage, quoteCopyText } from './quotes.ts';
 import {
@@ -189,11 +190,14 @@ function Fold({
 }
 
 // The text a tool card's path asks to be looked for in its file (ToolInput.tsx), if any.
-function findIn(element: HTMLElement): string[] | undefined {
+function findIn(element: HTMLElement): FindTarget[] | undefined {
   try {
     const found: unknown = JSON.parse(element.dataset.find ?? '');
     return Array.isArray(found)
-      ? found.filter((value): value is string => typeof value === 'string')
+      ? found.filter(
+          (item): item is FindTarget =>
+            typeof item?.text === 'string' && Number.isInteger(item?.offset),
+        )
       : undefined;
   } catch {
     return undefined;
@@ -1084,7 +1088,7 @@ export default function Conversation({
   // This window can open the files of the session's project: a desktop on the computer they are on.
   here: boolean;
   // Shows what a link leads to in the preview; whether it did. `find`: text to look for in the file (a tool card's).
-  preview?: (link: Link, find?: string[]) => Promise<boolean>;
+  preview?: (link: Link, find?: FindTarget[]) => Promise<boolean | Declined>;
   onQuote?: (messageId: string, text: string, destination: QuoteDestination) => void;
   sideQuoteAvailable?: boolean;
   adjustableWidth?: boolean;
@@ -1208,9 +1212,18 @@ export default function Conversation({
     element.isConnected ? showLink(element, link, note) : setCopyStatus(note);
   // A link is shown in the preview where it can be; otherwise it is opened as it is without one: a folder by the
   // file manager, a path on another computer not at all (followLink says why).
-  const show = async (link: Link, element: HTMLElement) => {
-    if (!(await preview?.(link, findIn(element)).catch(() => false)))
-      await followLink(link, tellAt(element, link));
+  // A folder, or a file the preview cannot show, is shown in the file manager (openDeclined). Without a preview
+  // the link is followed at once, so a browser still takes the click as the user's for opening a page.
+  const show = (link: Link, element: HTMLElement) => {
+    const tell = tellAt(element, link);
+    if (!preview) return void followLink(link, tell);
+    void preview(link, findIn(element))
+      .catch(() => false)
+      .then((shown) => {
+        if (shown === true) return;
+        if (shown && link.kind === 'path') void openDeclined(link, shown, tell);
+        else void followLink(link, tell);
+      });
   };
   const transcriptRoot = useRef<HTMLDivElement>(null);
   const lastFindRequest = useRef(findRequest);
@@ -1688,12 +1701,16 @@ export default function Conversation({
                     y,
                     heading: menu.heading,
                     items: [
+                      // Not for a folder or a file the preview cannot show.
                       ...(preview &&
-                      (link.kind === 'path' || (link.kind === 'web' && previewWebsite(link.url)))
+                      ((link.kind === 'path' &&
+                        menu.kind !== 'directory' &&
+                        (menu.kind !== 'file' || previewable(link.path))) ||
+                        (link.kind === 'web' && previewWebsite(link.url)))
                         ? [
                             {
                               label: '在侧栏预览',
-                              run: () => guarded(() => void show(link, element)),
+                              run: () => guarded(() => show(link, element)),
                             },
                           ]
                         : []),
@@ -1715,7 +1732,7 @@ export default function Conversation({
               if (!link) return;
               setLinkCard(null);
               doubtful.guard(link, anchor.textContent ?? '', () => {
-                void show(link, anchor);
+                show(link, anchor);
               });
             }}
             onPointerOver={(event) => {
