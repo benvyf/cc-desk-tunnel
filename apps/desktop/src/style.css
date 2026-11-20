@@ -11569,7 +11569,20 @@ dialog:has(.web-settings-form) {
   margin-left: auto;
 }
 .preview-diff-body {
+  --preview-diff-number: calc(var(--preview-diff-digits) * 1ch + 12px);
   white-space: normal;
+}
+.preview-diff-actions > .icon-button[aria-disabled='true'] {
+  opacity: 0.4;
+  cursor: default;
+}
+.preview-diff-chunk .sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .preview-diff-message {
   margin: 12px;
@@ -11588,13 +11601,16 @@ dialog:has(.web-settings-form) {
   padding-top: 0;
 }
 .preview-diff-chunk > span {
-  --preview-diff-number: calc(var(--preview-diff-digits) * 1ch + 12px);
   display: grid;
   grid-template-columns: var(--preview-diff-number) var(--preview-diff-number) 26px minmax(0, 1fr);
 }
+/* Every chunk as wide as the widest line, measured or not (a chunk off screen is not laid out). */
 .preview-diff-body:not(.wraps) .preview-diff-chunk {
   width: max-content;
-  min-width: 100%;
+  min-width: max(
+    100%,
+    calc(2 * var(--preview-diff-number) + 26px + var(--preview-diff-columns) * 1ch + 14px)
+  );
 }
 .preview-diff-body:not(.wraps) .preview-diff-chunk > span {
   grid-template-columns: var(--preview-diff-number) var(--preview-diff-number) 26px max-content;

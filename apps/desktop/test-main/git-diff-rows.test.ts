@@ -77,3 +77,9 @@ test('an untracked file is one hunk of added lines', () => {
   });
   assert.deepEqual(addedRows(''), { rows: [], hunks: [] });
 });
+
+test('a change of line endings alone is told as such', () => {
+  assert.equal(diffRows('@@ -1,2 +1,2 @@\n-a\n-b\n+a\r\n+b\r\n').endings, true);
+  assert.equal(diffRows('@@ -1 +1 @@\n-a\n+b\r\n').endings, undefined);
+  assert.equal(diffRows('@@ -1 +1 @@\n-a\n+a\n').endings, undefined);
+});

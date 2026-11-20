@@ -3,7 +3,7 @@ import { ChevronRight, RefreshCw } from './icons.tsx';
 import { IconButton } from './ui.tsx';
 import { diffLines, gitError, gitFilePath, refName, statusNames } from './gitChanges.ts';
 import type { GitChange, GitChangeList, GitFileDiff } from './gitChanges.ts';
-import { gitBaseKey, useGitBase } from './useGitFile.ts';
+import { gitBaseKey, requestChanges, useGitBase } from './useGitFile.ts';
 
 // The changes of the project's working tree: against HEAD, or since it left a branch. Read only — nothing is
 // staged, committed or discarded here. A file's diff is read when it is opened, and once.
@@ -33,50 +33,50 @@ export default function GitChanges({
   const asked = useRef(0);
   const inFlight = useRef(false);
   const loadedAt = useRef(0);
-  const load = useCallback(async () => {
-    const turn = ++asked.current;
-    inFlight.current = true;
-    setLoading(true);
-    try {
-      const result = await window.desktop!.git!.changes({
-        root,
-        ...(targetId ? { targetId } : {}),
-        ...(base ? { base } : {}),
-      });
-      if (turn !== asked.current) return;
-      setList(result);
-      setError('');
-      // What was read of the files before is of the tree as it was: they close, to be read again when opened.
-      setDiffs({});
-      setOpen(new Set());
-    } catch (e) {
-      if (turn !== asked.current) return;
-      setList(null);
-      setError(gitError(e, '读取 Git 改动失败。'));
-    } finally {
-      if (turn === asked.current) {
-        setLoading(false);
-        inFlight.current = false;
-        loadedAt.current = Date.now();
+  // An answer read since `since` (useGitFile.ts): the preview's file tabs asking at the same moment share one read.
+  const load = useCallback(
+    async (since = Date.now()) => {
+      const turn = ++asked.current;
+      inFlight.current = true;
+      setLoading(true);
+      try {
+        const result = await requestChanges({ root, targetId, base }, since);
+        if (turn !== asked.current) return;
+        setList(result);
+        setError('');
+        // What was read of the files before is of the tree as it was: they close, to be read again when opened.
+        setDiffs({});
+        setOpen(new Set());
+      } catch (e) {
+        if (turn !== asked.current) return;
+        setList(null);
+        setError(gitError(e, '读取 Git 改动失败。'));
+      } finally {
+        if (turn === asked.current) {
+          setLoading(false);
+          inFlight.current = false;
+          loadedAt.current = Date.now();
+        }
       }
-    }
-  }, [root, targetId, base]);
+    },
+    [root, targetId, base],
+  );
   useEffect(() => {
     setOpen(new Set());
-    void load();
+    void load(Date.now() - 1000);
   }, [load]);
   // Back in the window, or a run over: the tree may have changed.
   useEffect(() => {
     // Not while a read is under way, nor again within a few seconds of the last.
     const again = () => {
-      if (!inFlight.current && Date.now() - loadedAt.current > 3000) void load();
+      if (!inFlight.current && Date.now() - loadedAt.current > 3000) void load(Date.now() - 250);
     };
     window.addEventListener('focus', again);
     return () => window.removeEventListener('focus', again);
   }, [load]);
   const wasBusy = useRef(busy);
   useEffect(() => {
-    if (wasBusy.current && !busy) void load();
+    if (wasBusy.current && !busy) void load(Date.now() - 250);
     wasBusy.current = busy;
   }, [busy, load]);
   const toggle = (file: GitChange) => {
@@ -137,7 +137,12 @@ export default function GitChanges({
             )}
           </select>
         </label>
-        <IconButton title="刷新改动" size="sm" disabled={loading} onClick={() => void load()}>
+        <IconButton
+          title="刷新改动"
+          size="sm"
+          disabled={loading}
+          onClick={() => void load(Date.now())}
+        >
           <RefreshCw className={loading ? 'spinning' : undefined} />
         </IconButton>
       </header>

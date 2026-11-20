@@ -58,22 +58,29 @@ test('the diff shows each side’s line numbers in colour, goes from change to c
   expect(await background(added)).not.toBe('rgba(0, 0, 0, 0)');
   expect(await background(removed)).not.toBe('rgba(0, 0, 0, 0)');
   expect(await background(added)).not.toBe(await background(removed));
-  await expect(pane(page).locator('.preview-diff-position')).toHaveText('第 1 / 2 处改动');
-  await expect(rows(page).nth(0)).toHaveAttribute('aria-current', 'true');
+  await expect(pane(page).locator('.preview-diff-position')).toHaveText('2 处改动');
   await page.screenshot({ path: resolve(screenshots, 'preview-diff.png') });
 
   // The buttons, and F7 / Shift+F7 or Alt+↓ / Alt+↑ in the diff, go from hunk to hunk.
   await button(page, '下一处改动').click();
   await expect(pane(page).locator('.preview-diff-position')).toHaveText('第 2 / 2 处改动');
   await expect(rows(page).nth(8)).toHaveAttribute('aria-current', 'true');
-  await expect(button(page, '下一处改动')).toBeDisabled();
+  // Not disabled at the ends, so that the focus and the keys stay.
+  await expect(button(page, '下一处改动')).toHaveAttribute('aria-disabled', 'true');
   await pane(page).getByLabel('改动内容').focus();
   await page.keyboard.press('Shift+F7');
   await expect(pane(page).locator('.preview-diff-position')).toHaveText('第 1 / 2 处改动');
   await page.keyboard.press('Alt+ArrowDown');
   await expect(pane(page).locator('.preview-diff-position')).toHaveText('第 2 / 2 处改动');
   await page.keyboard.press('Alt+ArrowUp');
-  await expect(button(page, '上一处改动')).toBeDisabled();
+  await expect(button(page, '上一处改动')).toHaveAttribute('aria-disabled', 'true');
+  await expect(pane(page).getByLabel('改动内容')).toBeFocused();
+  // Enter opens the current change's first new line in the source.
+  await page.keyboard.press('Enter');
+  await expect(page.locator('.preview-code-highlight[data-line="12"]')).toBeVisible();
+  await modes(page).getByRole('button', { name: '改动' }).click();
+  // Chosen from the control, the diff takes the keys.
+  await expect(pane(page).getByLabel('改动内容')).toBeFocused();
 
   // A number of the file as it is opens its source there.
   await rows(page).nth(5).getByRole('button', { name: '13' }).click();
@@ -177,4 +184,64 @@ test('a deleted file opens as its changes only', async ({ page }) => {
   await expect(pane(page).locator('.preview-error')).toHaveCount(0);
   // Nothing of it is there to go to.
   await expect(pane(page).locator('button.preview-diff-number')).toHaveCount(0);
+});
+
+test('Git is asked once for many changes on disk, and once for a run’s end across panes and the panel', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  const calls = async () => (await asked(page)).changes.length;
+  await button(page, '长代码').click();
+  await modes(page).getByRole('button', { name: '改动' }).click();
+  await expect(rows(page)).toHaveCount(13);
+  await page.waitForTimeout(300);
+  let before = await calls();
+  // Changes on disk while the changes are shown: one read at once, then one after the last, 2.5 s on.
+  for (let index = 0; index < 6; index++) {
+    await page.evaluate(() => (window as any).fixturePreview.emit('长代码.ts'));
+    await page.waitForTimeout(100);
+  }
+  await expect.poll(calls, { timeout: 6000 }).toBe(before + 2);
+  await page.waitForTimeout(3000);
+  expect(await calls()).toBe(before + 2);
+  // Not shown, a change on disk waits for them to be.
+  await modes(page).getByRole('button', { name: '源码' }).click();
+  before = await calls();
+  await page.evaluate(() => (window as any).fixturePreview.emit('长代码.ts'));
+  await page.waitForTimeout(3000);
+  expect(await calls()).toBe(before);
+  await modes(page).getByRole('button', { name: '改动' }).click();
+  await expect.poll(calls).toBe(before + 1);
+
+  // Two panes showing changes and the changes panel: a run's end is one read.
+  await button(page, '打开文档').click();
+  await modes(page).last().getByRole('button', { name: '改动' }).click();
+  await button(page, '分栏预览').click();
+  await expect(pane(page).locator('.preview-diff')).toHaveCount(2);
+  await button(page, 'Git 改动').click();
+  await expect(page.getByRole('region', { name: 'Git 改动' }).locator('.git-change')).toHaveCount(
+    7,
+  );
+  await page.waitForTimeout(3500);
+  before = await calls();
+  await button(page, '模拟运行').click();
+  await button(page, '模拟运行').click();
+  await expect.poll(calls).toBe(before + 1);
+  await page.waitForTimeout(1000);
+  expect(await calls()).toBe(before + 1);
+});
+
+test('a restricted tab outside its workspace asks no Git, and a private file offers no changes', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await button(page, '受限外部文件').click();
+  await expect(pane(page).getByRole('tab', { name: '外部.txt' })).toBeVisible();
+  await page.waitForTimeout(500);
+  expect((await asked(page)).changes).toHaveLength(0);
+  await button(page, '私有文件').click();
+  await expect(pane(page).locator('.preview-code pre code')).toContainText('CC Space');
+  await expect.poll(async () => (await asked(page)).changes.length).toBe(1);
+  await expect(modes(page)).toHaveCount(0);
+  expect((await asked(page)).fileDiff).toHaveLength(0);
 });

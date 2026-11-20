@@ -78,9 +78,12 @@ export type DiffRow = {
 };
 // The rows of a file's unified diff, and where each hunk starts among them. What comes before the first hunk, and
 // between hunks once a hunk's lines are all there (headers), is left out; a diff cut short ends where it was cut.
-export function diffRows(text: string): { rows: DiffRow[]; hunks: number[] } {
+// `endings`: every line that went out came back the same but for its line ending (CRLF and LF).
+export function diffRows(text: string): { rows: DiffRow[]; hunks: number[]; endings?: boolean } {
   const rows: DiffRow[] = [];
   const hunks: number[] = [];
+  const removed: string[] = [];
+  const added: string[] = [];
   let oldLine = 0;
   let newLine = 0;
   // The lines of the current hunk still to come on each side, as its heading counts them.
@@ -111,9 +114,11 @@ export function diffRows(text: string): { rows: DiffRow[]; hunks: number[] } {
     const mark = line[0];
     if (mark === '+') {
       rows.push({ kind: '+', text: line.slice(1), new: newLine++ });
+      added.push(raw.slice(1));
       newLeft--;
     } else if (mark === '-') {
       rows.push({ kind: '-', text: line.slice(1), old: oldLine++ });
+      removed.push(raw.slice(1));
       oldLeft--;
     } else {
       rows.push({ kind: ' ', text: line.slice(1), old: oldLine++, new: newLine++ });
@@ -121,7 +126,13 @@ export function diffRows(text: string): { rows: DiffRow[]; hunks: number[] } {
       newLeft--;
     }
   }
-  return { rows, hunks };
+  const bare = (value: string) => value.replace(/\r$/, '');
+  const endings =
+    removed.length > 0 &&
+    removed.length === added.length &&
+    removed.every((value, index) => bare(value) === bare(added[index])) &&
+    removed.some((value, index) => value !== added[index]);
+  return endings ? { rows, hunks, endings } : { rows, hunks };
 }
 // An untracked file's text as one hunk of added lines, as git would show it once added.
 export function addedRows(text: string): { rows: DiffRow[]; hunks: number[] } {

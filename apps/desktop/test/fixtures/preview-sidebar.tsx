@@ -372,6 +372,8 @@ if (git) {
   (window as any).desktop.git = {
     changes: async (input: unknown) => {
       asked.changes.push(input);
+      // As git takes a moment, so that asks at the same time overlap.
+      await new Promise((resolve) => setTimeout(resolve, 50));
       return {
         top: 'C:/工作/网站预览',
         branch: 'main',
@@ -379,6 +381,7 @@ if (git) {
         base: null,
         against: 'a'.repeat(40),
         files: [
+          { path: '.env', status: 'M', added: 1, deleted: 1 },
           { path: '删除.txt', status: 'D', added: 0, deleted: 2 },
           { path: '大日志.log', status: 'M', added: 1, deleted: 0 },
           { path: '说明.md', status: 'M', added: 1, deleted: 1 },
@@ -404,6 +407,8 @@ function Fixture() {
   const [scope, setScope] = useState('fixture');
   const [session, setSession] = useState('session');
   const [draft, setDraft] = useState('');
+  // A run at work in the session (?git): its end reads the changes again.
+  const [busy, setBusy] = useState(false);
   const board = usePreviewWorkspace(
     scope,
     session,
@@ -437,6 +442,7 @@ function Fixture() {
         ['普通 HTML 文件', 'index.html'],
         ['GBK 文本', '旧编码.txt'],
         ['大日志', '大日志.log'],
+        ['私有文件', '.env'],
       ].map(([label, name]) => (
         <Button
           key={label}
@@ -512,6 +518,17 @@ function Fixture() {
       >
         临时网站
       </Button>
+      <Button
+        onClick={() => {
+          setOpened(true);
+          board.openFile('C:\\别处\\外部.txt', folder, true);
+        }}
+      >
+        受限外部文件
+      </Button>
+      <Button aria-pressed={busy} onClick={() => setBusy(!busy)}>
+        模拟运行
+      </Button>
       <input
         aria-label="测试输入"
         value={draft}
@@ -586,7 +603,7 @@ function Fixture() {
         <PreviewSidebar
           workspace={board}
           root={folder}
-          changes={git ? { root: folder } : undefined}
+          changes={git ? { root: folder, busy } : undefined}
           leaving={!board.expanded}
           attach={(path) => {
             const attached: string[] = ((window as any).fixtureAttached ??= []);

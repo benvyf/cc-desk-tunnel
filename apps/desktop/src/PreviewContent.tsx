@@ -13,7 +13,7 @@ import { SegmentedControl } from './SegmentedControl.tsx';
 import RichText from './RichText.tsx';
 import PreviewCode from './PreviewCode.tsx';
 import PreviewDiff from './PreviewDiff.tsx';
-import { gitBaseKey, useGitBase, useGitFile } from './useGitFile.ts';
+import { gitBaseKey, privateFile, useGitBase, useGitFile } from './useGitFile.ts';
 import { CopyButton } from './copy.tsx';
 import { LinkPlace, linkTarget } from './links.ts';
 import { followLink, openDeclined } from './linkActions.ts';
@@ -266,15 +266,26 @@ export default function PreviewContent({
       workspace.navigated.mark(tab.id, navigation.id);
   }, [navigation?.id, file]);
   // The file's changes (the 改动 view, PreviewDiff.tsx): asked of Git in the file's project, or, for a file outside
-  // it, in its folder's repository against HEAD. A file with none is shown only as itself.
+  // it, in its folder's repository against HEAD. A restricted tab (one a document's link opened) asks only in its
+  // own workspace or the project, never in a folder the document named. A file with none is shown only as itself.
   const gitRoot =
-    git && tab.kind === 'file'
-      ? isInside(tab.target, [git.root])
+    !git || tab.kind !== 'file'
+      ? undefined
+      : isInside(tab.target, [git.root])
         ? git.root
-        : parentOf(tab.target)
-      : undefined;
+        : tab.restricted
+          ? tab.root && isInside(tab.target, [tab.root])
+            ? tab.root
+            : undefined
+          : parentOf(tab.target);
+  // A file the preview keeps to itself (preview-files.cjs) offers no changes either; a deleted one, which cannot be
+  // read anyway, shows them as the changes panel does.
+  const privateTab =
+    !!gitRoot &&
+    (privateFile(gitRoot, tab.target) ||
+      (!!tab.root && isInside(tab.target, [tab.root]) && privateFile(tab.root, tab.target)));
   const [projectBase] = useGitBase(gitBaseKey(git?.root ?? ''));
-  const gitFile = useGitFile(
+  const [gitFile, refreshGit] = useGitFile(
     tab.id,
     gitRoot
       ? {
@@ -285,12 +296,18 @@ export default function PreviewContent({
           revision,
         }
       : null,
-    tab.view === 'diff',
+    tab.view === 'diff' && !privateTab,
   );
   const change = gitFile.status === 'changed' ? gitFile.change : undefined;
   // A deleted file has no other view; until Git answers, a tab left showing changes keeps showing them.
   const deleted = change?.status === 'D';
-  const diffShown = !!gitRoot && (deleted || (tab.view === 'diff' && gitFile.status !== 'none'));
+  const diffShown =
+    !!gitRoot && (deleted || (!privateTab && tab.view === 'diff' && gitFile.status !== 'none'));
+  // Chosen by the reader just now: the keys go to the diff as it is shown.
+  const focusDiff = useRef(false);
+  useEffect(() => {
+    if (diffShown) focusDiff.current = false;
+  }, [diffShown]);
   // A file found to have no changes any more goes back to showing itself.
   useEffect(() => {
     if (tab.view === 'diff' && gitFile.status === 'none' && gitFile.definite)
@@ -485,7 +502,9 @@ export default function PreviewContent({
   const modes = [
     ...(previewKind ? [{ value: 'preview' as const, label: '预览', disabled: !file }] : []),
     ...(sourceKind ? [{ value: 'source' as const, label: '源码', disabled: !file }] : []),
-    ...((change || diffShown) && !deleted ? [{ value: 'diff' as const, label: '改动' }] : []),
+    ...((change || diffShown) && !deleted && !privateTab
+      ? [{ value: 'diff' as const, label: '改动' }]
+      : []),
   ];
   const mode = diffShown
     ? 'diff'
@@ -581,6 +600,7 @@ export default function PreviewContent({
               if (value === 'diff') {
                 if (!diffShown) {
                   captureReading();
+                  focusDiff.current = true;
                   workspace.view(tab.id, 'diff');
                 }
                 return;
@@ -626,7 +646,13 @@ export default function PreviewContent({
             tab.kind === 'web' ? browser?.url || tab.target : (file?.path ?? tab.target)
           }
         />
-        <IconButton title="在系统应用中打开" size="sm" onClick={openInSystem}>
+        <IconButton
+          title="在系统应用中打开"
+          size="sm"
+          // A deleted file is not there to open.
+          disabled={deleted}
+          onClick={openInSystem}
+        >
           <ExternalLink />
         </IconButton>
       </div>
@@ -654,7 +680,14 @@ export default function PreviewContent({
           wrap={tab.wrap === true}
           setWrap={(value) => workspace.wrap(tab.id, value)}
           reveal={tab.reveal}
-          openLine={deleted ? undefined : (line) => workspace.showSource(tab.id, line)}
+          // Only a file with a source to show (text, Markdown, HTML; not a picture) goes to a line of it.
+          openLine={
+            !deleted && file && ['text', 'markdown', 'html'].includes(file.kind)
+              ? (line) => workspace.showSource(tab.id, line)
+              : undefined
+          }
+          autoFocus={focusDiff.current}
+          retry={refreshGit}
         />
       ) : file?.kind === 'html' && !source && workspace.restoredTabs.has(tab.id) ? (
         <div className="preview-empty">
