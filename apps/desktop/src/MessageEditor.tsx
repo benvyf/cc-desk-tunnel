@@ -37,7 +37,6 @@ export default function MessageEditor({
     !sending &&
     !blocked &&
     !tooLong &&
-    draft.trim() !== text.trim() &&
     (!!body.trim() || parts.files.length > 0) &&
     !(parts.quotes.length && !body.trim());
   // Opened with the caret at the end of the words, and in sight.
@@ -157,7 +156,7 @@ export default function MessageEditor({
         </small>
       )}
       <div className="message-editor-actions">
-        {blocked && !tooLong && (
+        {blocked && !tooLong && !sending && (
           <small id={hintId} className="message-editor-hint" role="status">
             {blocked}
           </small>

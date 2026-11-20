@@ -5043,7 +5043,6 @@ details[open] > summary > .fold-chevron {
 }
 .transcript .message.editing ~ * {
   opacity: 0.45;
-  transition: opacity var(--cds-dur-base) var(--cds-ease-out);
 }
 @keyframes message-editor-in {
   from {
@@ -5053,6 +5052,7 @@ details[open] > summary > .fold-chevron {
 @media (prefers-reduced-motion: reduce) {
   .message-editor {
     animation: none;
+    transition: none;
   }
 }
 @media (forced-colors: active) {

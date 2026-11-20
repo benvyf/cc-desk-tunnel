@@ -349,24 +349,49 @@ test('an earlier question is edited where it stands, and the conversation goes o
   page,
 }) => {
   const forks: Record<string, unknown>[] = [];
+  const order: string[] = [];
+  let forkRequest = '';
+  let copy = '';
   await page.routeWebSocket(connection().serverUrl, (route) => {
     const server = route.connectToServer();
     route.onMessage((raw) => {
       const message = JSON.parse(String(raw));
-      if (message.type === 'session.fork') forks.push(message);
+      if (message.type === 'session.fork') {
+        forks.push(message);
+        forkRequest = message.requestId;
+      }
+      if (forkRequest) order.push(message.type);
       server.send(raw);
     });
-    server.onMessage((raw) => route.send(raw));
+    server.onMessage((raw) => {
+      const message = JSON.parse(String(raw));
+      if (message.type === 'response' && message.requestId === forkRequest)
+        copy = message.sessionId;
+      route.send(raw);
+    });
   });
   await page.goto('/');
   await login(page);
+  const other = await createSession(page, '另一个会话');
   const title = await createSession(page, '原处编辑');
   for (const text of ['第一问', '第二问']) {
     await send(page, text);
     await settled(page);
   }
+  await sessionAction(page, '置顶');
   const questions = page.locator('.message.user .message-content');
   const box = page.getByRole('textbox', { name: '消息', exact: true });
+  // An editor left for another session closes, and the question stays as it was.
+  await questions.nth(0).hover();
+  await page.getByRole('button', { name: '编辑消息', exact: true }).first().click();
+  await page.getByRole('textbox', { name: '编辑内容', exact: true }).fill('不会发出的修改');
+  await page.locator('.session-row').filter({ hasText: other }).locator('.session-select').click();
+  await page
+    .locator('.session-select')
+    .filter({ has: page.getByText(title, { exact: true }) })
+    .click();
+  await expect(page.locator('.message-editor')).toHaveCount(0);
+  await expect(questions).toHaveText(['第一问', '第二问']);
   await box.fill('还没发的草稿');
   await questions.nth(0).hover();
   const edit = page.getByRole('button', { name: '编辑消息', exact: true }).first();
@@ -384,7 +409,8 @@ test('an earlier question is edited where it stands, and the conversation goes o
   expect(Math.abs(width - column)).toBeLessThan(2);
   await expect(page.locator('.message.editing ~ .message').first()).toHaveCSS('opacity', '0.45');
   await expect(page.locator('.message.user .message-content')).toHaveCount(1);
-  await expect(sendEdit).toBeDisabled();
+  // Sent again as it was, it is asked again from there.
+  await expect(sendEdit).toBeEnabled();
   expect(forks).toEqual([]);
   // Escape puts the bubble back and the keyboard on its pencil.
   await editor.press('Escape');
@@ -398,9 +424,24 @@ test('an earlier question is edited where it stands, and the conversation goes o
   await editor.pressSequentially('改过');
   await expect(editor).toHaveValue('第一问\n改过');
   await expect(sendEdit).toBeEnabled();
+  const firstId = await page.locator('.message.user.editing').getAttribute('data-message-id');
   await editor.press('Enter');
   await settled(page);
   expect(forks).toHaveLength(1);
+  expect(forks[0]!.beforeMessageId).toBe(firstId);
+  // Named before the run that holds names, the original put away after the edit went.
+  expect(order.filter((type) => type !== 'session.history' && type !== 'session.select')).toEqual(
+    expect.arrayContaining(['session.fork', 'session.rename', 'message.send', 'session.archive']),
+  );
+  expect(order.indexOf('session.rename')).toBeLessThan(order.indexOf('message.send'));
+  expect(order.indexOf('message.send')).toBeLessThan(order.indexOf('session.archive'));
+  // The pin went along with the conversation.
+  expect(
+    await page.evaluate(
+      () => JSON.parse(localStorage.getItem('proxy-prefs') ?? '{}').pinnedSessions,
+    ),
+  ).toEqual([copy]);
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
   // The same conversation, under its own name, from the edited question on; the words not yet sent came along.
   await expect(page.locator('.session-row.selected strong')).toHaveText(title);
   await expect(page.locator('.session-row').filter({ hasText: title })).toHaveCount(1);
@@ -446,6 +487,7 @@ test('an edit sent while the reader has gone elsewhere does not take them back',
   await editor.press('Enter');
   const frame = page.locator('.message-editor');
   await expect(frame.getByRole('button', { name: '发送中', exact: true })).toBeDisabled();
+  await expect(frame.locator('.message-editor-hint')).toHaveCount(0);
   await expect.poll(() => !!release).toBe(true);
   const otherRow = page.locator('.session-row').filter({ hasText: other });
   await otherRow.locator('.session-select').click();
@@ -498,8 +540,8 @@ test('an edit that cannot be sent waits in the copy, and the original stays', as
   await expect(box).toHaveValue('改过的问题');
   await expect(box).toBeFocused();
   await expect(page.locator('.message.user')).toHaveCount(0);
-  await expect(page.locator('.session-row.selected strong')).toHaveText(title);
-  // Both stand: the original was not put away.
+  // Both stand, told apart: the original was not put away, and the copy keeps the name of a fork.
+  await expect(page.locator('.session-row.selected strong')).toHaveText(`${title}（分叉）`);
   await expect(page.locator('.session-row').filter({ hasText: title })).toHaveCount(2);
 });
 

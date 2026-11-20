@@ -127,15 +127,16 @@ type Live = {
   backgroundTool: (tool: Tool) => void;
   // Opens a question in the editor where it stands (MessageEditor.tsx); absent while it could not be sent again.
   edit?: (item: Text) => void;
-  // The question open in the editor: why it cannot be sent just now, how it is sent, and how it is left.
-  editor?: Editor;
 };
+// The question open in the editor: why it cannot be sent just now, how it is sent, and how it is left. Given to the
+// questions apart from Live, so that opening and closing it draws only them, not every turn.
 type Editor = {
   id: string;
   blocked?: string;
   send: (text: string) => Promise<boolean>;
   cancel: () => void;
 };
+const OpenEditor = createContext<Editor | undefined>(undefined);
 const icons: Record<Category, typeof Wrench> = {
   command: SquareTerminal,
   edit: FileCode,
@@ -601,7 +602,6 @@ function Message({
   item,
   native,
   edit,
-  editor,
   footer,
   closing = false,
   latest = false,
@@ -614,8 +614,6 @@ function Message({
   // The model that wrote the reply, beside its time: shown where more than one answered in the session.
   model?: string;
   edit?: (item: Text) => void;
-  // Present while this question is open in the editor, which takes the place of its bubble and its line.
-  editor?: Editor;
   footer?: ReactNode;
   closing?: boolean;
   latest?: boolean;
@@ -625,6 +623,9 @@ function Message({
 }) {
   const time = messageTime(item.kind === 'assistant' ? (item.doneAt ?? item.at) : item.at);
   const user = item.kind === 'user';
+  // While this question is open in the editor, the editor takes the place of its bubble and its line.
+  const open = useContext(OpenEditor);
+  const editor = user && open?.id === item.id ? open : undefined;
   const [controlsShown, setControlsShown] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
@@ -698,7 +699,7 @@ function Message({
       )}
     </>
   );
-  if (user && editor)
+  if (editor)
     return (
       <article className="message user editing" data-message-id={item.id}>
         <MessageEditor
@@ -954,7 +955,7 @@ const TurnView = memo(function TurnView({
           item={turn.question}
           native={native}
           edit={turn.joined ? undefined : live.edit}
-          editor={live.editor?.id === turn.question.id ? live.editor : undefined}
+
           joined={turn.joined}
         />
       )}
@@ -1273,8 +1274,12 @@ export default function Conversation({
   actions.current = { replyApproval, stopTask, backgroundTask, edit };
   const activeRunId = session?.activeRun?.id;
   const editable = !!edit;
-  // The question open in the editor, one at a time, in the session it was opened in.
+  // The question open in the editor, one at a time, in the session it was opened in: it closes when the page goes
+  // to another session (a copy holds the same message IDs), and what was written in it goes with it.
   const [editing, setEditing] = useState<{ sessionId?: string; id: string } | null>(null);
+  const currentSession = useRef(session?.id);
+  currentSession.current = session?.id;
+  useEffect(() => setEditing(null), [session?.id]);
   const editingId = editing && editing.sessionId === session?.id ? editing.id : undefined;
   // While open, the editor keeps what is written even when it cannot be sent, and says why.
   const editBlocked = running
@@ -1313,23 +1318,12 @@ export default function Conversation({
     edit:
       edit && !running
         ? (item) => {
-            setEditing({ sessionId: session?.id, id: item.id });
+            setEditing({ sessionId: currentSession.current, id: item.id });
             // Reading where the question is: the view no longer keeps to the end under the editor.
             leave();
           }
         : undefined,
-    editor: editingId
-      ? {
-          id: editingId,
-          blocked: editBlocked,
-          send: async (text) => {
-            const sent = (await actions.current.edit?.(editingId, text)) ?? false;
-            if (sent) setEditing(null);
-            return sent;
-          },
-          cancel: () => setEditing(null),
-        }
-      : undefined,
+
     taskControl: (tool) =>
       connected &&
       ownsRun &&
@@ -1361,10 +1355,24 @@ export default function Conversation({
     activeRunId,
     running,
     editable,
-    editingId,
-    editBlocked,
     taskSent,
   ];
+  const editor = useMemo<Editor | undefined>(
+    () =>
+      editingId
+        ? {
+            id: editingId,
+            blocked: editBlocked,
+            send: async (text) => {
+              const sent = (await actions.current.edit?.(editingId, text)) ?? false;
+              if (sent) setEditing(null);
+              return sent;
+            },
+            cancel: () => setEditing(null),
+          }
+        : undefined,
+    [editingId, editBlocked],
+  );
   const live = useMemo(() => makeLive(now), [now, ...liveKeys]);
   // Turns at rest show no running clock, so a tick draws none of them; the day, for their dates, does.
   const atRest = useMemo(() => makeLive(day), [day, ...liveKeys]);
@@ -1775,18 +1783,20 @@ export default function Conversation({
                 )}
                 {showGreeting && <Greeting />}
                 <LinkPlace.Provider value={place}>
-                  {turns.map((turn, index) => (
-                    <TurnView
-                      key={turn.id}
-                      turn={turn}
-                      native={native}
-                      live={ticking(turn, activeRunId) ? live : atRest}
-                      latest={index === turns.length - 1}
-                      held={heldOpen(turns, index)}
-                      resume={index === turns.length - 1 ? resume : undefined}
-                      models={manyModels}
-                    />
-                  ))}
+                  <OpenEditor.Provider value={editor}>
+                    {turns.map((turn, index) => (
+                      <TurnView
+                        key={turn.id}
+                        turn={turn}
+                        native={native}
+                        live={ticking(turn, activeRunId) ? live : atRest}
+                        latest={index === turns.length - 1}
+                        held={heldOpen(turns, index)}
+                        resume={index === turns.length - 1 ? resume : undefined}
+                        models={manyModels}
+                      />
+                    ))}
+                  </OpenEditor.Provider>
                 </LinkPlace.Provider>
                 {session.activeRun && background && (
                   <div className="background-tasks">

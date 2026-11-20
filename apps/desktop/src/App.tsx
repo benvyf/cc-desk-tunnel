@@ -1538,14 +1538,18 @@ export function App({
       const copy = forked;
       // A slow edit must not take the reader away from a page they have since chosen.
       const here = () => navigation.current === startedAt;
-      // The copy is named "…（分叉）" by the service; this is the same conversation, under its own name. Before the
-      // run starts, which holds names still.
-      await client
-        .request({ type: 'session.rename', sessionId: copy, title: session.title })
-        .catch(() => {});
+      // The copy is named "…（分叉）" by the service. Where the original can be put away, the copy is the same
+      // conversation under its own name; otherwise both stay in the list, and the copy keeps the name that tells
+      // them apart. Named before the run starts, which holds names still; named back if it is not carried on.
+      const replaces = !!client.state.sessionArchive;
+      const forkName = `${session.title.slice(0, 116)}（分叉）`;
+      const rename = (title: string) =>
+        client.request({ type: 'session.rename', sessionId: copy, title }).catch(() => {});
+      if (replaces) await rename(session.title);
       try {
         await client.request({ type: 'message.send', sessionId: copy, text, scenario });
       } catch (error) {
+        if (replaces) await rename(forkName);
         // The copy stands without the edit, which waits in its input box as it was written.
         const parts = messageParts(text);
         setDraft(copy, parts.body);
@@ -1557,7 +1561,19 @@ export function App({
         }
         throw error;
       }
-      if (here()) show(copy);
+      if (here()) {
+        show(copy);
+        setFocusDraftSession(copy);
+      }
+      if (!replaces) return;
+      try {
+        await client.request({ type: 'session.archive', sessionId: session.id, archived: true });
+      } catch (error) {
+        // Both stay in the list, and nothing moves: the copy takes back the name that tells it apart.
+        await rename(forkName);
+        throw error;
+      }
+      setUndoArchive({ ids: [session.id], edited: true });
       // What belongs to the conversation rather than to one copy of it goes along: its pin, and words written
       // but not sent (files still being read stay behind, where their reading ends).
       setPrefs((value) =>
@@ -1580,9 +1596,6 @@ export function App({
         const moved = new Set(files.map((item) => item.id));
         setAttachments(session.id, (current) => current.filter((item) => !moved.has(item.id)));
       }
-      // Put away last: if that fails, both stand in the list, and nothing is lost.
-      await client.request({ type: 'session.archive', sessionId: session.id, archived: true });
-      setUndoArchive({ ids: [session.id], edited: true });
     });
     return !!forked;
   }
@@ -2996,6 +3009,7 @@ export function App({
               loadEarlier={() => client.loadEarlier(selected!.id)}
               edit={
                 controlsDisabled ||
+                selected?.archivedAt ||
                 (away && !(selected?.device?.viaSsh && window.desktop?.ssh && remote))
                   ? undefined
                   : (id, text) => resend(selected!, id, text)
