@@ -35,25 +35,31 @@ test('the tree’s open folders are restored with the layout, checked and bounde
       '../outside',
       'src/../..',
       '/etc',
-      'c:/windows',
-      'a\\b',
       '',
       'a//b',
       './a',
       7,
-      'x'.repeat(1025),
+      'x'.repeat(4097),
+      // A POSIX name may hold these.
+      'a:b\\c',
     ]).folders,
-    ['src', 'src/nested'],
+    ['src', 'src/nested', 'a:b\\c'],
   );
-  const many = Array.from({ length: treeFolderLimit + 20 }, (_, i) => `folder${i}`);
-  const kept = treeFolders(many);
+  assert.equal(treeFolderLimit, 96);
+  // More than 128 saved open folders (an older, larger bound) come back as the latest 96.
+  const many = Array.from({ length: 130 }, (_, i) => `f${i}`);
+  const kept = saved(many).folders!;
   assert.equal(kept.length, treeFolderLimit);
-  // The latest opened are kept.
-  assert.equal(kept.at(-1), many.at(-1));
-  assert.equal(kept[0], `folder20`);
-  // And no more than 8000 characters of them.
+  assert.equal(kept.at(-1), 'f129');
+  assert.equal(kept[0], 'f34');
+  // The oldest folder that holds no other kept one goes first: a parent stays while its open child does.
+  const nested = treeFolders(['a', ...many.slice(0, 95), 'a/b']);
+  assert.equal(nested.length, treeFolderLimit);
+  assert.ok(nested.includes('a') && nested.includes('a/b'));
+  assert.ok(!nested.includes('f0'));
+  // And no more than 4000 characters of them.
   const long = treeFolders(Array.from({ length: 20 }, (_, i) => `${i}`.padEnd(1000, 'x')));
-  assert.equal(long.length, 8);
+  assert.equal(long.length, 4);
   assert.ok(long.at(-1)!.startsWith('19'));
 });
 

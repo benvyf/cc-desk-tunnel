@@ -2287,6 +2287,20 @@ export function App({
   const [paletteOpen, setPaletteOpen] = useState(false);
   // The shortcut's request for the preview's box that opens a file by its name, until the preview has seen it.
   const [quickOpenRequested, setQuickOpenRequested] = useState(false);
+  // The shortcut pressed where there is no project on this computer to look in: said for a moment.
+  const [quickOpenRefused, setQuickOpenRefused] = useState(false);
+  // A request outlives neither the session or page it was made in, nor a preview that never came out.
+  useEffect(() => {
+    setQuickOpenRequested(false);
+  }, [selected?.id, place.page]);
+  useEffect(() => {
+    if (!quickOpenRequested && !quickOpenRefused) return;
+    const timer = setTimeout(() => {
+      setQuickOpenRequested(false);
+      setQuickOpenRefused(false);
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [quickOpenRequested, quickOpenRefused]);
   const [paletteRecent, setPaletteRecent] = useState<string[]>(() => {
     try {
       return knownRecent(JSON.parse(localStorage.getItem('cc-palette-recent') ?? '[]'));
@@ -2452,10 +2466,10 @@ export function App({
       activity: toggleActivity,
       // The preview comes out, if it was put away, with the box open; only for a project on this computer.
       quickOpen:
-        previewAvailable &&
-        !!selected?.projectPath &&
-        place.page === 'chat' &&
+        !!window.desktop &&
         (() => {
+          if (!previewAvailable || !selected?.projectPath || place.page !== 'chat')
+            return setQuickOpenRefused(true);
           if (!preview.expanded) preview.toggle();
           setQuickOpenRequested(true);
         }),
@@ -2905,6 +2919,11 @@ export function App({
                 </IconButton>
               </div>
             )}
+            {quickOpenRefused && !undoArchive && (
+              <div className="undo-banner" role="status">
+                <span>按名称打开文件只适用于本机项目</span>
+              </div>
+            )}
             {undoArchive && (
               <div
                 className="undo-banner"
@@ -3347,6 +3366,9 @@ export function App({
           workspace={preview}
           quickOpenRequested={quickOpenRequested && previewShown}
           quickOpenDone={() => setQuickOpenRequested(false)}
+          quickOpenCombo={(event) =>
+            prefs.shortcuts.enabled && comboOf(event) === keyFor(prefs, 'quickOpen')
+          }
           filesAvailable={previewAvailable}
           root={previewAvailable ? selected?.projectPath : undefined}
           attach={

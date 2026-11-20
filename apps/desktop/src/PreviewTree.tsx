@@ -132,13 +132,17 @@ function Directory({
   }, [root, path, revision, refresh, attempt]);
   useEffect(() => {
     const key = `${surface}:tree:${id}`;
+    let disposed = false;
     const stop = window.desktop!.preview.onChanged((e) => {
       if (e.key === key) setRevision((n) => n + 1);
     });
     // At the desktop's limit of watched folders this fails; 重试 (or 刷新目录) asks again, so a folder whose
     // watch could not be kept does not go on silently without its automatic refresh.
-    void window.desktop!.preview.watch({ root, path, key }).catch((e) => setError(e.message));
+    void window.desktop!.preview.watch({ root, path, key }).catch((e) => {
+      if (!disposed) setError(e.message);
+    });
     return () => {
+      disposed = true;
       stop();
       void window.desktop?.preview.unwatch(key);
     };
@@ -221,7 +225,12 @@ function Directory({
                 }
                 if (event.key === 'ArrowRight' && entry.kind === 'directory') {
                   event.preventDefault();
-                  folders.set(place, true);
+                  // An open folder hands the focus to its first row; a shut one opens.
+                  if (expanded)
+                    event.currentTarget.nextElementSibling
+                      ?.querySelector<HTMLElement>('[role="treeitem"]')
+                      ?.focus();
+                  else folders.set(place, true);
                   return;
                 }
                 if (event.key === 'ArrowLeft') {
@@ -340,7 +349,8 @@ export default function PreviewTree({
         update.current((list) =>
           value
             ? [...list.filter((item) => item !== folder), folder]
-            : list.filter((item) => item !== folder),
+            : // A folder shut forgets the open folders inside it too.
+              list.filter((item) => !below(item, folder)),
         ),
       reveal: (wanted) => {
         if (wanted.every((folder) => shown.has(folder))) return;

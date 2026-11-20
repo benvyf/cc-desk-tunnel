@@ -407,7 +407,8 @@ test('a file found by its name opens in the temporary tab, or kept with Ctrl+Ent
   // An index that reached its bounds says so.
   await page.evaluate(() => ((window as any).fixtureIndexTruncated = true));
   await button.click();
-  await expect(box.getByText('只索引了部分文件')).toBeVisible();
+  await expect(box.getByRole('status').filter({ hasText: '只索引了部分文件' })).toBeVisible();
+  await expect(input).toHaveAttribute('aria-haspopup', 'listbox');
   await page.keyboard.press('Escape');
   // Listed once per opening of the box.
   expect(await page.evaluate(() => (window as any).fixturePreview.counts().indexes)).toBe(4);
@@ -428,7 +429,10 @@ test('the tree has one tab stop, goes left to a folder, and a typed letter finds
   await expect(row('src')).toHaveAttribute('tabindex', '-1');
 
   await row('src').click();
-  await row('index.ts').focus();
+  // Right on an open folder goes to its first row.
+  await row('src').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(row('index.ts')).toBeFocused();
   await expect(row('index.ts')).toHaveAttribute('tabindex', '0');
   await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1);
   // Left from a file goes to its folder; from an open folder shuts it; from a shut top folder stays.

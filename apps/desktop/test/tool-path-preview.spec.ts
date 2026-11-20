@@ -62,6 +62,7 @@ async function open(page: Page) {
         },
         preview: {
           list: async () => [],
+          index: async () => ({ files: ['notes.txt', 'src/main.ts'], truncated: false }),
           read: async ({ path }: { path: string }) => {
             calls.reads.push(path);
             return { path, kind: 'text', text: source };
@@ -234,6 +235,32 @@ test('a tool card path opens its file in the preview, where the edit or the read
   await expect(page.getByRole('tab', { name: /out\.txt/ })).toBeVisible();
   await expect(page.locator('.preview-code-highlight')).toHaveCount(0);
   expect((await calls(page)).acts).toEqual([]);
+});
+
+// Ctrl+P (shortcuts.ts quickOpen), from the message box: the preview comes out with the box that opens a file by
+// its name; Ctrl+P again shuts it, and the focus goes back to the message box.
+test('Ctrl+P opens a file of the project by its name from the message box', async ({ page }) => {
+  await open(page);
+  const message = page.getByRole('textbox', { name: '消息', exact: true });
+  await message.focus();
+  await page.keyboard.press('Control+KeyP');
+  const box = page.getByRole('dialog', { name: '按名称打开文件' });
+  const input = box.getByRole('combobox', { name: '文件名或路径' });
+  await expect(input).toBeFocused();
+  await page.keyboard.press('Control+KeyP');
+  await expect(box).toHaveCount(0);
+  await expect(message).toBeFocused();
+  await page.keyboard.press('Control+KeyP');
+  await input.fill('main');
+  await expect(box.getByRole('option')).toHaveText(['main.tssrc']);
+  await page.keyboard.press('Escape');
+  await expect(box).toHaveCount(0);
+  await expect(message).toBeFocused();
+  await page.keyboard.press('Control+KeyP');
+  await input.fill('main');
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('tab', { name: /main\.ts/ })).toBeVisible();
+  expect((await calls(page)).reads).toContain(`${project}\\src\\main.ts`);
 });
 
 test('a tool card path that is not on this computer is not opened here', async ({ page }) => {

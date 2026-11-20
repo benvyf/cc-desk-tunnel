@@ -32,10 +32,13 @@ export type PreviewBoard = {
   // the layout, at most treeFolderLimit of them. Layouts saved before carry none: every folder starts shut.
   folders?: string[];
 };
-export const treeFolderLimit = 200;
-// What a saved list of open folders may hold: relative paths that stay inside the root, without repeats; the
-// latest opened are kept past the limit, or past 8000 characters in all, so that a hundred sessions' boards stay
-// well inside the size a saved layout is restored from (restoreLayout).
+export const treeFolderLimit = 96;
+const treeFolderBudget = 4000;
+// What a saved list of open folders may hold: relative paths that stay inside the root, without repeats. Past
+// treeFolderLimit of them, or 4000 characters in all (so that a hundred sessions' boards stay well inside the size a
+// saved layout is restored from, restoreLayout), the oldest folder holding no other kept one goes first: a folder
+// is never forgotten while one open inside it is kept. Names are not checked further, a POSIX name may hold ':'
+// or '\'; such a folder simply never matches on Windows.
 export function treeFolders(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   const kept = new Set<string>();
@@ -43,15 +46,20 @@ export function treeFolders(value: unknown): string[] {
     if (
       typeof item === 'string' &&
       item.length > 0 &&
-      item.length <= 1024 &&
-      !/[\\\0]/.test(item) &&
-      !/^(?:\/|[a-z]:)/i.test(item) &&
+      item.length <= 4096 &&
+      !item.includes('\0') &&
+      !item.startsWith('/') &&
       !item.split('/').some((part) => !part || part === '.' || part === '..')
     )
       kept.add(item);
-  const folders = [...kept].slice(-treeFolderLimit);
+  const folders = [...kept].slice(-4 * treeFolderLimit);
   let size = folders.reduce((sum, folder) => sum + folder.length, 0);
-  while (size > 8000) size -= folders.shift()!.length;
+  while (folders.length > treeFolderLimit || size > treeFolderBudget) {
+    const leaf = folders.findIndex(
+      (folder) => !folders.some((other) => other.startsWith(folder + '/')),
+    );
+    size -= folders.splice(leaf, 1)[0].length;
+  }
   return folders;
 }
 // The workspace tree is a column of its own: opening it widens the preview by this much, so the file keeps its

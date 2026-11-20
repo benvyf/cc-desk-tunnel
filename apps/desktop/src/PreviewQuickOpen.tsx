@@ -52,10 +52,13 @@ export default function PreviewQuickOpen({
   root,
   open,
   close,
+  toggle,
 }: {
   root: string;
   open: (path: string, temporary: boolean) => void;
   close: () => void;
+  // The box's own shortcut, which shuts it (the window's shortcuts are off while a dialog is open).
+  toggle?: (event: React.KeyboardEvent) => boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -161,6 +164,7 @@ export default function PreviewQuickOpen({
         aria-expanded={shown.length > 0}
         aria-controls={`${id}-list`}
         aria-autocomplete="list"
+        aria-haspopup="listbox"
         aria-activedescendant={current !== undefined ? optionId(currentIndex) : undefined}
         placeholder="输入文件名；Enter 打开，Ctrl+Enter 打开并固定"
         value={query}
@@ -177,6 +181,11 @@ export default function PreviewQuickOpen({
             performance.now() - composedAt.current < 10
           )
             return;
+          if (toggle?.(event)) {
+            event.preventDefault();
+            close();
+            return;
+          }
           if (event.key === 'Enter' && !event.shiftKey && !event.metaKey) {
             event.preventDefault();
             pick(current, !(event.ctrlKey || event.altKey));
@@ -195,7 +204,11 @@ export default function PreviewQuickOpen({
           act();
         }}
       />
-      {index?.truncated && <p className="preview-quick-notice">只索引了部分文件</p>}
+      {index?.truncated && (
+        <p className="preview-quick-notice" role="status">
+          只索引了部分文件
+        </p>
+      )}
       <p className="preview-quick-notice" role="status" hidden={!notice}>
         {notice}
       </p>

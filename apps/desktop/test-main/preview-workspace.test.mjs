@@ -134,6 +134,39 @@ test('an oversized directory lists its first 2000 entries and counts the rest', 
   for (let i = 1; i < names.length; i++) assert.ok(parseInt(names[i - 1]) < parseInt(names[i]));
 });
 
+test('the quick-open index stops in time among many empty folders', async (t) => {
+  const { project } = await fixture(t);
+  await Promise.all(
+    Array.from({ length: 1500 }, (_, i) =>
+      mkdir(join(project, `empty ${i}`, 'deeper'), { recursive: true }),
+    ),
+  );
+  await writeFile(join(project, 'zz-last.txt'), '');
+  const workspace = createPreviewWorkspace({ indexTimeMs: 20 });
+  t.after(() => workspace.close());
+  const started = Date.now();
+  const { files, truncated } = await workspace.index({ root: project });
+  assert.equal(truncated, true);
+  assert.ok(Date.now() - started < 1000);
+  assert.ok(files.length <= 1);
+});
+
+test('the quick-open index never enters a directory link, inside the root or out of it', async (t) => {
+  const { root, project, workspace } = await fixture(t);
+  await mkdir(join(root, 'outside'));
+  await writeFile(join(root, 'outside/secret.txt'), '');
+  await mkdir(join(project, 'inner'));
+  await writeFile(join(project, 'inner/kept.txt'), '');
+  try {
+    await symlink(join(root, 'outside'), join(project, 'out-dir'), 'dir');
+    await symlink(join(project, 'inner'), join(project, 'in-dir'), 'dir');
+  } catch (error) {
+    if (error.code === 'EPERM') return t.skip('creating directory links is not permitted here');
+    throw error;
+  }
+  assert.deepEqual((await workspace.index({ root: project })).files, ['inner/kept.txt']);
+});
+
 test('names sort naturally and without case, directories first', async (t) => {
   const { project, workspace } = await fixture(t);
   for (const name of ['dir10', 'Dir2', 'dir1']) await mkdir(join(project, name));
@@ -216,6 +249,13 @@ test('the quick-open index stops at its file and time bounds and says it is part
   const quick = createPreviewWorkspace({ indexTimeMs: -1 });
   t.after(() => quick.close());
   assert.deepEqual(await quick.index({ root }), { files: [], truncated: true });
+  // One folder past the entries kept from a folder: those kept, in order, and partial.
+  const narrow = createPreviewWorkspace({ indexDirectoryLimit: 4 });
+  t.after(() => narrow.close());
+  const partial = await narrow.index({ root });
+  assert.equal(partial.truncated, true);
+  assert.equal(partial.files.length, 4);
+  assert.deepEqual(partial.files, [...partial.files].sort());
   const whole = createPreviewWorkspace();
   t.after(() => whole.close());
   assert.equal((await whole.index({ root })).files.length, 5);

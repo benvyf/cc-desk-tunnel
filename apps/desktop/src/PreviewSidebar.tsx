@@ -20,7 +20,10 @@ export default function PreviewSidebar({
   attach,
   quickOpenRequested = false,
   quickOpenDone,
+  quickOpenCombo,
 }: {
+  // Whether a key press is the shortcut that opens the box, which then shuts it.
+  quickOpenCombo?: (event: React.KeyboardEvent) => boolean;
   // The window's shortcut asked for the box that opens a file by its name; `quickOpenDone` says it was seen.
   quickOpenRequested?: boolean;
   quickOpenDone?: () => void;
@@ -344,6 +347,7 @@ export default function PreviewSidebar({
             key={root}
             root={root}
             close={() => setQuickOpen(false)}
+            toggle={quickOpenCombo}
             open={(path, temporary) => workspace.openFile(path, root, true, undefined, temporary)}
           />
         )}

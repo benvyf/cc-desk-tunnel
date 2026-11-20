@@ -82,7 +82,12 @@ async function fileVersion(record) {
 // or connects to an agent. Each tree expansion lists one bounded directory on explicit request.
 // The quick-open index (index below) stops at `indexFileLimit` files or after `indexTimeMs`, whichever comes
 // first; tests give smaller bounds.
-function createPreviewWorkspace({ indexFileLimit = 20000, indexTimeMs = 1500 } = {}) {
+function createPreviewWorkspace({
+  indexFileLimit = 20000,
+  indexTimeMs = 1500,
+  // Entries kept from any one folder; a folder holding more makes the index partial rather than unbounded.
+  indexDirectoryLimit = 5000,
+} = {}) {
   const subscriptions = new Map();
   const directories = new Map();
   const recovering = new Set();
@@ -308,28 +313,52 @@ function createPreviewWorkspace({ indexFileLimit = 20000, indexTimeMs = 1500 } =
       const started = Date.now();
       const found = [];
       let truncated = false;
-      // Iterative, so a deep tree cannot exhaust the stack; every read is asynchronous.
+      // Checked before each folder and each entry, so neither one huge folder nor many empty ones outlast it.
+      const spent = () => found.length >= indexFileLimit || Date.now() - started > indexTimeMs;
+      const stale = () => closed || openedAt !== generation;
+      // Iterative, so a deep tree cannot exhaust the stack; every read is asynchronous and streamed.
       const pending = [''];
       walk: while (pending.length) {
+        if (stale()) throw new Error('预览来源已失效，请重新打开工作区。');
+        if (spent()) {
+          truncated = true;
+          break;
+        }
         const relative = pending.shift();
-        let entries;
+        const directory = path.join(root, relative);
+        // A folder is entered only as itself, inside the root and outside private folders, as list() does.
         try {
-          entries = await files.readdir(path.join(root, relative), { withFileTypes: true });
+          const canonical = local(await files.realpath(directory));
+          permitted(root, canonical);
+          if (canonical !== directory) continue;
         } catch {
-          // An unreadable or concurrently removed folder is left out.
           continue;
         }
-        if (closed || openedAt !== generation)
-          throw new Error('预览来源已失效，请重新打开工作区。');
+        const entries = [];
+        try {
+          for await (const entry of await files.opendir(directory)) {
+            if (stale() || spent() || entries.length >= indexDirectoryLimit) {
+              // Leaving the loop closes the folder's handle.
+              truncated = true;
+              break;
+            }
+            const lower = entry.name.toLowerCase();
+            if (!entry.name.startsWith('.') && !credentialDirectories.has(lower))
+              entries.push(entry);
+          }
+        } catch {
+          // An unreadable or concurrently removed folder is left out.
+        }
+        if (stale()) throw new Error('预览来源已失效，请重新打开工作区。');
+        // Only the kept entries are sorted, at most indexDirectoryLimit of them.
         entries.sort((a, b) => byName(a.name, b.name));
         for (const entry of entries) {
-          if (found.length >= indexFileLimit || Date.now() - started > indexTimeMs) {
+          if (spent()) {
             truncated = true;
             break walk;
           }
           const name = entry.name;
           const lower = name.toLowerCase();
-          if (name.startsWith('.') || credentialDirectories.has(lower)) continue;
           const child = relative ? `${relative}/${name}` : name;
           if (entry.isDirectory()) {
             if (!indexSkipped.has(lower)) pending.push(child);
@@ -349,7 +378,7 @@ function createPreviewWorkspace({ indexFileLimit = 20000, indexTimeMs = 1500 } =
           }
         }
       }
-      if (closed || openedAt !== generation) throw new Error('预览来源已失效，请重新打开工作区。');
+      if (stale()) throw new Error('预览来源已失效，请重新打开工作区。');
       return { files: found, truncated };
     },
 
