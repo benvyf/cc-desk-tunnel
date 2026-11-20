@@ -143,16 +143,80 @@ test('filters, buckets in the viewer time zone, and retention limits', () => {
     daily.rows.map((row) => row.id),
   );
   assert.equal(second.totals.requests, 3);
+  // Pruning takes the requests themselves, by count or by age; their hourly sums stay.
+  const all = () => log.query({ limit: 100, bucketMinutes: 60, offsetMinutes: 0 }, () => null);
   log.prune(base + 3 * hour);
-  assert.equal(
-    log.query({ limit: 100, bucketMinutes: 60, offsetMinutes: 0 }, () => null).totals.requests,
-    3,
-  );
+  assert.equal(all().rows.length, 3);
+  assert.equal(all().totals.requests, 4);
   log.prune(base + 40 * 24 * hour);
-  assert.equal(
-    log.query({ limit: 100, bucketMinutes: 60, offsetMinutes: 0 }, () => null).totals.requests,
-    0,
+  // The newest request always stays, so that ids are never reused.
+  assert.equal(all().rows.length, 1);
+  assert.equal(all().totals.requests, 4);
+  assert.deepEqual(
+    all()
+      .byModel.map((item) => [item.model, item.requests])
+      .sort(),
+    [
+      ['claude-haiku-4-5', 2],
+      ['claude-opus-5-5', 2],
+    ],
   );
+});
+
+test('hourly sums are kept for good: the same figures as the requests, before and after these are pruned', () => {
+  const database = new DatabaseSync(':memory:');
+  // Requests stored by an earlier version are summed when the table first appears.
+  new UsageLog(database).ingest(batch(request(base - 50 * hour, 'old')));
+  database.exec("DELETE FROM usage_hours; DELETE FROM usage_state WHERE name = 'summed-through'");
+  const log = new UsageLog(database, 35);
+  log.ingest(
+    batch(
+      request(base + 10 * 60_000, 'a'),
+      request(base + 20 * 60_000, 'b', {
+        model: 'claude-haiku-4-5',
+        ttft_ms: 500,
+        duration_ms: 2500,
+      }),
+      request(base + 5 * hour, 'c', { cost_usd: 1.25 }),
+    ),
+  );
+  // Sent again, a request is neither stored nor summed twice.
+  assert.equal(log.ingest(batch(request(base + 5 * hour, 'c', { cost_usd: 1.25 }))), 0);
+  const range = { limit: 1, bucketMinutes: 1440, offsetMinutes: 0 };
+  const before = log.query(range, () => null);
+  assert.equal(before.totals.requests, 4);
+  log.prune(base + 100 * 24 * hour);
+  const after = log.query(range, () => null);
+  assert.equal(after.rows.length, 1);
+  const { rows, hasMore, ...figures } = before;
+  const { rows: none, hasMore: more, ...kept } = after;
+  assert.deepEqual(kept, figures);
+  assert.equal(kept.totals.costUsd, 2.75);
+  // Speed and first-token time are averaged as the requests would be.
+  assert.equal(kept.totals.ttftMs, 875);
+  assert.ok(Math.abs(kept.totals.outputPerSecond! - 100) < 1e-9);
+  const haiku = log.query({ ...range, model: 'claude-haiku-4-5' }, () => null);
+  assert.equal(haiku.totals.requests, 1);
+  const summary = log.summary(base + 100 * 24 * hour);
+  assert.equal(summary.keepsHistory, true);
+  assert.equal(summary.firstRecordAt, new Date(base - 50 * hour).toISOString());
+  // Reopened, the sums are not counted again.
+  assert.equal(new UsageLog(database, 35).query(range, () => null).totals.requests, 4);
+  // A request an earlier version stored meanwhile, without summing it, is summed on the next start, once.
+  database
+    .prepare(
+      `INSERT INTO api_requests (at, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+        cost_usd, duration_ms, ttft_ms, request_id) VALUES (?, 'claude-opus-5-5', 1, 1, 0, 0, 0.25, 1000, 101, 'late')`,
+    )
+    .run(base + 101 * 24 * hour);
+  new UsageLog(database, 35);
+  const reopened = new UsageLog(database, 35);
+  reopened.prune(base + 200 * 24 * hour);
+  const summedLate = reopened.query(range, () => null).totals;
+  assert.equal(summedLate.requests, 5);
+  assert.equal(summedLate.costUsd, 3);
+  // First-token times keep their fraction: (875 × 4 + 101) / 5.
+  assert.equal(summedLate.ttftMs, 720.2);
 });
 
 test('period statistics follow the official windows, including early resets and expiry', () => {

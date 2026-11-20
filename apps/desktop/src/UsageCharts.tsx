@@ -1,4 +1,4 @@
-import { useId, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties, KeyboardEvent } from 'react';
 import type { UsagePage } from '@cc-desk-tunnel/protocol';
 
@@ -187,9 +187,16 @@ export function UsageBars({
       </div>
       <div className="usage-axis" aria-hidden="true">
         {buckets.map((bucket, index) => (
-          <span key={bucket.at}>
+          // A narrow chart shows every other label (style.css), so an even one names the day against the label two
+          // before it, which is the one shown before it there.
+          <span key={bucket.at} className={(index / step) % 2 === 1 ? 'odd' : undefined}>
             {ticks.includes(index)
-              ? axisLabel(bucket.at, index >= step ? buckets[index - step].at : undefined)
+              ? axisLabel(
+                  bucket.at,
+                  (index / step) % 2 === 1
+                    ? buckets[index - step]?.at
+                    : buckets[index - 2 * step]?.at,
+                )
               : ''}
           </span>
         ))}
@@ -318,7 +325,7 @@ export function ActivityCard({
   dollars: (value: number) => string;
 }) {
   const [active, setActive] = useState<number | null>(null);
-  const tipId = useId();
+  const scroller = useRef<HTMLDivElement>(null);
   const count = days.length;
   const byCost = days.some((day) => (day.bucket?.costUsd ?? 0) > 0);
   const value = (day: Day) => (byCost ? (day.bucket?.costUsd ?? 0) : (day.bucket?.tokens ?? 0));
@@ -328,7 +335,13 @@ export function ActivityCard({
   const unrecorded = (day: Day) => firstRecord === null || day.index < firstRecord;
   const first = days[0]?.index ?? 0;
   const week = (index: number) => Math.floor((index + 3) / 7) - Math.floor((first + 3) / 7);
-  const weeks = count ? week(days[count - 1].index) + 1 : 0;
+  // A year is drawn smaller, and scrolls in a narrow window, its latest weeks in view.
+  const year = count > 120;
+  const span = year ? '近一年' : `近 ${count} 天`;
+  useLayoutEffect(() => {
+    const element = scroller.current;
+    if (element) element.scrollLeft = element.scrollWidth;
+  }, [count]);
   const row = (index: number) => (((index + 3) % 7) + 7) % 7;
   const date = (index: number) => new Date(index * dayMs);
   const name = (index: number) => {
@@ -376,7 +389,7 @@ export function ActivityCard({
     }),
     { costUsd: 0, requests: 0, tokens: 0 },
   );
-  const bound = `只统计保留的 ${count} 天记录`;
+  const bound = `只统计${span}的记录`;
   const key = (event: KeyboardEvent<HTMLDivElement>) => {
     const moves: Record<string, number> = {
       ArrowLeft: -7,
@@ -409,80 +422,65 @@ export function ActivityCard({
     <section className="usage-card usage-activity" aria-label="活动" aria-busy={loading}>
       <header>
         <strong>活动</strong>
-        <span>近 {count} 天 · 每天的用量 · 全部模型</span>
+        <span>{span} · 每天的用量 · 全部模型</span>
       </header>
       {failed ? (
         <p className="muted">活动读取失败，点右上角刷新重试。</p>
       ) : (
         <div className="usage-activity-body">
           <div className="usage-heat-wrap">
-            <div
-              className="usage-heat"
-              tabIndex={0}
-              role="group"
-              aria-label="每天的用量，方向键逐日查看"
-              aria-describedby={shown ? tipId : undefined}
-              onKeyDown={key}
-              onBlur={() => setActive(null)}
-              onMouseLeave={() => setActive(null)}
-            >
-              {[...months].map(([column, text]) => (
-                <span
-                  key={`m${column}`}
-                  className="usage-heat-month"
-                  aria-hidden="true"
-                  style={{ gridColumn: column + 2, gridRow: 1 }}
-                >
-                  {text}
-                </span>
-              ))}
-              {[0, 2, 4].map((line) => (
-                <span
-                  key={`d${line}`}
-                  className="usage-heat-day"
-                  aria-hidden="true"
-                  style={{ gridColumn: 1, gridRow: line + 2 }}
-                >
-                  {weekdays[line]}
-                </span>
-              ))}
-              {days.map((day, index) => (
-                <i
-                  key={day.index}
-                  role="img"
-                  aria-label={describe(day)}
-                  data-level={loading ? 0 : level(day)}
-                  className={[
-                    !loading && unrecorded(day) && !day.bucket?.requests ? 'none' : '',
-                    active === index ? 'active' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  style={{ gridColumn: week(day.index) + 2, gridRow: row(day.index) + 2 }}
-                  onMouseEnter={() => setActive(index)}
-                />
-              ))}
-              {shown && !loading && (
-                <div
-                  id={tipId}
-                  className="usage-tip"
-                  role="tooltip"
-                  // Under the day's square: the grid's first row (month names) is 16px, every other track 18px, 4px apart.
-                  // In the right half it opens leftwards from the day's right edge, staying over the calendar.
-                  style={{
-                    top: `${20 + (row(shown.index) + 1) * 22 + 2}px`,
-                    ...(week(shown.index) * 2 < weeks
-                      ? { left: `${22 + week(shown.index) * 22}px` }
-                      : { right: `${(weeks - 1 - week(shown.index)) * 22}px` }),
-                  }}
-                >
-                  {describe(shown)}
-                </div>
-              )}
+            <div className="usage-heat-scroll" ref={scroller}>
+              <div
+                className={`usage-heat${year ? ' year' : ''}`}
+                tabIndex={0}
+                role="group"
+                aria-label="每天的用量，方向键逐日查看"
+                onKeyDown={key}
+                onBlur={() => setActive(null)}
+                onMouseLeave={() => setActive(null)}
+              >
+                {[...months].map(([column, text]) => (
+                  <span
+                    key={`m${column}`}
+                    className="usage-heat-month"
+                    aria-hidden="true"
+                    style={{ gridColumn: column + 2, gridRow: 1 }}
+                  >
+                    {text}
+                  </span>
+                ))}
+                {[0, 2, 4].map((line) => (
+                  <span
+                    key={`d${line}`}
+                    className="usage-heat-day"
+                    aria-hidden="true"
+                    style={{ gridColumn: 1, gridRow: line + 2 }}
+                  >
+                    {weekdays[line]}
+                  </span>
+                ))}
+                {days.map((day, index) => (
+                  <i
+                    key={day.index}
+                    role="img"
+                    aria-label={describe(day)}
+                    data-level={loading ? 0 : level(day)}
+                    className={[
+                      !loading && unrecorded(day) && !day.bucket?.requests ? 'none' : '',
+                      active === index ? 'active' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    style={{ gridColumn: week(day.index) + 2, gridRow: row(day.index) + 2 }}
+                    onMouseEnter={() => setActive(index)}
+                  />
+                ))}
+              </div>
             </div>
-            <span className="usage-sr" aria-live="polite">
-              {shown ? describe(shown) : ''}
-            </span>
+            {/* The day under the pointer or the keys, in a line of its own: a tip would be cut off by the scroll. */}
+            <p className="usage-heat-detail" aria-live="polite">
+              {shown ? describe(shown) : '悬停或用方向键查看每天的用量'}
+            </p>
             <div className="usage-heat-legend" aria-hidden="true">
               少
               {[0, 1, 2, 3, 4].map((step) => (
@@ -492,7 +490,7 @@ export function ActivityCard({
             </div>
           </div>
           <div className="usage-facts">
-            {fact(`近 ${count} 天等价费用`, dollars(sums.costUsd))}
+            {fact(`${span}等价费用`, dollars(sums.costUsd))}
             {fact('请求数', sums.requests.toLocaleString('zh-CN'))}
             {fact('Token', tokens(sums.tokens))}
             {fact('活跃', `${used.filter(Boolean).length} 天`, `共 ${count} 天`)}

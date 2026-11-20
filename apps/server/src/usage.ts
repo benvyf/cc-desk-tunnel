@@ -25,6 +25,7 @@ const lengthOf = (name: string) =>
 // Two readings taken at the same moment can differ by a point, and the later one may be the lower; a reset
 // takes away far more than that.
 const resetDrop = 5;
+const hourMs = 3600_000;
 const totals = `COUNT(*) AS requests, COALESCE(SUM(input_tokens), 0) AS inputTokens, COALESCE(SUM(output_tokens), 0) AS outputTokens,
   COALESCE(SUM(cache_read_tokens), 0) AS cacheReadTokens, COALESCE(SUM(cache_creation_tokens), 0) AS cacheCreationTokens,
   COALESCE(SUM(cost_usd), 0) AS costUsd`;
@@ -33,6 +34,27 @@ const totals = `COUNT(*) AS requests, COALESCE(SUM(input_tokens), 0) AS inputTok
 const streaming = `AVG(ttft_ms) AS ttftMs,
   SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN output_tokens END) AS streamedTokens,
   SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms END) AS streamedMs`;
+// The same figures over the merged source below, whose rows are single requests or whole hours.
+const summed = `COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(input_tokens), 0) AS inputTokens,
+  COALESCE(SUM(output_tokens), 0) AS outputTokens, COALESCE(SUM(cache_read_tokens), 0) AS cacheReadTokens,
+  COALESCE(SUM(cache_creation_tokens), 0) AS cacheCreationTokens, COALESCE(SUM(cost_usd), 0) AS costUsd`;
+const summedStreaming = `SUM(ttft_sum) * 1.0 / NULLIF(SUM(ttft_count), 0) AS ttftMs,
+  SUM(streamed_tokens) AS streamedTokens, SUM(streamed_ms) AS streamedMs`;
+// One request as a row of the hourly table.
+const asHour = `1 AS requests, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
+  duration_ms, COALESCE(ttft_ms * 1.0, 0.0) AS ttft_sum, ttft_ms IS NOT NULL AS ttft_count,
+  CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN output_tokens ELSE 0 END AS streamed_tokens,
+  CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms ELSE 0 END AS streamed_ms`;
+const hourColumns = `requests, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd,
+  duration_ms, ttft_sum, ttft_count, streamed_tokens, streamed_ms`;
+// Adds requests to the hours they fall in.
+const accumulate = `ON CONFLICT(hour, model) DO UPDATE SET requests = requests + excluded.requests,
+  input_tokens = input_tokens + excluded.input_tokens, output_tokens = output_tokens + excluded.output_tokens,
+  cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+  cache_creation_tokens = cache_creation_tokens + excluded.cache_creation_tokens,
+  cost_usd = cost_usd + excluded.cost_usd, duration_ms = duration_ms + excluded.duration_ms,
+  ttft_sum = ttft_sum + excluded.ttft_sum, ttft_count = ttft_count + excluded.ttft_count,
+  streamed_tokens = streamed_tokens + excluded.streamed_tokens, streamed_ms = streamed_ms + excluded.streamed_ms`;
 const perSecond = (tokens: number | null, ms: number | null) =>
   tokens && ms ? tokens / (ms / 1000) : null;
 
@@ -68,6 +90,17 @@ export class UsageLog {
         name TEXT PRIMARY KEY, started_at INTEGER NOT NULL, resets_at INTEGER, utilization REAL, observed_at INTEGER NOT NULL
       );
       CREATE TABLE IF NOT EXISTS migrations (name TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS usage_state (name TEXT PRIMARY KEY, value INTEGER NOT NULL);
+      -- Every request summed by UTC hour and model, kept for good: the requests themselves go after the retention
+      -- days, their sums stay until someone clears them on purpose.
+      CREATE TABLE IF NOT EXISTS usage_hours (
+        hour INTEGER NOT NULL, model TEXT NOT NULL,
+        requests INTEGER NOT NULL, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL,
+        cache_read_tokens INTEGER NOT NULL, cache_creation_tokens INTEGER NOT NULL, cost_usd REAL NOT NULL,
+        duration_ms INTEGER NOT NULL, ttft_sum REAL NOT NULL, ttft_count INTEGER NOT NULL,
+        streamed_tokens INTEGER NOT NULL, streamed_ms INTEGER NOT NULL,
+        PRIMARY KEY (hour, model)
+      ) WITHOUT ROWID;
     `);
     // The prompt a request belongs to, which is how one turn's requests, subagents included, are told apart.
     const columns = database.prepare('PRAGMA table_info(api_requests)').all() as { name: string }[];
@@ -76,6 +109,7 @@ export class UsageLog {
     database.exec('CREATE INDEX IF NOT EXISTS api_requests_prompt ON api_requests(prompt_id)');
     database.exec('CREATE INDEX IF NOT EXISTS api_requests_session ON api_requests(session_id)');
     this.restoreStarts();
+    this.fillHours();
     this.prune();
   }
   // Periods that a one-point dip in the reported utilization had cut short get back the start their reset time
@@ -164,39 +198,119 @@ export class UsageLog {
     }
     return resets;
   }
+  // Requests stored but not yet summed are summed: on the first start, all those stored before the sums existed;
+  // after an earlier version ran in between, those it stored. Requests are summed by id, up to the highest summed,
+  // which is kept; the sums are only ever added to, never rebuilt.
+  private fillHours() {
+    const state = this.database
+      .prepare("SELECT value FROM usage_state WHERE name = 'summed-through'")
+      .get() as { value: number } | undefined;
+    const last = (
+      this.database.prepare('SELECT MAX(id) AS id FROM api_requests').get() as { id: number | null }
+    ).id;
+    if (last === null || (state && state.value >= last)) return;
+    this.database.exec('BEGIN');
+    try {
+      this.database
+        .prepare(
+          `INSERT INTO usage_hours (hour, model, ${hourColumns})
+          SELECT (at / ${hourMs}) * ${hourMs} AS hour, model, ${[
+            'COUNT(*)',
+            'SUM(input_tokens)',
+            'SUM(output_tokens)',
+            'SUM(cache_read_tokens)',
+            'SUM(cache_creation_tokens)',
+            'SUM(cost_usd)',
+            'SUM(duration_ms)',
+            'COALESCE(SUM(ttft_ms * 1.0), 0.0)',
+            'COUNT(ttft_ms)',
+            'COALESCE(SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN output_tokens END), 0)',
+            'COALESCE(SUM(CASE WHEN ttft_ms IS NOT NULL AND duration_ms > ttft_ms THEN duration_ms - ttft_ms END), 0)',
+          ].join(', ')}
+          FROM api_requests WHERE id > ? GROUP BY hour, model
+          ${accumulate}`,
+        )
+        .run(state?.value ?? 0);
+      this.database
+        .prepare(
+          `INSERT INTO usage_state VALUES ('summed-through', ?)
+          ON CONFLICT(name) DO UPDATE SET value = excluded.value`,
+        )
+        .run(last);
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  // Before this time requests may have been pruned: it is the start of the first whole hour after the last one
+  // pruned. Figures before it come from the hourly sums, from it on from the requests.
+  private detailFrom() {
+    const row = this.database
+      .prepare("SELECT value FROM usage_state WHERE name = 'pruned-until'")
+      .get() as { value: number } | undefined;
+    return Math.ceil((row?.value ?? 0) / hourMs) * hourMs;
+  }
+  // Requests and hourly sums as one source with the hourly table's columns, each covering its own time.
+  private source(from: number, to: number, model?: string) {
+    const detail = this.detailFrom();
+    const byModel = model ? ' AND model = ?' : '';
+    return {
+      sql: `SELECT at, model, ${asHour} FROM api_requests
+          WHERE at >= ? AND at < ? AND at >= ?${byModel}
+        UNION ALL SELECT hour, model, ${hourColumns} FROM usage_hours
+          WHERE hour >= ? AND hour < ? AND hour < ?${byModel}`,
+      values: [
+        from,
+        to,
+        detail,
+        ...(model ? [model] : []),
+        from,
+        to,
+        detail,
+        ...(model ? [model] : []),
+      ] as (string | number)[],
+    };
+  }
   // Accepts one OTLP/HTTP JSON log export and keeps only the model request records.
   ingest(body: unknown) {
     const insert = this.database.prepare(`INSERT OR IGNORE INTO api_requests
       (at, session_id, model, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, duration_ms, ttft_ms, source, request_id, prompt_id)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const add = this.database.prepare(`INSERT INTO usage_hours (hour, model, ${hourColumns})
+      SELECT (at / ${hourMs}) * ${hourMs}, model, ${asHour} FROM api_requests WHERE rowid = ?
+      ${accumulate}`);
+    const through = this.database.prepare(`INSERT INTO usage_state VALUES ('summed-through', ?)
+      ON CONFLICT(name) DO UPDATE SET value = MAX(value, excluded.value)`);
     let stored = 0;
-    for (const resource of asArray((body as { resourceLogs?: unknown })?.resourceLogs))
-      for (const scope of asArray(resource?.scopeLogs))
-        for (const record of asArray(scope?.logRecords)) {
-          const fields = new Map<string, string | number>();
-          for (const attribute of asArray(record?.attributes)) {
-            const value =
-              attribute?.value?.stringValue ??
-              attribute?.value?.intValue ??
-              attribute?.value?.doubleValue;
-            if (typeof attribute?.key === 'string' && value !== undefined)
-              fields.set(attribute.key, value);
-          }
-          if (fields.get('event.name') !== 'api_request') continue;
-          const number = (name: string) => {
-            const value = Number(fields.get(name));
-            return Number.isFinite(value) && value >= 0 ? value : 0;
-          };
-          const text = (name: string) => {
-            const value = fields.get(name);
-            return typeof value === 'string' && value ? value.slice(0, 200) : null;
-          };
-          const at =
-            Date.parse(String(fields.get('event.timestamp'))) ||
-            Math.floor(Number(record.timeUnixNano) / 1e6) ||
-            Date.now();
-          stored += Number(
-            insert.run(
+    this.database.exec('BEGIN');
+    try {
+      for (const resource of asArray((body as { resourceLogs?: unknown })?.resourceLogs))
+        for (const scope of asArray(resource?.scopeLogs))
+          for (const record of asArray(scope?.logRecords)) {
+            const fields = new Map<string, string | number>();
+            for (const attribute of asArray(record?.attributes)) {
+              const value =
+                attribute?.value?.stringValue ??
+                attribute?.value?.intValue ??
+                attribute?.value?.doubleValue;
+              if (typeof attribute?.key === 'string' && value !== undefined)
+                fields.set(attribute.key, value);
+            }
+            if (fields.get('event.name') !== 'api_request') continue;
+            const number = (name: string) => {
+              const value = Number(fields.get(name));
+              return Number.isFinite(value) && value >= 0 ? value : 0;
+            };
+            const text = (name: string) => {
+              const value = fields.get(name);
+              return typeof value === 'string' && value ? value.slice(0, 200) : null;
+            };
+            const at =
+              Date.parse(String(fields.get('event.timestamp'))) ||
+              Math.floor(Number(record.timeUnixNano) / 1e6) ||
+              Date.now();
+            const result = insert.run(
               at,
               text('session.id'),
               text('model') ?? 'unknown',
@@ -210,9 +324,19 @@ export class UsageLog {
               text('query_source'),
               text('request_id'),
               text('prompt.id'),
-            ).changes,
-          );
-        }
+            );
+            // A request sent again is stored once, and summed once.
+            if (result.changes) {
+              stored++;
+              add.run(result.lastInsertRowid);
+              through.run(result.lastInsertRowid);
+            }
+          }
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
     return stored;
   }
   // Statistics follow the official quota periods. A period ends when the reported reset time moves or the utilization
@@ -276,12 +400,11 @@ export class UsageLog {
       resets_at: number | null;
       utilization: number | null;
     }[];
-    const first = this.database.prepare('SELECT MIN(at) AS at FROM api_requests').get() as {
-      at: number | null;
-    };
+    const first = this.firstRecord();
     return {
       retentionDays: this.retentionDays,
-      firstRecordAt: first.at ? new Date(first.at).toISOString() : null,
+      keepsHistory: true,
+      firstRecordAt: first ? new Date(first).toISOString() : null,
       windows: windows.map((window) => {
         // Past the reset time nothing has been reported yet for the next period; only later requests can belong to it.
         const expired = window.resets_at !== null && window.resets_at <= now;
@@ -300,6 +423,20 @@ export class UsageLog {
         };
       }),
     };
+  }
+  // The first request known, stored or summed.
+  private firstRecord() {
+    const stored = (
+      this.database.prepare('SELECT MIN(at) AS at FROM api_requests').get() as { at: number | null }
+    ).at;
+    const summed = (
+      this.database.prepare('SELECT MIN(hour) AS at FROM usage_hours').get() as {
+        at: number | null;
+      }
+    ).at;
+    // The request itself where it is still stored, else the hour it was summed in.
+    if (stored === null) return summed;
+    return summed === null || summed >= Math.floor(stored / hourMs) * hourMs ? stored : summed;
   }
   query(query: UsageQuery, title: (sessionId: string) => string | null): Page {
     const conditions = ['at >= ?', 'at < ?'];
@@ -321,33 +458,37 @@ export class UsageLog {
         query.limit + 1,
         query.offset ?? 0,
       ) as Record<string, number | string | null>[];
+    // The figures cover the requests still stored and, before them, the hourly sums.
+    const [from, to] = range as number[];
+    const chosen = this.source(from, to, query.model);
+    const every = this.source(from, to);
     const total = this.database
       .prepare(
-        `SELECT ${totals}, COALESCE(SUM(duration_ms), 0) AS durationMs, ${streaming}
-      FROM api_requests WHERE ${filtered}`,
+        `SELECT ${summed}, COALESCE(SUM(duration_ms), 0) AS durationMs, ${summedStreaming}
+      FROM (${chosen.sql})`,
       )
-      .get(...values) as Record<string, number | null>;
+      .get(...chosen.values) as Record<string, number | null>;
     const bucket = query.bucketMinutes * 60_000,
       offset = query.offsetMinutes * 60_000;
     const series = this.database
       .prepare(
-        `SELECT CAST((at + ?) / ? AS INTEGER) AS bucket, COUNT(*) AS requests, SUM(cost_usd) AS costUsd,
+        `SELECT CAST((at + ?) / ? AS INTEGER) AS bucket, SUM(requests) AS requests, SUM(cost_usd) AS costUsd,
         SUM(input_tokens + output_tokens + cache_read_tokens + cache_creation_tokens) AS tokens,
         SUM(input_tokens) AS inputTokens, SUM(output_tokens) AS outputTokens,
         SUM(cache_read_tokens) AS cacheReadTokens, SUM(cache_creation_tokens) AS cacheCreationTokens
-      FROM api_requests WHERE ${filtered} GROUP BY bucket ORDER BY bucket`,
+      FROM (${chosen.sql}) GROUP BY bucket ORDER BY bucket`,
       )
-      .all(offset, bucket, ...values) as ({
+      .all(offset, bucket, ...chosen.values) as ({
       bucket: number;
       tokens: number;
     } & Page['series'][number])[];
     // Like the model list, the breakdown covers every model of the range, whichever one is being looked at.
     const byModel = this.database
       .prepare(
-        `SELECT model, ${totals} FROM api_requests WHERE ${conditions.join(' AND ')}
+        `SELECT model, ${summed} FROM (${every.sql})
         GROUP BY model ORDER BY costUsd DESC, requests DESC, model`,
       )
-      .all(...range) as Page['byModel'];
+      .all(...every.values) as Page['byModel'];
     const { streamedTokens, streamedMs, ...sums } = total;
     return {
       rows: rows.slice(0, query.limit).map((row) => ({
@@ -437,15 +578,40 @@ export class UsageLog {
       firstRecordAt: first.at ? new Date(first.at).toISOString() : null,
     };
   }
+  // Requests go after the retention days, or the oldest stored beyond the most kept; their hourly sums stay. The
+  // time up to which requests may be missing is kept, so that figures before it are read from the sums.
   prune(now = Date.now()) {
-    this.database
-      .prepare('DELETE FROM api_requests WHERE at < ?')
-      .run(now - this.retentionDays * 24 * 3600_000);
-    this.database
+    const cutoff = now - this.retentionDays * 24 * 3600_000;
+    const capped = this.database
       .prepare(
-        'DELETE FROM api_requests WHERE id <= (SELECT id FROM api_requests ORDER BY id DESC LIMIT 1 OFFSET ?)',
+        `SELECT MAX(at) AS at FROM api_requests
+        WHERE id <= (SELECT id FROM api_requests ORDER BY id DESC LIMIT 1 OFFSET ?)`,
       )
-      .run(this.maxRows);
+      .get(this.maxRows) as { at: number | null };
+    this.database.exec('BEGIN');
+    try {
+      // The newest request always stays, so that ids are never handed out again: they tell which requests are summed.
+      this.database
+        .prepare(
+          'DELETE FROM api_requests WHERE at < ? AND id < (SELECT MAX(id) FROM api_requests)',
+        )
+        .run(cutoff);
+      this.database
+        .prepare(
+          'DELETE FROM api_requests WHERE id <= (SELECT id FROM api_requests ORDER BY id DESC LIMIT 1 OFFSET ?)',
+        )
+        .run(this.maxRows);
+      this.database
+        .prepare(
+          `INSERT INTO usage_state VALUES ('pruned-until', ?)
+          ON CONFLICT(name) DO UPDATE SET value = MAX(value, excluded.value)`,
+        )
+        .run(Math.max(cutoff, capped.at === null ? 0 : capped.at + 1));
+      this.database.exec('COMMIT');
+    } catch (error) {
+      this.database.exec('ROLLBACK');
+      throw error;
+    }
   }
 }
 function asArray(value: unknown): any[] {

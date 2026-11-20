@@ -915,6 +915,10 @@ test('usage log: totals, stacked chart by model, model table and the days kept, 
   // Today, in the calendar of the days kept.
   const activity = page.locator('.usage-activity');
   await expect(activity).toContainText('活跃1 天');
+  // The service keeps its hourly sums for good, so the calendar spans a year.
+  await expect(activity).toContainText('近一年 · 每天的用量');
+  await expect(activity.locator('.usage-heat i')).toHaveCount(365);
+  await expect(page.locator('.account-updated')).toContainText('按小时的用量统计长期保存');
   await expect(activity.locator('.usage-heat i[aria-label*="3 次请求"]')).toHaveCount(1);
   await noOverflowX(page);
   // Tall enough to show the whole page in one picture.
@@ -948,6 +952,9 @@ test('usage log: totals, stacked chart by model, model table and the days kept, 
   await page.getByRole('button', { name: '刷新调用日志', exact: true }).click();
   await expect(tiles).toContainText('请求数123');
   await expect(activity.locator('.usage-heat i[aria-label*="123 次请求"]')).toHaveCount(1);
+  await activity.locator('.usage-heat').focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(activity.locator('.usage-heat-detail')).toContainText('123 次请求');
   await page.setViewportSize({ width: 390, height: 900 });
   await noOverflowX(page);
   await page.screenshot({ path: resolve(screenshots, 'usage-narrow.png'), fullPage: true });

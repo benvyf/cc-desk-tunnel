@@ -159,7 +159,11 @@ const usageTotals = {
   costUsd: z.number().nonnegative(),
 };
 export const usageSummarySchema = z.object({
+  // How long single requests are kept.
   retentionDays: z.number().int().positive(),
+  // Whether hourly sums of every request are kept beyond that, until cleared on purpose (servers before Build 32
+  // keep nothing older than the retention days).
+  keepsHistory: z.boolean().optional(),
   firstRecordAt: timestamp.nullable(),
   // One entry per official quota period; totals cover requests since that period started.
   windows: z.array(

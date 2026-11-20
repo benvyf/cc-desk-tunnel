@@ -116,7 +116,8 @@ export default function UsagePanel({
   const offsetMs = offsetMinutes * 60_000;
   // Local days counted since 1970-01-01, the way the service buckets a day.
   const dayIndex = (time: number) => Math.floor((time + offsetMs) / dayMs);
-  const retention = summary?.retentionDays ?? 35;
+  // The calendar shows a year where the service keeps its sums for good, else the days it keeps requests.
+  const retention = summary?.keepsHistory ? 365 : (summary?.retentionDays ?? 35);
   // Only the chosen period's start, not the whole summary, which the account page reads again on its own.
   const windowStart = summary?.windows.find((item) => item.name === preset)?.startedAt;
   const range = useMemo((): Range => {
@@ -585,7 +586,9 @@ export default function UsagePanel({
         />
         {summary && (
           <p className="account-updated">
-            用量数据保留 {summary.retentionDays} 天
+            {summary.keepsHistory
+              ? `单次调用明细保留 ${summary.retentionDays} 天，按小时的用量统计长期保存`
+              : `用量数据保留 ${summary.retentionDays} 天`}
             {summary.firstRecordAt
               ? `，最早一条：${new Date(summary.firstRecordAt).toLocaleString('zh-CN')}`
               : ''}
