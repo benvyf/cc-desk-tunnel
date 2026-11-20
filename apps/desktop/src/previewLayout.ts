@@ -9,6 +9,9 @@ export type PreviewTab = {
   root?: string;
   restricted?: boolean;
   wrap?: boolean;
+  // A temporary tab (VS Code's preview mode): what a single click or a followed link opens. The next such opening
+  // in its pane takes its place instead of adding a tab; double-clicking, moving it or "固定标签" keeps it.
+  temporary?: boolean;
   // One explicit user navigation; filtered out when a layout is restored.
   // `find`: text to look for in the file, whose line is gone to instead; nowhere, where it is not found.
   navigation?: { id: string; line: number; column?: number; find?: FindTarget[] };
@@ -55,22 +58,66 @@ export function normalize(board: PreviewBoard): PreviewBoard {
     focused: panes.some((p) => p.id === board.focused) ? board.focused : panes[0].id,
   };
 }
-export function openTab(board: PreviewBoard, tab: PreviewTab): PreviewBoard {
-  const existing = board.tabs.find(
-    (t) =>
-      t.kind === tab.kind &&
-      (t.kind === 'file' ? pathKey(t.target) === pathKey(tab.target) : t.target === tab.target),
+export const previewTabLimit = 64;
+const sameTab = (a: PreviewTab, b: Pick<PreviewTab, 'kind' | 'target'>) =>
+  a.kind === b.kind &&
+  (a.kind === 'file' ? pathKey(a.target) === pathKey(b.target) : a.target === b.target);
+// The tab an opening would take the place of: the temporary tab of the pane it opens in, or, with no room left
+// for another tab, any temporary tab.
+function replaceable(board: PreviewBoard, tab: PreviewTab) {
+  const target = board.panes.find((p) => p.id === board.focused) ?? board.panes[0];
+  return (
+    (tab.temporary
+      ? board.tabs.find((t) => t.temporary && target.tabs.includes(t.id))
+      : undefined) ??
+    (board.tabs.length >= previewTabLimit ? board.tabs.find((t) => t.temporary) : undefined)
   );
+}
+// Whether opening this tab finds no room: every one of the 64 tabs is kept, and it is not one of them.
+export function previewTabsFull(board: PreviewBoard, tab: Pick<PreviewTab, 'kind' | 'target'>) {
+  return (
+    board.tabs.length >= previewTabLimit && !board.tabs.some((t) => t.temporary || sameTab(t, tab))
+  );
+}
+const pinned = (tab: PreviewTab): PreviewTab => {
+  if (!tab.temporary) return tab;
+  const { temporary: _, ...rest } = tab;
+  return rest;
+};
+export function pinTab(board: PreviewBoard, id: string): PreviewBoard {
+  if (!board.tabs.some((t) => t.id === id && t.temporary)) return board;
+  return { ...board, tabs: board.tabs.map((t) => (t.id === id ? pinned(t) : t)) };
+}
+export function openTab(board: PreviewBoard, tab: PreviewTab): PreviewBoard {
+  const existing = board.tabs.find((t) => sameTab(t, tab));
   if (existing) {
     const pane = board.panes.find((p) => p.tabs.includes(existing.id))!;
     return {
-      ...board,
+      // Opening a temporary tab's file to keep it (the file picker, a double-click) keeps the tab.
+      ...(tab.temporary ? board : pinTab(board, existing.id)),
       focused: pane.id,
       expanded: true,
       panes: board.panes.map((p) => (p === pane ? { ...p, active: existing.id } : p)),
     };
   }
-  if (board.tabs.length >= 64) return board;
+  const replaced = replaceable(board, tab);
+  if (replaced) {
+    // The new tab takes the old one's place under a new id, so nothing of the old file's view (its reading state,
+    // its native view) carries over; preview.ts releases it as it does a closed tab's.
+    const pane = board.panes.find((p) => p.tabs.includes(replaced.id))!;
+    return {
+      ...board,
+      focused: pane.id,
+      expanded: true,
+      tabs: board.tabs.map((t) => (t === replaced ? tab : t)),
+      panes: board.panes.map((p) =>
+        p === pane
+          ? { ...p, tabs: p.tabs.map((id) => (id === replaced.id ? tab.id : id)), active: tab.id }
+          : p,
+      ),
+    };
+  }
+  if (board.tabs.length >= previewTabLimit) return board;
   const target = board.panes.find((p) => p.id === board.focused) ?? board.panes[0];
   return {
     ...board,
@@ -101,8 +148,10 @@ export function moveTab(
 ): PreviewBoard {
   if (!board.tabs.some((t) => t.id === id) || !board.panes.some((p) => p.id === paneId))
     return board;
+  // A temporary tab moved to another pane (a drop there, a split, a float) is one the user keeps.
+  const moved = !board.panes.find((p) => p.id === paneId)!.tabs.includes(id);
   return normalize({
-    ...board,
+    ...(moved ? pinTab(board, id) : board),
     focused: paneId,
     panes: board.panes.map((p) => {
       const tabs = p.tabs.filter((t) => t !== id);
@@ -153,8 +202,11 @@ export function dockPane(board: PreviewBoard, paneId: string): PreviewBoard {
       ...board,
       panes: board.panes.map((p) => (p === source ? { ...p, floating: undefined } : p)),
     };
+  // The docked pane takes the floating one's tabs as kept tabs, so it never has two temporary tabs.
+  const moved = new Set(source.tabs);
   return {
     ...board,
+    tabs: board.tabs.map((t) => (moved.has(t.id) ? pinned(t) : t)),
     focused: target.id,
     expanded: true,
     panes: board.panes
@@ -165,14 +217,30 @@ export function dockPane(board: PreviewBoard, paneId: string): PreviewBoard {
   };
 }
 export function closeTab(board: PreviewBoard, id: string): PreviewBoard {
+  return closeTabs(board, [id]);
+}
+export function closeTabs(board: PreviewBoard, ids: readonly string[]): PreviewBoard {
+  const closing = new Set(ids);
+  if (!board.tabs.some((t) => closing.has(t.id))) return board;
   return normalize({
     ...board,
-    tabs: board.tabs.filter((t) => t.id !== id),
+    tabs: board.tabs.filter((t) => !closing.has(t.id)),
     panes: board.panes.map((p) => {
-      const tabs = p.tabs.filter((t) => t !== id);
-      return { ...p, tabs, active: p.active === id ? (tabs.at(-1) ?? '') : p.active };
+      const tabs = p.tabs.filter((t) => !closing.has(t));
+      return { ...p, tabs, active: closing.has(p.active) ? (tabs.at(-1) ?? '') : p.active };
     }),
   });
+}
+// The tabs of a tab's pane that "关闭其他标签" / "关闭右侧标签" / "关闭全部" close.
+export function paneTabsToClose(
+  board: PreviewBoard,
+  id: string,
+  which: 'others' | 'right' | 'all',
+): string[] {
+  const tabs = board.panes.find((p) => p.tabs.includes(id))?.tabs ?? [];
+  if (which === 'all') return [...tabs];
+  if (which === 'others') return tabs.filter((t) => t !== id);
+  return tabs.slice(tabs.indexOf(id) + 1);
 }
 const text = (value: unknown): value is string =>
   typeof value === 'string' && value.length > 0 && value.length <= 4096 && !value.includes('\0');
@@ -212,9 +280,16 @@ export function restoreLayout(serialized: string | null): {
             ...(local(t.root) ? { root: t.root } : {}),
             restricted: t.restricted === true,
             wrap: t.wrap === true,
+            // Layouts saved before temporary tabs carry no flag: their tabs are kept ones.
+            ...(t.temporary === true ? { temporary: true } : {}),
           });
         if (t.kind === 'web' && text(t.target) && previewWebsite(t.target))
-          tabs.push({ id: t.id, kind: 'web', target: previewWebsite(t.target)! });
+          tabs.push({
+            id: t.id,
+            kind: 'web',
+            target: previewWebsite(t.target)!,
+            ...(t.temporary === true ? { temporary: true } : {}),
+          });
         if (
           t.kind === 'chat' &&
           text(t.target) &&

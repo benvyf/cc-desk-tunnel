@@ -181,3 +181,191 @@ test('restored HTML behind a text alias still needs explicit activation', async 
   await page.getByRole('button', { name: '加载此预览', exact: true }).click();
   await expect(page.locator('.preview-native')).toHaveCount(1);
 });
+
+// VS Code's preview mode: a single click opens the file in a temporary tab, which the next single click takes over.
+test('a single click opens a temporary tab that the next one replaces; a double-click keeps it', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const tree = page.getByRole('tree', { name: '工作区文件' });
+  const tabs = page.getByRole('tab');
+  await tree.getByRole('treeitem', { name: '说明.md', exact: true }).click();
+  await expect(tabs).toHaveText(['说明.md']);
+  const first = page.getByRole('tab', { name: '说明.md', exact: true });
+  await expect(first).toHaveAttribute('aria-description', '临时标签，双击固定');
+  await expect(first.locator('span')).toHaveCSS('font-style', 'italic');
+  await tree.getByRole('treeitem', { name: 'src', exact: true }).click();
+  await tree.getByRole('treeitem', { name: 'index.ts', exact: true }).click();
+  await expect(tabs).toHaveText(['index.ts']);
+  // The replaced tab's view is released as a closed one's is.
+  await expect
+    .poll(() => page.evaluate(() => new Set((window as any).fixtureReleased ?? []).size))
+    .toBe(1);
+  await tree.getByRole('treeitem', { name: 'index.ts', exact: true }).dblclick();
+  const kept = page.getByRole('tab', { name: 'index.ts', exact: true });
+  await expect(kept).not.toHaveAttribute('aria-description');
+  await expect(kept.locator('span')).toHaveCSS('font-style', 'normal');
+  await tree.getByRole('treeitem', { name: '说明.md', exact: true }).click();
+  await expect(tabs).toHaveText(['index.ts', '说明.md']);
+  await expect(page.getByRole('tab', { name: '说明.md', exact: true })).toHaveAttribute(
+    'aria-description',
+    '临时标签，双击固定',
+  );
+  // A double-click on the tab keeps it too; the next click then opens a new temporary tab.
+  await page.getByRole('tab', { name: '说明.md', exact: true }).dblclick();
+  await expect(page.getByRole('tab', { name: '说明.md', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  await expect(tabs).toHaveText(['index.ts', '说明.md', '长代码.ts']);
+  await expect(page.getByRole('tab', { name: '长代码.ts', exact: true })).toHaveAttribute(
+    'aria-description',
+    '临时标签，双击固定',
+  );
+  // Following another link to the temporary tab's file goes to it there.
+  await page.getByRole('button', { name: '定位代码第20行', exact: true }).click();
+  await expect(tabs).toHaveText(['index.ts', '说明.md', '长代码.ts']);
+  // Moving the temporary tab to another pane keeps it.
+  await page.getByRole('button', { name: '分栏预览', exact: true }).click();
+  await expect(page.locator('.preview-pane')).toHaveCount(2);
+  await expect(page.getByRole('tab', { name: '长代码.ts', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+});
+
+test('a tab’s menu keeps or closes tabs, and the middle button closes one', async ({ page }) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  for (const name of ['打开文档', '图片状态', '长文本', 'GBK 文本'])
+    await page.getByRole('button', { name, exact: true }).click();
+  const tabs = page.getByRole('tab');
+  await expect(tabs).toHaveText(['说明.md', '趋势图.png', '长阅读.txt', '旧编码.txt']);
+  await page.getByRole('tab', { name: '趋势图.png', exact: true }).click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: '标签 趋势图.png' });
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    '关闭',
+    '关闭其他标签',
+    '关闭右侧标签',
+    '关闭全部',
+  ]);
+  await menu.getByRole('menuitem', { name: '关闭右侧标签' }).click();
+  await expect(tabs).toHaveText(['说明.md', '趋势图.png']);
+
+  // From the keyboard: Shift+F10 on the selected tab; the tablist's arrows still move between tabs.
+  await page.getByRole('button', { name: '长文本', exact: true }).click();
+  await page.getByRole('tab', { name: '长阅读.txt', exact: true }).focus();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page.getByRole('tab', { name: '趋势图.png', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+F10');
+  await expect(page.getByRole('menu', { name: '标签 趋势图.png' })).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('menu')).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: '趋势图.png', exact: true })).toBeFocused();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('menuitem', { name: '关闭其他标签' }).click();
+  await expect(tabs).toHaveText(['趋势图.png']);
+  await expect(page.getByRole('tab', { name: '趋势图.png', exact: true })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+
+  // A temporary tab's menu offers to keep it.
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  await expect(tabs).toHaveText(['趋势图.png', '长代码.ts']);
+  await page.getByRole('tab', { name: '长代码.ts', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '固定标签' }).click();
+  await expect(page.getByRole('tab', { name: '长代码.ts', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+  await page.getByRole('tab', { name: '长代码.ts', exact: true }).click({ button: 'right' });
+  await expect(page.getByRole('menuitem', { name: '固定标签' })).toHaveCount(0);
+  await page.keyboard.press('Escape');
+
+  await page.getByRole('tab', { name: '趋势图.png', exact: true }).click({ button: 'middle' });
+  await expect(tabs).toHaveText(['长代码.ts']);
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  await page.getByRole('tab', { name: '说明.md', exact: true }).click({ button: 'right' });
+  await page.getByRole('menuitem', { name: '关闭全部' }).click();
+  await expect(tabs).toHaveCount(0);
+});
+
+test('a saved layout keeps temporary tabs, and one saved before them keeps every tab', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  await waitForStoredLayout(page);
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        Object.entries(localStorage).some(
+          ([key, value]) => key.startsWith('cc-preview-v1:') && value.includes('"temporary":true'),
+        ),
+      ),
+    )
+    .toBe(true);
+  await page.reload();
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '长代码.ts', exact: true })).toHaveAttribute(
+    'aria-description',
+    '临时标签，双击固定',
+  );
+  await expect(page.getByRole('tab', { name: '说明.md', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+
+  await page.goto('/test/fixtures/preview-sidebar.html?connection=old');
+  await page.evaluate(() =>
+    localStorage.setItem(
+      'cc-preview-v1:old:main:fixture',
+      JSON.stringify({
+        width: 440,
+        boards: {
+          session: {
+            tabs: [{ id: 'old', kind: 'file', target: 'C:\\工作\\网站预览\\趋势图.png' }],
+            panes: [{ id: 'primary', tabs: ['old'], active: 'old' }],
+            focused: 'primary',
+            expanded: true,
+            tree: false,
+          },
+        },
+      }),
+    ),
+  );
+  await page.reload();
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await expect(page.getByRole('tab', { name: '趋势图.png', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  await expect(page.getByRole('tab')).toHaveText(['趋势图.png', '长代码.ts']);
+});
+
+test('with all 64 tabs kept an opening says so; a temporary tab is taken over instead', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '填满标签', exact: true }).click();
+  const tabs = page.getByRole('tab');
+  await expect(tabs).toHaveCount(64);
+  const notice = page.getByRole('alert').filter({ hasText: '预览标签已满（64 个）' });
+  await expect(notice).toHaveCount(0);
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  await expect(notice).toHaveText('预览标签已满（64 个），请先关闭一些标签。');
+  await expect(tabs).toHaveCount(64);
+  await page.getByRole('tab', { name: '满 0.json', exact: true }).click({ button: 'middle' });
+  await expect(notice).toHaveCount(0);
+  await page.getByRole('link', { name: '长代码.ts:12', exact: true }).click();
+  await expect(tabs).toHaveCount(64);
+  await expect(page.getByRole('tab', { name: '长代码.ts', exact: true })).toBeVisible();
+  // Full, a kept opening takes the temporary tab's place rather than being refused.
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  await expect(tabs).toHaveCount(64);
+  await expect(page.getByRole('tab', { name: '长代码.ts', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('tab', { name: '说明.md', exact: true })).not.toHaveAttribute(
+    'aria-description',
+  );
+  await expect(notice).toHaveCount(0);
+});

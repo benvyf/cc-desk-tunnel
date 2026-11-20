@@ -40,7 +40,7 @@ function Directory({
   path: string;
   depth: number;
   active?: string;
-  open: (path: string) => void;
+  open: (path: string, temporary: boolean) => void;
   surface: PreviewSurface;
   locate: number;
   menu: OpenMenu;
@@ -142,9 +142,13 @@ function Directory({
               event.preventDefault();
               menu({ x: event.clientX, y: event.clientY }, entry);
             }}
+            // A click opens the file in the temporary tab, a double-click keeps it (preview.ts openFile).
+            onDoubleClick={() => {
+              if (entry.kind === 'file') open(entry.path, false);
+            }}
             onClick={() =>
               entry.kind === 'file'
-                ? open(entry.path)
+                ? open(entry.path, true)
                 : setExpanded((old) => {
                     const next = new Set(old);
                     if (next.has(entry.path)) next.delete(entry.path);
@@ -230,7 +234,8 @@ export default function PreviewTree({
 }: {
   root: string;
   active?: string;
-  open: (path: string) => void;
+  // `temporary`: a single click, which the next one replaces; a double-click opens a kept tab.
+  open: (path: string, temporary: boolean) => void;
   surface: PreviewSurface;
   // Puts a path in the message box as an attachment; absent where there is no box to take it.
   attach?: (path: string) => AttachResult;

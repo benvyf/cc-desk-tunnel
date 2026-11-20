@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 import { FolderOpen, GitBranch, Globe, ListTree, Maximize2, Minimize2, Plus, X } from './icons.tsx';
 import GitChanges from './GitChanges.tsx';
 import { Button, IconButton, Modal } from './ui.tsx';
-import { previewSpan, previewWebsite } from './preview.ts';
+import { previewSpan, previewTabLimit, previewWebsite } from './preview.ts';
 import type { PreviewSurface, PreviewWorkspace } from './preview.ts';
 import PreviewTree from './PreviewTree.tsx';
 import PreviewPaneView from './PreviewPane.tsx';
@@ -252,10 +252,18 @@ export default function PreviewSidebar({
             {!inRow && headerActions}
           </header>
         )}
-        {error && !website && (
+        {error && !website ? (
           <p role="alert" className="preview-error">
             {error}
           </p>
+        ) : (
+          // An opening refused because all 64 tabs are kept (preview.ts), until a tab is closed.
+          workspace.full &&
+          workspace.tabs.length >= previewTabLimit && (
+            <p role="alert" className="preview-error">
+              预览标签已满（{previewTabLimit} 个），请先关闭一些标签。
+            </p>
+          )
         )}
         <div className="preview-workarea">
           {showChanges && (
@@ -265,7 +273,9 @@ export default function PreviewSidebar({
               targetId={changes.targetId}
               busy={changes.busy}
               openFile={
-                filesAvailable && root ? (path) => workspace.openFile(path, root, true) : undefined
+                filesAvailable && root
+                  ? (path) => workspace.openFile(path, root, true, undefined, true)
+                  : undefined
               }
             />
           )}
@@ -273,7 +283,7 @@ export default function PreviewSidebar({
             <PreviewTree
               root={root}
               active={active?.target}
-              open={(path) => workspace.openFile(path, root, true)}
+              open={(path, temporary) => workspace.openFile(path, root, true, undefined, temporary)}
               surface={surface}
               attach={attach}
             />

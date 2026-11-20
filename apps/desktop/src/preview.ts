@@ -4,6 +4,10 @@ import {
   emptyBoard,
   openTab,
   closeTab,
+  closeTabs,
+  paneTabsToClose,
+  pinTab,
+  previewTabsFull,
   moveTab,
   splitPane,
   floatTab,
@@ -20,7 +24,7 @@ import type { PreviewTab, PreviewBoard, FloatRect } from './previewLayout.ts';
 import { createPreviewPersistence } from './previewPersistence.ts';
 import type { PreviewReading } from './previewViewState.ts';
 export type { PreviewTab, PreviewPane, FloatRect } from './previewLayout.ts';
-export { previewSpan, previewTreeWidth, previewWebsite } from './previewLayout.ts';
+export { previewSpan, previewTabLimit, previewTreeWidth, previewWebsite } from './previewLayout.ts';
 
 export type PreviewSurface = 'main' | 'terminal' | 'inline-terminal';
 export type PreviewBounds = { x: number; y: number; width: number; height: number };
@@ -101,6 +105,9 @@ export function usePreviewWorkspace(
   const current = useRef(boards);
   current.current = boards;
   const board = session ? (boards[session] ?? emptyBoard()) : emptyBoard();
+  // Whether an opening was refused for want of room (every one of the 64 tabs kept) since a tab last closed; the
+  // sidebar says so.
+  const [full, setFull] = useState(false);
   const release = useCallback(
     (tab: PreviewTab) => {
       if (tab.kind === 'chat') return;
@@ -108,6 +115,25 @@ export function usePreviewWorkspace(
     },
     [surface],
   );
+  // A tab that leaves a session's board, closed or taken over by the next temporary opening, gives up its view
+  // state and its native view. Whole boards (a session gone, another workspace) are released where they go.
+  const shown = useRef(state);
+  useLayoutEffect(() => {
+    const previous = shown.current;
+    shown.current = state;
+    if (previous.persistence !== state.persistence || previous.boards === state.boards) return;
+    for (const [id, before] of Object.entries(previous.boards)) {
+      const after = state.boards[id];
+      if (!after || after === before || after.tabs === before.tabs) continue;
+      const kept = new Set(after.tabs.map((t) => t.id));
+      for (const tab of before.tabs)
+        if (!kept.has(tab.id)) {
+          tabViews.current.delete(JSON.stringify([id, tab.id]));
+          release(tab);
+          if (full) setFull(false);
+        }
+    }
+  }, [state, release, full]);
   useEffect(() => {
     // StrictMode replays setup after cleanup; a closed owner must never be reused.
     const restored =
@@ -186,7 +212,13 @@ export function usePreviewWorkspace(
     restricted?: boolean,
     title?: string,
     position?: { line?: number; column?: number; find?: FindTarget[] },
+    temporary = false,
   ) {
+    if (session && previewTabsFull(current.current[session] ?? emptyBoard(), { kind, target })) {
+      setFull(true);
+      change((b) => ({ ...b, expanded: true }));
+      return;
+    }
     const find = position?.find?.length ? position.find : undefined;
     // Text to look for goes to its line, or to the top where it is not found.
     const line = requestedLine(position?.line) ?? (find ? 1 : undefined);
@@ -207,7 +239,15 @@ export function usePreviewWorkspace(
       // Keep restoredTabs: switching from source to an executable page still needs confirmation.
     }
     change((b) => {
-      const next = openTab(b, { id: crypto.randomUUID(), kind, target, root, restricted, title });
+      const next = openTab(b, {
+        id: crypto.randomUUID(),
+        kind,
+        target,
+        root,
+        restricted,
+        title,
+        ...(temporary ? { temporary } : {}),
+      });
       return navigation ? navigateFile(next, target, navigation) : next;
     });
   }
@@ -227,6 +267,7 @@ export function usePreviewWorkspace(
     scope: JSON.stringify([storageKey, session]),
     active,
     width: state.width,
+    full,
     pending,
     restoredTabs,
     reading,
@@ -253,16 +294,19 @@ export function usePreviewWorkspace(
     activate,
     resize: (value: number | ((previous: number) => number)) =>
       setState((s) => ({ ...s, width: typeof value === 'function' ? value(s.width) : value })),
+    // `temporary`: a single click in the workspace tree or the Git changes, or a followed link, opens the file in
+    // the pane's temporary tab; anything else (the file picker, a double-click) opens a kept tab, or keeps it.
     openFile: (
       path: string,
       root?: string,
       restricted?: boolean,
       position?: { line?: number; column?: number },
-    ) => open('file', path, root, restricted, undefined, position),
+      temporary?: boolean,
+    ) => open('file', path, root, restricted, undefined, position, temporary),
     openChat: (id: string, title = '侧边对话') => open('chat', id, undefined, undefined, title),
-    openWebsite: (url: string) => {
+    openWebsite: (url: string, temporary?: boolean) => {
       const target = previewWebsite(url);
-      if (target) open('web', target);
+      if (target) open('web', target, undefined, undefined, undefined, undefined, temporary);
     },
     // Whether the link is shown here (true); one that is not (false) is opened as it would be without a preview
     // (followLink). A folder, or a file the preview cannot show, is declined: what it is comes back, for the
@@ -282,13 +326,14 @@ export function usePreviewWorkspace(
           if (info?.kind === 'file' && !previewable(link.path))
             return { kind: 'unpreviewable', runs: info.runs };
         }
-        open('file', link.path, root, restricted, undefined, { ...link, find });
+        // A followed link, from the conversation, a tool card or a document, opens a temporary tab.
+        open('file', link.path, root, restricted, undefined, { ...link, find }, true);
         return true;
       }
       if (link.kind === 'web') {
         const target = previewWebsite(link.url);
         if (target) {
-          open('web', target);
+          open('web', target, undefined, undefined, undefined, undefined, true);
           return true;
         }
       }
@@ -313,12 +358,20 @@ export function usePreviewWorkspace(
         ...b,
         panes: b.panes.map((p) => (p.id === id ? { ...p, floating: rect } : p)),
       })),
-    close: (id: string) => {
-      tabViews.current.delete(JSON.stringify([session, id]));
-      const tab = board.tabs.find((t) => t.id === id);
-      if (tab) release(tab);
-      change((b) => closeTab(b, id));
-    },
+    pin: (id: string) => change((b) => pinTab(b, id)),
+    // A closed tab's views are released as it leaves the board (above).
+    close: (id: string) => change((b) => closeTab(b, id)),
+    // The tab menu's "关闭其他标签" (which also shows the tab kept), "关闭右侧标签" and "关闭全部", in the tab's pane.
+    closeMany: (id: string, which: 'others' | 'right' | 'all') =>
+      change((b) => {
+        const next = closeTabs(b, paneTabsToClose(b, id, which));
+        return which === 'others'
+          ? {
+              ...next,
+              panes: next.panes.map((p) => (p.tabs.includes(id) ? { ...p, active: id } : p)),
+            }
+          : next;
+      }),
   };
 }
 export type PreviewWorkspace = ReturnType<typeof usePreviewWorkspace>;

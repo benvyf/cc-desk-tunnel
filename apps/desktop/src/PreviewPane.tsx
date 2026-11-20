@@ -1,7 +1,8 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Button, IconButton } from './ui.tsx';
+import { Button, IconButton, Menu } from './ui.tsx';
+import type { MenuPosition } from './ui.tsx';
 import {
   ArrowLeftRight,
   Columns2,
@@ -15,9 +16,24 @@ import {
 import PreviewContent from './PreviewContent.tsx';
 import { usePrefs } from './prefs.ts';
 import { fitFloat } from './previewLayout.ts';
-import type { PreviewPane, PreviewSurface, PreviewWorkspace, FloatRect } from './preview.ts';
+import type {
+  PreviewPane,
+  PreviewSurface,
+  PreviewTab,
+  PreviewWorkspace,
+  FloatRect,
+} from './preview.ts';
 const name = (target: string) => target.split(/[\\/]/).pop() || target;
 const mime = 'application/x-cc-preview-tab';
+const tabLabel = (tab: PreviewTab) =>
+  tab.kind === 'web'
+    ? tab.target.replace(/^https?:\/\//, '')
+    : tab.kind === 'chat'
+      ? (tab.title ?? '侧边对话')
+      : name(tab.target);
+// The keys that open a tab's menu from the keyboard, as a tree row's (PreviewTree.tsx).
+const menuKey = (event: { key: string; shiftKey: boolean }) =>
+  event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
 export default function PreviewPaneView({
   pane,
   workspace,
@@ -56,6 +72,8 @@ export default function PreviewPaneView({
   }, [viewport]);
   const content = useId(),
     handle = useRef<{ x: number; y: number; rect: FloatRect; resize: boolean } | null>(null);
+  // The menu of the tab it was opened on (a right-click, the menu key or Shift+F10).
+  const [menu, setMenu] = useState<(MenuPosition & { tab: string }) | null>(null);
   const active = workspace.tabs.find((t) => t.id === pane.active);
   const tabs = pane.tabs.map((id) => workspace.tabs.find((t) => t.id === id)!).filter(Boolean);
   const minHeight = active?.kind === 'chat' ? 30 * fontSizes.interface : 180;
@@ -66,6 +84,13 @@ export default function PreviewPaneView({
         size.height,
       )
     : undefined;
+  // Closing tabs moves the focus on to what the pane shows next, as the tab's own close button does.
+  const closing = (run: () => void) => {
+    run();
+    viewport.requestAnimationFrame(() => focus(pane.id));
+  };
+  const menuTab = menu && tabs.find((t) => t.id === menu.tab);
+  const menuIndex = menuTab ? tabs.indexOf(menuTab) : -1;
   useEffect(() => {
     const finish = () => {
       handle.current = null;
@@ -170,16 +195,40 @@ export default function PreviewPaneView({
                   e.currentTarget.closest('[data-drop]')?.removeAttribute('data-drop');
                 }
               }}
-              className={`preview-tab ${tab.id === active?.id ? 'active' : ''}`}
+              // The middle button closes a tab; its press would otherwise start the page's autoscroll.
+              onMouseDown={(event) => {
+                if (event.button === 1) event.preventDefault();
+              }}
+              onAuxClick={(event) => {
+                if (event.button !== 1) return;
+                event.preventDefault();
+                closing(() => workspace.close(tab.id));
+              }}
+              onContextMenu={(event) => {
+                event.preventDefault();
+                setMenu({ x: event.clientX, y: event.clientY, tab: tab.id });
+              }}
+              className={`preview-tab ${tab.id === active?.id ? 'active' : ''} ${tab.temporary ? 'temporary' : ''}`}
             >
               <button
                 role="tab"
                 aria-selected={tab.id === active?.id}
                 aria-controls={content}
+                aria-description={tab.temporary ? '临时标签，双击固定' : undefined}
                 tabIndex={tab.id === active?.id ? 0 : -1}
-                title={tab.kind === 'chat' ? (tab.title ?? '侧边会话') : tab.target}
+                title={
+                  (tab.kind === 'chat' ? (tab.title ?? '侧边会话') : tab.target) +
+                  (tab.temporary ? '\n临时标签，双击固定' : '')
+                }
                 onClick={() => workspace.select(tab.id)}
+                onDoubleClick={() => workspace.pin(tab.id)}
                 onKeyDown={(event) => {
+                  if (!event.altKey && !event.ctrlKey && !event.metaKey && menuKey(event)) {
+                    event.preventDefault();
+                    const box = event.currentTarget.getBoundingClientRect();
+                    setMenu({ x: box.left, y: box.bottom, tab: tab.id });
+                    return;
+                  }
                   if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
                   if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
                   event.preventDefault();
@@ -204,27 +253,47 @@ export default function PreviewPaneView({
                 ) : (
                   <FileText scale="xs" />
                 )}
-                <span>
-                  {tab.kind === 'web'
-                    ? tab.target.replace(/^https?:\/\//, '')
-                    : tab.kind === 'chat'
-                      ? (tab.title ?? '侧边对话')
-                      : name(tab.target)}
-                </span>
+                <span>{tabLabel(tab)}</span>
               </button>
               <IconButton
-                title={`关闭预览 ${tab.kind === 'web' ? tab.target.replace(/^https?:\/\//, '') : tab.kind === 'chat' ? (tab.title ?? '侧边对话') : name(tab.target)}`}
+                title={`关闭预览 ${tabLabel(tab)}`}
                 size="xs"
-                onClick={() => {
-                  workspace.close(tab.id);
-                  viewport.requestAnimationFrame(() => focus(pane.id));
-                }}
+                onClick={() => closing(() => workspace.close(tab.id))}
               >
                 <X />
               </IconButton>
             </div>
           ))}
         </div>
+        {menuTab && (
+          <Menu
+            label={`标签 ${tabLabel(menuTab)}`}
+            x={menu.x}
+            y={menu.y}
+            onClose={() => setMenu(null)}
+            items={[
+              ...(menuTab.temporary
+                ? [{ label: '固定标签', run: () => workspace.pin(menuTab.id) }]
+                : []),
+              { label: '关闭', run: () => closing(() => workspace.close(menuTab.id)) },
+              {
+                label: '关闭其他标签',
+                disabled: tabs.length < 2,
+                run: () => closing(() => workspace.closeMany(menuTab.id, 'others')),
+              },
+              {
+                label: '关闭右侧标签',
+                disabled: menuIndex === tabs.length - 1,
+                run: () => closing(() => workspace.closeMany(menuTab.id, 'right')),
+              },
+              {
+                label: '关闭全部',
+                separated: true,
+                run: () => closing(() => workspace.closeMany(menuTab.id, 'all')),
+              },
+            ]}
+          />
+        )}
         <span className="preview-pane-actions">
           {floating ? (
             <IconButton title="停靠预览" size="sm" onClick={() => workspace.dock(pane.id)}>

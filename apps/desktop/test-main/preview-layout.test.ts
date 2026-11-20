@@ -8,6 +8,11 @@ import {
   floatTab,
   dockPane,
   closeTab,
+  closeTabs,
+  paneTabsToClose,
+  pinTab,
+  previewTabLimit,
+  previewTabsFull,
   restoreLayout,
   fitFloat,
   navigateFile,
@@ -128,4 +133,125 @@ test('chat tabs restore as metadata without file access or website navigation', 
     }),
   );
   assert.equal(invalid.boards.main.tabs.length, 0);
+});
+
+test('a temporary tab is taken over by the next temporary opening in its pane, and kept once pinned', () => {
+  let board = openTab(emptyBoard(), { id: 'keep', kind: 'file', target: 'C:\\w\\keep.ts' });
+  board = openTab(board, { id: 'a', kind: 'file', target: 'C:\\w\\a.ts', temporary: true });
+  board = openTab(board, { id: 'b', kind: 'file', target: 'C:\\w\\b.ts', temporary: true });
+  assert.deepEqual(
+    board.tabs.map((t) => [t.id, t.temporary ?? false]),
+    [
+      ['keep', false],
+      ['b', true],
+    ],
+  );
+  assert.deepEqual(board.panes[0].tabs, ['keep', 'b']);
+  assert.equal(board.panes[0].active, 'b');
+  // Reopening the temporary tab's file temporarily leaves it temporary; opening it to keep pins it.
+  board = openTab(board, { id: 'x', kind: 'file', target: 'c:\\W\\b.ts', temporary: true });
+  assert.equal(board.tabs[1].temporary, true);
+  board = openTab(board, { id: 'y', kind: 'file', target: 'C:\\w\\b.ts' });
+  assert.equal(board.tabs[1].temporary, undefined);
+  assert.equal(board.tabs.length, 2);
+  board = openTab(board, { id: 'c', kind: 'file', target: 'C:\\w\\c.ts', temporary: true });
+  assert.equal(board.tabs.length, 3);
+  board = pinTab(board, 'c');
+  assert.equal(board.tabs[2].temporary, undefined);
+  board = openTab(board, { id: 'd', kind: 'file', target: 'C:\\w\\d.ts', temporary: true });
+  assert.equal(board.tabs.length, 4);
+});
+
+test('moving a temporary tab to another pane keeps it; reordering in its pane does not', () => {
+  let board = openTab(emptyBoard(), { id: 'keep', kind: 'file', target: 'C:\\w\\keep.ts' });
+  board = openTab(board, { id: 'a', kind: 'file', target: 'C:\\w\\a.ts', temporary: true });
+  board = moveTab(board, 'a', board.panes[0].id, 0);
+  assert.equal(board.tabs[1].temporary, true);
+  const split = splitPane(board, board.panes[0].id, 'a', 'second');
+  assert.equal(split.tabs[1].temporary, undefined);
+  const floated = floatTab(board, 'a', 'floating');
+  assert.equal(floated.tabs[1].temporary, undefined);
+  // A temporary tab opened in a floating pane is kept when the pane docks beside another temporary tab.
+  let docked = openTab(
+    { ...floated, focused: board.panes[0].id },
+    { id: 'b', kind: 'file', target: 'C:\\w\\b.ts', temporary: true },
+  );
+  docked = { ...docked, focused: 'floating' };
+  docked = openTab(docked, { id: 'c', kind: 'file', target: 'C:\\w\\c.ts', temporary: true });
+  docked = dockPane(docked, 'floating');
+  assert.deepEqual(
+    docked.tabs.filter((t) => t.temporary).map((t) => t.id),
+    ['b'],
+  );
+});
+
+test('closing several tabs of a pane', () => {
+  let board = emptyBoard();
+  for (const id of ['a', 'b', 'c', 'd'])
+    board = openTab(board, { id, kind: 'file', target: `C:\\w\\${id}.ts` });
+  board = splitPane(board, board.panes[0].id, 'd', 'second');
+  assert.deepEqual(paneTabsToClose(board, 'b', 'others'), ['a', 'c']);
+  assert.deepEqual(paneTabsToClose(board, 'b', 'right'), ['c']);
+  assert.deepEqual(paneTabsToClose(board, 'b', 'all'), ['a', 'b', 'c']);
+  const closed = closeTabs(board, paneTabsToClose(board, 'b', 'all'));
+  assert.deepEqual(
+    closed.tabs.map((t) => t.id),
+    ['d'],
+  );
+  assert.equal(closed.panes.length, 1);
+  assert.equal(closeTabs(board, []), board);
+});
+
+test('a full board takes over a temporary tab, or opens nothing', () => {
+  let board = emptyBoard();
+  for (let i = 0; i < previewTabLimit; i++)
+    board = openTab(board, { id: `t${i}`, kind: 'file', target: `C:\\w\\${i}.ts` });
+  const more = { id: 'more', kind: 'file' as const, target: 'C:\\w\\more.ts' };
+  assert.equal(previewTabsFull(board, more), true);
+  assert.equal(previewTabsFull(board, { kind: 'file', target: 'c:\\W\\3.ts' }), false);
+  assert.equal(openTab(board, more), board);
+  board = {
+    ...board,
+    tabs: board.tabs.map((t) => (t.id === 't5' ? { ...t, temporary: true } : t)),
+  };
+  assert.equal(previewTabsFull(board, more), false);
+  const opened = openTab(board, more);
+  assert.equal(opened.tabs.length, previewTabLimit);
+  assert.equal(opened.tabs[5].id, 'more');
+  assert.equal(opened.tabs[5].temporary, undefined);
+  assert.equal(opened.panes[0].tabs[5], 'more');
+});
+
+test('the temporary flag is saved and restored; layouts without it restore kept tabs', () => {
+  let board = openTab(emptyBoard(), { id: 'a', kind: 'file', target: 'C:\\w\\a.ts' });
+  board = openTab(board, { id: 'b', kind: 'file', target: 'C:\\w\\b.ts', temporary: true });
+  board = openTab(board, {
+    id: 'w',
+    kind: 'web',
+    target: 'http://localhost:5173/',
+    temporary: true,
+  });
+  const restored = restoreLayout(JSON.stringify({ boards: { s: board } })).boards.s;
+  assert.deepEqual(
+    restored.tabs.map((t) => [t.id, t.temporary ?? false]),
+    [
+      ['a', false],
+      ['w', true],
+    ],
+  );
+  const old = restoreLayout(
+    JSON.stringify({
+      boards: {
+        s: {
+          ...board,
+          tabs: [
+            { id: 'a', kind: 'file', target: 'C:\\w\\a.ts' },
+            { id: 'w', kind: 'web', target: 'http://localhost:5173/', temporary: 'yes' },
+          ],
+        },
+      },
+    }),
+  ).boards.s;
+  assert.equal(old.tabs.length, 2);
+  assert.ok(old.tabs.every((t) => t.temporary === undefined));
 });

@@ -412,6 +412,14 @@ function Fixture() {
       >
         多个标签
       </Button>
+      <Button
+        onClick={() => {
+          setOpened(true);
+          for (let i = 0; i < 64; i++) board.openFile(folder + `\\满 ${i}.json`, folder);
+        }}
+      >
+        填满标签
+      </Button>
       <Button onClick={() => setScope(scope === 'fixture' ? 'other' : 'fixture')}>
         切换预览工作区
       </Button>

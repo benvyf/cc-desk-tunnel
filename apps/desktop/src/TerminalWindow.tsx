@@ -955,8 +955,10 @@ export default function TerminalWindow({
                     !!window.desktop?.preview &&
                     !state.browser &&
                     tab.source.device?.id === state.device?.id;
+                  // A link followed from the terminal opens a temporary tab, as one from the conversation does.
                   if (target.kind === 'web') {
-                    if (here && previewWebsite(target.value)) preview.openWebsite(target.value);
+                    if (here && previewWebsite(target.value))
+                      preview.openWebsite(target.value, true);
                     else if (previewWebsite(target.value))
                       setLinkError('这是远端设备的网址，不能按 Windows 本机网站预览。');
                     else void followLink({ kind: 'web', url: target.value }, setLinkError);
@@ -964,7 +966,7 @@ export default function TerminalWindow({
                     const path = /^file:/i.test(raw)
                       ? target.value
                       : target.value.replace(/:\d+(?::\d+)?$/, '');
-                    preview.openFile(path, tab.source.projectPath);
+                    preview.openFile(path, tab.source.projectPath, undefined, undefined, true);
                   } else setFile({ raw, source: tab.source });
                 }}
               />

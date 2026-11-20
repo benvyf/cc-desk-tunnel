@@ -10287,6 +10287,10 @@ dialog:has(.web-settings-form) {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A temporary tab, which the next file opened by a single click takes over, is named in italics. */
+.preview-tab.temporary > button[role='tab'] > span {
+  font-style: italic;
+}
 .preview-tab svg {
   flex: none;
 }

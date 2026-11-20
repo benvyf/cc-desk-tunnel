@@ -306,14 +306,17 @@ export default function PreviewContent({
     () =>
       window.desktop!.preview.onState((state) => {
         if (state.surface !== surface || state.key !== tab.id) return;
+        // A link followed from a page opens a temporary tab, as one followed from the conversation does.
         if (state.open) {
           if (state.open.kind === 'file')
             workspaceRef.current.openFile(
               state.open.target,
               state.open.root,
               state.open.restricted,
+              undefined,
+              true,
             );
-          else workspaceRef.current.openWebsite(state.open.target);
+          else workspaceRef.current.openWebsite(state.open.target, true);
           return;
         }
         setBrowser((previous) => ({
