@@ -12,6 +12,7 @@ type Mark = { line: number; top: number; height: number };
 
 export default function PreviewCode({
   text,
+  truncated = false,
   language,
   wrap,
   setWrap,
@@ -22,6 +23,8 @@ export default function PreviewCode({
   beforeNavigate,
 }: {
   text: string;
+  // The text is the beginning of a longer file, so a later line is not missing but not shown.
+  truncated?: boolean;
   language: string;
   wrap: boolean;
   setWrap: (value: boolean) => void;
@@ -39,6 +42,7 @@ export default function PreviewCode({
   const [marks, setMarks] = useState<Mark[]>([]);
   const [line, setLine] = useState('');
   const [error, setError] = useState('');
+  const [note, setNote] = useState('');
   const [highlight, setHighlight] = useState<Mark>();
   const targetLine = useRef<number | undefined>(undefined);
   const consumed = useRef<string | undefined>(undefined);
@@ -146,6 +150,11 @@ export default function PreviewCode({
   }, [text, starts, wrap, root]);
 
   const go = (row: number, column?: number) => {
+    setNote(
+      truncated && row > starts.length
+        ? `第 ${row} 行不在已显示的部分，已跳到显示部分的末尾。`
+        : '',
+    );
     const element = pre.current!,
       box = root.current!,
       node = source.current?.firstChild;
@@ -291,6 +300,7 @@ export default function PreviewCode({
               onChange={(event) => {
                 setLine(event.target.value);
                 setError('');
+                setNote('');
               }}
             />
             <Button size="sm" variant="ghost" type="submit">
@@ -300,10 +310,16 @@ export default function PreviewCode({
           <CopyButton text={text} label="复制代码" variant="code" />
         </div>
       </div>
-      {error && (
+      {error ? (
         <p className="preview-code-error" role="status">
           {error}
         </p>
+      ) : (
+        note && (
+          <p className="preview-code-error preview-code-note" role="status">
+            {note}
+          </p>
+        )
       )}
       <div
         className="preview-code-body"

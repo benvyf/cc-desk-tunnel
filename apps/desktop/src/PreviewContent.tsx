@@ -33,6 +33,14 @@ const nameOf = (tab: PreviewTab) =>
 const parentOf = (path: string) =>
   path.slice(0, Math.max(path.lastIndexOf('\\'), path.lastIndexOf('/')) + 1);
 const languageOf = (path: string) => /\.([a-z0-9]+)$/i.exec(path)?.[1].toLowerCase() ?? 'text';
+// The main process shows the first 4 MiB of a larger text file (electron/text-decode.cjs).
+const previewTextLimit = 4 * 1024 * 1024;
+const megabytes = (size: number) => String(Math.round((size / 1024 / 1024) * 10) / 10);
+const encodingNames: Record<string, string> = {
+  'utf-16le': 'UTF-16 LE',
+  'utf-16be': 'UTF-16 BE',
+  gb18030: 'GBK',
+};
 const PreviewPdf = lazy(() => import('./PreviewPdf.tsx'));
 const PreviewSpreadsheet = lazy(() => import('./PreviewSpreadsheet.tsx'));
 const previewOverlays =
@@ -214,6 +222,9 @@ export default function PreviewContent({
   const workspaceRef = useRef(workspace);
   workspaceRef.current = workspace;
   const documentRoot = useRef<HTMLDivElement>(null);
+  // The file read on screen: which tab target it belongs to and how to give up its resources (an
+  // HTML page's local address and native view). A refresh replaces it only once the new read is in.
+  const shown = useRef<{ key: string; release: (view: boolean) => void } | undefined>(undefined);
   // A PDF replaces the file-loading placeholder; reader intent must survive that handoff.
   const readingInterrupted = useRef(false);
   const navigation =
@@ -312,33 +323,60 @@ export default function PreviewContent({
   );
   useEffect(() => {
     if (tab.kind !== 'file') return;
-    let disposed = false,
-      token: string | undefined;
+    let disposed = false;
+    const key = JSON.stringify([surface, tab.id, tab.target, tab.root, !!tab.restricted]);
     captureReading();
     readingInterrupted.current = false;
-    setFile(null);
-    setError('');
+    // A change on disk or the refresh button keeps the current content until the new read is in;
+    // only the first read of a file starts from the loading placeholder.
+    if (shown.current?.key !== key) {
+      shown.current?.release(true);
+      shown.current = undefined;
+      setFile(null);
+      setError('');
+    }
+    const replace = (next?: { key: string; release: (view: boolean) => void }) => {
+      shown.current?.release(true);
+      shown.current = next;
+    };
     void window
       .desktop!.preview.read({ path: tab.target, root: tab.root, restricted: tab.restricted })
       .then(
         (result) => {
-          token = result.token;
-          if (disposed) {
+          const token = result.token;
+          const release = (view: boolean) => {
             if (token) void window.desktop!.preview.releaseFile(token);
+            if (view)
+              void window.desktop!.preview.release({ surface, key: tab.id }).catch(() => {});
+          };
+          if (disposed) {
+            release(false);
             return;
           }
+          replace({ key, release });
+          setError('');
           setFile(result);
         },
         (e) => {
-          if (!disposed) setError(e.message);
+          if (disposed) return;
+          // A failed refresh shows its error in place of the content, as a failed first read does.
+          replace();
+          setFile(null);
+          setError(e.message);
         },
       );
     return () => {
       disposed = true;
-      if (token) void window.desktop!.preview.releaseFile(token);
-      void window.desktop!.preview.release({ surface, key: tab.id }).catch(() => {});
     };
   }, [tab.id, tab.kind, tab.target, tab.root, tab.restricted, revision, surface]);
+  // Closing the tab gives up what its last read holds.
+  useEffect(
+    () => () => {
+      shown.current?.release(true);
+      shown.current = undefined;
+    },
+    [],
+  );
   const watchPath = file?.path ?? tab.target;
   const watchRoot =
     tab.restricted || (tab.root && isInside(watchPath, [tab.root]))
@@ -377,6 +415,21 @@ export default function PreviewContent({
     (file
       ? ['html', 'markdown'].includes(file.kind)
       : /\.(?:html?|md|markdown)$/i.test(tab.target));
+  const openInSystem = () => {
+    setError('');
+    if (tab.kind === 'web')
+      void window
+        .desktop!.openLink(previewWebsite(browser?.url || tab.target) ?? tab.target)
+        .catch((e) => setError(e.message));
+    else
+      void window.desktop!.actOnPath('open', tab.target).then(
+        (message) => {
+          if (message) setError(message);
+        },
+        (e) => setError(e.message),
+      );
+  };
+  const encoding = file?.encoding && encodingNames[file.encoding];
   const action = (action: 'back' | 'forward' | 'reload') => {
     setError('');
     void window
@@ -442,6 +495,11 @@ export default function PreviewContent({
             <span className="preview-path-name">{shownPath.slice(nameAt)}</span>
           </span>
         )}
+        {encoding && (
+          <span className="preview-encoding" title={`以 ${encoding} 编码显示`}>
+            {encoding}
+          </span>
+        )}
         {/* Preview or source, as Claude's artifacts offer it: a two-way control, before the row's icons. */}
         {switchable && (
           <SegmentedControl
@@ -489,27 +547,20 @@ export default function PreviewContent({
             tab.kind === 'web' ? browser?.url || tab.target : (file?.path ?? tab.target)
           }
         />
-        <IconButton
-          title="在系统应用中打开"
-          size="sm"
-          onClick={() => {
-            setError('');
-            if (tab.kind === 'web')
-              void window
-                .desktop!.openLink(previewWebsite(browser?.url || tab.target) ?? tab.target)
-                .catch((e) => setError(e.message));
-            else
-              void window.desktop!.actOnPath('open', tab.target).then(
-                (message) => {
-                  if (message) setError(message);
-                },
-                (e) => setError(e.message),
-              );
-          }}
-        >
+        <IconButton title="在系统应用中打开" size="sm" onClick={openInSystem}>
           <ExternalLink />
         </IconButton>
       </div>
+      {file?.truncated && (
+        <div className="preview-notice">
+          <span>
+            文件较大（{megabytes(file.size ?? 0)} MB），只显示前 {megabytes(previewTextLimit)} MB
+          </span>
+          <Button size="sm" variant="ghost" onClick={openInSystem}>
+            在系统应用中打开
+          </Button>
+        </div>
+      )}
       {(error || browser?.error || watchError) && (
         <p className="preview-error" role="alert">
           {error || browser?.error || watchError}
@@ -630,6 +681,7 @@ export default function PreviewContent({
               <div className="message-content preview-code">
                 <PreviewCode
                   text={file.text ?? ''}
+                  truncated={!!file.truncated}
                   language={languageOf(file.path)}
                   wrap={tab.wrap === true}
                   setWrap={(value) => workspace.wrap(tab.id, value)}

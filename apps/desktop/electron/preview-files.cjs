@@ -1,8 +1,9 @@
 const { createServer } = require('node:http');
 const { randomBytes } = require('node:crypto');
-const { realpath, open } = require('node:fs/promises');
+const { realpath, open, stat } = require('node:fs/promises');
 const path = require('node:path');
 const { localPath } = require('./file-links.cjs');
+const { decodeText, textLimit } = require('./text-decode.cjs');
 
 const types = {
   '.html': 'text/html',
@@ -45,24 +46,32 @@ function localWebsite(value) {
     throw new Error('请输入本机网站地址，例如 http://localhost:5173。');
   return url.href;
 }
-async function bytes(file, limit) {
+const megabytes = (size) => `${Math.round((size / 1024 / 1024) * 10) / 10} MiB`;
+const tooLarge = (limit) => new Error(`文件超过预览大小限制（${megabytes(limit)}）。`);
+// Reads the start of a file, at most `limit` bytes and one more to tell whether there is more;
+// `whole` refuses a file over the limit instead.
+async function head(file, limit, whole = false) {
   const handle = await open(file, 'r');
   try {
-    const stat = await handle.stat();
-    if (!stat.isFile()) throw new Error('请选择普通文件。');
-    if (stat.size > limit) throw new Error('文件超过预览大小限制。');
-    const buffer = Buffer.alloc(Math.min(stat.size + 1, limit + 1));
+    const info = await handle.stat();
+    if (!info.isFile()) throw new Error('请选择普通文件。');
+    if (whole && info.size > limit) throw tooLarge(limit);
+    const buffer = Buffer.alloc(Math.min(info.size + 1, limit + 1));
     let bytesRead = 0;
     while (bytesRead < buffer.length) {
       const next = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
       if (!next.bytesRead) break;
       bytesRead += next.bytesRead;
     }
-    if (bytesRead > limit) throw new Error('文件超过预览大小限制。');
-    return buffer.subarray(0, bytesRead);
+    return { data: buffer.subarray(0, bytesRead), size: Math.max(info.size, bytesRead) };
   } finally {
     await handle.close();
   }
+}
+async function bytes(file, limit) {
+  const { data } = await head(file, limit, true);
+  if (data.length > limit) throw tooLarge(limit);
+  return data;
 }
 
 // This server serves only explicitly opened project roots, with an unguessable URL per file tab.
@@ -72,6 +81,9 @@ function createPreviewFiles() {
   let server, starting;
   let generation = 0;
   let office;
+  // Recent Office conversions by path, reused while the file's size and modification time are
+  // unchanged (a refresh, a repeated change notification, reopening the tab).
+  const conversions = new Map();
   async function start() {
     if (starting) return starting;
     starting = (async () => {
@@ -114,9 +126,11 @@ function createPreviewFiles() {
             return;
           }
           const data = await bytes(file, 20 * 1024 * 1024);
+          // The opened page itself is labelled with the encoding its preview was read in; other
+          // files of the site stay UTF-8.
           const contentType =
             mime.startsWith('text/') || mime === 'application/json'
-              ? `${mime}; charset=utf-8`
+              ? `${mime}; charset=${(file === mount.file && mount.charset) || 'utf-8'}`
               : mime;
           response.writeHead(200, {
             'content-type': contentType,
@@ -170,15 +184,32 @@ function createPreviewFiles() {
         };
       }
       if (['.doc', '.docx', '.ppt', '.pptx', '.odt', '.ods', '.odp'].includes(extension)) {
-        office ??= require('./preview-office.cjs').createPreviewOffice();
-        const result = await office.render(file, (candidate) => {
+        const authorize = (candidate) => {
           if (
             !inside(root, candidate) ||
             (input.restricted && privateResource(path.relative(root, candidate).split(path.sep)))
           )
             throw new Error('文件不在原预览工作区内或位于私有目录。');
-        });
+        };
+        const version = (info) => info.isFile() && `${info.size}:${info.mtimeMs}`;
+        const before = version(await stat(file));
+        const known = conversions.get(file);
+        if (before && known?.version === before) {
+          authorize(file);
+          return { path: file, kind: 'pdf', ...known.result };
+        }
+        office ??= require('./preview-office.cjs').createPreviewOffice();
+        const result = await office.render(file, authorize);
         if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
+        // A file that changed while it was converted is not remembered under either version.
+        if (before && version(await stat(file).catch(() => null)) === before) {
+          conversions.delete(file);
+          conversions.set(file, { version: before, result });
+          for (const key of conversions.keys()) {
+            if (conversions.size <= 2) break;
+            conversions.delete(key);
+          }
+        }
         return { path: file, kind: 'pdf', ...result };
       }
       if (extension === '.pdf') {
@@ -187,33 +218,33 @@ function createPreviewFiles() {
           throw new Error('不是有效的 PDF 文件。');
         return { path: file, kind: 'pdf', data: data.toString('base64') };
       }
-      const data = await bytes(
-        file,
-        mime?.startsWith('image/') ? 20 * 1024 * 1024 : 4 * 1024 * 1024,
-      );
-      if (mime?.startsWith('image/'))
+      if (mime?.startsWith('image/')) {
+        const data = await bytes(file, 20 * 1024 * 1024);
         return {
           path: file,
           kind: 'image',
           image: `data:${mime};base64,${data.toString('base64')}`,
         };
-      if (data.includes(0)) throw new Error('此文件暂不支持预览，请在系统应用中打开。');
-      let text;
-      try {
-        text = new TextDecoder('utf-8', { fatal: true }).decode(data);
-      } catch {
-        throw new Error('此文件不是 UTF-8 文本，请在系统应用中打开。');
       }
+      // A text file larger than the limit shows its beginning, cut at a character boundary.
+      const read = await head(file, textLimit);
+      const cut = read.data.length > textLimit;
+      const { text, encoding } = decodeText(cut ? read.data.subarray(0, textLimit) : read.data, {
+        cut,
+      });
       const result = {
         path: file,
-        kind: extension === '.md' || extension === '.markdown' ? 'markdown' : 'text',
+        // The beginning of a document is shown as source: half a page is not rendered.
+        kind: !cut && (extension === '.md' || extension === '.markdown') ? 'markdown' : 'text',
         text,
       };
-      if (extension === '.html' || extension === '.htm') {
+      if (encoding !== 'utf-8') result.encoding = encoding;
+      if (cut) Object.assign(result, { truncated: true, size: read.size });
+      if (!cut && (extension === '.html' || extension === '.htm')) {
         await start();
         if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
         const token = randomBytes(24).toString('hex');
-        mounts.set(token, { root, file });
+        mounts.set(token, { root, file, charset: encoding });
         const relative = path
           .relative(root, file)
           .split(path.sep)
@@ -234,6 +265,7 @@ function createPreviewFiles() {
       generation++;
       office?.reset();
       mounts.clear();
+      conversions.clear();
     },
     owns(url) {
       try {
@@ -274,6 +306,7 @@ function createPreviewFiles() {
     },
     async close() {
       generation++;
+      conversions.clear();
       await office?.close();
       mounts.clear();
       if (starting) await starting;

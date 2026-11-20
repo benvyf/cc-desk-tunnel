@@ -38,6 +38,16 @@ async function change(page: Page, suffix: string, options: Record<string, unknow
 async function counts(page: Page) {
   return page.evaluate(() => (window as any).fixturePreview.counts());
 }
+// A refresh of the shown file keeps its content, with no loading placeholder, while the new read is pending.
+async function refreshPending(page: Page) {
+  await expect
+    .poll(async () => {
+      const value = await counts(page);
+      return value.reads - value.completedReads;
+    })
+    .toBe(1);
+  await expect(page.getByText('正在读取文件…')).toHaveCount(0);
+}
 async function restart(page: Page) {
   await page.reload();
   await button(page, '展开空栏').click();
@@ -217,7 +227,7 @@ test('Markdown preview and source retain separate positions and selected mode', 
   await at(doc(page), 800);
 });
 
-test('delayed automatic refresh placeholder preserves reading position without extra reads', async ({
+test('delayed automatic refresh keeps the text and its reading position without extra reads', async ({
   page,
 }) => {
   await page.goto(fixture);
@@ -226,7 +236,7 @@ test('delayed automatic refresh placeholder preserves reading position without e
   await scroll(doc(page), 1100);
   const before = await counts(page);
   await change(page, '长阅读.txt', { delayMs: 800 });
-  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  await refreshPending(page);
   await textReady(page);
   await at(doc(page), 1100);
   expect(await counts(page)).toMatchObject({
@@ -277,7 +287,7 @@ test('deletion and failed refresh retain position for reconstruction and explici
   expect((await counts(page)).reads).toBe(5);
 });
 
-test('user wheel input while restore is pending preempts automatic positioning', async ({
+test('user wheel input while a refresh is pending keeps the position the reader scrolled to', async ({
   page,
 }) => {
   await page.goto(fixture);
@@ -285,18 +295,21 @@ test('user wheel input while restore is pending preempts automatic positioning',
   await textReady(page);
   await scroll(doc(page), 1500);
   await change(page, '长阅读.txt', { delayMs: 1000 });
-  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  await refreshPending(page);
+  // The old text stays in view, so the wheel scrolls it; the new text keeps that position.
   await doc(page).hover();
   await page.mouse.wheel(0, -200);
+  await at(doc(page), 1300);
+  await expect.poll(async () => (await counts(page)).completedReads).toBe(2);
   await textReady(page);
-  await at(doc(page), 0);
+  await at(doc(page), 1300);
   await button(page, '图片状态').click();
   await page.getByRole('tab', { name: '长阅读.txt', exact: true }).click();
   await textReady(page);
-  await at(doc(page), 0);
+  await at(doc(page), 1300);
 });
 
-test('user wheel input during delayed PDF refresh preempts the recreated PDF restore', async ({
+test('user wheel input during delayed PDF refresh is kept by the recreated PDF restore', async ({
   page,
 }) => {
   await page.goto(fixture);
@@ -321,19 +334,20 @@ test('user wheel input during delayed PDF refresh preempts the recreated PDF res
     )
     .toBe(300);
   await change(page, '多页报告.pdf', { delayMs: 1000 });
-  await expect(page.getByRole('status')).toContainText('正在读取文件');
-  await doc(page).hover();
+  await refreshPending(page);
+  // The old PDF stays in view, so the wheel scrolls it; the new revision keeps that position.
+  await pages.hover();
   await page.mouse.wheel(0, -200);
   await expect(pages).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
   await expect(page.locator('.preview-pdf')).toContainText('125%');
-  await at(pages, 0, 0);
+  await at(pages, 100, 50);
   await button(page, '图片状态').click();
   await page.getByRole('tab', { name: '多页报告.pdf', exact: true }).click();
   await expect(pages).toHaveAttribute('aria-busy', 'false');
   await expect(page.getByLabel('PDF 页码')).toHaveValue('3');
   await expect(page.locator('.preview-pdf')).toContainText('125%');
-  await at(pages, 0, 0);
+  await at(pages, 100, 50);
 });
 
 test('same tab identity in another session and workspace keeps independent reading state', async ({
@@ -381,7 +395,7 @@ test('late read from a released workspace cannot replace the new workspace readi
   await textReady(page);
   await scroll(doc(page), 700);
   await change(page, '长阅读.txt', { delayMs: 1000, short: true });
-  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  await refreshPending(page);
   await button(page, '切换预览工作区').click();
   await page.evaluate(() => (window as any).fixturePreview.configure('长阅读.txt', {}));
   await button(page, '长文本').click();
@@ -498,7 +512,7 @@ for (const action of ['close', 'workspace'] as const) {
     await expect(pages).toHaveAttribute('aria-busy', 'false');
     await scroll(pages, 100);
     await change(page, '多页报告.pdf', { delayMs: 800 });
-    await expect(page.getByRole('status')).toContainText('正在读取文件');
+    await refreshPending(page);
     if (action === 'close') {
       await button(page, '关闭预览 多页报告.pdf').click();
       await expect(page.getByRole('tab')).toHaveCount(0);
@@ -690,7 +704,7 @@ test('multi-page PDF restores page three at 125 percent and scroll after float/d
   await expect(page.locator('.preview-pdf')).toContainText('125%');
   await at(pages, 300, 50);
   await change(page, '多页报告.pdf', { pages: 2, delayMs: 500 });
-  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  await refreshPending(page);
   await ready();
   await expect(page.getByLabel('PDF 页码')).toHaveValue('2');
   await expect(page.locator('.preview-pdf')).toContainText('125%');

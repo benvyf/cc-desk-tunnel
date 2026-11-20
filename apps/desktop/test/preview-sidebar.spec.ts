@@ -196,6 +196,70 @@ test('terminal preview controls leave the Windows title bar free and short empty
   await expect(pane.getByRole('button', { name: '打开文件', exact: true })).toBeInViewport();
 });
 
+test('a text in another encoding names it, and a large file says only its beginning is shown', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  const pane = page.getByRole('complementary', { name: '文件与网站预览' });
+  await page.getByRole('button', { name: 'GBK 文本', exact: true }).click();
+  await expect(pane.locator('.preview-code')).toContainText('中文测试');
+  await expect(pane.locator('.preview-encoding')).toHaveText('GBK');
+  await expect(pane.locator('.preview-encoding')).toHaveAttribute('title', '以 GBK 编码显示');
+  await expect(pane.locator('.preview-notice')).toHaveCount(0);
+
+  await page.getByRole('button', { name: '大日志', exact: true }).click();
+  const notice = pane.locator('.preview-notice');
+  await expect(notice).toContainText('文件较大（12.5 MB），只显示前 4 MB');
+  await expect(pane.locator('.preview-encoding')).toHaveCount(0);
+  await notice.getByRole('button', { name: '在系统应用中打开', exact: true }).click();
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixtureActs))
+    .toEqual([['open', 'C:\\工作\\网站预览\\大日志.log']]);
+  // A line past the shown part goes to its end and says why.
+  await pane.getByLabel('跳转到行', { exact: true }).fill('5000');
+  await pane.getByRole('button', { name: '跳转', exact: true }).click();
+  await expect(pane.locator('.preview-code-note')).toHaveText(
+    '第 5000 行不在已显示的部分，已跳到显示部分的末尾。',
+  );
+  await expect(pane.locator('.preview-code-highlight')).toHaveAttribute('data-line', '301');
+});
+
+test('an automatic refresh keeps the shown text until the new read is in', async ({ page }) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  const pane = page.getByRole('complementary', { name: '文件与网站预览' });
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  await expect(pane.locator('.preview-markdown')).toContainText('项目说明');
+  const before = await page.evaluate(() => (window as any).fixturePreview.counts().completedReads);
+  await page.evaluate(() => {
+    (window as any).fixturePreview.configure('说明.md', { delayMs: 800 });
+    (window as any).fixturePreview.emit('说明.md');
+  });
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixturePreview.counts().reads))
+    .toBe(before + 1);
+  // The re-read is still pending: the document stays, with no loading placeholder in between.
+  for (let i = 0; i < 5; i++) {
+    await expect(pane.locator('.preview-markdown')).toContainText('项目说明');
+    await expect(pane.getByText('正在读取文件…')).toHaveCount(0);
+    await page.waitForTimeout(100);
+  }
+  expect(await page.evaluate(() => (window as any).fixturePreview.counts().completedReads)).toBe(
+    before,
+  );
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixturePreview.counts().completedReads))
+    .toBe(before + 1);
+  await expect(pane.locator('.preview-markdown')).toContainText('项目说明');
+
+  // A failed refresh replaces the content with its error.
+  await page.evaluate(() => {
+    (window as any).fixturePreview.configure('说明.md', { fail: true });
+    (window as any).fixturePreview.emit('说明.md');
+  });
+  await expect(pane.getByRole('alert')).toHaveText('模拟读取失败，请刷新重试。');
+  await expect(pane.locator('.preview-markdown')).toHaveCount(0);
+});
+
 test('successful retries clear errors from file selection and system opening', async ({ page }) => {
   await page.goto('/test/fixtures/preview-sidebar.html');
   await page.getByRole('button', { name: '展开空栏', exact: true }).click();

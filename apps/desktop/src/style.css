@@ -10440,6 +10440,37 @@ dialog:has(.web-settings-form) {
   line-height: var(--leading-caption);
   flex: none;
 }
+/* The encoding a text that is not UTF-8 was read in, as a small tag after the path. */
+.preview-encoding {
+  flex: none;
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: 1;
+  padding: 3px 6px;
+  margin-right: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+/* Only the beginning of a large file is shown: said once, above the text, with the way out. */
+.preview-notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+}
+.preview-notice > span {
+  flex: 1;
+  min-width: 0;
+}
+.preview-notice > .button {
+  flex: none;
+}
 .preview-loading,
 .preview-unavailable {
   display: flex;

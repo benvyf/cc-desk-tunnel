@@ -197,6 +197,17 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
             ),
           ),
         };
+      if (path.endsWith('旧编码.txt'))
+        return { path, kind: 'text', text: '中文测试\n第二行', encoding: 'gb18030' };
+      // The main process read the first 4 MiB of a 12.5 MiB log.
+      if (path.endsWith('大日志.log'))
+        return {
+          path,
+          kind: 'text',
+          text: Array.from({ length: 300 }, (_, i) => `log line ${i + 1}`).join('\n') + '\n',
+          truncated: true,
+          size: 12.5 * 1024 * 1024,
+        };
       if (path.includes('长错误'))
         throw new Error(
           '找不到文件：C:\\' + '很长的项目目录\\'.repeat(60) + '报告.txt。请确认路径。',
@@ -317,6 +328,8 @@ function Fixture() {
         ['多页 PDF', '多页报告.pdf'],
         ['普通 HTML 别名', 'alias.txt'],
         ['普通 HTML 文件', 'index.html'],
+        ['GBK 文本', '旧编码.txt'],
+        ['大日志', '大日志.log'],
       ].map(([label, name]) => (
         <Button
           key={label}

@@ -34,6 +34,9 @@
   color: var(--code-error);
   font-size: calc(12rem / 14);
 }
+.preview-code-note {
+  color: var(--muted);
+}
 .preview-code-body {
   position: relative;
   min-width: 0;

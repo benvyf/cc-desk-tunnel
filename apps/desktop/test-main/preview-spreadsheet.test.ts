@@ -131,6 +131,19 @@ test('UTF-16 delimited documents preserve Chinese and leading zeroes', () => {
   ]);
 });
 
+test('a CSV saved as GBK is read as GBK, and undecodable bytes are still refused', () => {
+  // "编号,值\r\n00123,中文" in GBK.
+  const bytes = new Uint8Array([
+    0xb1, 0xe0, 0xba, 0xc5, 0x2c, 0xd6, 0xb5, 0x0d, 0x0a, 0x30, 0x30, 0x31, 0x32, 0x33, 0x2c, 0xd6,
+    0xd0, 0xce, 0xc4,
+  ]);
+  assert.deepEqual(parseSpreadsheet(bytes, 'csv').sheets[0].rows, [
+    ['编号', '值'],
+    ['00123', '中文'],
+  ]);
+  assert.throws(() => parseSpreadsheet(new Uint8Array([0x80, 0xff, 0x2c]), 'csv'), /GBK/);
+});
+
 test('hidden sheets stay hidden and sheet count limits do not truncate files silently', () => {
   const book = utils.book_new();
   utils.book_append_sheet(book, utils.aoa_to_sheet([['visible']]), '显示');

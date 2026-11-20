@@ -119,15 +119,55 @@ test('file preview handles Markdown and text without executing scripts, and reje
   await writeFile(join(project, 'script.ps1'), 'Write-Output hello');
   await writeFile(join(project, 'binary.dat'), Buffer.from([0, 1, 2]));
   await writeFile(join(project, 'large.txt'), Buffer.alloc(4 * 1024 * 1024 + 1, 65));
+  await writeFile(join(project, 'large.png'), Buffer.alloc(20 * 1024 * 1024 + 1, 65));
   assert.equal((await files.read({ path: join(project, '说明.md') })).kind, 'markdown');
   assert.equal(
     (await files.read({ path: join(project, 'script.ps1') })).text,
     'Write-Output hello',
   );
   await assert.rejects(files.read({ path: join(project, 'binary.dat') }), /不支持/);
-  await assert.rejects(files.read({ path: join(project, 'large.txt') }), /大小限制/);
+  // A large text shows its beginning; an image over its limit is still refused, naming the limit.
+  const large = await files.read({ path: join(project, 'large.txt') });
+  assert.equal(large.truncated, true);
+  assert.equal(large.size, 4 * 1024 * 1024 + 1);
+  assert.equal(large.text.length, 4 * 1024 * 1024);
+  await assert.rejects(files.read({ path: join(project, 'large.png') }), /大小限制（20 MiB）/);
   await assert.rejects(files.read({ path: '\\\\server\\share\\file.html' }), /本机/);
   await assert.rejects(files.read({ path: 'relative.txt' }), /绝对路径/);
+});
+test('an unchanged Office file is not converted again; a changed one or a reset is', async (t) => {
+  const office = createRequire(import.meta.url)('../electron/preview-office.cjs');
+  const original = office.createPreviewOffice;
+  let renders = 0;
+  office.createPreviewOffice = () => ({
+    async render(file, authorize) {
+      authorize(file);
+      renders++;
+      return { data: Buffer.from(`%PDF-${renders}`).toString('base64'), missingFonts: [] };
+    },
+    reset() {},
+    async close() {},
+  });
+  t.after(() => {
+    office.createPreviewOffice = original;
+  });
+  const { files, project, root } = await fixture(t);
+  const document = join(project, '报告.docx');
+  await writeFile(document, 'first');
+  const read = () => files.read({ path: document, root: project });
+  assert.equal((await read()).data, (await read()).data);
+  assert.equal(renders, 1);
+  await writeFile(document, 'second version');
+  await read();
+  assert.equal(renders, 2);
+  files.reset();
+  await read();
+  assert.equal(renders, 3);
+  // The cached conversion is still subject to the workspace restriction.
+  await assert.rejects(
+    files.read({ path: document, root: join(root, 'elsewhere'), restricted: true }),
+    /工作区/,
+  );
 });
 test('website addresses allow only explicit local HTTP(S) services', () => {
   for (const value of ['http://localhost:5173', 'http://127.0.0.1:3000/a?b=1', 'http://[::1]:8080'])

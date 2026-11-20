@@ -741,7 +741,8 @@ test(
       });
       await page.getByRole('button', { name: '放大 PDF', exact: true }).click();
       await expect(page.locator('.preview-pdf')).toContainText('125%');
-      assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 2);
+      // Reopening the unchanged document reuses its conversion.
+      assert.equal(await app.evaluate(() => global.fixtureOfficeRequests), 1);
       await page.getByRole('tab', { name: 'index.html', exact: true }).click();
       await expect.poll(() => nativeValue('document.body?.dataset.loaded')).toBe('yes');
       await page.reload();

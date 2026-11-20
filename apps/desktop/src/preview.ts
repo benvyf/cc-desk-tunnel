@@ -44,6 +44,11 @@ export type PreviewFile = {
   image?: string;
   url?: string;
   token?: string;
+  // Text not in UTF-8: 'utf-16le', 'utf-16be' or 'gb18030'.
+  encoding?: string;
+  // Only the beginning of a larger text file was read; size is the whole file's, in bytes.
+  truncated?: boolean;
+  size?: number;
 };
 function restoreWorkspace(key: string | null) {
   let serialized: string | null = null;

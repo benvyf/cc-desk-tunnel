@@ -451,7 +451,14 @@ test('source intent survives a watched alias changing from Markdown to HTML', as
     (window as any).fixturePreview.configure('alias.txt', { delayMs: 800 });
     (window as any).fixturePreview.emit('alias.txt');
   });
-  await expect(page.getByRole('status')).toContainText('正在读取文件');
+  // The Markdown stays shown while the changed file is read again.
+  await expect
+    .poll(async () => {
+      const value = await counts(page);
+      return value.reads - value.completedReads;
+    })
+    .toBe(1);
+  await expect(page.locator('.preview-markdown')).toContainText('Former Markdown alias');
   await button(page, '定位 HTML 源码').click();
   await expect(code(page)).toHaveText('<h1>HTML alias</h1>');
   await targetVisible(page, 1);

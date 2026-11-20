@@ -21,7 +21,11 @@ export default function PreviewSpreadsheet({ data, format }: { data: string; for
   const [viewport, setViewport] = useState({ top: 0, height: 600 });
   const scroll = useRef<HTMLDivElement>(null);
   const panelId = useId();
+  const latest = useRef(loaded);
+  latest.current = loaded;
   useEffect(() => {
+    // A new revision of the same table (the file changed on disk) keeps the sheet and scroll position.
+    const refreshing = !!latest.current?.book && latest.current.format === format;
     let worker: Worker | undefined;
     let timer: ReturnType<typeof setTimeout>;
     let disposed = false;
@@ -41,10 +45,14 @@ export default function PreviewSpreadsheet({ data, format }: { data: string; for
         disposed = true;
         clearTimeout(timer);
         worker?.terminate();
-        setActive(0);
         setLoaded({ source: data, format, ...event.data });
-        setViewport((old) => ({ ...old, top: 0 }));
-        if (scroll.current) scroll.current.scrollTop = 0;
+        const sheets = event.data.book?.sheets.length ?? 0;
+        if (refreshing && sheets) setActive((index) => Math.min(index, sheets - 1));
+        else {
+          setActive(0);
+          setViewport((old) => ({ ...old, top: 0 }));
+          if (scroll.current) scroll.current.scrollTop = 0;
+        }
       };
       worker.onerror = () => fail('无法读取表格，请刷新重试或在系统应用中打开。');
       timer = setTimeout(() => fail('表格解析超时，请在系统应用中打开。'), 15000);
@@ -58,7 +66,8 @@ export default function PreviewSpreadsheet({ data, format }: { data: string; for
       worker?.terminate();
     };
   }, [data, format]);
-  const book = loaded?.source === data && loaded.format === format ? loaded.book : undefined;
+  // While a changed file is parsed the previous table stays in view.
+  const book = loaded?.format === format ? loaded.book : undefined;
   const error = loaded?.source === data && loaded.format === format ? loaded.error : undefined;
   const sheet = book?.sheets[active];
   useEffect(() => {

@@ -21,12 +21,16 @@ export function parseSpreadsheet(bytes: Uint8Array, format: string): Spreadsheet
         : bytes[0] === 0xfe && bytes[1] === 0xff
           ? 'utf-16be'
           : 'utf-8';
-    let text: string;
-    try {
-      text = new TextDecoder(encoding, { fatal: true }).decode(bytes);
-    } catch {
-      throw new Error('表格文本须使用 UTF-8 或带 BOM 的 UTF-16 编码。');
+    // Without a byte order mark, text that is not UTF-8 is taken as GB18030 (a superset of GBK),
+    // which is what Excel on a Chinese Windows saves as CSV.
+    let text: string | undefined;
+    for (const label of encoding === 'utf-8' ? ['utf-8', 'gb18030'] : [encoding]) {
+      try {
+        text = new TextDecoder(label, { fatal: true }).decode(bytes);
+        break;
+      } catch {}
     }
+    if (text === undefined) throw new Error('表格文本须使用 UTF-8、GBK 或带 BOM 的 UTF-16 编码。');
     if (text.includes('\0')) throw new Error('不是有效的文本表格。');
     const rows: string[][] = [];
     let columns = 0;
