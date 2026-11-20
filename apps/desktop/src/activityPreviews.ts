@@ -94,7 +94,11 @@ export function trackPreviews(client: ProxyClient) {
   const inspect = () => {
     // Signed out (not a connection lost on the way): what the account's sessions said is not left behind.
     if (client.state.status !== status) {
-      if (client.state.status === 'disconnected' && status === 'connected') clearPreviews();
+      if (
+        client.state.status === 'disconnected' &&
+        (status === 'connected' || status === 'reconnecting')
+      )
+        clearPreviews();
       status = client.state.status;
     }
     let moved = false;

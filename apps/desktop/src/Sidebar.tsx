@@ -860,9 +860,26 @@ export default function Sidebar({
     return () => clearTimeout(timer);
   }, [inActivity, today]);
   // The session open on the page of a window in front shows what it waits for itself: it is listed, but not
-  // counted on the button (as the notices left it out). Read anew with each change of the sessions.
+  // counted on the button (as the notices left it out).
+  const [inFront, setInFront] = useState(
+    () => document.hasFocus() && document.visibilityState === 'visible',
+  );
+  useEffect(() => {
+    const check = () => setInFront(document.hasFocus() && document.visibilityState === 'visible');
+    window.addEventListener('focus', check);
+    window.addEventListener('blur', check);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      window.removeEventListener('focus', check);
+      window.removeEventListener('blur', check);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, []);
+  // Read at each drawing as well: the events above only make sure there is one when the window comes or goes.
   const reading =
-    document.hasFocus() && document.visibilityState === 'visible' ? selectedId : undefined;
+    inFront && document.hasFocus() && document.visibilityState === 'visible'
+      ? selectedId
+      : undefined;
   const urgent = useMemo(
     () =>
       [...sessions, ...elsewhere].filter(
