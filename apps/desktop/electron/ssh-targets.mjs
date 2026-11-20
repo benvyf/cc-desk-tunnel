@@ -24,6 +24,10 @@ const field = (value, name, maximum = 256) => {
   return value.trim();
 };
 
+// How often an authorization the service ended is taken up again on a target (reauthorize), as in client.ts.
+const REAUTHORIZE_LIMIT = 6;
+const REAUTHORIZE_WINDOW_MS = 120_000;
+const STABLE_MS = 90_000;
 const stages = {
   ssh: 'SSH 登录',
   capabilities: '目标环境检查',
@@ -140,6 +144,21 @@ export function createSshTargets({
     active.delete(id);
     await closeRun(run);
     emit();
+  }
+  // Counts one more authorization taken up again on this target; false once there have been
+  // REAUTHORIZE_LIMIT within REAUTHORIZE_WINDOW_MS. A connection that stood STABLE_MS starts the count afresh.
+  function reauthorize(intent) {
+    const now = Date.now();
+    // Only once per connection that stood: failures before the next ready keep counting.
+    if (intent.readyAt && now - intent.readyAt >= STABLE_MS) {
+      intent.reauthorized = { since: 0, count: 0 };
+      intent.readyAt = 0;
+    }
+    const { since, count } = intent.reauthorized;
+    if (count >= REAUTHORIZE_LIMIT || (count > 0 && now - since > REAUTHORIZE_WINDOW_MS))
+      return false;
+    intent.reauthorized = { since: count ? since : now, count: count + 1 };
+    return true;
   }
   function failure(id, run, error) {
     if (active.get(id) !== run || run.controller.signal.aborted) return;
@@ -270,6 +289,9 @@ export function createSshTargets({
         secret,
         established: false,
         failures: 0,
+        // Authorizations the service ended and taken up again lately (reauthorize), and when it last stood.
+        reauthorized: { since: 0, count: 0 },
+        readyAt: 0,
         generation: turn,
         attempt,
         timer: undefined,
@@ -393,6 +415,7 @@ export function createSshTargets({
             run.status = 'connected';
             intent.established = true;
             intent.failures = 0;
+            intent.readyAt = Date.now();
             stage('ready');
             finish();
           } else if (message.type === 'session.updated') {
@@ -403,9 +426,11 @@ export function createSshTargets({
             run.sessions.delete(message.sessionId);
           } else if (message.type === 'connection.error') {
             const error = new Error(message.message);
-            error.retryable = ['connection_lost', 'tunnel_failed', 'ssh_failed'].includes(
-              message.code,
-            );
+            // An authorization the service ended on a connection that stood is taken up again with a new ticket
+            // (service.credentials), as in the window (client.ts); a login the center has ended gets none.
+            error.retryable =
+              ['connection_lost', 'tunnel_failed', 'ssh_failed'].includes(message.code) ||
+              (message.code === 'unauthorized' && intent.established && reauthorize(intent));
             finish(error);
             failure(id, run, error);
           } else if (message.type === 'response') {

@@ -390,3 +390,48 @@ test('a failed computer replacement rolls back old sessions, tickets and device 
     db.close();
   }
 });
+
+test('a node renews its live tickets together: order kept, revocations and maintenance tickets refused', async (t) => {
+  const { store, nodes, input, id } = await fixture(t);
+  const now = Date.now();
+  const login = await store.login(input, 'renew', now);
+  const first = store.connect(login.token, 'ubuntu-cc', now);
+  const second = store.connect(login.token, 'ubuntu-cc', now + 1);
+  const management = store.serverConnection(login.token, 'ubuntu-cc', now + 2);
+  const unknown = 'ccs_' + 'x'.repeat(43);
+  // Past a ticket's own two minutes, a live one is still renewed; repeats answer alike; a lease of five minutes.
+  assert.deepEqual(
+    store.renew(
+      [first.token, unknown, second.token, first.token, management.token],
+      'ubuntu-cc',
+      now + 120_001,
+    ),
+    { leaseMs: 300_000, valid: [true, false, true, true, false] },
+  );
+  // Another node's tickets are not this one's.
+  assert.deepEqual(store.renew([first.token], 'other', now + 3).valid, [false]);
+  // The login's end, a removed grant, a disabled user: refused.
+  assert.deepEqual(store.renew([first.token], 'ubuntu-cc', login.expiresAt).valid, [false]);
+  await store.saveUser(id, { ...input, password: '', nodes: [] }, nodes);
+  assert.deepEqual(store.renew([first.token, second.token], 'ubuntu-cc', now + 4).valid, [
+    false,
+    false,
+  ]);
+  // A disabled user, on a fresh grant and login.
+  await store.saveUser(id, { ...input, password: '', nodes: ['ubuntu-cc'] }, nodes);
+  const again = await store.login(input, 'renew', now + 5);
+  const live = store.connect(again.token, 'ubuntu-cc', now + 5);
+  assert.deepEqual(store.renew([live.token], 'ubuntu-cc', now + 6).valid, [true]);
+  await store.saveUser(id, { ...input, password: '', nodes: ['ubuntu-cc'], enabled: false }, nodes);
+  assert.deepEqual(store.renew([live.token], 'ubuntu-cc', now + 7).valid, [false]);
+});
+
+test('logging out refuses the renewal of every ticket of that login', async (t) => {
+  const { store, input } = await fixture(t);
+  const now = Date.now();
+  const login = await store.login(input, 'renew-logout', now);
+  const ticket = store.connect(login.token, 'ubuntu-cc', now);
+  assert.deepEqual(store.renew([ticket.token], 'ubuntu-cc', now + 1).valid, [true]);
+  store.logout(login.token);
+  assert.deepEqual(store.renew([ticket.token], 'ubuntu-cc', now + 2).valid, [false]);
+});

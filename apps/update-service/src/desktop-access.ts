@@ -15,6 +15,10 @@ const hash = (value: string) => createHash('sha256').update(value).digest('hex')
 const secret = () => randomBytes(32).toString('base64url');
 const ticketLifetime = 120_000;
 const leaseLifetime = 60_000;
+// The lease of a batched renewal (renew): a node renews every 30 s, so revocation still lands within a round while the
+// center answers; the length only bridges rounds lost to the network or a restart of the center.
+const renewalLeaseLifetime = 300_000;
+export const renewBatchLimit = 256;
 const rememberedLifetime = 30 * 86400_000;
 const onlineLifetime = 90_000;
 const activityWriteInterval = 30_000;
@@ -409,6 +413,23 @@ export class DesktopAccess {
       email: String(row.email),
       validUntil: now + leaseLifetime,
     };
+  }
+  // A node's live tickets renewed together, in one query: whether each still stands, in the order given. Only
+  // desktop tickets, whose own expiry no longer matters once used (as for `validate` with renewal); a maintenance
+  // ticket is never renewed. Nothing is written, as in `validate`.
+  renew(tickets: string[], nodeId: string, now = Date.now()) {
+    const hashes = tickets.map(hash);
+    const rows = this.db
+      .prepare(
+        `SELECT tickets.hash FROM tickets
+      JOIN sessions ON sessions.hash=tickets.session_hash JOIN users ON users.id=sessions.user_id
+      JOIN grants ON grants.user_id=users.id AND grants.node_id=tickets.node_id
+      WHERE tickets.node_id=? AND sessions.expires>? AND users.enabled=1
+        AND tickets.hash IN (SELECT value FROM json_each(?))`,
+      )
+      .all(nodeId, now, JSON.stringify([...new Set(hashes)]));
+    const standing = new Set(rows.map((row) => String(row.hash)));
+    return { leaseMs: renewalLeaseLifetime, valid: hashes.map((value) => standing.has(value)) };
   }
   logout(token: string) {
     this.db.prepare('DELETE FROM tickets WHERE session_hash=?').run(hash(token));

@@ -12,7 +12,7 @@ import { FreshNodes } from './fresh-nodes.ts';
 import { validateMonitorReport } from '../../../packages/protocol/src/account-monitor.ts';
 import { ModerationStore } from './moderation.ts';
 import { PasswordAuth } from './password-auth.ts';
-import { DesktopAccess } from './desktop-access.ts';
+import { DesktopAccess, renewBatchLimit } from './desktop-access.ts';
 import { desktopServerUpdate } from './desktop-server-update.ts';
 import { authenticateNode, moderationPath, NodeReviews } from './moderation-nodes.ts';
 import {
@@ -94,6 +94,24 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
     : undefined;
   const passwordAuth = new PasswordAuth(join(config.dataDir, 'private'));
   const desktopAccess = new DesktopAccess(config.dataDir);
+  // A node asking about its desktops' tickets (validate, renew): by its own token, never from a page.
+  const requireNode = (
+    request: IncomingMessage,
+    input: Record<string, unknown>,
+    bearer: string,
+  ) => {
+    if (request.headers.origin !== undefined) throw new UpdateError(403, 'Node request required.');
+    const expected =
+      typeof input.nodeId === 'string' && Object.hasOwn(nodeHashes(), input.nodeId)
+        ? nodeHashes()[input.nodeId]
+        : undefined;
+    if (
+      !expected ||
+      !/^[A-Za-z0-9_-]{32,128}$/.test(bearer) ||
+      !timingSafeEqual(createHash('sha256').update(bearer).digest(), Buffer.from(expected, 'hex'))
+    )
+      throw new UpdateError(401, 'Node authentication required.');
+  };
   const enrollment = new EnrollmentStore(config);
   let failures = 0;
   let windowStart = Date.now();
@@ -155,7 +173,9 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
           contentType(request, 'application/json');
           let input: Record<string, unknown>;
           try {
-            input = JSON.parse((await body(request, 4096)).toString('utf8'));
+            // A node's batched renewal carries up to renewBatchLimit tickets of about 50 bytes each.
+            const limit = path === '/cc-access/v1/renew' ? 16_384 : 4096;
+            input = JSON.parse((await body(request, limit)).toString('utf8'));
           } catch {
             throw new UpdateError(400, 'Invalid JSON.');
           }
@@ -185,21 +205,7 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
             desktopAccess.logout(bearer);
             respond(response, 204);
           } else if (path === '/cc-access/v1/validate') {
-            if (request.headers.origin !== undefined)
-              throw new UpdateError(403, 'Node request required.');
-            const expected =
-              typeof input.nodeId === 'string' && Object.hasOwn(nodeHashes(), input.nodeId)
-                ? nodeHashes()[input.nodeId]
-                : undefined;
-            if (
-              !expected ||
-              !/^[A-Za-z0-9_-]{32,128}$/.test(bearer) ||
-              !timingSafeEqual(
-                createHash('sha256').update(bearer).digest(),
-                Buffer.from(expected, 'hex'),
-              )
-            )
-              throw new UpdateError(401, 'Node authentication required.');
+            requireNode(request, input, bearer);
             if (
               typeof input.ticket !== 'string' ||
               input.ticket.length > 128 ||
@@ -211,6 +217,20 @@ export async function createUpdateServer(store: UpdateStore, config: UpdateConfi
               200,
               desktopAccess.validate(input.ticket, String(input.nodeId), input.renewal),
             );
+          } else if (path === '/cc-access/v1/renew') {
+            // All of a node's live tickets at once (Build 32 and later); `validate` stays for older nodes.
+            requireNode(request, input, bearer);
+            const tickets = input.tickets;
+            if (
+              !Array.isArray(tickets) ||
+              tickets.length < 1 ||
+              tickets.length > renewBatchLimit ||
+              !tickets.every(
+                (ticket) => typeof ticket === 'string' && /^ccs_[A-Za-z0-9_-]{43}$/.test(ticket),
+              )
+            )
+              throw new UpdateError(400, 'Invalid tickets.');
+            respond(response, 200, desktopAccess.renew(tickets, String(input.nodeId)));
           } else throw new UpdateError(404, 'Not found.');
           return;
         }

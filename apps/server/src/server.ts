@@ -97,7 +97,12 @@ import { AccountMonitor, type AccountMonitorOptions } from './account-monitor.ts
 import { reviewInput, type ModerationOptions } from './moderation.ts';
 import { assertNativeTerminalReview } from './native-terminal-policy.ts';
 import { managedServerHandler, type ManagedBackend } from './managed-server-http.ts';
-import { validateDesktopTicket, type DesktopAccessOptions } from './desktop-access.ts';
+import {
+  createDesktopLeases,
+  RENEW_INTERVAL_MS,
+  validateDesktopTicket,
+  type DesktopAccessOptions,
+} from './desktop-access.ts';
 
 type Peer = {
   socket: WebSocket;
@@ -105,6 +110,8 @@ type Peer = {
   address: string;
   authenticated: boolean;
   access?: { ticket: string; userId: string; validUntil: number };
+  // Ends a desktop's connection whose authorization was refused or ran out (createDesktopLeases).
+  revoke: () => void;
   browser?: string;
   origin?: string;
   // A browser that came through a trusted proxy, which serves it the proxy's certificate.
@@ -2421,6 +2428,7 @@ export function createProxyServer(options: ServerOptions) {
       }
       if (maintenance || closing || peer.left || peer.socket.readyState !== WebSocket.OPEN)
         return false;
+      leases?.track(peer);
     }
     if (!allowed) refuse(peer.address);
     else throttle.succeed(peer.address);
@@ -2768,6 +2776,11 @@ export function createProxyServer(options: ServerOptions) {
     announce();
   }
 
+  // The desktops' authorizations, renewed together for the whole node (desktop-access.ts).
+  const leases = options.desktopAccess ? createDesktopLeases(options.desktopAccess) : undefined;
+  const leaseTimer = leases
+    ? setInterval(() => void leases.tick(), RENEW_INTERVAL_MS).unref()
+    : undefined;
   wss.on(
     'connection',
     (
@@ -2780,6 +2793,7 @@ export function createProxyServer(options: ServerOptions) {
         id: randomUUID(),
         address,
         authenticated: false,
+        revoke: () => {},
         browser: context?.browser,
         origin: context?.origin,
         proxied: context?.proxied,
@@ -2810,7 +2824,6 @@ export function createProxyServer(options: ServerOptions) {
       let signedIn = false;
       let greeted = false;
       let pendingIdentity: unknown;
-      let renewing = false;
       const revoke = () => {
         peer.left = true;
         send(peer, {
@@ -2820,21 +2833,7 @@ export function createProxyServer(options: ServerOptions) {
         });
         socket.close(4001, 'Desktop authorization expired');
       };
-      const accessTimer = setInterval(() => {
-        if (!peer.access || !options.desktopAccess || renewing) return;
-        if (peer.access.validUntil <= Date.now()) {
-          revoke();
-          return;
-        }
-        renewing = true;
-        void validateDesktopTicket(options.desktopAccess, peer.access.ticket, true)
-          .then((access) => {
-            peer.access = access;
-          }, revoke)
-          .finally(() => {
-            renewing = false;
-          });
-      }, 30_000);
+      peer.revoke = revoke;
       socket.on('pong', () => {
         missed = 0;
       });
@@ -2982,7 +2981,7 @@ export function createProxyServer(options: ServerOptions) {
       });
       socket.on('close', (code) => {
         clearTimeout(authTimer);
-        clearInterval(accessTimer);
+        leases?.untrack(peer);
         clearInterval(heartbeat);
         if (!signedIn) gate.leave(address);
         // Why a connection ended is the first thing needed when a run was cut short.
@@ -3021,6 +3020,7 @@ export function createProxyServer(options: ServerOptions) {
     },
     async close() {
       closing = true;
+      clearInterval(leaseTimer);
       accountMonitor?.close();
       web.close();
       const terminalCleanup = Promise.all(

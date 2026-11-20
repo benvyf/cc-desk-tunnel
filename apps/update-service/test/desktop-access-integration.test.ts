@@ -74,8 +74,10 @@ test(
     const store = await UpdateStore.open(root, config.trustedKeys, config.adminName);
     const management = await createUpdateServer(store, config);
     let validationRequests = 0;
+    let renewalRequests = 0;
     management.on('request', (request) => {
       if (request.url === '/cc-access/v1/validate') validationRequests++;
+      if (request.url === '/cc-access/v1/renew') renewalRequests++;
     });
     await new Promise<void>((resolve) => management.listen(0, '127.0.0.1', resolve));
     const address = management.address();
@@ -209,8 +211,7 @@ test(
       JSON.stringify({ type: 'device', id: randomUUID(), platform: 'linux', viaSsh: true }),
     );
     await wait(() => parallelReady);
-    // Exercise the same authenticated renewal HTTP path used by Ubuntu every 30s,
-    // without waiting for the timer or weakening the authorization requirement.
+    // Older nodes still renew one ticket at a time, with a one-minute lease.
     for (const token of [ticket.token, parallelTicket.token]) {
       const renewal = await request('/cc-access/v1/validate', nodeToken, {
         nodeId: 'ubuntu-cc',
@@ -218,16 +219,42 @@ test(
         renewal: true,
       });
       assert.equal(renewal.status, 200);
-      await renewal.text();
+      const lease = await renewal.json();
+      assert.ok(lease.validUntil <= Date.now() + 61_000);
     }
-    const beforePeriodicRenewal = validationRequests;
+    // The batched renewal: the node's token only, never from a page, a bounded batch.
+    const renew = (token: string, tickets: string[], page = false) =>
+      fetch(base + '/cc-access/v1/renew', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          ...(page ? { origin } : {}),
+        },
+        body: JSON.stringify({ nodeId: 'ubuntu-cc', tickets }),
+      });
+    const unknownTicket = 'ccs_' + 'z'.repeat(43);
+    const renewed = await renew(nodeToken, [ticket.token, unknownTicket, parallelTicket.token]);
+    assert.equal(renewed.status, 200);
+    assert.deepEqual(await renewed.json(), { leaseMs: 300_000, valid: [true, false, true] });
+    for (const [response, status] of [
+      [await renew('wrong'.repeat(8), [ticket.token]), 401],
+      [await renew(nodeToken, [ticket.token], true), 403],
+      [await renew(nodeToken, []), 400],
+      [await renew(nodeToken, Array(257).fill(ticket.token)), 400],
+      [await renew(nodeToken, ['not-a-ticket']), 400],
+      [await renew(nodeToken, Array(400).fill(ticket.token)), 400],
+    ] as const) {
+      assert.equal(response.status, status);
+      await response.text();
+    }
+    // The node's own 30-second round renews both connections in one request, and no longer one by one.
+    const beforeRound = { renewals: renewalRequests, validations: validationRequests };
     const renewalDeadline = Date.now() + 35000;
-    while (validationRequests < beforePeriodicRenewal + 2 && Date.now() < renewalDeadline)
+    while (renewalRequests < beforeRound.renewals + 1 && Date.now() < renewalDeadline)
       await new Promise((resolve) => setTimeout(resolve, 20));
-    assert.ok(
-      validationRequests >= beforePeriodicRenewal + 2,
-      'both real 30-second lease timers renewed',
-    );
+    assert.equal(renewalRequests, beforeRound.renewals + 1, 'one batched renewal per round');
+    assert.equal(validationRequests, beforeRound.validations, 'no per-connection renewal');
     assert.equal(socket.readyState, WebSocket.OPEN);
     assert.equal(parallelSocket.readyState, WebSocket.OPEN);
     assert.ok(

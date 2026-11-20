@@ -180,6 +180,11 @@ export type ConnectedDevice = Extract<ServerMessage, { type: 'devices' }>['devic
 // The renderer's single connection and its state store: components read `state` through subscribe / getSnapshot
 // and send commands with request(). A connection that breaks is made again, for as long as it takes, and what
 // was missed is read from the service's record; nothing is resent automatically.
+// How often an authorization the service ended is taken up again with a new ticket (ProxyClient.reauthorize).
+const REAUTHORIZE_LIMIT = 6;
+const REAUTHORIZE_WINDOW_MS = 120_000;
+const STABLE_MS = 90_000;
+
 export class ProxyClient {
   state: ClientState = {
     status: 'disconnected',
@@ -221,7 +226,15 @@ export class ProxyClient {
     // Remote mode: opens the bridge in the main process and resolves to its address. A bridge serves one
     // connection, so every attempt asks for a new one.
     bridge?: () => Promise<string | { url: string; token: string }>;
+    // The bridge hands out a ticket of its own for each attempt (email login): a connection whose authorization
+    // ended can take a new one instead of the user signing in again.
+    ticketed?: boolean;
   } | null = null;
+  // Authorizations ended on established connections and taken up again with a new ticket, lately: a service that
+  // keeps ending them is given up on after REAUTHORIZE_LIMIT within REAUTHORIZE_WINDOW_MS. A connection that
+  // stands STABLE_MS clears the count.
+  private reauthorized = { since: 0, count: 0 };
+  private stableTimer: ReturnType<typeof setTimeout> | undefined;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   retryAttempt = 0;
   // Whether this sign-in has stood once. Until then a failure is the user's to look at; after it, a fault on
@@ -504,6 +517,7 @@ export class ProxyClient {
     this.disconnect();
     this.credentials = { url: address.toString(), token: token.trim(), device, reconnect, bridge };
     this.established = false;
+    this.reauthorized = { since: 0, count: 0 };
     this.cacheOrder = [];
     this.update({
       status: 'connecting',
@@ -618,7 +632,10 @@ export class ProxyClient {
       (connection) => {
         if (!current()) return;
         credentials.url = typeof connection === 'string' ? connection : connection.url;
-        if (typeof connection !== 'string') credentials.token = connection.token;
+        if (typeof connection !== 'string') {
+          credentials.token = connection.token;
+          credentials.ticketed = true;
+        }
         this.attach(credentials);
       },
       (error) => {
@@ -695,6 +712,11 @@ export class ProxyClient {
         this.established = true;
         clearTimeout(timeout);
         this.retryAttempt = 0;
+        clearTimeout(this.stableTimer);
+        this.stableTimer = setTimeout(() => {
+          this.stableTimer = undefined;
+          if (this.socket === socket) this.reauthorized = { since: 0, count: 0 };
+        }, STABLE_MS);
         const selectedId = message.sessions.some((session) => session.id === this.state.selectedId)
           ? this.state.selectedId
           : null;
@@ -773,7 +795,18 @@ export class ProxyClient {
             this.established &&
             credentials.reconnect &&
             ['tunnel_failed', 'ssh_failed', 'connection_lost'].includes(message.code);
-          if (!passing) this.credentials = null;
+          // An authorization the service ended (a renewal it could not make, often only the network on its way
+          // to the management center) is taken up again with a new ticket. The management center decides: a
+          // login it has ended gets no ticket, and the bridge's refusal ends this as before.
+          const reauthorizing =
+            message.code === 'unauthorized' &&
+            this.established &&
+            credentials.reconnect &&
+            !!credentials.bridge &&
+            !!credentials.ticketed &&
+            this.reauthorize();
+          if (reauthorizing) this.update({ error: '登录授权续期中断，正在重新连接…' });
+          if (!passing && !reauthorizing) this.credentials = null;
           socket.close();
         }
       } else if (
@@ -909,6 +942,8 @@ export class ProxyClient {
     socket.onclose = (event) => {
       clearTimeout(timeout);
       if (this.socket !== socket) return;
+      clearTimeout(this.stableTimer);
+      this.stableTimer = undefined;
       this.socket = null;
       this.diskReads.clear();
       this.synced.clear();
@@ -950,6 +985,15 @@ export class ProxyClient {
       /* onclose owns reconnect and pending request cleanup. */
     };
   }
+  // Counts one more authorization taken up again; false once there have been too many lately.
+  private reauthorize() {
+    const now = Date.now();
+    const { since, count } = this.reauthorized;
+    if (count >= REAUTHORIZE_LIMIT || (count > 0 && now - since > REAUTHORIZE_WINDOW_MS))
+      return false;
+    this.reauthorized = { since: count ? since : now, count: count + 1 };
+    return true;
+  }
   // Makes the attempt that is waiting for its turn now: the network just came back.
   retryNow() {
     if (this.state.status !== 'reconnecting' || this.retryTimer === undefined) return;
@@ -958,6 +1002,8 @@ export class ProxyClient {
     this.open();
   }
   disconnect() {
+    clearTimeout(this.stableTimer);
+    this.stableTimer = undefined;
     this.flushStream();
     this.flushHistoryCache(true);
     if (this.historyCacheReady)

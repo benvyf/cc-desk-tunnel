@@ -682,7 +682,14 @@ test('temporary ticket failures retry with a fresh token; explicit refusal stops
   await new Promise((resolve) => setImmediate(resolve));
   client.socket.onopen();
   assert.equal(client.socket.sent[0].token, 'new-ticket-with-enough-characters');
+  // An authorization ended by the service is taken up again with a new ticket; the bridge's refusal ends it.
   client.socket.message({ type: 'connection.error', code: 'unauthorized', message: 'revoked' });
+  assert.equal(client.state.status, 'reconnecting');
+  client.credentials.bridge = async () => {
+    throw Object.assign(new Error('refused'), { retryable: false });
+  };
+  client.retryNow();
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(client.state.status, 'disconnected');
   assert.equal(client.retryTimer, undefined);
 });
@@ -790,4 +797,113 @@ test('a remote connection that breaks is made again through a new bridge, and on
   client.disconnect();
   assert.equal(sockets[4].sent.at(-1).type, 'leave');
   assert.equal(bridges, 5);
+});
+
+test('an authorization the service ended is taken up again with a new ticket, a few times at most', async (t) => {
+  const Original = globalThis.WebSocket;
+  const sockets = [];
+  class Socket {
+    static OPEN = 1;
+    readyState = 1;
+    sent = [];
+    constructor(url) {
+      this.url = url;
+      sockets.push(this);
+    }
+    send(raw) {
+      this.sent.push(JSON.parse(raw));
+    }
+    close() {
+      this.readyState = 3;
+      this.onclose?.();
+    }
+    message(message) {
+      this.onmessage({ data: JSON.stringify(message) });
+    }
+  }
+  globalThis.WebSocket = Socket;
+  const client = new ProxyClient();
+  t.after(() => {
+    client.disconnect();
+    globalThis.WebSocket = Original;
+  });
+  const device = { id: randomUUID(), name: 'this computer' };
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
+  const ready = (socket) =>
+    socket.message({
+      type: 'ready',
+      protocolVersion: PROTOCOL_VERSION,
+      version: '0.0.1',
+      connectionId: randomUUID(),
+      adapter: 'claude-code',
+      sessions: [],
+    });
+  let tickets = 0;
+  let refuse = false;
+  const ticketed = async () => {
+    if (refuse)
+      throw Object.assign(new Error('邮箱登录已失效，请重新登录。'), { retryable: false });
+    return {
+      url: `ws://127.0.0.1:${9100 + ++tickets}/bridge`,
+      token: `ccs_ticket-${tickets}`.padEnd(47, 'x'),
+    };
+  };
+  const revoke = (socket) =>
+    socket.message({
+      type: 'connection.error',
+      code: 'unauthorized',
+      message: '登录授权已结束，请重新登录。',
+    });
+  const connect = (bridge) =>
+    client.connect('ws://127.0.0.1/ws', 'email-authorization-pending', device, true, bridge);
+
+  // Before it ever stood, the refusal is the user's to see.
+  connect(ticketed);
+  await settle();
+  revoke(sockets.at(-1));
+  assert.equal(client.state.status, 'disconnected');
+
+  // Once it stood, each end is taken up again with a ticket of its own.
+  connect(ticketed);
+  await settle();
+  ready(sockets.at(-1));
+  for (let round = 1; round <= 6; round++) {
+    revoke(sockets.at(-1));
+    assert.equal(client.state.status, 'reconnecting', `round ${round}`);
+    assert.equal(client.state.error, '登录授权续期中断，正在重新连接…');
+    const before = tickets;
+    client.retryNow();
+    await settle();
+    assert.equal(tickets, before + 1);
+    const socket = sockets.at(-1);
+    socket.onopen();
+    assert.equal(socket.sent[0].token, `ccs_ticket-${tickets}`.padEnd(47, 'x'));
+    ready(socket);
+    assert.equal(client.state.status, 'connected');
+  }
+  // A service that keeps ending them is given up on, and says why.
+  revoke(sockets.at(-1));
+  assert.equal(client.state.status, 'disconnected');
+  assert.equal(client.state.error, '登录授权已结束，请重新登录。');
+  assert.equal(client.retryTimer, undefined);
+
+  // A login the management center has ended gets no ticket: that ends it.
+  connect(ticketed);
+  await settle();
+  ready(sockets.at(-1));
+  revoke(sockets.at(-1));
+  assert.equal(client.state.status, 'reconnecting');
+  refuse = true;
+  client.retryNow();
+  await settle();
+  assert.equal(client.state.status, 'disconnected');
+  assert.equal(client.state.error, '邮箱登录已失效，请重新登录。');
+  refuse = false;
+
+  // A bridge that hands out no ticket of its own (a token typed in) ends as before.
+  connect(async () => `ws://127.0.0.1:${9300 + ++tickets}/bridge`);
+  await settle();
+  ready(sockets.at(-1));
+  revoke(sockets.at(-1));
+  assert.equal(client.state.status, 'disconnected');
 });
