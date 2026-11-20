@@ -3,7 +3,7 @@ import Brand from './Brand.tsx';
 import SidebarShell, { SearchField } from './SidebarShell.tsx';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import {
-  Activity,
+  Bell,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -1016,7 +1016,7 @@ export default function Sidebar({
               aria-pressed={inActivity}
               onClick={toggleView}
             >
-              <Activity />
+              <Bell />
             </button>
             {!inActivity && waiting > 0 && (
               <span className="notice-badge" aria-hidden="true">
