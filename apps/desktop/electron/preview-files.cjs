@@ -264,11 +264,16 @@ function createPreviewFiles() {
         await start();
         if (openedAt !== generation) throw new Error('预览来源已失效，请重新打开文件。');
         const token = randomBytes(24).toString('hex');
-        // A guessed encoding gives way to the page's own declaration.
+        // A guessed GB18030 gives way to the page's own declaration; a guessed UTF-16 does not, since a page's meta
+        // cannot be read by the browser from UTF-16 bytes.
         const declared = /<meta\s[^>]*(?:charset\s*=|http-equiv\s*=\s*["']?content-type)/i.test(
           text.slice(0, 1024),
         );
-        mounts.set(token, { root, file, charset: guessed && declared ? '' : encoding });
+        mounts.set(token, {
+          root,
+          file,
+          charset: encoding === 'gb18030' && guessed && declared ? '' : encoding,
+        });
         const relative = path
           .relative(root, file)
           .split(path.sep)
