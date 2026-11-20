@@ -13,6 +13,7 @@ export type Action =
   | 'settings'
   | 'find'
   | 'activity'
+  | 'quickOpen'
   | 'zoomIn'
   | 'zoomOut'
   | 'zoomReset';
@@ -27,6 +28,7 @@ export const actions: { id: Action; name: string; desktop?: boolean }[] = [
   { id: 'settings', name: '打开设置' },
   { id: 'find', name: '查找对话内容' },
   { id: 'activity', name: '查看活动' },
+  { id: 'quickOpen', name: '按名称打开文件', desktop: true },
   { id: 'zoomIn', name: '放大界面', desktop: true },
   { id: 'zoomOut', name: '缩小界面', desktop: true },
   { id: 'zoomReset', name: '恢复界面大小', desktop: true },
@@ -43,6 +45,8 @@ const defaults: Record<Action, string> = {
   settings: 'Ctrl+Comma',
   find: 'Ctrl+KeyF',
   activity: 'Ctrl+Alt+KeyU',
+  // As in VS Code: a file of the session's project, found by its name, in the preview.
+  quickOpen: 'Ctrl+KeyP',
   zoomIn: 'Ctrl+Equal',
   zoomOut: 'Ctrl+Minus',
   zoomReset: 'Ctrl+Digit0',

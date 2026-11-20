@@ -286,3 +286,171 @@ test('successful retries clear errors from file selection and system opening', a
   await pane.getByRole('button', { name: '在系统应用中打开', exact: true }).click();
   await expect(pane.getByRole('alert')).toHaveCount(0);
 });
+
+// The tree's open folders are the session's, kept with its layout (preview.ts setFolders): a refresh reads them
+// again without shutting them, and they outlast the Git changes, the tree put away, the preview put away, another
+// session and a reload. A remembered folder that is gone is forgotten.
+test('the workspace tree keeps its open folders', async ({ page }) => {
+  await page.goto('/test/fixtures/preview-sidebar.html?git');
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const tree = page.getByRole('tree', { name: '工作区文件' });
+  const src = tree.getByRole('treeitem', { name: 'src', exact: true });
+  const nested = tree.getByRole('treeitem', { name: 'index.ts', exact: true });
+  await src.click();
+  await expect(nested).toBeVisible();
+  const lists = () => page.evaluate(() => (window as any).fixturePreview.counts().lists);
+  const before = await lists();
+  await page.getByRole('button', { name: '刷新目录', exact: true }).click();
+  // Both shown folders read again; src stays open.
+  await expect.poll(lists).toBe(before + 2);
+  await expect(src).toHaveAttribute('aria-expanded', 'true');
+  await expect(nested).toBeVisible();
+
+  await page.getByRole('button', { name: 'Git 改动', exact: true }).click();
+  await expect(tree).toHaveCount(0);
+  await page.getByRole('button', { name: 'Git 改动', exact: true }).click();
+  await expect(nested).toBeVisible();
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  await expect(tree).toHaveCount(0);
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  await expect(nested).toBeVisible();
+  await page.getByRole('button', { name: '预览开关', exact: true }).click();
+  await expect(tree).toHaveCount(0);
+  await page.getByRole('button', { name: '预览开关', exact: true }).click();
+  await expect(nested).toBeVisible();
+  // Another session has a tree of its own, shut; this one's comes back open.
+  await page.getByRole('button', { name: '切换预览会话', exact: true }).click();
+  await expect(nested).toHaveCount(0);
+  await page.getByRole('button', { name: '切换预览会话', exact: true }).click();
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await expect(nested).toBeVisible();
+
+  await page.reload();
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await expect(nested).toBeVisible();
+  await expect(src).toHaveAttribute('aria-expanded', 'true');
+
+  // src is deleted: the next reading forgets it, so that once it is back it is shut.
+  await page.evaluate(() => ((window as any).fixtureNoSrc = true));
+  await page.getByRole('button', { name: '刷新目录', exact: true }).click();
+  await expect(src).toHaveCount(0);
+  await page.evaluate(() => ((window as any).fixtureNoSrc = false));
+  await page.getByRole('button', { name: '刷新目录', exact: true }).click();
+  await expect(src).toHaveAttribute('aria-expanded', 'false');
+  await expect(nested).toHaveCount(0);
+});
+
+test('重试 after the desktop could not watch a folder watches it again', async ({ page }) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await page.evaluate(() => ((window as any).fixtureFailWatch = true));
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const tree = page.getByRole('tree', { name: '工作区文件' });
+  await expect(tree.getByRole('alert')).toContainText('本机目录监听最多支持 128 个目录。');
+  await page.evaluate(() => ((window as any).fixtureFailWatch = false));
+  await tree.getByRole('button', { name: '重试', exact: true }).click();
+  await expect(tree.getByRole('alert')).toHaveCount(0);
+  await expect
+    .poll(() => page.evaluate(() => (window as any).fixturePreview.counts().activeWatches))
+    .toBe(1);
+  // The folder refreshes itself again on a change.
+  const lists = () => page.evaluate(() => (window as any).fixturePreview.counts().lists);
+  const before = await lists();
+  await page.evaluate(() => (window as any).fixturePreview.emit('网站预览'));
+  await expect.poll(lists).toBe(before + 1);
+});
+
+test('a file found by its name opens in the temporary tab, or kept with Ctrl+Enter', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html');
+  await page.getByRole('button', { name: '展开空栏', exact: true }).click();
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const button = page.getByRole('button', { name: '按名称打开文件', exact: true });
+  const box = page.getByRole('dialog', { name: '按名称打开文件' });
+  const input = box.getByRole('combobox', { name: '文件名或路径' });
+  const options = box.getByRole('option');
+  await button.click();
+  await expect(input).toBeFocused();
+  await expect(options).toHaveCount(4);
+  // The name beginning with what is typed comes first, before a path holding it.
+  await input.fill('READ');
+  await expect(options).toHaveText(['readme.mdsrc', 'a.mdreadme-tools']);
+  // Letters in order are enough.
+  await input.fill('idxts');
+  await expect(options).toHaveText(['index.tssrc']);
+  await input.press('Enter');
+  await expect(box).toHaveCount(0);
+  await expect(button).toBeFocused();
+  const temporary = page.getByRole('tab', { name: 'index.ts', exact: true });
+  await expect(temporary).toHaveAttribute('aria-description', '临时标签，双击固定');
+
+  await button.click();
+  await input.fill('read');
+  await input.press('ArrowDown');
+  await expect(options.nth(1)).toHaveAttribute('aria-selected', 'true');
+  await input.press('Control+Enter');
+  const kept = page.getByRole('tab', { name: 'a.md', exact: true });
+  await expect(kept).toBeVisible();
+  await expect(kept).not.toHaveAttribute('aria-description');
+  await expect(page.getByRole('tab')).toHaveText(['index.ts', 'a.md']);
+
+  // Escape shuts the box and gives the focus back.
+  await button.click();
+  await expect(input).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(box).toHaveCount(0);
+  await expect(button).toBeFocused();
+  await expect(page.getByRole('tab')).toHaveCount(2);
+
+  // An index that reached its bounds says so.
+  await page.evaluate(() => ((window as any).fixtureIndexTruncated = true));
+  await button.click();
+  await expect(box.getByText('只索引了部分文件')).toBeVisible();
+  await page.keyboard.press('Escape');
+  // Listed once per opening of the box.
+  expect(await page.evaluate(() => (window as any).fixturePreview.counts().indexes)).toBe(4);
+});
+
+test('the tree has one tab stop, goes left to a folder, and a typed letter finds a row', async ({
+  page,
+}) => {
+  await page.goto('/test/fixtures/preview-sidebar.html?big');
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  await page.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const tree = page.getByRole('tree', { name: '工作区文件' });
+  const row = (name: string) => tree.getByRole('treeitem', { name, exact: true });
+  await expect(row('说明.md')).toBeVisible();
+  // Only the selected row is in the Tab order.
+  await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1);
+  await expect(row('说明.md')).toHaveAttribute('tabindex', '0');
+  await expect(row('src')).toHaveAttribute('tabindex', '-1');
+
+  await row('src').click();
+  await row('index.ts').focus();
+  await expect(row('index.ts')).toHaveAttribute('tabindex', '0');
+  await expect(tree.locator('[role="treeitem"][tabindex="0"]')).toHaveCount(1);
+  // Left from a file goes to its folder; from an open folder shuts it; from a shut top folder stays.
+  await page.keyboard.press('ArrowLeft');
+  await expect(row('src')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(row('src')).toHaveAttribute('aria-expanded', 'false');
+  await expect(row('src')).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(row('src')).toBeFocused();
+
+  // A typed letter goes to the next row beginning with it, round to the first.
+  await page.keyboard.press('b');
+  await expect(row('big')).toBeFocused();
+  await page.keyboard.press('S');
+  await expect(row('src')).toBeFocused();
+  await page.keyboard.press('b');
+  await expect(row('big')).toBeFocused();
+
+  // A folder past 2000 entries shows the first 2000 and says so.
+  await row('big').click();
+  await expect(tree.getByText('此文件夹有 2345 项，只显示前 2000 项')).toBeVisible();
+  await expect(row('条目 2000.txt')).toHaveCount(1);
+  await expect(tree.getByRole('alert')).toHaveCount(0);
+});

@@ -21,6 +21,12 @@ async function fixture(t) {
 }
 
 const pause = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// A folder's shown entries; `total` counts them too, and more for a folder past the 2000 shown.
+async function listed(workspace, input) {
+  const { entries, total } = await workspace.list(input);
+  assert.equal(total, entries.length);
+  return entries;
+}
 async function changed(events, after = 0) {
   for (let attempts = 0; attempts < 100; attempts++) {
     if (events.length > after) return events.at(-1);
@@ -36,13 +42,13 @@ test('lists only one directory, sorted directories first, without reading file c
   await writeFile(join(project, 'b.txt'), 'PRIVATE BODY');
   await writeFile(join(project, 'a.txt'), 'ANOTHER BODY');
   await writeFile(join(project, 'a-folder/nested.txt'), 'NESTED BODY');
-  assert.deepEqual(await workspace.list({ root: project }), [
+  assert.deepEqual(await listed(workspace, { root: project }), [
     { name: 'a-folder', path: join(project, 'a-folder'), kind: 'directory' },
     { name: 'z-folder', path: join(project, 'z-folder'), kind: 'directory' },
     { name: 'a.txt', path: join(project, 'a.txt'), kind: 'file' },
     { name: 'b.txt', path: join(project, 'b.txt'), kind: 'file' },
   ]);
-  assert.deepEqual(await workspace.list({ root: project, path: join(project, 'a-folder') }), [
+  assert.deepEqual(await listed(workspace, { root: project, path: join(project, 'a-folder') }), [
     { name: 'nested.txt', path: join(project, 'a-folder/nested.txt'), kind: 'file' },
   ]);
 });
@@ -54,11 +60,11 @@ test('hides credentials and hidden entries but permits generated .local director
   await writeFile(join(project, '.env'), 'SECRET');
   await writeFile(join(project, '.local/result.txt'), 'LOCAL');
   assert.deepEqual(
-    (await workspace.list({ root: project })).map((entry) => entry.name),
+    (await listed(workspace, { root: project })).map((entry) => entry.name),
     ['.local'],
   );
   assert.equal(
-    (await workspace.list({ root: project, path: join(project, '.local') }))[0].name,
+    (await listed(workspace, { root: project, path: join(project, '.local') }))[0].name,
     'result.txt',
   );
   for (const name of ['.git', '.ssh', '.claude', '.codex', '.hidden', '.env']) {
@@ -99,7 +105,7 @@ test('omits aliases outside the root or into credential folders and rejects dire
   await symlink(join(project, '.claude'), join(project, 'credential-link'), 'junction');
   await symlink(join(project, 'safe'), join(project, 'safe-link'), 'junction');
   assert.deepEqual(
-    (await workspace.list({ root: project })).map((entry) => entry.name),
+    (await listed(workspace, { root: project })).map((entry) => entry.name),
     ['safe', 'safe-link'],
   );
   for (const name of ['outside-link', 'credential-link']) {
@@ -114,12 +120,107 @@ test('omits aliases outside the root or into credential folders and rejects dire
   }
 });
 
-test('rejects an oversized directory with an explicit limit instead of silently truncating it', async (t) => {
+test('an oversized directory lists its first 2000 entries and counts the rest', async (t) => {
   const { project, workspace } = await fixture(t);
   await Promise.all(
-    Array.from({ length: 2001 }, (_, i) => writeFile(join(project, `${i}.txt`), '')),
+    Array.from({ length: 2005 }, (_, i) => writeFile(join(project, `${i}.txt`), '')),
   );
-  await assert.rejects(workspace.list({ root: project }), /2000/);
+  await writeFile(join(project, '.hidden'), '');
+  const { entries, total } = await workspace.list({ root: project });
+  assert.equal(entries.length, 2000);
+  assert.equal(total, 2005);
+  // The shown ones in natural order, numbers by value.
+  const names = entries.map((entry) => entry.name);
+  for (let i = 1; i < names.length; i++) assert.ok(parseInt(names[i - 1]) < parseInt(names[i]));
+});
+
+test('names sort naturally and without case, directories first', async (t) => {
+  const { project, workspace } = await fixture(t);
+  for (const name of ['dir10', 'Dir2', 'dir1']) await mkdir(join(project, name));
+  for (const name of ['file10.txt', 'File2.txt', 'file1.txt', 'b.txt', 'A.txt'])
+    await writeFile(join(project, name), '');
+  assert.deepEqual(
+    (await listed(workspace, { root: project })).map((entry) => entry.name),
+    ['dir1', 'Dir2', 'dir10', 'A.txt', 'b.txt', 'file1.txt', 'File2.txt', 'file10.txt'],
+  );
+});
+
+test('the quick-open index lists the workspace’s files, skipping hidden, private and build folders', async (t) => {
+  const { root, project, workspace } = await fixture(t);
+  for (const folder of [
+    'src/nested',
+    '.git',
+    '.ssh',
+    '.claude',
+    '.codex',
+    '.local',
+    'node_modules/pkg',
+    'dist',
+    'build',
+    'out',
+    '.next',
+    'target',
+    '__pycache__',
+    '.venv',
+    'Build-Tools',
+  ])
+    await mkdir(join(project, folder), { recursive: true });
+  for (const file of [
+    'src/nested/file10.ts',
+    'src/nested/file2.ts',
+    'src/main.ts',
+    'README.md',
+    '.env',
+    '.git/config',
+    '.ssh/id',
+    '.claude/settings.json',
+    '.codex/auth.json',
+    '.local/cache.txt',
+    'node_modules/pkg/index.js',
+    'dist/app.js',
+    'build/app.js',
+    'out/app.js',
+    '.next/app.js',
+    'target/app.class',
+    '__pycache__/a.pyc',
+    '.venv/python',
+    'Build-Tools/run.cmd',
+  ])
+    await writeFile(join(project, file), 'BODY');
+  await mkdir(join(root, 'outside'));
+  await writeFile(join(root, 'outside/secret.txt'), 'SECRET');
+  await symlink(join(root, 'outside'), join(project, 'outside-link'), 'junction');
+  await symlink(join(project, 'src'), join(project, 'src-link'), 'junction');
+  const { files, truncated } = await workspace.index({ root: project });
+  assert.equal(truncated, false);
+  // Breadth first, each folder in natural order; links into directories are never followed.
+  assert.deepEqual(files, [
+    'README.md',
+    'Build-Tools/run.cmd',
+    'src/main.ts',
+    'src/nested/file2.ts',
+    'src/nested/file10.ts',
+  ]);
+});
+
+test('the quick-open index stops at its file and time bounds and says it is partial', async (t) => {
+  const root = await mkdtemp(join(tmpdir(), 'cc-workspace-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  for (let i = 0; i < 5; i++) await writeFile(join(root, `${i}.txt`), '');
+  const few = createPreviewWorkspace({ indexFileLimit: 3 });
+  t.after(() => few.close());
+  assert.deepEqual(await few.index({ root }), {
+    files: ['0.txt', '1.txt', '2.txt'],
+    truncated: true,
+  });
+  const quick = createPreviewWorkspace({ indexTimeMs: -1 });
+  t.after(() => quick.close());
+  assert.deepEqual(await quick.index({ root }), { files: [], truncated: true });
+  const whole = createPreviewWorkspace();
+  t.after(() => whole.close());
+  assert.equal((await whole.index({ root })).files.length, 5);
+  await assert.rejects(whole.index({ root: join(root, '0.txt') }), /目录/);
+  await assert.rejects(whole.index({ root: '\\\\server\\share' }), /本机|网络/);
 });
 
 test('opened file watches debounce metadata through atomic saves, deletion and recreation', async (t) => {
@@ -377,7 +478,7 @@ test('bounds watch subscriptions at 128, including concurrent registrations, and
 test('the .local exception permits generated directories, never hidden files', async (t) => {
   const { project, workspace } = await fixture(t);
   await writeFile(join(project, '.local'), 'SECRET');
-  assert.deepEqual(await workspace.list({ root: project }), []);
+  assert.deepEqual(await listed(workspace, { root: project }), []);
   await assert.rejects(
     workspace.watch({ root: project, path: join(project, '.local'), key: 'hidden' }, () => {}),
     /隐藏/,
@@ -570,7 +671,7 @@ test('a file alias cannot expose a hidden .local file', async (t) => {
       value === alias ? join(project, '.local') : original(value),
     );
   }
-  assert.deepEqual(await workspace.list({ root: project }), []);
+  assert.deepEqual(await listed(workspace, { root: project }), []);
   await assert.rejects(
     workspace.watch(
       { root: project, path: join(project, 'visible-alias.txt'), key: 'hidden' },

@@ -7,6 +7,21 @@ const entryLimit = 2000;
 const watchLimit = 128;
 const debounceMs = 75;
 const credentialDirectories = new Set(['.git', '.ssh', '.claude', '.codex']);
+// Folders the quick-open index never enters: dependencies, build output and caches, which hold many files that are
+// rarely the ones looked for. Hidden folders (.git, .next, .venv and the like) are skipped as hidden.
+const indexSkipped = new Set([
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  'target',
+  '__pycache__',
+  '.venv',
+]);
+// Names in natural order (file2 before file10), the same letters in either case as one, directories first.
+const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const byName = (a, b) => collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
 const inside = (root, file) => {
   const relative = path.relative(root, file);
   return relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative);
@@ -65,7 +80,9 @@ async function fileVersion(record) {
 
 // Only local path metadata leaves this controller. It never reads file contents, starts a server,
 // or connects to an agent. Each tree expansion lists one bounded directory on explicit request.
-function createPreviewWorkspace() {
+// The quick-open index (index below) stops at `indexFileLimit` files or after `indexTimeMs`, whichever comes
+// first; tests give smaller bounds.
+function createPreviewWorkspace({ indexFileLimit = 20000, indexTimeMs = 1500 } = {}) {
   const subscriptions = new Map();
   const directories = new Map();
   const recovering = new Set();
@@ -237,10 +254,15 @@ function createPreviewWorkspace() {
       const { root, target, directory } = await resolveTarget(input);
       if (!directory) throw new Error('请选择目录。');
       const entries = [];
-      let count = 0;
+      // Past the first 2000 shown entries, the rest are only counted, by name, for the tree to say how many
+      // there are; none of them is resolved or exposed.
+      let total = 0;
       const handle = await files.opendir(target);
       for await (const entry of handle) {
-        if (++count > entryLimit) throw new Error('目录超过 2000 个项目，请选择更小的目录。');
+        if (entries.length >= entryLimit) {
+          if (!entry.name.startsWith('.')) total++;
+          continue;
+        }
         const entryPath = path.join(target, entry.name);
         try {
           permitted(root, entryPath);
@@ -252,20 +274,83 @@ function createPreviewWorkspace() {
             (entry.name.startsWith('.') || path.basename(canonical).startsWith('.'))
           )
             continue;
-          if (stat.isDirectory() || stat.isFile())
+          if (stat.isDirectory() || stat.isFile()) {
             entries.push({
               name: entry.name,
               path: entryPath,
               kind: stat.isDirectory() ? 'directory' : 'file',
             });
+            total++;
+          }
         } catch {
           // Hidden, unsafe, dangling or concurrently removed entries are never exposed.
         }
       }
       if (closed || openedAt !== generation) throw new Error('预览来源已失效，请重新打开工作区。');
-      return entries.sort((a, b) =>
-        a.kind === b.kind ? a.name.localeCompare(b.name) : a.kind === 'directory' ? -1 : 1,
-      );
+      // `total` exceeds the entries' count when the folder holds more than the 2000 shown (the tree says so).
+      return {
+        entries: entries.sort((a, b) =>
+          a.kind === b.kind ? byName(a.name, b.name) : a.kind === 'directory' ? -1 : 1,
+        ),
+        total,
+      };
+    },
+
+    // The files of the whole workspace, for opening one by name: paths relative to the root, '/' between their
+    // parts. Bounded in count and time; past either, what was found so far comes back with `truncated`. Hidden
+    // and private folders, dependencies and build output are not entered, and a link is followed only to a file
+    // inside the root, never into a directory, so nothing outside the root is listed and no cycle is walked.
+    async index(input) {
+      if (closed) throw new Error('预览工作区已关闭。');
+      const openedAt = generation;
+      const { root, directory } = await resolveTarget({ root: input?.root });
+      if (!directory) throw new Error('请选择目录。');
+      const started = Date.now();
+      const found = [];
+      let truncated = false;
+      // Iterative, so a deep tree cannot exhaust the stack; every read is asynchronous.
+      const pending = [''];
+      walk: while (pending.length) {
+        const relative = pending.shift();
+        let entries;
+        try {
+          entries = await files.readdir(path.join(root, relative), { withFileTypes: true });
+        } catch {
+          // An unreadable or concurrently removed folder is left out.
+          continue;
+        }
+        if (closed || openedAt !== generation)
+          throw new Error('预览来源已失效，请重新打开工作区。');
+        entries.sort((a, b) => byName(a.name, b.name));
+        for (const entry of entries) {
+          if (found.length >= indexFileLimit || Date.now() - started > indexTimeMs) {
+            truncated = true;
+            break walk;
+          }
+          const name = entry.name;
+          const lower = name.toLowerCase();
+          if (name.startsWith('.') || credentialDirectories.has(lower)) continue;
+          const child = relative ? `${relative}/${name}` : name;
+          if (entry.isDirectory()) {
+            if (!indexSkipped.has(lower)) pending.push(child);
+          } else if (entry.isFile()) {
+            found.push(child);
+          } else if (entry.isSymbolicLink()) {
+            // Windows junctions are links too. Only a link to a file inside the root, outside private
+            // folders, is listed, under its own name.
+            try {
+              const canonical = local(await files.realpath(path.join(root, child)));
+              permitted(root, canonical);
+              if (path.basename(canonical).startsWith('.')) continue;
+              if ((await files.stat(canonical)).isFile()) found.push(child);
+            } catch {
+              // Dangling, outside the root or private: not listed.
+            }
+          }
+        }
+      }
+      if (closed || openedAt !== generation) throw new Error('预览来源已失效，请重新打开工作区。');
+      return { files: found, truncated };
     },
 
     async watch(input, callback) {

@@ -16,7 +16,46 @@ import {
   restoreLayout,
   fitFloat,
   navigateFile,
+  treeFolders,
+  treeFolderLimit,
 } from '../src/previewLayout.ts';
+
+test('the tree’s open folders are restored with the layout, checked and bounded', () => {
+  const saved = (folders: unknown) =>
+    restoreLayout(JSON.stringify({ boards: { s: { ...emptyBoard(), tree: true, folders } } }))
+      .boards.s;
+  // Layouts saved before carry none.
+  assert.equal(saved(undefined).folders, undefined);
+  assert.equal(saved('src').folders, undefined);
+  assert.deepEqual(
+    saved([
+      'src',
+      'src/nested',
+      'src',
+      '../outside',
+      'src/../..',
+      '/etc',
+      'c:/windows',
+      'a\\b',
+      '',
+      'a//b',
+      './a',
+      7,
+      'x'.repeat(1025),
+    ]).folders,
+    ['src', 'src/nested'],
+  );
+  const many = Array.from({ length: treeFolderLimit + 20 }, (_, i) => `folder${i}`);
+  const kept = treeFolders(many);
+  assert.equal(kept.length, treeFolderLimit);
+  // The latest opened are kept.
+  assert.equal(kept.at(-1), many.at(-1));
+  assert.equal(kept[0], `folder20`);
+  // And no more than 8000 characters of them.
+  const long = treeFolders(Array.from({ length: 20 }, (_, i) => `${i}`.padEnd(1000, 'x')));
+  assert.equal(long.length, 8);
+  assert.ok(long.at(-1)!.startsWith('19'));
+});
 
 test('file navigation keeps the tab, repeats explicit requests, and never replays after restore', () => {
   let board = openTab(emptyBoard(), {

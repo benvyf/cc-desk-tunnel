@@ -28,7 +28,32 @@ export type PreviewBoard = {
   focused: string;
   expanded: boolean;
   tree: boolean;
+  // The workspace tree's open folders, relative to its root with '/' between parts (PreviewTree.tsx); kept with
+  // the layout, at most treeFolderLimit of them. Layouts saved before carry none: every folder starts shut.
+  folders?: string[];
 };
+export const treeFolderLimit = 200;
+// What a saved list of open folders may hold: relative paths that stay inside the root, without repeats; the
+// latest opened are kept past the limit, or past 8000 characters in all, so that a hundred sessions' boards stay
+// well inside the size a saved layout is restored from (restoreLayout).
+export function treeFolders(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const kept = new Set<string>();
+  for (const item of value)
+    if (
+      typeof item === 'string' &&
+      item.length > 0 &&
+      item.length <= 1024 &&
+      !/[\\\0]/.test(item) &&
+      !/^(?:\/|[a-z]:)/i.test(item) &&
+      !item.split('/').some((part) => !part || part === '.' || part === '..')
+    )
+      kept.add(item);
+  const folders = [...kept].slice(-treeFolderLimit);
+  let size = folders.reduce((sum, folder) => sum + folder.length, 0);
+  while (size > 8000) size -= folders.shift()!.length;
+  return folders;
+}
 // The workspace tree is a column of its own: opening it widens the preview by this much, so the file keeps its
 // width (the width the user drags is the panes').
 export const previewTreeWidth = 200;
@@ -380,6 +405,9 @@ export function restoreLayout(serialized: string | null): {
         focused: value.focused,
         expanded: value.expanded === true,
         tree: value.tree === true,
+        ...(Array.isArray(value.folders) && treeFolders(value.folders).length
+          ? { folders: treeFolders(value.folders) }
+          : {}),
       });
     }
     return { width: bound(input.width, 320, 900, 440), boards };

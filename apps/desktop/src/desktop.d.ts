@@ -82,10 +82,13 @@ declare global {
         onChanged: (callback: (entries: SshTarget[]) => void) => () => void;
       };
       preview: {
-        list: (input: {
-          root: string;
-          path?: string;
-        }) => Promise<{ name: string; path: string; kind: 'file' | 'directory' }[]>;
+        // `total` is more than the entries' count for a folder past the 2000 entries shown.
+        list: (input: { root: string; path?: string }) => Promise<{
+          entries: { name: string; path: string; kind: 'file' | 'directory' }[];
+          total: number;
+        }>;
+        // The workspace's files for opening one by name (preview-workspace.cjs index): relative paths.
+        index: (input: { root: string }) => Promise<{ files: string[]; truncated: boolean }>;
         watch: (input: {
           root: string;
           path: string;

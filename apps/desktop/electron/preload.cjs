@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('desktop', {
   },
   preview: {
     list: (input) => ipcRenderer.invoke('preview:list', input),
+    index: (input) => ipcRenderer.invoke('preview:index', input),
     watch: (input) => ipcRenderer.invoke('preview:watch', input),
     unwatch: (key) => ipcRenderer.invoke('preview:unwatch', key),
     onChanged: (callback) => {

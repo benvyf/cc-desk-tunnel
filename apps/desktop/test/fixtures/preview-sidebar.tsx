@@ -49,6 +49,7 @@ const metrics = {
   reads: 0,
   completedReads: 0,
   lists: 0,
+  indexes: 0,
   watchCalls: 0,
   unwatchCalls: 0,
   listenerAdds: 0,
@@ -128,15 +129,41 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
           path: folder + '/' + name,
           kind: 'file',
         }));
+      // ?big: a folder of 2345 entries, of which the desktop gives the first 2000 (preview-workspace.cjs).
+      if (path.endsWith('\\big'))
+        return {
+          entries: Array.from({ length: 2000 }, (_, i) => ({
+            name: `条目 ${i + 1}.txt`,
+            path: `${path}\\条目 ${i + 1}.txt`,
+            kind: 'file',
+          })),
+          total: 2345,
+        };
       return path.endsWith('src')
         ? [{ name: 'index.ts', path: path + '\\index.ts', kind: 'file' }]
         : [
-            { name: 'src', path: path + '\\src', kind: 'directory' },
+            ...(new URLSearchParams(location.search).has('big')
+              ? [{ name: 'big', path: path + '\\big', kind: 'directory' }]
+              : []),
+            // window.fixtureNoSrc: the folder was deleted.
+            ...((window as any).fixtureNoSrc
+              ? []
+              : [{ name: 'src', path: path + '\\src', kind: 'directory' }]),
             { name: '说明.md', path: path + '\\说明.md', kind: 'file' },
           ];
     },
+    // The quick-open index; window.fixtureIndexTruncated: it reached its bounds.
+    async index() {
+      metrics.indexes++;
+      return {
+        files: ['说明.md', 'readme-tools/a.md', 'src/index.ts', 'src/readme.md'],
+        truncated: !!(window as any).fixtureIndexTruncated,
+      };
+    },
     async watch(input: Watch) {
       metrics.watchCalls++;
+      // window.fixtureFailWatch: the desktop's limit of watched folders is reached.
+      if ((window as any).fixtureFailWatch) throw new Error('本机目录监听最多支持 128 个目录。');
       watches.set(input.key, input);
     },
     async unwatch(key: string) {

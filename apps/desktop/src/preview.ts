@@ -17,6 +17,7 @@ import {
   navigateFile,
   showChanges,
   setTabView,
+  treeFolders,
 } from './previewLayout.ts';
 import { requestedLine } from './previewCode.ts';
 import type { FindTarget } from './previewCode.ts';
@@ -384,6 +385,15 @@ export function usePreviewWorkspace(
     toggle: () => change((b) => ({ ...b, expanded: !b.expanded })),
     collapse: () => change((b) => ({ ...b, expanded: false })),
     toggleTree: () => change((b) => ({ ...b, tree: !b.tree })),
+    // The workspace tree's open folders (PreviewTree.tsx), kept with this session's layout.
+    setFolders: (update: (folders: string[]) => string[]) =>
+      change((b) => {
+        const before = b.folders ?? [];
+        const after = update(before);
+        if (after === before) return b;
+        const folders = treeFolders(after);
+        return folders.length ? { ...b, folders } : { ...b, folders: undefined };
+      }),
     split: (pane: string, id: string) => change((b) => splitPane(b, pane, id, crypto.randomUUID())),
     float: (id: string) => change((b) => floatTab(b, id, crypto.randomUUID())),
     dock: (id: string) => change((b) => dockPane(b, id)),

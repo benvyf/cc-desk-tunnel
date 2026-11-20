@@ -208,13 +208,16 @@ test('another shortcut may be given to the palette, and the old one then does no
     .getByRole('button', { name: '快捷键', exact: true })
     .click();
   await page.getByRole('button', { name: '修改快捷键：命令面板', exact: true }).click();
+  // Ctrl+P is taken: it opens a file by its name.
   await page.keyboard.press('Control+KeyP');
+  await expect(page.getByText('Ctrl+P 已被“按名称打开文件”使用。')).toBeVisible();
+  await page.keyboard.press('Control+Shift+KeyP');
   await expect(page.getByRole('button', { name: '修改快捷键：命令面板', exact: true })).toHaveText(
-    'Ctrl+P',
+    'Ctrl+Shift+P',
   );
   await page.keyboard.press('Control+KeyK');
   await expect(palette(page)).toHaveCount(0);
-  await page.keyboard.press('Control+KeyP');
+  await page.keyboard.press('Control+Shift+KeyP');
   await expect(palette(page)).toBeVisible();
 });
 

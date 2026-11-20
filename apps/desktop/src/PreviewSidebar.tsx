@@ -6,6 +6,7 @@ import { Button, IconButton, Modal } from './ui.tsx';
 import { previewSpan, previewTabLimit, previewWebsite } from './preview.ts';
 import type { PreviewSurface, PreviewWorkspace } from './preview.ts';
 import PreviewTree from './PreviewTree.tsx';
+import PreviewQuickOpen from './PreviewQuickOpen.tsx';
 import PreviewPaneView from './PreviewPane.tsx';
 
 export default function PreviewSidebar({
@@ -17,7 +18,12 @@ export default function PreviewSidebar({
   leaving = false,
   changes,
   attach,
+  quickOpenRequested = false,
+  quickOpenDone,
 }: {
+  // The window's shortcut asked for the box that opens a file by its name; `quickOpenDone` says it was seen.
+  quickOpenRequested?: boolean;
+  quickOpenDone?: () => void;
   // Puts a path from the workspace tree in the message box (composerAttach.ts); only where there is one.
   attach?: (path: string) => import('./composerAttach.ts').AttachResult;
   workspace: PreviewWorkspace;
@@ -35,6 +41,7 @@ export default function PreviewSidebar({
   const [error, setError] = useState('');
   const [full, setFull] = useState(false);
   const [changesShown, setChangesShown] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
   const [ownerDocument, setOwnerDocument] = useState<Document>(() => document);
   const { width, resize: setWidth } = workspace;
   const drag = useRef<{ x: number; width: number } | null>(null);
@@ -61,6 +68,13 @@ export default function PreviewSidebar({
       setError('');
     }
   }, [filesAvailable]);
+  // Finding a file by its name needs the workspace on this computer, as the tree does: not an SSH device's.
+  const canQuickOpen = !!root && filesAvailable && !!window.desktop?.preview?.index;
+  useEffect(() => {
+    if (!quickOpenRequested) return;
+    if (canQuickOpen) setQuickOpen(true);
+    quickOpenDone?.();
+  }, [quickOpenRequested, canQuickOpen]);
   const active = workspace.tabs.find((tab) => tab.id === workspace.active);
   const closeWebsite = () => {
     setWebsite(false);
@@ -291,6 +305,9 @@ export default function PreviewSidebar({
               open={(path, temporary) => workspace.openFile(path, root, true, undefined, temporary)}
               surface={surface}
               attach={attach}
+              folders={workspace.folders ?? []}
+              setFolders={workspace.setFolders}
+              quickOpen={canQuickOpen ? () => setQuickOpen(true) : undefined}
             />
           )}
           <div className="preview-panes">
@@ -322,6 +339,14 @@ export default function PreviewSidebar({
             ))}
           </div>
         </div>
+        {quickOpen && canQuickOpen && (
+          <PreviewQuickOpen
+            key={root}
+            root={root}
+            close={() => setQuickOpen(false)}
+            open={(path, temporary) => workspace.openFile(path, root, true, undefined, temporary)}
+          />
+        )}
         {website && (
           <Modal title="打开本机网站" onClose={closeWebsite} initialFocus="input">
             <form

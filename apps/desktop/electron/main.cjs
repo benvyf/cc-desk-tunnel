@@ -250,6 +250,7 @@ function previewWorkspace(event) {
   return controller;
 }
 handle('preview:list', (event, input) => previewWorkspace(event).list(input));
+handle('preview:index', (event, input) => previewWorkspace(event).index(input));
 handle('preview:watch', (event, input) =>
   previewWorkspace(event).watch(input, (value) => {
     if (!event.sender.isDestroyed()) event.sender.send('preview:changed', value);

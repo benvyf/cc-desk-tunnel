@@ -2285,6 +2285,8 @@ export function App({
   // The command palette (CommandPalette.tsx): what the window holds, found and gone to by keyboard. Built only while
   // it is open; nothing in it asks the service anything.
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // The shortcut's request for the preview's box that opens a file by its name, until the preview has seen it.
+  const [quickOpenRequested, setQuickOpenRequested] = useState(false);
   const [paletteRecent, setPaletteRecent] = useState<string[]>(() => {
     try {
       return knownRecent(JSON.parse(localStorage.getItem('cc-palette-recent') ?? '[]'));
@@ -2448,6 +2450,15 @@ export function App({
       search: openSearch,
       settings: () => open('settings'),
       activity: toggleActivity,
+      // The preview comes out, if it was put away, with the box open; only for a project on this computer.
+      quickOpen:
+        previewAvailable &&
+        !!selected?.projectPath &&
+        place.page === 'chat' &&
+        (() => {
+          if (!preview.expanded) preview.toggle();
+          setQuickOpenRequested(true);
+        }),
       find: !!selected && place.page === 'chat' && (() => setFindRequest((value) => value + 1)),
       zoomIn: window.desktop && (() => window.desktop!.zoom(1)),
       zoomOut: window.desktop && (() => window.desktop!.zoom(-1)),
@@ -3334,6 +3345,8 @@ export function App({
         <PreviewSidebar
           leaving={!previewShown}
           workspace={preview}
+          quickOpenRequested={quickOpenRequested && previewShown}
+          quickOpenDone={() => setQuickOpenRequested(false)}
           filesAvailable={previewAvailable}
           root={previewAvailable ? selected?.projectPath : undefined}
           attach={

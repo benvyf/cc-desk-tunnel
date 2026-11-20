@@ -11778,6 +11778,22 @@ dialog.palette:not([open]) {
     display: none;
   }
 }
+/* The preview's box that opens a file by its name (PreviewQuickOpen.tsx) is the palette's, with a line of notice
+   under the input: indexing, nothing found, or only part of the workspace indexed. */
+.preview-quick-notice {
+  flex: none;
+  margin: 0;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: calc(12.5rem / 14);
+}
+.preview-quick-notice[hidden] {
+  display: none;
+}
+.preview-quick-open .palette-label {
+  max-width: 50%;
+}
 /* Choosing sessions (Sidebar.tsx): a bar over the list with what may be done to them, and a box on each row. */
 .choose-bar {
   display: flex;
