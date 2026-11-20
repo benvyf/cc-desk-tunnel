@@ -88,9 +88,27 @@ sshd -t && systemctl reload ssh
   - 隧道通常在一分钟内恢复，这样能更快接上。
 - 不涉及协议改动，与旧服务端兼容。
 
-## 5. 待办：服务端隧道单元（需要登录服务端）
+## 5. 已完成：服务端隧道单元（2026-11-20 08:15 UTC）
 
-把服务端反向隧道单元（第一台为 `ccdesk-relay.service`，02～06 见手册第 5.2 节）的检测参数改快：
+用户在 `ubuntu-cc` 上执行了脚本：先备份为 `<unit>.bak-20261120`，再修改所有连向 `ccdesk-relay@` 的单元，然后重启。第一台实际有两个隧道单元：
+
+- `cc-vmiss-relay.service`：连当前中转 `189.105.70.247`，known_hosts 是 `/etc/ccdesk-vmiss/known_hosts`。
+- `cc-bwg-relay.service`：连旧中转 `212.50.248.138`（`HostKeyAlias=74.82.201.214`），仍在运行。
+
+两个单元都已改为 `ConnectTimeout=5`、`TCPKeepAlive=yes`、`ServerAliveInterval=5`、`ServerAliveCountMax=3`、`RestartSec=1`，重启后都是 active。
+
+中转机日志里，旧会话在 08:15:57 关闭，新会话同一秒就建立了。新会话是在第 3 节的中转机保活生效之后建立的，所以两端的快速检测现在都已生效。
+
+回退方法：
+
+```bash
+for b in /etc/systemd/system/*.service.bak-20261120; do sudo cp -p "$b" "${b%.bak-20261120}"; done
+sudo systemctl daemon-reload
+```
+
+然后重启这两个单元。
+
+02～06 目前没有隧道接到 189.105.70.247；如果以后接入，也照下面的参数改。参数参考：
 
 ```ini
 ExecStart=/usr/bin/ssh -NT ... -o ExitOnForwardFailure=yes -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -o ConnectTimeout=5 -o TCPKeepAlive=yes -R 127.0.0.1:28787:127.0.0.1:8787 ccdesk-relay@189.105.70.247

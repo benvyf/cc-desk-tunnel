@@ -8,7 +8,7 @@
 - 中转机 sshd 对 `ccdesk-relay` 用户开启 `ClientAliveInterval 5` / `ClientAliveCountMax 3`，有备份，可回退。
 - 客户端分支 `fix/relay-reconnect`：改写 ECONNRESET 的提示，断线后第一分钟内每次重试最多间隔 3 秒。尚未打包。
 
-待办：服务端隧道单元改为 `ServerAliveInterval=5`、`RestartSec=1`，需要登录服务端。
+服务端 `ubuntu-cc` 的两个隧道单元（`cc-vmiss-relay`、`cc-bwg-relay`）也已于 08:15 UTC 改为 `ServerAliveInterval=5`、`RestartSec=1`。
 
 详见[中转隧道断线排查与保活](docs/RELAY-TUNNEL-KEEPALIVE-2026-11-20.zh-CN.md)。
 
