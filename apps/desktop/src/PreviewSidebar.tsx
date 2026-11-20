@@ -173,6 +173,11 @@ export default function PreviewSidebar({
   const inRow = !!docked;
   const showChanges = changesShown && !!changes;
   const tree = !showChanges && workspace.tree && !!root;
+  // A file tab may show its changes where the file itself is shown, on this computer (PreviewContent.tsx).
+  const git =
+    changes && !changes.targetId && filesAvailable
+      ? { root: changes.root, busy: changes.busy }
+      : undefined;
   return (
     <>
       {/* A narrow main window lays the preview over the page (style.css, ≤1050px); like the side column's overlay
@@ -274,7 +279,7 @@ export default function PreviewSidebar({
               busy={changes.busy}
               openFile={
                 filesAvailable && root
-                  ? (path) => workspace.openFile(path, root, true, undefined, true)
+                  ? (path) => workspace.openChanges(path, root, true)
                   : undefined
               }
             />
@@ -296,6 +301,7 @@ export default function PreviewSidebar({
                 doc={ownerDocument}
                 renderChat={renderChat}
                 filesAvailable={filesAvailable}
+                git={git}
                 register={registerPane}
                 focus={focusPane}
                 actions={inRow && pane.id === docked!.id ? headerActions : undefined}

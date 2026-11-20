@@ -12,6 +12,8 @@ import { Button, IconButton } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
 import RichText from './RichText.tsx';
 import PreviewCode from './PreviewCode.tsx';
+import PreviewDiff from './PreviewDiff.tsx';
+import { gitBaseKey, useGitBase, useGitFile } from './useGitFile.ts';
 import { CopyButton } from './copy.tsx';
 import { LinkPlace, linkTarget } from './links.ts';
 import { followLink, openDeclined } from './linkActions.ts';
@@ -194,11 +196,14 @@ export default function PreviewContent({
   surface,
   workspace,
   pane,
+  git,
 }: {
   tab: PreviewTab;
   surface: PreviewSurface;
   workspace: PreviewWorkspace;
   pane: string;
+  // The project on this computer whose changes panel's base the file's changes are shown against.
+  git?: { root: string; busy?: boolean };
 }) {
   const [file, setFile] = useState<PreviewFile | null>(null);
   const [error, setError] = useState('');
@@ -260,9 +265,40 @@ export default function PreviewContent({
     if (navigation && file && !['text', 'markdown', 'html'].includes(file.kind))
       workspace.navigated.mark(tab.id, navigation.id);
   }, [navigation?.id, file]);
+  // The file's changes (the 改动 view, PreviewDiff.tsx): asked of Git in the file's project, or, for a file outside
+  // it, in its folder's repository against HEAD. A file with none is shown only as itself.
+  const gitRoot =
+    git && tab.kind === 'file'
+      ? isInside(tab.target, [git.root])
+        ? git.root
+        : parentOf(tab.target)
+      : undefined;
+  const [projectBase] = useGitBase(gitBaseKey(git?.root ?? ''));
+  const gitFile = useGitFile(
+    tab.id,
+    gitRoot
+      ? {
+          root: gitRoot,
+          path: tab.target,
+          base: gitRoot === git?.root ? projectBase : '',
+          busy: git?.busy,
+          revision,
+        }
+      : null,
+    tab.view === 'diff',
+  );
+  const change = gitFile.status === 'changed' ? gitFile.change : undefined;
+  // A deleted file has no other view; until Git answers, a tab left showing changes keeps showing them.
+  const deleted = change?.status === 'D';
+  const diffShown = !!gitRoot && (deleted || (tab.view === 'diff' && gitFile.status !== 'none'));
+  // A file found to have no changes any more goes back to showing itself.
+  useEffect(() => {
+    if (tab.view === 'diff' && gitFile.status === 'none' && gitFile.definite)
+      workspace.view(tab.id, undefined);
+  }, [tab.view, gitFile]);
   const captureReading = usePreviewReading(
     documentRoot,
-    file?.kind === 'text' || file?.kind === 'markdown' ? file : null,
+    !diffShown && (file?.kind === 'text' || file?.kind === 'markdown') ? file : null,
     `${file?.kind ?? 'loading'}:${source ? 'source' : 'preview'}`,
     () => {
       const saved = reading.get(tab.id);
@@ -443,6 +479,25 @@ export default function PreviewContent({
         (e) => setError(e.message),
       );
   };
+  // The ways to show the file: as a document (预览) or its text (源码), and its changes (改动) where it has any.
+  const sourceKind = switchable || !file || file.kind === 'text';
+  const previewKind = switchable || (!!file && file.kind !== 'text');
+  const modes = [
+    ...(previewKind ? [{ value: 'preview' as const, label: '预览', disabled: !file }] : []),
+    ...(sourceKind ? [{ value: 'source' as const, label: '源码', disabled: !file }] : []),
+    ...((change || diffShown) && !deleted ? [{ value: 'diff' as const, label: '改动' }] : []),
+  ];
+  const mode = diffShown
+    ? 'diff'
+    : switchable
+      ? source
+        ? 'source'
+        : 'preview'
+      : previewKind
+        ? 'preview'
+        : 'source';
+  // What went wrong reading the file itself is beside the point while its changes are shown.
+  const shownError = diffShown ? '' : error || browser?.error || watchError;
   const encoding = file?.encoding && encodingNames[file.encoding];
   const action = (action: 'back' | 'forward' | 'reload') => {
     setError('');
@@ -514,18 +569,24 @@ export default function PreviewContent({
             {encoding}
           </span>
         )}
-        {/* Preview or source, as Claude's artifacts offer it: a two-way control, before the row's icons. */}
-        {switchable && (
+        {/* Preview or source, as Claude's artifacts offer it, and the file's changes where it has any: one control,
+            before the row's icons. */}
+        {!deleted && modes.length > 1 && (
           <SegmentedControl
             label="显示方式"
             className="preview-mode"
-            value={source ? 'source' : 'preview'}
-            options={[
-              { value: 'preview', label: '预览', disabled: !file },
-              { value: 'source', label: '源码', disabled: !file },
-            ]}
+            value={mode}
+            options={modes}
             onChange={(value) => {
-              if ((value === 'source') === source) return;
+              if (value === 'diff') {
+                if (!diffShown) {
+                  captureReading();
+                  workspace.view(tab.id, 'diff');
+                }
+                return;
+              }
+              if (diffShown) workspace.view(tab.id, undefined);
+              if (!switchable || (value === 'source') === source) return;
               captureReading();
               if (navigation) workspace.navigated.mark(tab.id, navigation.id);
               workspace.sourceMode.set(tab.id, !source);
@@ -569,7 +630,7 @@ export default function PreviewContent({
           <ExternalLink />
         </IconButton>
       </div>
-      {file?.truncated && (
+      {file?.truncated && !diffShown && (
         <div className="preview-notice">
           <span>
             {megabytes(file.size ?? 0) === megabytes(previewTextLimit)
@@ -581,12 +642,21 @@ export default function PreviewContent({
           </Button>
         </div>
       )}
-      {(error || browser?.error || watchError) && (
+      {shownError && (
         <p className="preview-error" role="alert">
-          {error || browser?.error || watchError}
+          {shownError}
         </p>
       )}
-      {file?.kind === 'html' && !source && workspace.restoredTabs.has(tab.id) ? (
+      {diffShown ? (
+        <PreviewDiff
+          diff={gitFile.status === 'changed' ? gitFile.diff : undefined}
+          change={change}
+          wrap={tab.wrap === true}
+          setWrap={(value) => workspace.wrap(tab.id, value)}
+          reveal={tab.reveal}
+          openLine={deleted ? undefined : (line) => workspace.showSource(tab.id, line)}
+        />
+      ) : file?.kind === 'html' && !source && workspace.restoredTabs.has(tab.id) ? (
         <div className="preview-empty">
           <FileText />
           <p>已恢复 HTML 标签。点击后加载页面。</p>

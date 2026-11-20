@@ -63,7 +63,7 @@ test('a branch to compare with is chosen by its full ref; nothing offers to stag
   ).toHaveCount(0);
 });
 
-test('a file opens in the preview by its full path; a deleted one cannot be opened', async ({
+test('a file opens in the preview by its full path, a deleted one too (as its changes)', async ({
   page,
 }) => {
   await page.goto('/test/fixtures/git-changes.html');
@@ -71,9 +71,11 @@ test('a file opens in the preview by its full path; a deleted one cannot be open
   await expect(panel.locator('.git-change')).toHaveCount(6);
   await panel.locator('.git-change').nth(0).getByRole('button', { name: '打开' }).click();
   expect((await asked(page)).opened).toEqual(['D:\\工作\\仓库\\src\\app.ts']);
-  await expect(
-    panel.locator('.git-change').nth(1).getByRole('button', { name: '打开' }),
-  ).toHaveCount(0);
+  await panel.locator('.git-change').nth(1).getByRole('button', { name: '打开' }).click();
+  expect((await asked(page)).opened).toEqual([
+    'D:\\工作\\仓库\\src\\app.ts',
+    'D:\\工作\\仓库\\gone.txt',
+  ]);
 });
 
 test('a project on an SSH device is read through its target and offers no opening', async ({

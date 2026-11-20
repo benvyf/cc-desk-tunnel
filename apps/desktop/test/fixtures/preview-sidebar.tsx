@@ -230,6 +230,8 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
         throw new Error(
           '找不到文件：C:\\' + '很长的项目目录\\'.repeat(60) + '报告.txt。请确认路径。',
         );
+      if (path.endsWith('删除.txt'))
+        throw new Error('找不到这个文件，请确认路径或在系统应用中打开。');
       if (path.includes('不存在'))
         throw new Error('找不到这个文件，请确认路径或在系统应用中打开。');
       if (path.includes('读取中')) return new Promise(() => {});
@@ -309,6 +311,92 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
     },
   },
 };
+
+// The project's Git changes (?git), as electron/git-changes.cjs gives them: what the changes panel and a file tab's
+// 改动 view are told, and what they asked, on window.fixtureGit.
+const git = new URLSearchParams(location.search).has('git');
+if (git) {
+  const asked = ((window as any).fixtureGit = {
+    changes: [] as unknown[],
+    fileDiff: [] as unknown[],
+  });
+  const diffs: Record<string, unknown> = {
+    '长代码.ts': {
+      kind: 'diff',
+      truncated: false,
+      text: [
+        'diff --git a/长代码.ts b/长代码.ts',
+        '--- a/长代码.ts',
+        '+++ b/长代码.ts',
+        '@@ -10,5 +10,6 @@ export const',
+        ' export const readingRow10 = 1;',
+        ' export const readingRow11 = 1;',
+        '-export const readingRow12 = 0;',
+        '+export const readingRow12 = 1;',
+        '+export const added = true;',
+        ' export const readingRow13 = 1;',
+        ' export const readingRow14 = 1;',
+        '@@ -300,3 +301,3 @@',
+        ' export const readingRow300 = 1;',
+        '-export const readingRow301 = 0;',
+        '+export const readingRow301 = 1;',
+        ' export const readingRow302 = 1;',
+        '',
+      ].join('\n'),
+    },
+    '说明.md': {
+      kind: 'diff',
+      truncated: false,
+      text: '--- a/说明.md\n+++ b/说明.md\n@@ -1,3 +1,3 @@\n # 项目说明\n \n-旧的说明\n+在这里查看生成的文件，继续在左侧讨论。\n',
+    },
+    '长阅读.txt': {
+      kind: 'diff',
+      truncated: false,
+      text:
+        '--- a/长阅读.txt\n+++ b/长阅读.txt\n@@ -1,0 +1,1200 @@\n' +
+        Array.from({ length: 1200 }, (_, i) => `+Reading paragraph ${i + 1}`).join('\n') +
+        '\n@@ -10,1 +1210,1 @@\n-old far line\n+new far line\n',
+    },
+    '大日志.log': {
+      kind: 'diff',
+      truncated: true,
+      text: '--- a/大日志.log\n+++ b/大日志.log\n@@ -1,2 +1,3 @@\n log line 1\n+log line 2\n log line 3\n',
+    },
+    '趋势图.png': { kind: 'binary' },
+    '删除.txt': {
+      kind: 'diff',
+      truncated: false,
+      text: '--- a/删除.txt\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-第一行\n-第二行\n',
+    },
+  };
+  (window as any).desktop.git = {
+    changes: async (input: unknown) => {
+      asked.changes.push(input);
+      return {
+        top: 'C:/工作/网站预览',
+        branch: 'main',
+        refs: { local: ['refs/heads/main'], remote: [] },
+        base: null,
+        against: 'a'.repeat(40),
+        files: [
+          { path: '删除.txt', status: 'D', added: 0, deleted: 2 },
+          { path: '大日志.log', status: 'M', added: 1, deleted: 0 },
+          { path: '说明.md', status: 'M', added: 1, deleted: 1 },
+          { path: '趋势图.png', status: 'M', binary: true },
+          { path: '长代码.ts', status: 'M', added: 3, deleted: 2 },
+          { path: '长阅读.txt', status: 'M', added: 1201, deleted: 1 },
+        ],
+        summary: { files: 6, added: 1206, deleted: 6, untracked: 0 },
+        truncated: false,
+        filtered: [],
+      };
+    },
+    fileDiff: async (input: { path: string }) => {
+      asked.fileDiff.push(input);
+      return diffs[input.path];
+    },
+  };
+}
 
 function Fixture() {
   metrics.renders++;
@@ -498,6 +586,7 @@ function Fixture() {
         <PreviewSidebar
           workspace={board}
           root={folder}
+          changes={git ? { root: folder } : undefined}
           leaving={!board.expanded}
           attach={(path) => {
             const attached: string[] = ((window as any).fixtureAttached ??= []);

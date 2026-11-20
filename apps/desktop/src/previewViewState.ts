@@ -96,9 +96,12 @@ export function serializePreviewState(
   layout: { width: number; boards: Record<string, PreviewBoard> },
   reading: PreviewReadingSessions,
 ): string {
-  // A line navigation belongs to a user action, never a restart of a saved layout.
+  // A line navigation, or a request to show a file's first change, belongs to a user action, never a restart of
+  // a saved layout.
   const serialize = (value: unknown) =>
-    JSON.stringify(value, (key, item) => (key === 'navigation' ? undefined : item));
+    JSON.stringify(value, (key, item) =>
+      key === 'navigation' || key === 'reveal' ? undefined : item,
+    );
   const sessions = ownedReading(reading, layout.boards);
   if (!Object.keys(sessions).length) return serialize(layout);
   const metadata = { version: 1, sessions };

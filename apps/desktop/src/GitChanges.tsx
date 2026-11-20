@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronRight, RefreshCw } from './icons.tsx';
 import { IconButton } from './ui.tsx';
-import { diffLines, refName, statusNames } from './gitChanges.ts';
+import { diffLines, gitError, gitFilePath, refName, statusNames } from './gitChanges.ts';
 import type { GitChange, GitChangeList, GitFileDiff } from './gitChanges.ts';
+import { gitBaseKey, useGitBase } from './useGitFile.ts';
 
 // The changes of the project's working tree: against HEAD, or since it left a branch. Read only — nothing is
 // staged, committed or discarded here. A file's diff is read when it is opened, and once.
@@ -17,10 +18,11 @@ export default function GitChanges({
   targetId?: string;
   // A run at work: once it ends, its changes are read again.
   busy?: boolean;
-  // Opens a file of the project in the preview; absent where files cannot be previewed.
+  // Opens a file of the project in the preview, as its changes; absent where files cannot be previewed.
   openFile?: (path: string) => void;
 }) {
-  const [base, setBase] = useState('');
+  // Shared with the preview's 改动 view of the project's files, which compares with the same base.
+  const [base, setBase] = useGitBase(gitBaseKey(root, targetId));
   const [list, setList] = useState<GitChangeList | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,11 +52,7 @@ export default function GitChanges({
     } catch (e) {
       if (turn !== asked.current) return;
       setList(null);
-      setError(
-        e instanceof Error
-          ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-          : '读取 Git 改动失败。',
-      );
+      setError(gitError(e, '读取 Git 改动失败。'));
     } finally {
       if (turn === asked.current) {
         setLoading(false);
@@ -101,23 +99,13 @@ export default function GitChanges({
             against,
             path: file.path,
           })
-          .then(keep, (e: unknown) =>
-            keep({
-              error:
-                e instanceof Error
-                  ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
-                  : '读取差异失败。',
-            }),
-          );
+          .then(keep, (e: unknown) => keep({ error: gitError(e, '读取差异失败。') }));
       }
     }
     setOpen(next);
   };
   // A file's full path as this computer writes it.
-  const where = (path: string) => {
-    const full = `${(list?.top ?? root).replace(/[\\/]$/, '')}/${path}`;
-    return /^[A-Za-z]:/.test(full) ? full.replace(/\//g, '\\') : full;
-  };
+  const where = (path: string) => gitFilePath(list?.top ?? root, path);
   return (
     <section className="git-changes" aria-label="Git 改动">
       <header className="git-changes-head">
@@ -249,7 +237,8 @@ export default function GitChanges({
                         )
                       )}
                     </button>
-                    {openFile && file.status !== 'D' && !file.path.endsWith('/') && (
+                    {/* A deleted file opens too: its tab shows only its changes. */}
+                    {openFile && !file.path.endsWith('/') && (
                       <button
                         type="button"
                         className="button secondary git-change-open"

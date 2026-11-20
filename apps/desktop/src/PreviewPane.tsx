@@ -42,10 +42,13 @@ export default function PreviewPaneView({
   doc,
   renderChat,
   filesAvailable = true,
+  git,
   register,
   focus,
   actions,
 }: {
+  // The project on this computer whose files' changes a file tab may show (PreviewContent.tsx).
+  git?: { root: string; busy?: boolean };
   pane: PreviewPane;
   workspace: PreviewWorkspace;
   surface: PreviewSurface;
@@ -367,6 +370,7 @@ export default function PreviewPaneView({
               pane={pane.id}
               surface={surface}
               workspace={workspace}
+              git={git}
             />
           )
         ) : (

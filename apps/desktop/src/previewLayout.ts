@@ -15,6 +15,10 @@ export type PreviewTab = {
   // One explicit user navigation; filtered out when a layout is restored.
   // `find`: text to look for in the file, whose line is gone to instead; nowhere, where it is not found.
   navigation?: { id: string; line: number; column?: number; find?: FindTarget[] };
+  // A file shown as its changes (PreviewDiff.tsx) rather than as itself; kept with the layout.
+  view?: 'diff';
+  // One request to show a file's first change (the changes panel's 打开); filtered out when a layout is saved.
+  reveal?: string;
 };
 export type FloatRect = { x: number; y: number; width: number; height: number };
 export type PreviewPane = { id: string; tabs: string[]; active: string; floating?: FloatRect };
@@ -136,6 +140,7 @@ export function openTab(board: PreviewBoard, tab: PreviewTab): PreviewBoard {
     ),
   };
 }
+// A line to go to is in the file itself: a tab showing the file's changes shows the file again.
 export function navigateFile(
   board: PreviewBoard,
   target: string,
@@ -143,9 +148,36 @@ export function navigateFile(
 ): PreviewBoard {
   return {
     ...board,
-    tabs: board.tabs.map((tab) =>
-      tab.kind === 'file' && pathKey(tab.target) === pathKey(target) ? { ...tab, navigation } : tab,
-    ),
+    tabs: board.tabs.map((tab) => {
+      if (tab.kind !== 'file' || pathKey(tab.target) !== pathKey(target)) return tab;
+      const { view: _view, reveal: _reveal, ...rest } = tab;
+      return { ...rest, navigation };
+    }),
+  };
+}
+// The file's tab shows its changes, from the first (`reveal`); a line it was still to go to is dropped.
+export function showChanges(board: PreviewBoard, target: string, reveal: string): PreviewBoard {
+  return {
+    ...board,
+    tabs: board.tabs.map((tab) => {
+      if (tab.kind !== 'file' || pathKey(tab.target) !== pathKey(target)) return tab;
+      const { navigation: _, ...rest } = tab;
+      return { ...rest, view: 'diff', reveal };
+    }),
+  };
+}
+// A tab shown as its changes (`diff`), or as itself.
+export function setTabView(
+  board: PreviewBoard,
+  id: string,
+  view: 'diff' | undefined,
+): PreviewBoard {
+  const tab = board.tabs.find((t) => t.id === id);
+  if (!tab || tab.kind !== 'file' || tab.view === view) return board;
+  const { view: _view, reveal: _reveal, ...rest } = tab;
+  return {
+    ...board,
+    tabs: board.tabs.map((t) => (t === tab ? { ...rest, ...(view ? { view } : {}) } : t)),
   };
 }
 export function moveTab(
@@ -288,6 +320,8 @@ export function restoreLayout(serialized: string | null): {
             ...(local(t.root) ? { root: t.root } : {}),
             restricted: t.restricted === true,
             wrap: t.wrap === true,
+            // Layouts saved before the changes view carry no view: their tabs show the file.
+            ...(t.view === 'diff' ? { view: 'diff' as const } : {}),
             // Layouts saved before temporary tabs carry no flag: their tabs are kept ones.
             ...(t.temporary === true ? { temporary: true } : {}),
           });

@@ -15,6 +15,8 @@ import {
   restoreLayout,
   previewWebsite,
   navigateFile,
+  showChanges,
+  setTabView,
 } from './previewLayout.ts';
 import { requestedLine } from './previewCode.ts';
 import type { FindTarget } from './previewCode.ts';
@@ -297,6 +299,19 @@ export function usePreviewWorkspace(
         tabViews.current.set(key, { ...tabViews.current.get(key), source });
       },
     },
+    // A file tab shown as its changes ('diff'), or as itself (undefined); the choice is kept with the layout.
+    view: (id: string, value: 'diff' | undefined) => change((b) => setTabView(b, id, value)),
+    // From a line of a file's changes to that line of its source (PreviewDiff.tsx).
+    showSource: (id: string, line: number) => {
+      const key = JSON.stringify([session, id]);
+      tabViews.current.set(key, { ...tabViews.current.get(key), source: true });
+      change((b) => {
+        const tab = b.tabs.find((t) => t.id === id);
+        return tab?.kind === 'file'
+          ? navigateFile(b, tab.target, { id: crypto.randomUUID(), line })
+          : b;
+      });
+    },
     wrap: (id: string, value: boolean) =>
       change((b) => ({
         ...b,
@@ -315,6 +330,11 @@ export function usePreviewWorkspace(
       temporary?: boolean,
       source?: string,
     ) => open('file', path, root, restricted, undefined, position, temporary, source),
+    // The changes panel's 打开: the file in the pane's temporary tab, shown as its changes from the first.
+    openChanges: (path: string, root?: string, restricted?: boolean) => {
+      open('file', path, root, restricted, undefined, undefined, true);
+      change((b) => showChanges(b, path, crypto.randomUUID()));
+    },
     openChat: (id: string, title = '侧边对话') => open('chat', id, undefined, undefined, title),
     openWebsite: (url: string, temporary?: boolean, source?: string) => {
       const target = previewWebsite(url);

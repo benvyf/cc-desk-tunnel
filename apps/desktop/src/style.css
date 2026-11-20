@@ -11542,6 +11542,93 @@ dialog:has(.web-settings-form) {
 .git-diff > .hunk {
   color: var(--faint);
 }
+/* A file's changes in its preview tab (PreviewDiff.tsx): the changes panel's diff (.tool-diff-view) at the pane's
+   size, each row with its line number on each side. The rows come in chunks the page skips while off screen. */
+.preview-diff {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+}
+.preview-diff-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  flex: none;
+  padding: 4px 8px 4px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: var(--font-caption);
+  line-height: var(--leading-caption);
+}
+.preview-diff-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.preview-diff-body {
+  white-space: normal;
+}
+.preview-diff-message {
+  margin: 12px;
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+}
+.preview-diff-chunk.tool-diff-view {
+  max-height: none;
+  overflow: visible;
+  padding: 0;
+  content-visibility: auto;
+  contain-intrinsic-size: auto calc(var(--preview-diff-rows) * 1.5em);
+}
+.preview-diff-chunk + .preview-diff-chunk {
+  border-top: 0;
+  padding-top: 0;
+}
+.preview-diff-chunk > span {
+  --preview-diff-number: calc(var(--preview-diff-digits) * 1ch + 12px);
+  display: grid;
+  grid-template-columns: var(--preview-diff-number) var(--preview-diff-number) 26px minmax(0, 1fr);
+}
+.preview-diff-body:not(.wraps) .preview-diff-chunk {
+  width: max-content;
+  min-width: 100%;
+}
+.preview-diff-body:not(.wraps) .preview-diff-chunk > span {
+  grid-template-columns: var(--preview-diff-number) var(--preview-diff-number) 26px max-content;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+.preview-diff-chunk > .hunk,
+.preview-diff-chunk > .note {
+  color: var(--faint);
+}
+.preview-diff-chunk > .hunk {
+  background: var(--hover);
+}
+.preview-diff-chunk > .hunk[aria-current='true'] {
+  box-shadow: inset 2px 0 var(--accent);
+}
+.preview-diff-number {
+  margin: 0;
+  padding: 0 6px 0 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-weight: normal;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+button.preview-diff-number {
+  cursor: pointer;
+}
+button.preview-diff-number:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
 /* A fork under what it was forked from (Sidebar.tsx, sessionTree.ts): indented a step a level, up to four, with a
    rail from its source's line. A row at the top is as it always was. */
 .session-row[data-depth] {
