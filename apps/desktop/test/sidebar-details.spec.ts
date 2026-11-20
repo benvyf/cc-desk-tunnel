@@ -313,27 +313,36 @@ test('a scheduled task is switched on and off by a small switch, its actions flo
   await expect(task).toContainText('已停用');
 });
 
-// Phase 3k (spec §5.4, §5.5): the activity view replaces the list in place; dialogs' buttons are words only;
-// the account menu's head wears the column's avatar.
-test('the activity view opens in place, empty of priorities; the delete dialog and the account menu speak plainly', async ({
+// Phase 3k (spec §5.4, §5.5): the bell's panel opens under it without covering the column's actions, and keeps an
+// icon when empty; dialogs' buttons are words only; the account menu's head wears the column's avatar.
+test('the notices open under the bell, empty with an icon; the delete dialog and the account menu speak plainly', async ({
   page,
 }) => {
   await connect(page);
-  // The activity view replaces the list in place, under the column's own actions, and says when nothing waits.
-  const activity = page.getByRole('button', { name: '查看活动', exact: true });
-  await expect(activity).toHaveAttribute('aria-pressed', 'false');
-  await activity.click();
-  const pressed = page.getByRole('button', { name: /^查看活动/, pressed: true });
-  await expect(pressed).toHaveAttribute('aria-pressed', 'true');
-  const recent = page.getByRole('navigation', { name: '最近的会话' });
-  await expect(recent.locator('.list-heading').first()).toHaveText('优先事项');
-  await expect(recent).toContainText('暂无需要关注的聊天');
-  for (const name of ['新建会话', '搜索', '定时任务'])
-    await expect(
-      page.locator('.sidebar').getByRole('button', { name, exact: true }).first(),
-    ).toBeVisible();
-  await pressed.click();
-  await expect(page.getByRole('navigation', { name: '会话列表' })).toBeVisible();
+  const bell = page.getByRole('button', { name: '通知', exact: true });
+  await bell.click();
+  const panel = page.getByRole('dialog', { name: '通知', exact: true });
+  await panel.evaluate((node) => Promise.all(node.getAnimations().map((item) => item.finished)));
+  const [bellBox, box] = await Promise.all([bell.boundingBox(), panel.boundingBox()]);
+  expect(Math.abs(box!.x - bellBox!.x)).toBeLessThanOrEqual(1);
+  expect(box!.width).toBe(320);
+  expect(box!.y).toBeGreaterThanOrEqual(bellBox!.y + bellBox!.height);
+  // The column's own actions stay uncovered: their labels are still what is under the pointer.
+  for (const name of ['新建会话', '搜索', '定时任务']) {
+    const label = page.locator('.sidebar').getByRole('button', { name, exact: true }).first();
+    const at = (await label.boundingBox())!;
+    expect(
+      await label.evaluate(
+        (node, [x, y]) => node.contains(document.elementFromPoint(x, y)),
+        [at.x + 40, at.y + at.height / 2],
+      ),
+    ).toBe(true);
+  }
+  const empty = panel.locator('.notice-empty');
+  await expect(empty.locator('svg')).toBeVisible();
+  await expect(empty.locator('strong')).toHaveText('暂无通知');
+  await expect(empty).toContainText('会话完成、出错或需要审批时会出现在这里。');
+  await page.keyboard.press('Escape');
 
   await row(page, '审计日志').locator('.session-select').focus();
   await page.keyboard.press('ContextMenu');

@@ -517,15 +517,12 @@ test('waiting terminal in another project raises a navigable notice without taki
   );
   sessions[0].activeRun.activity = 'waiting';
   send({ type: 'session.updated', session: sessions[0] });
-  await expect(
-    page.getByRole('button', { name: '查看活动（1 项需要关注）', exact: true }),
-  ).toBeVisible();
+  await expect(page.getByRole('button', { name: '通知（1 条未读）', exact: true })).toBeVisible();
   await expect(page.locator('.titlebar h1')).toHaveText('项目 B 会话');
-  await page.getByRole('button', { name: '查看活动（1 项需要关注）', exact: true }).click();
-  // A terminal that waits is listed first, among what needs the user.
-  await expect(
-    page.getByRole('navigation', { name: '最近的会话' }).locator('.activity-row').first(),
-  ).toContainText('项目 A 会话');
+  await page.getByRole('button', { name: '通知（1 条未读）', exact: true }).click();
+  await expect(page.getByRole('dialog', { name: '通知', exact: true })).toContainText(
+    '终端等待确认或回答',
+  );
 });
 
 test('local creation response does not steal navigation after the user selects another project', async ({

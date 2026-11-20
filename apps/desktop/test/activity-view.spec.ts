@@ -3,8 +3,9 @@ import type { Page } from '@playwright/test';
 import { randomUUID } from 'node:crypto';
 import { PROTOCOL_VERSION, type Session } from '@cc-desk-tunnel/protocol';
 
-// The activity view (查看活动): the bell's place at the column's head becomes a button that turns the list into
-// every session by day, under what needs the user, with the opening of each latest reply this computer has seen.
+// The activity view (查看活动): a button beside the notices' bell turns the list into every session by day, under
+// what needs the user, with the opening of each latest reply this computer has seen. The bell keeps its notices
+// and its count; the activity button has none.
 const url = 'ws://127.0.0.1:18898/ws';
 const now = new Date(2026, 10, 20, 15, 0, 0);
 const at = (days: number, hours = 0) =>
@@ -120,10 +121,16 @@ test('the activity button lists every session by day under what needs the user, 
   page,
 }) => {
   await connect(page);
-  // What waits for the user is counted on the button while the projects are listed.
-  const button = page.getByRole('button', { name: '查看活动（1 项需要关注）', exact: true });
+  // The activity button stands left of the bell, the same size, with no count of its own.
+  const button = page.getByRole('button', { name: '查看活动', exact: true });
   await expect(button).toHaveAttribute('title', '查看活动  Ctrl+Alt+U');
-  await expect(page.locator('.activity-toggle .notice-badge')).toHaveText('1');
+  await expect(button).toHaveAttribute('aria-pressed', 'false');
+  await expect(button.locator('.notice-badge')).toHaveCount(0);
+  const bell = page.locator('.notice-bell > button');
+  const [line, ring] = [(await button.boundingBox())!, (await bell.boundingBox())!];
+  expect(line.x + line.width).toBeLessThanOrEqual(ring.x);
+  expect(line.width).toBe(ring.width);
+  expect(line.y).toBe(ring.y);
   // Opening a session gives this computer the opening of its latest reply.
   await page.locator('.session-row').filter({ hasText: '测速' }).locator('.session-select').click();
   await expect(page.locator('.titlebar h1')).toHaveText('测速');
@@ -134,7 +141,6 @@ test('the activity button lists every session by day under what needs the user, 
     'title',
     '关闭活动视图',
   );
-  await expect(page.locator('.activity-toggle .notice-badge')).toHaveCount(0);
   // The session that waits is listed once, among the priorities, with its state; the rest by day, newest first.
   const rows = list.locator('.activity-row');
   await expect(rows.nth(0)).toContainText('迁移数据库');
