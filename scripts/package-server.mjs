@@ -72,6 +72,34 @@ function normalizeArchiveOwnership(archive) {
   writeFileSync(archive, gzipSync(bytes));
 }
 
+// The version a server release carries, and the desktop workspace's version written into its package-lock.json.
+// The runtime images are built from one dependency lock, and the host update (deploy/host-update/apply.py LOCK),
+// the supervisor and the installers admit a release only when its package-lock.json has exactly that digest.
+// The file also names the desktop workspace's own version, which every client release moves, though no dependency
+// does: the lock a server release carries pins it to the version the runtime was built with. A dependency that
+// does change still changes the digest, and the release is refused as before. Change this together with LOCK
+// and the runtime level, never on its own.
+export const SERVER_APP_VERSION = '0.3.10';
+const desktopEntry = (version) =>
+  `"apps/desktop": {\n      "name": "@cc-desk-tunnel/desktop",\n      "version": ${JSON.stringify(version)}`;
+// package-lock.json with the desktop workspace's version set to `version`: only those bytes change, and nothing
+// else in the file may differ, or no release is made.
+export function pinnedLock(bytes, version = SERVER_APP_VERSION) {
+  const text = Buffer.from(bytes).toString('utf8');
+  const lock = JSON.parse(text);
+  const current = lock.packages?.['apps/desktop']?.version;
+  if (typeof current !== 'string') throw new Error('The lock names no desktop workspace version.');
+  const entry = desktopEntry(current);
+  if (text.split(entry).length !== 2)
+    throw new Error('The desktop workspace version must appear exactly once in the lock.');
+  const pinned = text.replace(entry, desktopEntry(version));
+  const expected = structuredClone(lock);
+  expected.packages['apps/desktop'].version = version;
+  if (JSON.stringify(JSON.parse(pinned)) !== JSON.stringify(expected))
+    throw new Error('Pinning the lock changed more than the desktop workspace version.');
+  return Buffer.from(pinned, 'utf8');
+}
+
 export function packageServer(root, output, webBaseline) {
   const git = (...args) =>
     execFileSync('git', args, { cwd: root, windowsHide: true, maxBuffer: 16 * 1024 * 1024 });
@@ -81,7 +109,7 @@ export function packageServer(root, output, webBaseline) {
   const config = JSON.parse(git('show', 'HEAD:deploy/managed-server.json'));
   if (config.runtimeLevel !== RUNTIME_LEVEL)
     throw new Error('Managed server identity and publication runtime level differ.');
-  const { version: appVersion } = JSON.parse(git('show', 'HEAD:apps/desktop/package.json'));
+  const appVersion = SERVER_APP_VERSION;
   const source = git('show', 'HEAD:packages/protocol/src/index.ts').toString();
   const protocol = Number(/export const PROTOCOL_VERSION = (\d+)/.exec(source)?.[1]);
   const local = join(root, '.local');
@@ -101,6 +129,11 @@ export function packageServer(root, output, webBaseline) {
       // Export committed bytes: neither private untracked files nor Windows newline conversion enter a release.
       writeFileSync(join(program, path), git('show', `HEAD:${path}`), { mode: 0o644 });
     }
+    writeFileSync(
+      join(program, 'package-lock.json'),
+      pinnedLock(readFileSync(join(program, 'package-lock.json'))),
+      { mode: 0o644 },
+    );
     const web = join(program, 'apps/server/web');
     if (webBaseline) {
       if (webBaseline.release.protocol !== protocol)

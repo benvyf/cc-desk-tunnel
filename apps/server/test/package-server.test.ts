@@ -20,9 +20,14 @@ import { extractRelease, verifyReleaseDirectory } from '../src/managed-server-fi
 import { PROTOCOL_VERSION } from '../../../packages/protocol/src/index.ts';
 import { RUNTIME_LEVEL } from '../../../packages/managed-server/src/index.ts';
 
-const { packageServer } = await import(
+const { packageServer, pinnedLock, SERVER_APP_VERSION } = await import(
   new URL('../../../scripts/package-server.mjs', import.meta.url).href
 );
+// The dependency lock the runtime images were built from, as the host update admits it.
+const runtimeLock = /^LOCK = '([a-f0-9]{64})'$/m.exec(
+  readFileSync(new URL('../../../deploy/host-update/apply.py', import.meta.url), 'utf8'),
+)![1];
+const digest = (bytes: Buffer | string) => createHash('sha256').update(bytes).digest('hex');
 const root = fileURLToPath(new URL('../../..', import.meta.url));
 const tar = process.platform === 'win32' ? 'tar.exe' : 'tar';
 
@@ -126,6 +131,11 @@ test('server archives contain a fresh Web build without local data or desktop de
   assert.equal(descriptor.build, 1);
   assert.equal(descriptor.protocol, PROTOCOL_VERSION);
   assert.equal(descriptor.sourceCommit, git('rev-parse', 'HEAD').toString().trim());
+  // Whatever version the desktop is at, the release carries the runtime's own lock and version.
+  assert.equal(descriptor.appVersion, SERVER_APP_VERSION);
+  const lock = execFileSync(tar, ['-xOzf', output, 'package-lock.json'], { windowsHide: true });
+  assert.equal(digest(lock), runtimeLock);
+  assert.equal(descriptor.files['package-lock.json'].sha256, runtimeLock);
   const main = execFileSync(tar, ['-xOzf', output, 'apps/server/src/main.ts'], {
     windowsHide: true,
   });
@@ -188,4 +198,34 @@ test('server archives contain a fresh Web build without local data or desktop de
   assert.deepEqual(readFileSync(output), previous);
   assert.deepEqual(readdirSync(join(directory, '.local')), ['server.tar.gz']);
   assert.equal(existsSync(join(directory, 'apps/server/web')), false);
+});
+
+test('a server release pins only the desktop version in the lock, to the runtime lock', () => {
+  const lock = readFileSync(join(root, 'package-lock.json'));
+  // The lock in the tree, at whatever version the desktop is released at, is the runtime's once pinned. When a
+  // dependency changes this fails: the runtime level, LOCK and SERVER_APP_VERSION then move together.
+  assert.equal(digest(pinnedLock(lock)), runtimeLock);
+  const parsed = JSON.parse(lock.toString());
+  const pinned = JSON.parse(pinnedLock(lock).toString());
+  assert.equal(pinned.packages['apps/desktop'].version, SERVER_APP_VERSION);
+  pinned.packages['apps/desktop'].version = parsed.packages['apps/desktop'].version;
+  assert.deepEqual(pinned, parsed);
+  // Any version pins the same way; a lock without the entry, or naming it twice, makes no release.
+  const other = lock
+    .toString()
+    .replace(
+      /("apps\/desktop": \{\n {6}"name": "@cc-desk-tunnel\/desktop",\n {6}"version": )"[^"]+"/,
+      '$1"9.9.9"',
+    );
+  assert.equal(digest(pinnedLock(Buffer.from(other))), runtimeLock);
+  assert.throws(() => pinnedLock(Buffer.from('{"packages":{}}')), /no desktop workspace version/);
+  const twice = JSON.stringify({
+    packages: { 'apps/desktop': { name: '@cc-desk-tunnel/desktop', version: '1.0.0' } },
+  });
+  assert.throws(() => pinnedLock(Buffer.from(twice)), /exactly once/);
+  // A dependency that changed is not hidden: the digest differs from the runtime's.
+  const moved = lock
+    .toString()
+    .replace(/"resolved": "[^"]+"/, '"resolved": "https://example.invalid/x.tgz"');
+  assert.notEqual(digest(pinnedLock(Buffer.from(moved))), runtimeLock);
 });
