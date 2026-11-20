@@ -130,6 +130,13 @@ type Live = {
 };
 // The question open in the editor: why it cannot be sent just now, how it is sent, and how it is left. Given to the
 // questions apart from Live, so that opening and closing it draws only them, not every turn.
+const deliveryWords: Record<NonNullable<Text['delivery']>, string> = {
+  submitted: '已提交',
+  queued: '等待原生处理',
+  received: '原生已接收',
+  not_sent: '未送达原生',
+  unconfirmed: '接收未确认',
+};
 type Editor = {
   id: string;
   blocked?: string;
@@ -748,10 +755,8 @@ function Message({
         <div className="message-footer" ref={line}>
           {item.terminal && <span className="message-delivery">终端</span>}
           {item.delivery && (
-            <span
-              className={`message-delivery${item.delivery === '原生已接收' ? '' : ' unsettled'}`}
-            >
-              {item.delivery}
+            <span className={`message-delivery${item.delivery === 'received' ? '' : ' unsettled'}`}>
+              {deliveryWords[item.delivery]}
             </span>
           )}
           {stamp}
@@ -761,7 +766,11 @@ function Message({
               type="button"
               className="message-action"
               aria-label="编辑消息"
-              title="编辑消息"
+              title={
+                item.delivery === 'not_sent'
+                  ? '编辑消息：这条消息未送达，改好后在本会话重新发送'
+                  : '编辑消息'
+              }
               ref={pencil}
               onClick={() => edit(item)}
             >
@@ -1091,8 +1100,9 @@ export default function Conversation({
     answers?: Record<string, string>,
     // Whether the answer reached the service.
   ) => Promise<boolean>;
-  // Sends a question again as edited; resolves whether it went, or the editor stays open.
-  edit?: (messageId: string, text: string) => Promise<boolean>;
+  // Sends a question again as edited; resolves whether it went, or the editor stays open. `inPlace`: the service
+  // said the question never reached the CLI, so the edit is simply sent in this session, with nothing to replace.
+  edit?: (messageId: string, text: string, inPlace: boolean) => Promise<boolean>;
   clock: Clock;
   // What the session's background tasks last said of themselves, by task.
   progress: Record<string, TaskProgress> | undefined;
@@ -1282,11 +1292,16 @@ export default function Conversation({
   const editable = !!edit;
   // The question open in the editor, one at a time, in the session it was opened in: it closes when the page goes
   // to another session (a copy holds the same message IDs), and what was written in it goes with it.
-  const [editing, setEditing] = useState<{ sessionId?: string; id: string } | null>(null);
+  const [editing, setEditing] = useState<{
+    sessionId?: string;
+    id: string;
+    inPlace: boolean;
+  } | null>(null);
   const currentSession = useRef(session?.id);
   currentSession.current = session?.id;
   useEffect(() => setEditing(null), [session?.id]);
   const editingId = editing && editing.sessionId === session?.id ? editing.id : undefined;
+  const editingInPlace = !!editingId && editing!.inPlace;
   // While open, the editor keeps what is written even when it cannot be sent, and says why.
   const editBlocked = running
     ? '任务运行中，结束后可以发送'
@@ -1324,7 +1339,11 @@ export default function Conversation({
     edit:
       edit && !running
         ? (item) => {
-            setEditing({ sessionId: currentSession.current, id: item.id });
+            setEditing({
+              sessionId: currentSession.current,
+              id: item.id,
+              inPlace: item.delivery === 'not_sent',
+            });
             // Reading where the question is: the view no longer keeps to the end under the editor.
             leave();
           }
@@ -1370,14 +1389,16 @@ export default function Conversation({
             id: editingId,
             blocked: editBlocked,
             send: async (text) => {
-              const sent = (await actions.current.edit?.(editingId, text)) ?? false;
+              const sent = (await actions.current.edit?.(editingId, text, editingInPlace)) ?? false;
               if (sent) setEditing(null);
+              // Sent again here, the question comes at the end: the view goes there with it.
+              if (sent && editingInPlace) requestAnimationFrame(() => rejoin());
               return sent;
             },
             cancel: () => setEditing(null),
           }
         : undefined,
-    [editingId, editBlocked],
+    [editingId, editingInPlace, editBlocked],
   );
   const live = useMemo(() => makeLive(now), [now, ...liveKeys]);
   // Turns at rest show no running clock, so a tick draws none of them; the day, for their dates, does.
@@ -1957,6 +1978,7 @@ export default function Conversation({
             <ApprovalDock
               key={waitingOn[0].approvalId}
               tool={waitingOn[0]}
+              bypassing={session?.permissionMode === 'bypassPermissions'}
               more={waitingOn.length - 1}
               disabled={live.busy || live.answered(waitingOn[0])}
               reply={(allowed, answers) => live.reply(waitingOn[0], allowed, answers)}

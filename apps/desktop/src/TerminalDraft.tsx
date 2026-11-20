@@ -168,8 +168,13 @@ export default function TerminalDraft({
       {expanded && (
         <div
           className="terminal-draft-card"
-          onDragOver={(event) => event.preventDefault()}
+          onDragOver={(event) => {
+            // Only files from Explorer are taken here; a row of the workspace tree carries a path the card has no
+            // use for, so it is not shown as droppable.
+            if (event.dataTransfer.types.includes('Files')) event.preventDefault();
+          }}
           onDrop={(event) => {
+            if (!event.dataTransfer.files.length) return;
             event.preventDefault();
             void files([...event.dataTransfer.files]);
           }}

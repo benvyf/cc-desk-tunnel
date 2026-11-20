@@ -2,7 +2,7 @@ import { useId, useLayoutEffect, useRef, useState } from 'react';
 import { LoaderCircle } from './icons.tsx';
 import AttachmentTiles from './AttachmentTiles.tsx';
 import QuoteChips from './QuoteChips.tsx';
-import { fitDraft } from './Composer.tsx';
+import { fitDraft, touchKeyboard } from './Composer.tsx';
 import { messageLimit, withPastedText } from './attachments.ts';
 import { joinMessage, messageParts } from './messageParts.ts';
 
@@ -145,6 +145,8 @@ export default function MessageEditor({
             return;
           }
           if (event.key === 'Enter' && !event.shiftKey) {
+            // On a touch screen Enter starts a new line, as in the input box; the send button sends.
+            if (touchKeyboard()) return;
             event.preventDefault();
             void submit();
           }

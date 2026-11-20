@@ -114,6 +114,7 @@ import { FollowUps } from './followUps.ts';
 import FollowUpQueue from './FollowUpQueue.tsx';
 import { inputHistory } from './inputHistory.ts';
 import PreviewSidebar from './PreviewSidebar.tsx';
+import { attachToComposer } from './composerAttach.ts';
 import { previewSpan, usePreviewWorkspace } from './preview.ts';
 
 import type { TerminalWorkspaceHandle } from './TerminalWindow.tsx';
@@ -1517,9 +1518,19 @@ export function App({
   // (session.fork); the edit is sent there, and the copy takes over the original's name, pin and unsent words
   // while the original is put away, where it stays readable and can be restored. Resolves whether the edit went:
   // once the copy exists, the editor is done with, and what goes wrong after is said and kept in the copy.
-  async function resend(session: Session, messageId: string, text: string) {
+  async function resend(session: Session, messageId: string, text: string, inPlace = false) {
     if (terminalOwns(session.id) || session.activeRun || client.historyPending(session.id))
       return false;
+    // The service said the question never reached the CLI: the conversation goes on from before it already, so
+    // the edit is sent here, as a new question, and no copy is made (upstream 72764597, as in-place editing).
+    if (inPlace) {
+      let sent = false;
+      await act(async () => {
+        await client.request({ type: 'message.send', sessionId: session.id, text, scenario });
+        sent = true;
+      });
+      return sent;
+    }
     const startedAt = navigation.current;
     let forked: string | undefined;
     await act(async () => {
@@ -3034,7 +3045,7 @@ export function App({
                 selected?.archivedAt ||
                 (away && !(selected?.device?.viaSsh && window.desktop?.ssh && remote))
                   ? undefined
-                  : (id, text) => resend(selected!, id, text)
+                  : (id, text, inPlace) => resend(selected!, id, text, inPlace)
               }
               stopTask={(taskId) => {
                 void act(async () => {
@@ -3197,6 +3208,7 @@ export function App({
             {selected && !selected.archivedAt && (!away || remote || selectedTerminal) && (
               <Composer
                 dockSlot={setDockSlot}
+                takesTreePaths
                 mascot={prefs.mascot}
                 queuedMessages={
                   <FollowUpQueue
@@ -3322,6 +3334,11 @@ export function App({
           workspace={preview}
           filesAvailable={previewAvailable}
           root={previewAvailable ? selected?.projectPath : undefined}
+          attach={
+            selected && !selected.archivedAt && !selected.device?.viaSsh
+              ? attachToComposer
+              : undefined
+          }
           changes={
             changesAvailable && selected
               ? {

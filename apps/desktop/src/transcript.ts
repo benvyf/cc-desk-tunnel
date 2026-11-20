@@ -17,7 +17,8 @@ export type TranscriptItem =
       id: string;
       runId: string;
       text: string;
-      delivery?: string;
+      // How the question reached the CLI, as the service last said (message.delivery); Conversation.tsx words it.
+      delivery?: Extract<SessionEvent['payload'], { type: 'message.delivery' }>['status'];
       // Stands for the "continue" button: there is no message of the user's to show, edit or copy.
       continued?: boolean;
       // Asked in a terminal that continued the session; recorded as its turn ended.
@@ -49,6 +50,9 @@ export type TranscriptItem =
       input: string;
       target: string;
       approvalId?: string;
+      // Why Claude Code asks about the call, and whether one of its own safety checks does.
+      approvalReason?: string;
+      safetyCheck?: boolean;
       resolved: boolean;
       status: string;
       state: ToolState;
@@ -117,14 +121,7 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
       });
     if (payload.type === 'message.delivery') {
       const item = byId.get(payload.messageId);
-      if (item?.kind === 'user')
-        item.delivery = {
-          submitted: '已提交',
-          queued: '等待原生处理',
-          received: '原生已接收',
-          not_sent: '未送达原生',
-          unconfirmed: '接收未确认',
-        }[payload.status];
+      if (item?.kind === 'user') item.delivery = payload.status;
     }
     // What a subagent said goes under its call, or nowhere: out of place, it would be taken for the answer.
     if (payload.type === 'text.delta') {
@@ -177,6 +174,8 @@ export function transcript(events: SessionEvent[]): TranscriptItem[] {
       const tool = byId.get(payload.toolId);
       if (tool?.kind === 'tool') {
         tool.approvalId = payload.approvalId;
+        tool.approvalReason = payload.reason;
+        tool.safetyCheck = payload.safetyCheck;
         tool.askedAt = sequence;
         tool.status = '等待审批';
         tool.state = 'approval';

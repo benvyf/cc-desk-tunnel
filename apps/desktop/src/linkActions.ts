@@ -20,7 +20,7 @@ export async function followLink(link: Link, tell: Tell) {
   }
 }
 
-const fileManager = () =>
+export const fileManager = () =>
   ({ win32: '资源管理器', darwin: '访达', linux: '文件管理器' })[
     window.desktop?.platform ?? 'win32'
   ];

@@ -12,6 +12,8 @@ import {
   withPastedText,
 } from './attachments.ts';
 import type { Attachment, SetAttachments } from './attachments.ts';
+import { onAttachToComposer, pathMime } from './composerAttach.ts';
+import type { AttachResult } from './composerAttach.ts';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -49,6 +51,8 @@ export type Scenario = 'chat' | 'tool' | 'question' | 'error' | 'agent';
 // A draft that is only a slash and an optional command name opens the command menu.
 const slashDraft = /^[/\\][^ \n]*$/;
 
+// A phone or tablet, typing on the screen: its keyboard has no Shift+Enter for a new line.
+export const touchKeyboard = () => matchMedia('(pointer: coarse)').matches;
 export function fitDraft(box: HTMLTextAreaElement | null) {
   if (!box) return;
   box.style.height = 'auto';
@@ -118,8 +122,12 @@ export default function Composer({
   stop,
   mascot = false,
   dockSlot,
+  takesTreePaths = false,
 }: {
   queuedMessages?: ReactNode;
+  // The main window's box takes the paths its workspace tree sends (composerAttach.ts); a side conversation's
+  // does not, so one choice never lands in two boxes.
+  takesTreePaths?: boolean;
   // Where the conversation puts what waits on the user (ApprovalDock.tsx). While it holds something, it stands in
   // for the message box (style.css), which keeps its draft underneath.
   dockSlot?: (element: HTMLDivElement | null) => void;
@@ -240,6 +248,32 @@ export default function Composer({
     setAttachmentError(null);
     setDropping(false);
   }, [session.id]);
+  // A file or folder from the workspace tree: its path is attached as a file from Explorer would be. An approval
+  // standing in for the box folds away, as for a quote, so what was added is in sight.
+  function attachPath(path: string): AttachResult {
+    if (!path || inputDisabled || !setAttachments) return 'busy';
+    if (remoteSsh) {
+      setAttachmentError('SSH 项目暂不支持图片或文件附件，可继续输入或粘贴文字。');
+      return 'ssh';
+    }
+    setAttachmentError(null);
+    if (slot.current?.childElementCount)
+      slot.current.dispatchEvent(new Event('approval-dock:fold'));
+    input.current?.focus();
+    if (attachments.some((item) => item.path === path)) return 'duplicate';
+    setAttachments(session.id, (current) =>
+      current.some((item) => item.path === path)
+        ? current
+        : [...current, { id: crypto.randomUUID(), name: fileName(path), path, status: 'ready' }],
+    );
+    return 'added';
+  }
+  const latestAttachPath = useRef(attachPath);
+  latestAttachPath.current = attachPath;
+  useEffect(() => {
+    if (!takesTreePaths) return;
+    return onAttachToComposer((path) => latestAttachPath.current(path));
+  }, [takesTreePaths]);
   // The command menu: this window's own actions, then Claude Code's commands that fit what follows the slash. Enter
   // runs the one picked; Tab or a click puts a command in the box, to be given its arguments.
   // Until the keys pick one, the first that can be used is picked.
@@ -490,7 +524,12 @@ export default function Composer({
             submit();
           }}
           onDragOver={(event) => {
-            if (!window.desktop || inputDisabled || !event.dataTransfer.types.includes('Files'))
+            const types = event.dataTransfer.types;
+            if (
+              !window.desktop ||
+              inputDisabled ||
+              !(types.includes('Files') || types.includes(pathMime))
+            )
               return;
             event.preventDefault();
             if (remoteSsh) {
@@ -502,6 +541,11 @@ export default function Composer({
           onDragLeave={() => setDropping(false)}
           onDrop={(event) => {
             setDropping(false);
+            if (window.desktop && event.dataTransfer.types.includes(pathMime)) {
+              event.preventDefault();
+              attachPath(event.dataTransfer.getData(pathMime));
+              return;
+            }
             if (!window.desktop || inputDisabled || !event.dataTransfer.files.length) return;
             event.preventDefault();
             if (remoteSsh) {
@@ -677,6 +721,9 @@ export default function Composer({
                   return;
                 }
                 if (event.key === 'Enter' && !event.shiftKey) {
+                  // A touch keyboard has no Shift+Enter: there Enter starts a new line and the send button
+                  // sends; in the command menu it still runs the picked command (upstream a7b73f19).
+                  if (!menuShown && touchKeyboard() && !event.ctrlKey && !event.metaKey) return;
                   event.preventDefault();
                   if (!menuShown) submit(isMac ? event.metaKey : event.ctrlKey);
                   else if (!items[at].disabled) items[at].run();
@@ -903,6 +950,7 @@ export function NewSessionComposer({
             onChange={(event) => setDraft(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+                if (touchKeyboard()) return;
                 event.preventDefault();
                 submit();
               }

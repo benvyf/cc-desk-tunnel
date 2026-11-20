@@ -59,6 +59,7 @@ export function mount() {
           更多附件
         </button>
         <Composer
+          takesTreePaths
           session={
             {
               id,

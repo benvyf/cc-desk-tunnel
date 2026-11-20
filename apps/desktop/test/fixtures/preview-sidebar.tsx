@@ -86,7 +86,8 @@ const image = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w
     ((window as any).fixtureCopied ??= []).push(text);
   },
   openLink: async () => {},
-  actOnPath: async () => {
+  actOnPath: async (action: string, path: string) => {
+    ((window as any).fixtureActs ??= []).push([action, path]);
     if ((window as any).fixtureFailOpen) {
       (window as any).fixtureFailOpen = false;
       throw new Error('模拟系统打开失败');
@@ -415,7 +416,17 @@ function Fixture() {
       </header>
       <main className="workspace">{controls}</main>
       {opened && (board.expanded || leaving) && (
-        <PreviewSidebar workspace={board} root={folder} leaving={!board.expanded} />
+        <PreviewSidebar
+          workspace={board}
+          root={folder}
+          leaving={!board.expanded}
+          attach={(path) => {
+            const attached: string[] = ((window as any).fixtureAttached ??= []);
+            const result = attached.includes(path) ? 'duplicate' : 'added';
+            attached.push(path);
+            return result;
+          }}
+        />
       )}
     </div>
   );

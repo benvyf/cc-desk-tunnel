@@ -80,6 +80,8 @@ export class ClaudeStream {
   result: { failed: boolean; text: string } | null = null;
   blocks = new Map<number, string>();
   requestedPermissionMode?: PermissionMode;
+  // The mode the CLI said it runs in (init), which may not be the one asked for.
+  reportedPermissionMode?: string;
   requestedEffort?: Effort | null;
   // The subagent call each task was started by: a permission request names the subagent by its task, not its call.
   agents = new Map<string, string>();
@@ -143,6 +145,8 @@ export class ClaudeStream {
         : undefined;
     if (message.type === 'system') {
       if (message.subtype === 'init') {
+        if (typeof message.permissionMode === 'string')
+          this.reportedPermissionMode = message.permissionMode;
         this.emit({
           type: 'native.session',
           nativeSessionId: z.uuid().parse(message.session_id),

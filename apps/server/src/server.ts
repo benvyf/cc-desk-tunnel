@@ -880,7 +880,7 @@ export function createProxyServer(options: ServerOptions) {
         signal: run.controller.signal,
         ssh: ssh ? sessionSsh(store.directory, run.sessionId, ssh) : undefined,
         emit: (event) => emit(run, event),
-        approve: (toolId, waiting) => {
+        approve: (toolId, waiting, why) => {
           if (run.controller.signal.aborted) return Promise.resolve({ allowed: false });
           const approvalId = randomUUID();
           if (waiting === 'question') run.questions.add(approvalId);
@@ -890,7 +890,7 @@ export function createProxyServer(options: ServerOptions) {
               emit(run, { type: 'approval.resolved', approvalId, allowed });
               resolve({ allowed, answers, unanswered });
             });
-            emit(run, { type: 'approval.requested', approvalId, toolId });
+            emit(run, { type: 'approval.requested', approvalId, toolId, ...why });
             emit(run, {
               type: 'run.status',
               status: 'awaiting_approval',

@@ -1,11 +1,27 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { Button, IconButton } from './ui.tsx';
-import { ChevronDown, ChevronRight, Crosshair, FileText, RefreshCw } from './icons.tsx';
+import { Button, IconButton, Menu } from './ui.tsx';
+import type { MenuItem, MenuPosition } from './ui.tsx';
+import {
+  ChevronDown,
+  ChevronRight,
+  Crosshair,
+  ExternalLink,
+  FileText,
+  RefreshCw,
+} from './icons.tsx';
 import type { PreviewSurface } from './preview.ts';
 import { pathKey } from './paths.ts';
+import { copyText } from './copy.tsx';
+import { fileManager } from './linkActions.ts';
+import { attachWords, pathMime } from './composerAttach.ts';
+import type { AttachResult } from './composerAttach.ts';
 type Entry = { name: string; path: string; kind: 'file' | 'directory' };
+// A row's menu, opened by a right-click or from the keyboard (the menu key, Shift+F10).
+type OpenMenu = (at: MenuPosition, entry: Entry) => void;
 const keyOf = (path: string) => pathKey(path).replaceAll('\\', '/').replace(/\/$/, '');
+const menuKey = (event: { key: string; shiftKey: boolean }) =>
+  event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10');
 
 // Rows are the side column's (32px, 8px corners, hover and selected fills across the whole row); the depth only
 // moves the row's content, so nested rows are not narrower targets.
@@ -17,6 +33,8 @@ function Directory({
   open,
   surface,
   locate,
+  menu,
+  draggable,
 }: {
   root: string;
   path: string;
@@ -25,6 +43,9 @@ function Directory({
   open: (path: string) => void;
   surface: PreviewSurface;
   locate: number;
+  menu: OpenMenu;
+  // A row can be dragged into the message box, which attaches its path.
+  draggable: boolean;
 }) {
   const [entries, setEntries] = useState<Entry[]>([]),
     [error, setError] = useState(''),
@@ -111,6 +132,16 @@ function Directory({
             aria-selected={keyOf(active ?? '') === keyOf(entry.path)}
             aria-expanded={entry.kind === 'directory' ? expanded.has(entry.path) : undefined}
             title={entry.path}
+            draggable={draggable}
+            onDragStart={(event) => {
+              event.dataTransfer.setData(pathMime, entry.path);
+              event.dataTransfer.setData('text/plain', entry.path);
+              event.dataTransfer.effectAllowed = 'copy';
+            }}
+            onContextMenu={(event) => {
+              event.preventDefault();
+              menu({ x: event.clientX, y: event.clientY }, entry);
+            }}
             onClick={() =>
               entry.kind === 'file'
                 ? open(entry.path)
@@ -123,6 +154,12 @@ function Directory({
             }
             onKeyDown={(event) => {
               if (event.altKey || event.ctrlKey || event.metaKey) return;
+              if (menuKey(event)) {
+                event.preventDefault();
+                const box = event.currentTarget.getBoundingClientRect();
+                menu({ x: box.left + 24, y: box.bottom }, entry);
+                return;
+              }
               if (entry.kind === 'directory' && ['ArrowLeft', 'ArrowRight'].includes(event.key)) {
                 event.preventDefault();
                 setExpanded((old) => {
@@ -174,6 +211,8 @@ function Directory({
                 open={open}
                 surface={surface}
                 locate={locate}
+                menu={menu}
+                draggable={draggable}
               />
             </div>
           )}
@@ -187,15 +226,55 @@ export default function PreviewTree({
   active,
   open,
   surface,
+  attach,
 }: {
   root: string;
   active?: string;
   open: (path: string) => void;
   surface: PreviewSurface;
+  // Puts a path in the message box as an attachment; absent where there is no box to take it.
+  attach?: (path: string) => AttachResult;
 }) {
   const [revision, setRevision] = useState(0),
     [locate, setLocate] = useState(0);
+  const [menu, setMenu] = useState<(MenuPosition & { items: MenuItem[] }) | null>(null);
+  const [status, setStatus] = useState({ text: '', revision: 0 });
   const locating = useRef<MutationObserver | null>(null);
+  useEffect(() => {
+    if (!status.text) return;
+    const timer = setTimeout(() => setStatus((now) => ({ ...now, text: '' })), 2000);
+    return () => clearTimeout(timer);
+  }, [status]);
+  const tell = (text: string) => setStatus((now) => ({ text, revision: now.revision + 1 }));
+  const act = (action: 'open' | 'reveal', path: string) =>
+    void window.desktop!.actOnPath(action, path).then(
+      (said) => said && tell(said),
+      () => tell('操作失败，请重试。'),
+    );
+  const copyPath = (path: string) =>
+    void copyText(path).then(
+      () => tell('已复制路径'),
+      () => tell('复制失败，请重试。'),
+    );
+  const openMenu: OpenMenu = (at, entry) =>
+    setMenu({
+      ...at,
+      items: [
+        ...(attach
+          ? [
+              {
+                label: '添加到输入框',
+                run: () => {
+                  const result = attach(entry.path);
+                  if (result !== 'added') tell(attachWords[result]);
+                },
+              },
+            ]
+          : []),
+        { label: `在${fileManager()}中显示`, run: () => act('reveal', entry.path) },
+        { label: '复制路径', run: () => copyPath(entry.path) },
+      ],
+    });
   useEffect(
     () => () => {
       locating.current?.disconnect();
@@ -232,6 +311,9 @@ export default function PreviewTree({
         >
           <Crosshair />
         </IconButton>
+        <IconButton title={`在${fileManager()}中打开`} size="xs" onClick={() => act('open', root)}>
+          <ExternalLink />
+        </IconButton>
         <IconButton title="刷新目录" size="xs" onClick={() => setRevision((n) => n + 1)}>
           <RefreshCw />
         </IconButton>
@@ -246,8 +328,14 @@ export default function PreviewTree({
           open={open}
           surface={surface}
           locate={locate}
+          menu={openMenu}
+          draggable={!!attach}
         />
       </div>
+      <p className="preview-tree-status" role="status">
+        {status.text}
+      </p>
+      {menu && <Menu label="文件操作" {...menu} onClose={() => setMenu(null)} />}
     </section>
   );
 }

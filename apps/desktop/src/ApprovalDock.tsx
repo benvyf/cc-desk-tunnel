@@ -27,7 +27,14 @@ const RichText = lazy(() => import('./RichText.tsx'));
 //
 // The input box is still there underneath, with its draft: "输入消息" folds the dock into a bar over it, for a
 // follow-up, a quote, or another approval mode before answering. Folded, the dock keeps what was chosen so far.
-export type DockTool = { name: string; input: string; approvalId?: string };
+export type DockTool = {
+  name: string;
+  input: string;
+  approvalId?: string;
+  // Why Claude Code asks, and whether one of its own safety checks does (a service from Build 33 on says).
+  approvalReason?: string;
+  safetyCheck?: boolean;
+};
 
 // When a key was last pressed anywhere: a dock that comes up while the user is typing must not take the focus, or
 // the next digit and Enter meant for the message would answer the question.
@@ -48,8 +55,11 @@ export default function ApprovalDock({
   stop,
   folded,
   fold,
+  bypassing = false,
 }: {
   tool: DockTool;
+  // The session bypasses permissions: what is asked then is only what Claude Code's safety checks stop.
+  bypassing?: boolean;
   // Other calls waiting behind this one, answered after it.
   more: number;
   disabled: boolean;
@@ -252,6 +262,26 @@ export default function ApprovalDock({
           {tail()}
         </header>
         <p className="approval-dock-title approval-title">{approvalQuestion(tool.name)}</p>
+        {(tool.safetyCheck || tool.approvalReason) && (
+          <div
+            className="approval-reason"
+            role="note"
+            title={
+              tool.safetyCheck ? 'Claude Code 自身的安全检查，任何审批模式下都会询问' : undefined
+            }
+          >
+            <ShieldAlert />
+            <span>
+              {tool.safetyCheck && (
+                <b>
+                  Claude Code 安全拦截
+                  {bypassing && <i className="approval-tag">绕过权限时也会询问</i>}
+                </b>
+              )}
+              {tool.approvalReason && <small>{tool.approvalReason}</small>}
+            </span>
+          </div>
+        )}
         <div className="approval-dock-body">
           <div className="approval-dock-box tool-section tool-input">
             <div className="tool-section-head">

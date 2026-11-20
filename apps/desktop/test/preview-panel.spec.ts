@@ -75,6 +75,53 @@ test('the workspace tree has the side column rows and its own column', async ({ 
   ).toBeVisible();
 });
 
+test('a tree row’s menu reveals it, copies its path or puts it in the message box', async ({
+  page,
+}) => {
+  await page.goto(fixture);
+  await page.getByRole('button', { name: '打开文档', exact: true }).click();
+  const aside = pane(page);
+  await aside.getByRole('button', { name: '工作区目录', exact: true }).click();
+  const tree = aside.getByRole('tree', { name: '工作区文件' });
+  const row = tree.getByRole('treeitem', { name: '说明.md', exact: true });
+  const path = (await row.getAttribute('title'))!;
+  await expect(row).toHaveAttribute('draggable', 'true');
+
+  await row.click({ button: 'right' });
+  const menu = page.getByRole('menu', { name: '文件操作' });
+  await expect(menu.getByRole('menuitem')).toHaveText([
+    '添加到输入框',
+    '在资源管理器中显示',
+    '复制路径',
+  ]);
+  await menu.getByRole('menuitem', { name: '复制路径' }).click();
+  await expect(menu).toHaveCount(0);
+  expect(await page.evaluate(() => (window as any).fixtureCopied)).toEqual([path]);
+  await expect(aside.locator('.preview-tree-status')).toHaveText('已复制路径');
+  await expect(aside.locator('.preview-tree-status')).toBeEmpty({ timeout: 4000 });
+
+  // The keyboard opens the same menu, at the row.
+  await row.focus();
+  await page.keyboard.press('Shift+F10');
+  await menu.getByRole('menuitem', { name: '在资源管理器中显示' }).click();
+  expect(await page.evaluate(() => (window as any).fixtureActs)).toEqual([['reveal', path]]);
+
+  await row.click({ button: 'right' });
+  await menu.getByRole('menuitem', { name: '添加到输入框' }).click();
+  expect(await page.evaluate(() => (window as any).fixtureAttached)).toEqual([path]);
+  // Added a second time, the tree says it is there already.
+  await row.click({ button: 'right' });
+  await menu.getByRole('menuitem', { name: '添加到输入框' }).click();
+  await expect(aside.locator('.preview-tree-status')).toHaveText('输入框里已有这个路径');
+
+  // The heading opens the whole folder.
+  await aside.getByRole('button', { name: '在资源管理器中打开', exact: true }).click();
+  expect((await page.evaluate(() => (window as any).fixtureActs)).at(-1)).toEqual([
+    'open',
+    (await aside.locator('.preview-tree > header > span').getAttribute('title'))!,
+  ]);
+});
+
 // benben kept the original empty state (2026-11-02): folder icon, title, one line and an "open file" button.
 test('an empty preview keeps its icon, title and open button', async ({ page }) => {
   await page.goto(fixture);

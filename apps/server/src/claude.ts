@@ -66,6 +66,7 @@ export type ClaudeRun = {
   approve: (
     toolId: string,
     waiting: 'approval' | 'question',
+    why?: { reason?: string; safetyCheck?: boolean },
   ) => Promise<{ allowed: boolean; answers?: Record<string, string>; unanswered?: Unanswered }>;
   // Absent only for a session owned by the service itself.
   ssh?: SshConnection;
@@ -157,6 +158,19 @@ export function prepareNativeDirectory(options: ClaudeOptions, dataDir: string, 
   settings.cleanupPeriodDays = options.contextRetentionDays ?? 3650;
   writeFileSync(localSettingsPath, JSON.stringify(settings, null, 2) + '\n', { mode: 0o600 });
   return cwd;
+}
+
+// Why the CLI asks about a call: its reason, and whether one of its own safety checks asks. The kind of reason says
+// so, though a compound command's ask comes as its subcommands' results (the SDK passes the kind without typing it).
+// Bypassing permissions the CLI asks only for its safety checks, the user's ask rules and hooks: an ask whose kind
+// names no rule or hook is then a safety check. `mode` is the one the CLI reported, which may differ from the one
+// asked for. Upstream 85785f72, 4053b1a0.
+export function asked(context: { decisionReason?: string }, mode: string | undefined) {
+  const kind = (context as { decisionReasonType?: unknown }).decisionReasonType;
+  const reason = context.decisionReason?.trim().slice(0, 4000);
+  const safety =
+    kind === 'safetyCheck' || (mode === 'bypassPermissions' && kind !== 'rule' && kind !== 'hook');
+  return { ...(reason ? { reason } : {}), ...(safety ? { safetyCheck: true } : {}) };
 }
 
 export async function runClaude(
@@ -312,7 +326,13 @@ export async function runClaude(
           const { allowed, answers, unanswered } =
             context.signal.aborted || run.signal.aborted
               ? { allowed: false }
-              : await run.approve(tool.id, question ? 'question' : 'approval');
+              : await run.approve(
+                  tool.id,
+                  question ? 'question' : 'approval',
+                  question || name === 'ExitPlanMode'
+                    ? undefined
+                    : asked(context, mapper.reportedPermissionMode ?? run.permissionMode),
+                );
           if (question && unanswered) {
             // A CLI that knows of it is told how the question went: the tool's result says so, and Claude reads
             // the answer given for each question. An older one refuses an answer that says it.

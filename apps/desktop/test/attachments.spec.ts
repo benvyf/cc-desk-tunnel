@@ -68,6 +68,53 @@ test('files become removable tiles, images have thumbnails and attachment-only m
   expect(await page.locator('main').getAttribute('data-sent')).toBe('"C:\\照片\\风景.png"');
 });
 
+test('a path from the workspace tree is attached once, dropped or sent from its menu', async ({
+  page,
+}) => {
+  const drop = (path: string) =>
+    page.locator('.composer').evaluate((box, path) => {
+      const data = new DataTransfer();
+      data.setData('application/x-cc-space-path', path);
+      data.setData('text/plain', path);
+      for (const type of ['dragover', 'drop'])
+        box.dispatchEvent(
+          new DragEvent(type, { dataTransfer: data, bubbles: true, cancelable: true }),
+        );
+    }, path);
+  await drop('C:\\项目\\src\\index.ts');
+  await expect(page.locator('.attachment-tile')).toHaveCount(1);
+  // The path is not typed into the box as text.
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toHaveValue('');
+  const attach = (path: string) =>
+    page.evaluate((path) => {
+      const detail: { path: string; result?: string } = { path };
+      window.dispatchEvent(new CustomEvent('cc-space:attach-path', { detail }));
+      return detail.result;
+    }, path);
+  expect(await attach('C:\\项目\\docs')).toBe('added');
+  expect(await attach('C:\\项目\\docs')).toBe('duplicate');
+  await drop('C:\\项目\\src\\index.ts');
+  await expect(page.locator('.attachment-tile')).toHaveCount(2);
+  await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: '发送消息', exact: true }).click();
+  expect(await page.locator('main').getAttribute('data-sent')).toBe(
+    '"C:\\项目\\src\\index.ts"\n"C:\\项目\\docs"',
+  );
+});
+
+test('an SSH project refuses a path from the workspace tree', async ({ page }) => {
+  await page.goto('/test/fixtures/attachments.html?ssh');
+  expect(
+    await page.evaluate(() => {
+      const detail: { path: string; result?: string } = { path: 'C:\\项目\\a.ts' };
+      window.dispatchEvent(new CustomEvent('cc-space:attach-path', { detail }));
+      return detail.result;
+    }),
+  ).toBe('ssh');
+  await expect(page.getByRole('alert')).toContainText('SSH');
+  await expect(page.locator('.attachment-tile')).toHaveCount(0);
+});
+
 test('attachments follow their session and survive reload without storing thumbnail data', async ({
   page,
 }) => {

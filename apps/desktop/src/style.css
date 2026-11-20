@@ -8891,6 +8891,46 @@ dialog::backdrop {
 .approval-dock-note {
   color: var(--faint);
 }
+/* Why Claude Code asks (upstream 85785f72): a safety check's mark and the CLI's own reason, under the question. */
+.approval-reason {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0 16px 10px;
+  color: var(--warn-text);
+  font-size: calc(12.5rem / 14);
+}
+.approval-reason > svg {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+}
+.approval-reason > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.approval-reason b {
+  font-weight: 600;
+}
+.approval-reason small {
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  overflow-wrap: anywhere;
+  max-height: 6.5em;
+  overflow: auto;
+}
+.approval-tag {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border: 1px solid var(--warn-line);
+  border-radius: 999px;
+  font-size: calc(11rem / 14);
+  font-style: normal;
+  font-weight: 500;
+}
 .approval-dock-actions {
   flex: none;
   flex-wrap: wrap;
@@ -10959,6 +10999,24 @@ dialog:has(.web-settings-form) {
 }
 .preview-tree-notice .button {
   margin-top: 6px;
+}
+/* What a row's menu did ("已复制路径"), for two seconds at the column's foot; nothing is drawn while it is empty. */
+.preview-tree-status {
+  flex: none;
+  margin: 0;
+  padding: 6px 14px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: calc(12rem / 14);
+  overflow-wrap: anywhere;
+}
+/* Empty, it stays in the layout with no height, so a screen reader still hears what comes into it. */
+.preview-tree-status:empty {
+  padding: 0;
+  border-top-color: transparent;
+}
+.preview-tree-item[draggable='true'] {
+  -webkit-user-drag: element;
 }
 @media (min-width: 1400px) {
   .preview-full .preview-panes {

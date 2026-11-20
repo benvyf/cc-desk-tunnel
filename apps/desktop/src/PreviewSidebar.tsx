@@ -16,7 +16,10 @@ export default function PreviewSidebar({
   renderChat,
   leaving = false,
   changes,
+  attach,
 }: {
+  // Puts a path from the workspace tree in the message box (composerAttach.ts); only where there is one.
+  attach?: (path: string) => import('./composerAttach.ts').AttachResult;
   workspace: PreviewWorkspace;
   surface?: PreviewSurface;
   root?: string;
@@ -272,6 +275,7 @@ export default function PreviewSidebar({
               active={active?.target}
               open={(path) => workspace.openFile(path, root, true)}
               surface={surface}
+              attach={attach}
             />
           )}
           <div className="preview-panes">
