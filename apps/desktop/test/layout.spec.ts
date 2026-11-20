@@ -196,7 +196,7 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
   await expect(recent).toContainText('暂无需要关注的聊天');
   await expect(recent.locator('.activity-row').first()).toContainText(title);
   await shot(page, '09-活动视图');
-  await page.getByRole('button', { name: '关闭活动视图', exact: true }).click();
+  await page.getByRole('button', { name: /^查看活动/, pressed: true }).click();
   await expect(page.getByRole('navigation', { name: '会话列表' })).toBeVisible();
 
   // The same window, narrow.

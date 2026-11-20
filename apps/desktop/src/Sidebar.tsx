@@ -859,21 +859,28 @@ export default function Sidebar({
     const timer = setTimeout(() => setToday(Date.now()), nextDay(now) - now + 1000);
     return () => clearTimeout(timer);
   }, [inActivity, today]);
+  // The session open on the page of a window in front shows what it waits for itself: it is listed, but not
+  // counted on the button (as the notices left it out). Read anew with each change of the sessions.
+  const reading =
+    document.hasFocus() && document.visibilityState === 'visible' ? selectedId : undefined;
   const urgent = useMemo(
     () =>
       [...sessions, ...elsewhere].filter(
-        (session) => urgency(session, { failed, done }) !== undefined,
+        (session) => session.id !== reading && urgency(session, { failed, done }) !== undefined,
       ).length,
-    [sessions, elsewhere, failed, done],
+    [sessions, elsewhere, failed, done, reading],
   );
   // What was reported apart from any session (a lost connection, a task not sent): kept until put away.
   const reminders = notifications.notices.filter((notice) => !notice.sessionId);
   const unreadReminders = reminders.filter((notice) => !notice.read).length;
   const { markRead } = notifications;
-  // Opening the view reads what it shows.
+  // Opening the view reads what it shows. A reminder that comes while it is open is at its head: the list goes
+  // back up to it, so that it is seen before it counts as read.
   useEffect(() => {
-    if (inActivity && notifications.unread) markRead();
-  }, [inActivity, notifications.unread, markRead]);
+    if (!inActivity || !notifications.unread) return;
+    if (unreadReminders && list.current) list.current.scrollTop = 0;
+    markRead();
+  }, [inActivity, notifications.unread, unreadReminders, markRead]);
   const recent = useMemo(() => {
     if (!inActivity) return null;
     const term = search.trim().toLowerCase();
@@ -987,13 +994,8 @@ export default function Sidebar({
               title={
                 inActivity ? '关闭活动视图' : `查看活动${activityHint ? `  ${activityHint}` : ''}`
               }
-              aria-label={
-                inActivity
-                  ? '关闭活动视图'
-                  : waiting
-                    ? `查看活动（${waiting} 项需要关注）`
-                    : '查看活动'
-              }
+              // The name stays and `aria-pressed` tells whether the view shows; the tooltip says what a press does.
+              aria-label={waiting ? `查看活动（${waiting} 项需要关注）` : '查看活动'}
               aria-pressed={inActivity}
               onClick={toggleView}
             >

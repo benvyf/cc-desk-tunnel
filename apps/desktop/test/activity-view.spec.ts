@@ -130,9 +130,9 @@ test('the activity button lists every session by day under what needs the user, 
 
   await button.click();
   const list = recent(page);
-  await expect(page.getByRole('button', { name: '关闭活动视图', exact: true })).toHaveAttribute(
-    'aria-pressed',
-    'true',
+  await expect(page.getByRole('button', { name: /^查看活动/, pressed: true })).toHaveAttribute(
+    'title',
+    '关闭活动视图',
   );
   await expect(page.locator('.activity-toggle .notice-badge')).toHaveCount(0);
   // The session that waits is listed once, among the priorities, with its state; the rest by day, newest first.
@@ -146,6 +146,12 @@ test('the activity button lists every session by day under what needs the user, 
   await expect(speedRow.locator('.activity-preview')).toHaveText(
     '100 Mbps 做 100 台 Ubuntu 的 CC 中转，绰绰有余。',
   );
+  // Under the pointer the "…" takes the project's place, and the reply's lines do not move.
+  const preview = speedRow.locator('.activity-preview');
+  const before = (await preview.boundingBox())!;
+  await speedRow.hover();
+  await expect(speedRow.getByRole('button', { name: '会话操作', exact: true })).toBeVisible();
+  expect(await preview.boundingBox()).toEqual(before);
   // One never opened here has no preview: the time it changed instead, under its day.
   await expect(rows.filter({ hasText: '回应问候' }).locator('.activity-preview')).toHaveText(
     '15:00',
@@ -186,15 +192,14 @@ test('the activity button lists every session by day under what needs the user, 
   await expect(page.getByRole('navigation', { name: '会话列表' })).toBeVisible();
   await page.keyboard.press('Control+Alt+KeyU');
   await expect(list).toBeVisible();
-  // Rows out of sight are sized by estimate (content-visibility), which may settle a few pixels off.
-  expect(Math.abs((await list.evaluate((node) => node.scrollTop)) - 300)).toBeLessThanOrEqual(8);
+  expect(await list.evaluate((node) => node.scrollTop)).toBe(300);
   expect(await page.evaluate(() => JSON.parse(localStorage['proxy-prefs']).sidebarView)).toBe(
     'activity',
   );
-  // The preview is kept on this computer for the next time.
-  await expect
-    .poll(() => page.evaluate(() => localStorage['proxy-activity-previews'] ?? ''))
-    .toContain('100 Mbps');
+  // A browser keeps no copies of the conversations on disk, and so none of their previews either: they live
+  // as long as the page.
+  await page.waitForTimeout(1500);
+  expect(await page.evaluate(() => localStorage['proxy-activity-previews'] ?? '')).toBe('');
 });
 
 test('the activity view fits a narrow column without spilling sideways', async ({ page }) => {

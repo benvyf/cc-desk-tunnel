@@ -323,7 +323,7 @@ test('the activity view opens in place, empty of priorities; the delete dialog a
   const activity = page.getByRole('button', { name: '查看活动', exact: true });
   await expect(activity).toHaveAttribute('aria-pressed', 'false');
   await activity.click();
-  const pressed = page.getByRole('button', { name: '关闭活动视图', exact: true });
+  const pressed = page.getByRole('button', { name: /^查看活动/, pressed: true });
   await expect(pressed).toHaveAttribute('aria-pressed', 'true');
   const recent = page.getByRole('navigation', { name: '最近的会话' });
   await expect(recent.locator('.list-heading').first()).toHaveText('优先事项');

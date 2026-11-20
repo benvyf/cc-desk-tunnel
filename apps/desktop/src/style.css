@@ -2490,18 +2490,21 @@ dialog:has(.release-notes) {
   background: var(--selected);
   color: var(--text);
 }
-.notice-badge {
-  pointer-events: none;
-}
 /* The activity view's rows: the title with the project at its end, and under it two quiet lines of the latest
    reply. They keep the rows' own colours, hover and selection. */
+/* Its "…" rests at the top right corner over the first line, which makes room for it under the pointer by
+   letting the project's name give way, as a time does in the project list: the reply's lines never move. */
 .session-row.activity-row {
+  position: relative;
   align-items: flex-start;
-  content-visibility: auto;
-  contain-intrinsic-size: auto 56px;
 }
 .session-row.activity-row .row-action {
-  margin-top: 6px;
+  position: absolute;
+  top: 3px;
+  right: 4px;
+}
+.session-row.activity-row:is(:hover, :focus-within) .activity-line {
+  padding-right: 28px;
 }
 .activity-row .session-select {
   height: auto;
@@ -2623,6 +2626,7 @@ dialog:has(.release-notes) {
 }
 .notice-badge {
   position: absolute;
+  pointer-events: none;
   top: 1px;
   right: 0;
   min-width: 15px;

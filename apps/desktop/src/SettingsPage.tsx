@@ -36,6 +36,7 @@ import type { ListedConnection } from './shared.ts';
 import ShortcutSettings from './ShortcutSettings.tsx';
 import { IconButton, Switch } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
+import { clearPreviews } from './activityPreviews.ts';
 
 export type Section =
   | 'account'
@@ -729,6 +730,7 @@ function General({
                   className="button"
                   onClick={() => {
                     setCacheError('');
+                    clearPreviews();
                     void client
                       .clearHistoryCache()
                       .then(() => setCacheBytes(0))

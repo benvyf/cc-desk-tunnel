@@ -232,7 +232,7 @@ test('the activity view stays inside narrow windows', async ({ page }) => {
       .toBe(true);
     if (width === 320)
       await page.screenshot({ path: resolve(screenshots, 'theme-activity-mobile.png') });
-    await page.getByRole('button', { name: '关闭活动视图', exact: true }).click();
+    await page.getByRole('button', { name: /^查看活动/, pressed: true }).click();
     await expect(recent).toBeHidden();
     if (width < 700) await page.mouse.click(width - 8, 350);
   }
