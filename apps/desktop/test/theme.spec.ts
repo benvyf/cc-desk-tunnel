@@ -213,9 +213,7 @@ test('workbench surfaces and hover feedback remain consistent across pages and s
   }
 });
 
-test('notification popup stays inside narrow windows and dismisses with Escape', async ({
-  page,
-}) => {
+test('the activity view stays inside narrow windows', async ({ page }) => {
   await page.goto('/');
   await login(page);
   for (const width of [1280, 390, 320]) {
@@ -224,15 +222,18 @@ test('notification popup stays inside narrow windows and dismisses with Escape',
       await expect(page.locator('.sidebar')).toBeHidden();
       await page.getByRole('button', { name: '展开会话列表', exact: true }).click();
     }
-    await page.getByRole('button', { name: /^通知/ }).click();
-    const popup = page.getByRole('dialog', { name: '通知', exact: true });
-    const bounds = (await popup.boundingBox())!;
+    await page.getByRole('button', { name: /^查看活动/ }).click();
+    const recent = page.getByRole('navigation', { name: '最近的会话' });
+    const bounds = (await recent.boundingBox())!;
     expect.soft(bounds.x, `${width}px left`).toBeGreaterThanOrEqual(0);
     expect.soft(bounds.x + bounds.width, `${width}px right`).toBeLessThanOrEqual(width);
+    expect
+      .soft(await recent.evaluate((node) => node.scrollWidth <= node.clientWidth), `${width}px`)
+      .toBe(true);
     if (width === 320)
-      await page.screenshot({ path: resolve(screenshots, 'theme-notifications-mobile.png') });
-    await page.keyboard.press('Escape');
-    await expect(popup).toBeHidden();
+      await page.screenshot({ path: resolve(screenshots, 'theme-activity-mobile.png') });
+    await page.getByRole('button', { name: '关闭活动视图', exact: true }).click();
+    await expect(recent).toBeHidden();
     if (width < 700) await page.mouse.click(width - 8, 350);
   }
 });

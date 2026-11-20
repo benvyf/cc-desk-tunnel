@@ -19,6 +19,8 @@ export type Notifications = {
   // Reports something that happened outside the session list: a lost connection, a task that was not sent.
   push: (notice: Pick<Notice, 'kind' | 'title' | 'body' | 'sessionId'>) => void;
   markRead: () => void;
+  // Puts one notice away.
+  dismiss: (id: string) => void;
   clear: () => void;
   // Sessions whose last run failed: the list marks them until they are opened or run again, whether or not
   // failures raise a notice.
@@ -252,6 +254,10 @@ export function useNotifications(client: ProxyClient, viewing: () => string | nu
     push,
     markRead: useCallback(
       () => setNotices((current) => current.map((notice) => ({ ...notice, read: true }))),
+      [],
+    ),
+    dismiss: useCallback(
+      (id: string) => setNotices((current) => current.filter((notice) => notice.id !== id)),
       [],
     ),
     clear: useCallback(() => setNotices([]), []),

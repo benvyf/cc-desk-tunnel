@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Brand from './Brand.tsx';
 import SidebarShell, { SearchField } from './SidebarShell.tsx';
 import type { CSSProperties, KeyboardEvent, ReactNode } from 'react';
 import {
+  Activity,
   CalendarClock,
   ChevronDown,
   ChevronRight,
@@ -13,6 +14,7 @@ import {
   Pin,
   Plus,
   Search,
+  SlidersHorizontal,
   SquarePen,
   Check,
   Trash2,
@@ -22,8 +24,9 @@ import {
 import { pruned, ranged, toggled as chosenToggled } from './sessionSelection.ts';
 import type { Session } from '@cc-desk-tunnel/protocol';
 import type { ConnectedDevice } from './client.ts';
-import NoticeBell from './NoticeBell.tsx';
 import type { Notifications } from './notifications.ts';
+import { activityGroups, nextDay } from './activityView.ts';
+import { usePreview } from './activityPreviews.ts';
 import { ago, folderName, isInside, pathKey } from './paths.ts';
 import { setPrefs, toggled, usePrefs } from './prefs.ts';
 import { useConnectionName } from './shared.ts';
@@ -97,6 +100,36 @@ function activity(session: Session, state: RowState | undefined) {
   if (session.activeRun?.surface === 'terminal') return terminalState(session.activeRun.activity);
   return state ? stateLabels[state] : ago(Date.parse(session.updatedAt));
 }
+// How much a session needs the user, for the activity view's 优先事项: waiting for an answer, failed, or
+// finished out of sight and not yet read. None for the others.
+function urgency(session: Session, outcomes: Outcomes) {
+  const state = rowState(session, outcomes);
+  if (state === 'approval' || state === 'question' || state === 'failed') return stateRank[state];
+  return lit(session, outcomes.done) ? stateRank.done : undefined;
+}
+// The activity view's second line: the state when there is one, then the opening of the latest reply this
+// computer has seen (activityPreviews.ts), or the time the session last changed.
+function ActivityLine({ session, state }: { session: Session; state: RowState | undefined }) {
+  const preview = usePreview(session.id);
+  const word = state || session.activeRun?.surface === 'terminal' ? activity(session, state) : '';
+  return (
+    <span className="activity-preview">
+      {word && <b className="activity-state">{word}</b>}
+      {word && preview && ' · '}
+      {preview ?? (word ? '' : clock.format(Date.parse(session.updatedAt)))}
+    </span>
+  );
+}
+// The time of day a session changed: its day is the heading it is listed under.
+const clock = new Intl.DateTimeFormat('zh-CN', {
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+// The activity view lists this many of its days' sessions at first, and as many more at each "show more".
+const ACTIVITY_PAGE = 50;
+// A folder this program made for a session without a project: a day and under it a time. Not a project's name.
+const madeFolder = /[\\/]\d{4}-\d{2}-\d{2}[\\/]\d{6}(-\d+)?[\\/]?$/;
 
 // A list of sessions shows its latest few until it is listed in full.
 const PAGE = 5;
@@ -158,7 +191,13 @@ export default function Sidebar({
   archiveChosen,
   deleteChosen,
   batchProgress,
+  activityHint,
+  openNotifySettings,
 }: {
+  // The activity view's keyboard shortcut, told on its button.
+  activityHint?: string;
+  // The notification settings, from the 优先事项 heading.
+  openNotifySettings?: () => void;
   // Sessions put away: listed apart, at the foot, and found by a search.
   archived?: Session[];
   // The sessions chosen to act on together (sessionSelection.ts); choosing is on while any is.
@@ -415,7 +454,7 @@ export default function Sidebar({
       // program makes are told by their shape, a day and under it a time.
       if (
         devices.some((item) => item.id === device.id && item.server) ||
-        /[\\/]\d{4}-\d{2}-\d{2}[\\/]\d{6}(-\d+)?[\\/]?$/.test(session.projectPath)
+        madeFolder.test(session.projectPath)
       ) {
         entry.plain.push(session);
         continue;
@@ -639,14 +678,14 @@ export default function Sidebar({
     chosenSessions.length > 0 && chosenSessions.every((session) => session.archivedAt);
   const [archivedOpen, setArchivedOpen] = useState(false);
 
-  function renderSession(session: Session, row?: ForkRow) {
+  function renderSession(session: Session, row?: ForkRow, inActivity = false) {
     const state = rowState(session, notifications);
     const depth = row?.depth ?? 0;
     const canChoose = choosable(session);
     const taken = chosen.has(session.id);
     return (
       <div
-        className={`session-row ${selectedId === session.id ? 'selected' : ''}${taken ? ' chosen' : ''}`}
+        className={`session-row ${selectedId === session.id ? 'selected' : ''}${taken ? ' chosen' : ''}${inActivity ? ' activity-row' : ''}`}
         data-state={state}
         data-session-id={session.id}
         data-choosable={canChoose}
@@ -740,12 +779,29 @@ export default function Sidebar({
           )}
           {/* Finished while out of sight: a green light before the title, until the session is opened. */}
           {lit(session, done) && <DoneDot at={done.get(session.id)} />}
-          <strong>{session.title}</strong>
-          {row?.parentTitle && <span className="sr-only">，派生自 {row.parentTitle}</span>}
-          {state && state !== 'done' && (
-            <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
+          {inActivity ? (
+            <span className="activity-text">
+              <span className="activity-line">
+                <strong>{session.title}</strong>
+                {state && state !== 'done' && (
+                  <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
+                )}
+                {projectLabel(session) && (
+                  <span className="activity-project">{projectLabel(session)}</span>
+                )}
+              </span>
+              <ActivityLine session={session} state={state} />
+            </span>
+          ) : (
+            <>
+              <strong>{session.title}</strong>
+              {row?.parentTitle && <span className="sr-only">，派生自 {row.parentTitle}</span>}
+              {state && state !== 'done' && (
+                <span className={`running-dot${breathes(state) ? ' breathing' : ''}`} />
+              )}
+              <small>{activity(session, state)}</small>
+            </>
           )}
-          <small>{activity(session, state)}</small>
         </button>
         <IconButton
           title="会话操作"
@@ -778,6 +834,144 @@ export default function Sidebar({
     rows[next]?.focus();
     rows[next]?.scrollIntoView({ block: 'nearest' });
   };
+  // The activity view: every session as one list by when it changed, under what needs the user (优先事项). The
+  // project list stays as it was, folded or not, for when the view is closed.
+  const inActivity = prefs.sidebarView === 'activity';
+  const elsewhereIds = useMemo(() => new Set(elsewhere.map((session) => session.id)), [elsewhere]);
+  // What the project is called where a row has room for it: the name given here, or the folder's. A session
+  // without a project names the other computer it is on, or nothing.
+  function projectLabel(session: Session) {
+    const away = elsewhereIds.has(session.id);
+    if (away ? madeFolder.test(session.projectPath) : isInside(session.projectPath, workspaceRoots))
+      return away ? (session.device?.name ?? '') : '';
+    const key =
+      away && session.device
+        ? projectPreferenceKey(projectScope, session.device.id, session.projectPath)
+        : pathKey(session.projectPath);
+    return prefs.projectNames[key] || folderName(session.projectPath);
+  }
+  // The day headings move on at midnight: one timer, while the view is open.
+  const [today, setToday] = useState(() => Date.now());
+  useEffect(() => {
+    if (!inActivity) return;
+    const now = Date.now();
+    if (nextDay(today) <= now) setToday(now);
+    const timer = setTimeout(() => setToday(Date.now()), nextDay(now) - now + 1000);
+    return () => clearTimeout(timer);
+  }, [inActivity, today]);
+  const urgent = useMemo(
+    () =>
+      [...sessions, ...elsewhere].filter(
+        (session) => urgency(session, { failed, done }) !== undefined,
+      ).length,
+    [sessions, elsewhere, failed, done],
+  );
+  // What was reported apart from any session (a lost connection, a task not sent): kept until put away.
+  const reminders = notifications.notices.filter((notice) => !notice.sessionId);
+  const unreadReminders = reminders.filter((notice) => !notice.read).length;
+  const { markRead } = notifications;
+  // Opening the view reads what it shows.
+  useEffect(() => {
+    if (inActivity && notifications.unread) markRead();
+  }, [inActivity, notifications.unread, markRead]);
+  const recent = useMemo(() => {
+    if (!inActivity) return null;
+    const term = search.trim().toLowerCase();
+    const found = term
+      ? [...sessions, ...elsewhere].filter((session) =>
+          `${session.title} ${session.projectPath} ${session.device?.name ?? '本机'} ${projectLabel(session)}`
+            .toLowerCase()
+            .includes(term),
+        )
+      : [...sessions, ...elsewhere];
+    return activityGroups(found, (session) => urgency(session, { failed, done }), today);
+    // projectLabel reads what is listed below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    inActivity,
+    sessions,
+    elsewhere,
+    failed,
+    done,
+    search,
+    today,
+    workspaceRoots,
+    projectScope,
+    prefs.projectNames,
+  ]);
+  const [activityShown, setActivityShown] = useState(ACTIVITY_PAGE);
+  // Each view comes back where it was left.
+  const list = useRef<HTMLElement>(null);
+  const scrolled = useRef<Record<string, number>>({});
+  useLayoutEffect(() => {
+    if (list.current) list.current.scrollTop = scrolled.current[prefs.sidebarView] ?? 0;
+  }, [prefs.sidebarView]);
+  const toggleView = () =>
+    setPrefs((value) => ({
+      ...value,
+      sidebarView: value.sidebarView === 'activity' ? 'projects' : 'activity',
+    }));
+  const waiting = urgent + unreadReminders;
+  function renderActivity() {
+    if (!recent) return null;
+    const term = search.trim();
+    let left = term ? Infinity : activityShown;
+    const total = recent.days.reduce((sum, day) => sum + day.sessions.length, 0);
+    return (
+      <>
+        <div className="list-heading">
+          优先事项
+          {openNotifySettings && (
+            <IconButton title="通知设置" onClick={openNotifySettings}>
+              <SlidersHorizontal />
+            </IconButton>
+          )}
+        </div>
+        {reminders.map((notice) => (
+          <div className={`activity-reminder ${notice.kind}`} key={notice.id} role="note">
+            <span>
+              <strong>{notice.title}</strong>
+              <small>{ago(notice.at)}</small>
+            </span>
+            <span className="notice-body">{notice.body}</span>
+            <IconButton
+              title="移除这条提醒"
+              size="sm"
+              className="activity-dismiss"
+              onClick={() => notifications.dismiss(notice.id)}
+            >
+              <X />
+            </IconButton>
+          </div>
+        ))}
+        {recent.priority.map((session) => renderSession(session, undefined, true))}
+        {!recent.priority.length && !reminders.length && (
+          <p className="project-empty">暂无需要关注的聊天</p>
+        )}
+        {recent.days.map((day) => {
+          if (left <= 0) return null;
+          const shown = day.sessions.slice(0, left);
+          left -= shown.length;
+          return (
+            <section className="activity-day" key={day.key} aria-label={day.label}>
+              <div className="list-heading">{day.label}</div>
+              {shown.map((session) => renderSession(session, undefined, true))}
+            </section>
+          );
+        })}
+        {!term && total > activityShown && (
+          <button
+            type="button"
+            className="project-more loose"
+            onClick={() => setActivityShown((value) => value + ACTIVITY_PAGE)}
+          >
+            显示更多 ({total - activityShown})
+          </button>
+        )}
+        {term && !recent.priority.length && !total && <p className="list-empty">没有匹配会话</p>}
+      </>
+    );
+  }
   return (
     <SidebarShell
       open={sideOpen}
@@ -785,7 +979,32 @@ export default function Sidebar({
       header={
         <>
           <Brand connectionName={connectionName} />
-          <NoticeBell notifications={notifications} open={select} />
+          <div className="activity-toggle">
+            {/* Its name tells the count as well, which its tooltip leaves to the badge. */}
+            <button
+              type="button"
+              className="icon-button"
+              title={
+                inActivity ? '关闭活动视图' : `查看活动${activityHint ? `  ${activityHint}` : ''}`
+              }
+              aria-label={
+                inActivity
+                  ? '关闭活动视图'
+                  : waiting
+                    ? `查看活动（${waiting} 项需要关注）`
+                    : '查看活动'
+              }
+              aria-pressed={inActivity}
+              onClick={toggleView}
+            >
+              <Activity />
+            </button>
+            {!inActivity && waiting > 0 && (
+              <span className="notice-badge" aria-hidden="true">
+                {waiting > 9 ? '9+' : waiting}
+              </span>
+            )}
+          </div>
         </>
       }
       footer={footer}
@@ -890,211 +1109,227 @@ export default function Sidebar({
       <span className="choose-status" role="status">
         {choosing ? `已选 ${chosen.size} 个会话${batchProgress ? `，${batchProgress}` : ''}` : ''}
       </span>
-      <nav className="session-list" aria-label="会话列表" onKeyDown={moveInList}>
-        {pinned.length > 0 && <div className="list-heading">置顶</div>}
-        {pinned.map((session) => renderSession(session))}
-        {localProjects && (
-          <div className="list-heading">
-            项目
-            <IconButton title="打开项目" disabled={!connected || busy} onClick={addProject}>
-              <Plus />
-            </IconButton>
-          </div>
-        )}
-        {groups.map(({ key, path, sessions: members, deviceId, deviceName, online }) => {
-          // A search shows what it found, folded or not.
-          const legacyKey = deviceId ? `${deviceId}\n${pathKey(path)}` : '';
-          const collapsed =
-            !search.trim() &&
-            (prefs.collapsedProjects.includes(key) ||
-              (!!deviceId &&
-                (prefs.collapsedElsewhere.includes(legacyKey) ||
-                  prefs.collapsedElsewhere.includes(deviceId))));
-          const name = prefs.projectNames[key] || folderName(path);
-          const location = deviceId ? `${deviceName} · ${path}` : path;
-          const openMenu = (position: MenuPosition) =>
-            deviceId ? remoteProjectMenu?.(deviceId, path, position) : projectMenu(path, position);
-          return (
-            <section className="project-group" key={key}>
-              <h2
-                title={location}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  openMenu({ x: event.clientX, y: event.clientY });
-                }}
-              >
-                {foldToggle({
-                  open: !collapsed,
-                  label: `项目 · ${name}${deviceName ? ` · ${deviceName}` : ''}`,
-                  name,
-                  members,
-                  toggle: () =>
-                    setPrefs((value) => {
-                      const folded = new Set(value.collapsedProjects);
-                      if (deviceId && value.collapsedElsewhere.includes(deviceId))
-                        for (const group of groups)
-                          if (group.deviceId === deviceId) folded.add(group.key);
-                      if (collapsed) folded.delete(key);
-                      else folded.add(key);
-                      return {
-                        ...value,
-                        collapsedProjects: [...folded],
-                        collapsedElsewhere: deviceId
-                          ? value.collapsedElsewhere.filter(
-                              (item) => item !== legacyKey && item !== deviceId,
-                            )
-                          : value.collapsedElsewhere,
-                      };
-                    }),
-                  onKeyDown: (event) => {
-                    if (!asksForMenu(event)) return;
-                    event.preventDefault();
-                    openMenu(below(event.currentTarget));
-                  },
-                })}
-                {deviceName && (
-                  <small
-                    className="project-device"
-                    title={`${deviceName}${online ? '' : ' · 离线'}`}
-                  >
-                    {deviceName}
-                    {!online && ' · 离线'}
-                  </small>
-                )}
-                {prefs.pinnedProjects.includes(key) && <Pin className="pin-mark" />}
-                <IconButton
-                  title={`项目操作 · ${location}`}
-                  className="row-action"
-                  onClick={(event) => {
-                    const box = event.currentTarget.getBoundingClientRect();
-                    openMenu({ x: box.left, y: box.bottom + 4 });
-                  }}
-                >
-                  <Ellipsis />
-                </IconButton>
-                <IconButton
-                  title={`新建会话 · ${location}`}
-                  className="row-action"
-                  disabled={!connected || busy || refreshing}
-                  onClick={() =>
-                    deviceId ? createRemoteProject?.(deviceId, path) : createInProject(path)
-                  }
-                >
+      <nav
+        className="session-list"
+        aria-label={inActivity ? '最近的会话' : '会话列表'}
+        onKeyDown={moveInList}
+        ref={list}
+        onScroll={(event) => {
+          scrolled.current[prefs.sidebarView] = event.currentTarget.scrollTop;
+        }}
+      >
+        {inActivity ? (
+          renderActivity()
+        ) : (
+          <>
+            {pinned.length > 0 && <div className="list-heading">置顶</div>}
+            {pinned.map((session) => renderSession(session))}
+            {localProjects && (
+              <div className="list-heading">
+                项目
+                <IconButton title="打开项目" disabled={!connected || busy} onClick={addProject}>
                   <Plus />
                 </IconButton>
-              </h2>
-              {/* An empty project shows no placeholder: its row offers "+" under the pointer. */}
-              {!collapsed && renderSessions(key, members)}
-            </section>
-          );
-        })}
-        {localProjects && groups.length === 0 && (
-          <p className="project-empty">{search ? '没有匹配的项目' : '还没有项目'}</p>
+              </div>
+            )}
+            {groups.map(({ key, path, sessions: members, deviceId, deviceName, online }) => {
+              // A search shows what it found, folded or not.
+              const legacyKey = deviceId ? `${deviceId}\n${pathKey(path)}` : '';
+              const collapsed =
+                !search.trim() &&
+                (prefs.collapsedProjects.includes(key) ||
+                  (!!deviceId &&
+                    (prefs.collapsedElsewhere.includes(legacyKey) ||
+                      prefs.collapsedElsewhere.includes(deviceId))));
+              const name = prefs.projectNames[key] || folderName(path);
+              const location = deviceId ? `${deviceName} · ${path}` : path;
+              const openMenu = (position: MenuPosition) =>
+                deviceId
+                  ? remoteProjectMenu?.(deviceId, path, position)
+                  : projectMenu(path, position);
+              return (
+                <section className="project-group" key={key}>
+                  <h2
+                    title={location}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                      openMenu({ x: event.clientX, y: event.clientY });
+                    }}
+                  >
+                    {foldToggle({
+                      open: !collapsed,
+                      label: `项目 · ${name}${deviceName ? ` · ${deviceName}` : ''}`,
+                      name,
+                      members,
+                      toggle: () =>
+                        setPrefs((value) => {
+                          const folded = new Set(value.collapsedProjects);
+                          if (deviceId && value.collapsedElsewhere.includes(deviceId))
+                            for (const group of groups)
+                              if (group.deviceId === deviceId) folded.add(group.key);
+                          if (collapsed) folded.delete(key);
+                          else folded.add(key);
+                          return {
+                            ...value,
+                            collapsedProjects: [...folded],
+                            collapsedElsewhere: deviceId
+                              ? value.collapsedElsewhere.filter(
+                                  (item) => item !== legacyKey && item !== deviceId,
+                                )
+                              : value.collapsedElsewhere,
+                          };
+                        }),
+                      onKeyDown: (event) => {
+                        if (!asksForMenu(event)) return;
+                        event.preventDefault();
+                        openMenu(below(event.currentTarget));
+                      },
+                    })}
+                    {deviceName && (
+                      <small
+                        className="project-device"
+                        title={`${deviceName}${online ? '' : ' · 离线'}`}
+                      >
+                        {deviceName}
+                        {!online && ' · 离线'}
+                      </small>
+                    )}
+                    {prefs.pinnedProjects.includes(key) && <Pin className="pin-mark" />}
+                    <IconButton
+                      title={`项目操作 · ${location}`}
+                      className="row-action"
+                      onClick={(event) => {
+                        const box = event.currentTarget.getBoundingClientRect();
+                        openMenu({ x: box.left, y: box.bottom + 4 });
+                      }}
+                    >
+                      <Ellipsis />
+                    </IconButton>
+                    <IconButton
+                      title={`新建会话 · ${location}`}
+                      className="row-action"
+                      disabled={!connected || busy || refreshing}
+                      onClick={() =>
+                        deviceId ? createRemoteProject?.(deviceId, path) : createInProject(path)
+                      }
+                    >
+                      <Plus />
+                    </IconButton>
+                  </h2>
+                  {/* An empty project shows no placeholder: its row offers "+" under the pointer. */}
+                  {!collapsed && renderSessions(key, members)}
+                </section>
+              );
+            })}
+            {localProjects && groups.length === 0 && (
+              <p className="project-empty">{search ? '没有匹配的项目' : '还没有项目'}</p>
+            )}
+            {plain.length > 0 && <div className="list-heading">最近</div>}
+            {renderTree(plain)}
+            {othersCount > 0 && (
+              <section className="elsewhere-group">
+                <div
+                  className="list-heading"
+                  title="这些会话的项目目录在你的其他电脑上；那台电脑在线时可以直接在这里操作，也可以接到这台电脑上继续"
+                >
+                  {foldHeading({
+                    open: othersOpen,
+                    label: '其他设备的会话',
+                    name: '其他设备',
+                    members: others.flatMap(([, device]) => [
+                      ...device.plain,
+                      ...[...device.projects.values()].flatMap((project) => project.sessions),
+                    ]),
+                    toggle: () =>
+                      setPrefs((value) => ({ ...value, elsewhereOpen: !value.elsewhereOpen })),
+                  })}
+                </div>
+                {othersOpen &&
+                  others.map(([id, device]) => {
+                    // Each computer folds under its name, and each folder on it as a project does; a search opens
+                    // them. Its sessions without a project are listed under its name, after its projects.
+                    const open = (key: string) =>
+                      !!search.trim() || !prefs.collapsedElsewhere.includes(key);
+                    const projects = [...device.projects.entries()];
+                    return (
+                      <Fragment key={id}>
+                        <div className="device-heading">
+                          {foldHeading({
+                            open: open(id),
+                            label: `设备 · ${device.name}`,
+                            name: device.name,
+                            members: [
+                              ...projects.flatMap(([, project]) => project.sessions),
+                              ...device.plain,
+                            ],
+                            toggle: foldElsewhere(id),
+                            icon: <Laptop className="fold-folder" />,
+                          })}
+                          <span className={`device-state${device.online ? ' online' : ''}`}>
+                            {device.online ? '在线' : '离线'}
+                          </span>
+                        </div>
+                        {open(id) &&
+                          projects.map(([path, project]) => {
+                            const key = `${id}\n${path}`;
+                            const name = folderName(project.path);
+                            return (
+                              <section className="project-group elsewhere-project" key={path}>
+                                <h2 title={project.path}>
+                                  {foldToggle({
+                                    open: open(key),
+                                    label: `项目 · ${device.name} · ${name}`,
+                                    name,
+                                    members: project.sessions,
+                                    toggle: foldElsewhere(key),
+                                  })}
+                                </h2>
+                                {open(key) && renderSessions(key, project.sessions)}
+                              </section>
+                            );
+                          })}
+                        {open(id) && renderSessions(`${id}\n`, device.plain, true)}
+                      </Fragment>
+                    );
+                  })}
+              </section>
+            )}
+            {(() => {
+              // Put away, at the foot: folded until opened, and open on what a search finds there.
+              const term = search.trim().toLowerCase();
+              const found = archived
+                .filter((session) =>
+                  `${session.title} ${session.projectPath} ${session.device?.name ?? ''}`
+                    .toLowerCase()
+                    .includes(term),
+                )
+                .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+              if (!found.length) return null;
+              const shown = archivedOpen || !!term;
+              return (
+                <section className="archived-group">
+                  <button
+                    type="button"
+                    className="project-toggle list-heading archived-toggle"
+                    aria-expanded={shown}
+                    onClick={() => setArchivedOpen(!archivedOpen)}
+                  >
+                    已归档 ({found.length})
+                  </button>
+                  {shown && found.map((session) => renderSession(session))}
+                </section>
+              );
+            })()}
+            {search &&
+              groups.length === 0 &&
+              plain.length === 0 &&
+              pinned.length === 0 &&
+              othersCount === 0 &&
+              !archived.some((session) =>
+                session.title.toLowerCase().includes(search.trim().toLowerCase()),
+              ) && <p className="list-empty">没有匹配会话</p>}
+          </>
         )}
-        {plain.length > 0 && <div className="list-heading">最近</div>}
-        {renderTree(plain)}
-        {othersCount > 0 && (
-          <section className="elsewhere-group">
-            <div
-              className="list-heading"
-              title="这些会话的项目目录在你的其他电脑上；那台电脑在线时可以直接在这里操作，也可以接到这台电脑上继续"
-            >
-              {foldHeading({
-                open: othersOpen,
-                label: '其他设备的会话',
-                name: '其他设备',
-                members: others.flatMap(([, device]) => [
-                  ...device.plain,
-                  ...[...device.projects.values()].flatMap((project) => project.sessions),
-                ]),
-                toggle: () =>
-                  setPrefs((value) => ({ ...value, elsewhereOpen: !value.elsewhereOpen })),
-              })}
-            </div>
-            {othersOpen &&
-              others.map(([id, device]) => {
-                // Each computer folds under its name, and each folder on it as a project does; a search opens
-                // them. Its sessions without a project are listed under its name, after its projects.
-                const open = (key: string) =>
-                  !!search.trim() || !prefs.collapsedElsewhere.includes(key);
-                const projects = [...device.projects.entries()];
-                return (
-                  <Fragment key={id}>
-                    <div className="device-heading">
-                      {foldHeading({
-                        open: open(id),
-                        label: `设备 · ${device.name}`,
-                        name: device.name,
-                        members: [
-                          ...projects.flatMap(([, project]) => project.sessions),
-                          ...device.plain,
-                        ],
-                        toggle: foldElsewhere(id),
-                        icon: <Laptop className="fold-folder" />,
-                      })}
-                      <span className={`device-state${device.online ? ' online' : ''}`}>
-                        {device.online ? '在线' : '离线'}
-                      </span>
-                    </div>
-                    {open(id) &&
-                      projects.map(([path, project]) => {
-                        const key = `${id}\n${path}`;
-                        const name = folderName(project.path);
-                        return (
-                          <section className="project-group elsewhere-project" key={path}>
-                            <h2 title={project.path}>
-                              {foldToggle({
-                                open: open(key),
-                                label: `项目 · ${device.name} · ${name}`,
-                                name,
-                                members: project.sessions,
-                                toggle: foldElsewhere(key),
-                              })}
-                            </h2>
-                            {open(key) && renderSessions(key, project.sessions)}
-                          </section>
-                        );
-                      })}
-                    {open(id) && renderSessions(`${id}\n`, device.plain, true)}
-                  </Fragment>
-                );
-              })}
-          </section>
-        )}
-        {(() => {
-          // Put away, at the foot: folded until opened, and open on what a search finds there.
-          const term = search.trim().toLowerCase();
-          const found = archived
-            .filter((session) =>
-              `${session.title} ${session.projectPath} ${session.device?.name ?? ''}`
-                .toLowerCase()
-                .includes(term),
-            )
-            .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-          if (!found.length) return null;
-          const shown = archivedOpen || !!term;
-          return (
-            <section className="archived-group">
-              <button
-                type="button"
-                className="project-toggle list-heading archived-toggle"
-                aria-expanded={shown}
-                onClick={() => setArchivedOpen(!archivedOpen)}
-              >
-                已归档 ({found.length})
-              </button>
-              {shown && found.map((session) => renderSession(session))}
-            </section>
-          );
-        })()}
-        {search &&
-          groups.length === 0 &&
-          plain.length === 0 &&
-          pinned.length === 0 &&
-          othersCount === 0 &&
-          !archived.some((session) =>
-            session.title.toLowerCase().includes(search.trim().toLowerCase()),
-          ) && <p className="list-empty">没有匹配会话</p>}
       </nav>
       <Presence>
         {card && (

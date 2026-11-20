@@ -179,25 +179,25 @@ test('pages, side column, menus, pins, export, settings and the notice list', as
     document.hasFocus = () => false;
   });
   await send(page, '检查目录', 'tool');
-  const bell = page.getByRole('button', { name: /^通知/ });
-  await expect(bell).toHaveAccessibleName('通知（1 条未读）');
+  // The activity button counts what needs the user: the approval, then the finish nobody has seen.
+  const activity = page.getByRole('button', { name: /^查看活动/ });
+  await expect(activity).toHaveAccessibleName('查看活动（1 项需要关注）');
   await page.getByRole('button', { name: '允许', exact: true }).click();
   await settled(page);
-  await expect(bell).toHaveAccessibleName('通知（2 条未读）');
-  // Back in front, the session on screen has shown what its notices say: they stay in the list, read.
+  await expect(activity).toHaveAccessibleName('查看活动（1 项需要关注）');
+  // Back in front, the session on screen has been read: nothing waits any more.
   await page.evaluate(() => {
     document.hasFocus = () => true;
     window.dispatchEvent(new Event('focus'));
   });
-  await expect(bell).toHaveAccessibleName('通知');
-  await bell.click();
-  const notices = page.getByRole('dialog', { name: '通知' });
-  await expect(notices.locator('.notice strong')).toHaveText(['任务完成', '等待审批']);
-  await expect(notices.locator('.notice').first()).toContainText(title);
-  await shot(page, '09-通知列表');
-  await notices.locator('.notice').first().click();
-  await expect(notices).toHaveCount(0);
-  await expect(bell).toHaveAccessibleName('通知');
+  await expect(activity).toHaveAccessibleName('查看活动');
+  await activity.click();
+  const recent = page.getByRole('navigation', { name: '最近的会话' });
+  await expect(recent).toContainText('暂无需要关注的聊天');
+  await expect(recent.locator('.activity-row').first()).toContainText(title);
+  await shot(page, '09-活动视图');
+  await page.getByRole('button', { name: '关闭活动视图', exact: true }).click();
+  await expect(page.getByRole('navigation', { name: '会话列表' })).toBeVisible();
 
   // The same window, narrow.
   await page.setViewportSize({ width: 390, height: 844 });

@@ -50,6 +50,8 @@ export type Prefs = {
   hiddenProjects: string[];
   // Whether the sessions on the user's other computers are listed in the sidebar.
   elsewhereOpen: boolean;
+  // The sidebar's list: by project, or every session by when it changed (查看活动).
+  sidebarView: 'projects' | 'activity';
   // Which of the other computers, and which folders on them, are folded away: a computer by its id, a folder by
   // the computer's id, a line break and the folder's pathKey(). (Earlier versions also folded a computer's
   // sessions without a project, by its id and a line break; they are now listed under the computer itself.)
@@ -96,6 +98,7 @@ const defaults: Prefs = {
   collapsedProjects: [],
   hiddenProjects: [],
   elsewhereOpen: false,
+  sidebarView: 'projects',
   collapsedElsewhere: [],
   projectNames: {},
   notify: {
@@ -153,6 +156,7 @@ function read(saved: any = shared('prefs') ?? stored()): Prefs {
       collapsedProjects: strings(saved.collapsedProjects),
       hiddenProjects: strings(saved.hiddenProjects),
       elsewhereOpen: saved.elsewhereOpen === true,
+      sidebarView: saved.sidebarView === 'activity' ? 'activity' : 'projects',
       collapsedElsewhere: strings(saved.collapsedElsewhere),
       projectNames:
         saved.projectNames && typeof saved.projectNames === 'object' ? saved.projectNames : {},

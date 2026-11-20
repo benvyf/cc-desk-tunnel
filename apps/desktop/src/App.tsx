@@ -72,6 +72,7 @@ import type { ConnectionForm } from './LoginPage.tsx';
 import { exportSession } from './exportSession.ts';
 import { onSharedChange, saveShared, shared, useShared } from './shared.ts';
 import { useNotifications } from './notifications.ts';
+import { trackPreviews } from './activityPreviews.ts';
 import { folderName, isInside, isNewer, pathKey, withProject } from './paths.ts';
 import { getPrefs, pageMinWidth, setPrefs, toggled, usePrefs } from './prefs.ts';
 import { sessionDefaultOptions } from './modelDefaults.ts';
@@ -1417,6 +1418,8 @@ export function App({
     place.page === 'chat' ? client.state.selectedId : null,
   );
   useEffect(() => window.desktop?.onNotifyClicked((sessionId) => sessionId && show(sessionId)));
+  // The opening of each session's latest reply, for the activity view, from what this window comes to hold.
+  useEffect(() => trackPreviews(client), [client]);
   const schedules = useSchedules(
     async (task, due) => {
       const { status, sessions, selectedId, device } = client.state;
@@ -2140,6 +2143,14 @@ export function App({
     },
   ];
   const toggleSide = () => setSideOpen((value) => !value);
+  // The activity view lives in the conversations' side column: shown there, it closes; otherwise the column
+  // opens on it.
+  const toggleActivity = () => {
+    const shown = place.page === 'chat' && sideOpen && prefs.sidebarView === 'activity';
+    if (place.page !== 'chat') open('chat');
+    setSideOpen(true);
+    setPrefs((value) => ({ ...value, sidebarView: shown ? 'projects' : 'activity' }));
+  };
   // The search lives in the conversations' side column: go there, open the column, then the field.
   const openSearch = () => {
     if (place.page !== 'chat') open('chat');
@@ -2333,6 +2344,12 @@ export function App({
           ['search', '在侧栏搜索会话', 'cbsshh search', openSearch],
           ['toggleSide', sideOpen ? '收起侧栏' : '展开侧栏', 'cl sidebar', toggleSide],
           [
+            'activity',
+            prefs.sidebarView === 'activity' ? '关闭活动视图' : '查看活动',
+            'ckhd activity recent',
+            toggleActivity,
+          ],
+          [
             'find',
             '查找对话内容',
             'czdhnr find',
@@ -2419,6 +2436,7 @@ export function App({
       },
       search: openSearch,
       settings: () => open('settings'),
+      activity: toggleActivity,
       find: !!selected && place.page === 'chat' && (() => setFindRequest((value) => value + 1)),
       zoomIn: window.desktop && (() => window.desktop!.zoom(1)),
       zoomOut: window.desktop && (() => window.desktop!.zoom(-1)),
@@ -2844,6 +2862,8 @@ export function App({
               setDeleteMany(targets);
             }}
             batchProgress={batchProgress}
+            activityHint={hint('activity')}
+            openNotifySettings={() => open('settings', 'notifications')}
           />
           <main
             className={`workspace chat-workspace${fresh && !selectedTerminal ? ' new-session' : ''}`}
