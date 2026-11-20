@@ -16,7 +16,7 @@ const zero = {
   costUsd: 0,
 };
 async function usage(page: Page) {
-  const queries: { from: string; to: string }[] = [];
+  const queries: { from: string; to: string; limit: number }[] = [];
   await page.routeWebSocket(url, (route) => {
     const send = (value: object) => route.send(JSON.stringify(value));
     route.onMessage((raw) => {
@@ -127,6 +127,8 @@ test('the call log offers five ranges in one control and the quota periods in a 
     'true',
   );
   await expect(quota).toHaveValue('');
+  // Only figures are asked for, never a page of single calls.
+  expect(queries.every((query) => query.limit === 1)).toBe(true);
 });
 
 test('a task is set to the hour and minute in 24-hour time, on days chosen as pills', async ({

@@ -35,6 +35,34 @@ function usePreview(path: string | undefined, kind: string) {
   return { preview, loading, drop: () => setPreview(null) };
 }
 
+// A picture opened whole, read from this computer; where it cannot be (sent from another, or since moved), its
+// preview is shown larger instead.
+function PictureModal({
+  name,
+  path,
+  preview,
+  onClose,
+}: {
+  name: string;
+  path?: string;
+  preview: string;
+  onClose: () => void;
+}) {
+  const [whole, setWhole] = useState(true);
+  return createPortal(
+    <Modal title={name} onClose={onClose}>
+      <div className="picture-view" onContextMenu={(event) => event.stopPropagation()}>
+        <img
+          src={whole && path ? localPicture(path) : preview}
+          alt={name}
+          onError={() => setWhole(false)}
+        />
+      </div>
+    </Modal>,
+    document.body,
+  );
+}
+
 // What a sent question carried, in a row above its bubble: the same small tiles as in the input box, so that many
 // pictures take little room. A picture opens whole on a click, read from this computer; where it cannot be (sent
 // from another, or since moved), its preview is shown larger instead.
@@ -42,7 +70,6 @@ function SentFile({ item }: { item: Attachment }) {
   const kind = attachmentKind(fileName(item.path ?? item.name));
   const { preview, drop } = usePreview(item.path, kind);
   const [open, setOpen] = useState(false);
-  const [whole, setWhole] = useState(true);
   const Icon = kind === 'CODE' ? FileCode : FileText;
   const face = (
     <>
@@ -78,20 +105,14 @@ function SentFile({ item }: { item: Attachment }) {
           {face}
         </div>
       )}
-      {open &&
-        preview &&
-        createPortal(
-          <Modal title={item.name} onClose={() => setOpen(false)}>
-            <div className="picture-view" onContextMenu={(event) => event.stopPropagation()}>
-              <img
-                src={whole && item.path ? localPicture(item.path) : preview}
-                alt={item.name}
-                onError={() => setWhole(false)}
-              />
-            </div>
-          </Modal>,
-          document.body,
-        )}
+      {open && preview && (
+        <PictureModal
+          name={item.name}
+          path={item.path}
+          preview={preview}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   );
 }
@@ -214,6 +235,7 @@ function Tile({
 }) {
   const kind = attachmentKind(fileName(item.path ?? item.name));
   const { preview, loading: previewLoading, drop } = usePreview(item.path, kind);
+  const [open, setOpen] = useState(false);
   const Icon = kind === 'CODE' ? FileCode : FileText;
   const preparing = item.status === 'preparing' || (previewLoading && !!remove);
   return (
@@ -249,12 +271,30 @@ function Tile({
           </button>
         )}
         <span className="attachment-name">{item.name}</span>
+        {/* The whole tile opens the picture; drawn after the name, so the name opens it too. */}
+        {preview && (
+          <button
+            type="button"
+            className="attachment-zoom"
+            aria-label={`查看图片 ${item.name}`}
+            title={`${item.path ?? item.name}（点击放大）`}
+            onClick={() => setOpen(true)}
+          />
+        )}
         {(preparing || item.status === 'error') && (
           <span className="attachment-status" role="status" title={item.error}>
             {preparing ? '处理中…' : '添加失败，请重新添加'}
           </span>
         )}
       </div>
+      {open && preview && (
+        <PictureModal
+          name={item.name}
+          path={item.path}
+          preview={preview}
+          onClose={() => setOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -222,6 +222,22 @@ test('failed thumbnail requests settle without blocking or losing the attached f
   expect(await page.locator('main').getAttribute('data-sent')).toContain('"C:\\照片\\风景.png"');
 });
 
+test('a picture in the message box opens whole on a click, and its remove button still removes it', async ({
+  page,
+}) => {
+  await page.getByRole('button', { name: '添加附件', exact: true }).click();
+  await expect(page.locator('.attachment-preview')).toHaveCount(1);
+  await page.getByRole('button', { name: '查看图片 风景.png', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: '风景.png' });
+  await expect(dialog.locator('.picture-view img')).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('button', { name: '查看图片 风景.png', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: '移除 风景.png', exact: true }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.locator('.attachment-tile')).toHaveCount(1);
+});
+
 test('light/dark tiles keep reference geometry and narrow screens scroll without overflowing', async ({
   page,
 }) => {

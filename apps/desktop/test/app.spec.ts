@@ -859,7 +859,7 @@ test('a session on another computer is listed apart, read, and taken over with a
   await context.close();
 });
 
-test('usage log: period-independent totals, chart hover, model filter and table', async ({
+test('usage log: totals, stacked chart by model, model table and the days kept, without call records', async ({
   page,
 }) => {
   const database = new DatabaseSync(resolve('.local/ui-test/sessions/sessions.sqlite'));
@@ -886,32 +886,55 @@ test('usage log: period-independent totals, chart hover, model filter and table'
   await expect(tiles).toContainText('100.0 tok/s');
   // 60,000 of the 64,800 prompt tokens were read from the cache.
   await expect(tiles).toContainText('缓存命中率92.6%');
-  await expect(page.locator('.usage-log tbody tr')).toHaveCount(3);
+  // Only the figures are read: no list of single calls.
+  await expect(page.locator('.usage-log')).toHaveCount(0);
+  await expect(page.getByText('调用记录', { exact: true })).toHaveCount(0);
   await expect(page.locator('.usage-models tbody tr')).toHaveCount(2);
   await expect(page.locator('.usage-models tbody tr').first()).toContainText('claude-opus-5-5');
   await expect(page.locator('.usage-models tbody tr').first()).toContainText('99.0%');
-  await expect(page.getByRole('navigation', { name: '调用记录翻页' })).toHaveCount(0);
+  await expect(page.locator('.usage-models tfoot')).toContainText('合计');
+  // Each model is a layer of the columns, in its own colour, named in the legend and the tip.
+  await expect(page.locator('.usage-legend li')).toHaveText([
+    'claude-opus-5-5',
+    'claude-haiku-4-5',
+  ]);
+  await expect(page.locator('.usage-bars > div').last().locator('.usage-stack i')).toHaveCount(2);
+  await expect(page.locator('.usage-models .usage-spark')).toHaveCount(2);
   await page.locator('.usage-bars > div').last().hover();
-  await expect(page.getByRole('tooltip')).toContainText('3 次请求');
-  const trend = page.locator('.usage-trend .usage-canvas').first();
-  const box = (await trend.boundingBox())!;
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
-  await expect(page.getByRole('tooltip')).toContainText('缓存读取 6万');
-  await expect(page.getByRole('tooltip')).toContainText('缓存命中率 92.6%');
+  const tip = page.getByRole('tooltip');
+  await expect(tip).toContainText('3 次请求');
+  await expect(tip).toContainText('claude-haiku-4-5 $0.01');
+  await expect(tip).toContainText('缓存读取 6万');
+  await expect(tip).toContainText('缓存命中率 92.6%');
+  // The keyboard walks the columns too.
+  await page.locator('.usage-bars').focus();
+  await page.keyboard.press('End');
+  await expect(tip).toContainText('3 次请求');
+  await page.keyboard.press('Escape');
+  await expect(tip).toHaveCount(0);
+  // Today, in the calendar of the days kept.
+  const activity = page.locator('.usage-activity');
+  await expect(activity).toContainText('活跃1 天');
+  await expect(activity.locator('.usage-heat i[aria-label*="3 次请求"]')).toHaveCount(1);
   await noOverflowX(page);
   // Tall enough to show the whole page in one picture.
   await page.setViewportSize({ width: 1280, height: 1700 });
-  await page.mouse.move(box.x + box.width - 2, box.y + box.height / 2);
+  await page.locator('.usage-bars > div').last().hover();
   await page.screenshot({ path: resolve(screenshots, 'usage.png') });
+  await page.emulateMedia({ colorScheme: 'dark' });
+  await page.screenshot({ path: resolve(screenshots, 'usage-dark.png') });
+  await page.emulateMedia({ colorScheme: 'light' });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByLabel('模型').selectOption('claude-haiku-4-5');
-  await expect(page.locator('.usage-log tbody tr')).toHaveCount(1);
   await expect(tiles).toContainText('请求数1');
+  await expect(page.locator('.usage-models tbody tr[aria-current="true"]')).toContainText(
+    'claude-haiku-4-5',
+  );
   // The breakdown keeps every model of the range.
   await expect(page.locator('.usage-models tbody tr')).toHaveCount(2);
   await page.getByLabel('模型').selectOption('');
 
-  // More records than one page holds: the pager walks them from the newest and jumps by number.
+  // Records arriving later are counted on refresh.
   const more = new DatabaseSync(resolve('.local/ui-test/sessions/sessions.sqlite'));
   try {
     const insert = more.prepare(`INSERT INTO api_requests
@@ -923,24 +946,12 @@ test('usage log: period-independent totals, chart hover, model filter and table'
     more.close();
   }
   await page.getByRole('button', { name: '刷新调用日志', exact: true }).click();
-  const pager = page.getByRole('navigation', { name: '调用记录翻页' });
-  await expect(pager).toContainText('/ 3 页');
-  await expect(pager).toContainText('共 123 条');
-  await expect(page.locator('.usage-log tbody tr')).toHaveCount(50);
-  await expect(pager.getByRole('button', { name: '上一页' })).toBeDisabled();
-  await pager.getByRole('button', { name: '下一页' }).click();
-  await expect(pager.getByLabel('页码')).toHaveValue('2');
-  await expect(page.locator('.usage-log tbody tr')).toHaveCount(50);
-  await pager.getByLabel('页码').fill('3');
-  await pager.getByLabel('页码').press('Enter');
-  await expect(page.locator('.usage-log tbody tr')).toHaveCount(23);
-  // The record stored first is the last row of the last page.
-  await expect(page.locator('.usage-log tbody tr').last()).toContainText('$0.75');
-  await expect(pager.getByRole('button', { name: '下一页' })).toBeDisabled();
-  await pager.getByLabel('页码').fill('9');
-  await pager.getByLabel('页码').press('Enter');
-  await expect(pager.getByLabel('页码')).toHaveValue('3');
-  await page.screenshot({ path: resolve(screenshots, 'usage-pages.png'), fullPage: true });
+  await expect(tiles).toContainText('请求数123');
+  await expect(activity.locator('.usage-heat i[aria-label*="123 次请求"]')).toHaveCount(1);
+  await page.setViewportSize({ width: 390, height: 900 });
+  await noOverflowX(page);
+  await page.screenshot({ path: resolve(screenshots, 'usage-narrow.png'), fullPage: true });
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: '返回账号', exact: true }).click();
   await expect(page.getByRole('heading', { name: '账号', exact: true })).toBeVisible();
 });

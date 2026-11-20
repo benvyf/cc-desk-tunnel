@@ -1,12 +1,21 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronLeft, ChevronRight, RefreshCw } from './icons.tsx';
+import { useEffect, useMemo, useState } from 'react';
+import type { CSSProperties } from 'react';
+import { ArrowLeft, Info, RefreshCw } from './icons.tsx';
 import type { UsagePage, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import { IconButton } from './ui.tsx';
 import { SegmentedControl } from './SegmentedControl.tsx';
-import { ModelBreakdown, TokenTrend, cacheHitRate, percent } from './UsageCharts.tsx';
+import {
+  ActivityCard,
+  ModelBreakdown,
+  UsageBars,
+  cacheHitRate,
+  modelColors,
+  percent,
+  tokenSum,
+} from './UsageCharts.tsx';
+import type { Bucket, Day, Series } from './UsageCharts.tsx';
 
-const pageSize = 50;
 const quotaNames: Record<string, string | undefined> = {
   five_hour: '5 小时额度',
   seven_day: '每周额度',
@@ -26,13 +35,8 @@ export const dollars = (value: number) =>
   `$${value >= 100 ? value.toFixed(0) : value >= 1 ? value.toFixed(2) : value.toFixed(value >= 0.01 || value === 0 ? 2 : 4)}`;
 export const seconds = (ms: number | null) =>
   ms == null ? '—' : ms < 1000 ? `${Math.round(ms)} ms` : `${(ms / 1000).toFixed(1)} s`;
-const total = (item: {
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-}) => item.inputTokens + item.outputTokens + item.cacheReadTokens + item.cacheCreationTokens;
 const hour = 3600_000;
+const dayMs = 24 * hour;
 const presets = [
   ['today', '今日'],
   ['24h', '24 小时'],
@@ -40,10 +44,36 @@ const presets = [
   ['30d', '30 天'],
   ['custom', '自定义'],
 ] as const;
+const presetTitles: Record<string, string> = {
+  today: '今日',
+  '24h': '最近 24 小时',
+  '7d': '最近 7 天',
+  '30d': '最近 30 天',
+};
 const measures = { costUsd: '等价费用', tokens: 'Token', requests: '请求数' } as const;
 type Measure = keyof typeof measures;
 const localInput = (date: Date) =>
   new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 16);
+const two = (value: number) => String(value).padStart(2, '0');
+const shortDate = (at: Date) =>
+  `${at.getMonth() + 1}/${at.getDate()} ${two(at.getHours())}:${two(at.getMinutes())}`;
+const emptyBucket = (at: number): Bucket => ({
+  at: new Date(at).toISOString(),
+  requests: 0,
+  tokens: 0,
+  inputTokens: 0,
+  outputTokens: 0,
+  cacheReadTokens: 0,
+  cacheCreationTokens: 0,
+  costUsd: 0,
+});
+// Only the figures are wanted; the protocol asks for at least one record, which is ignored.
+const figuresOnly = { limit: 1 } as const;
+
+type Range = { from: number; to: number; bucketMinutes: number; key: string };
+// A range's figures with the range they cover and its name, so that what is shown always describes itself while
+// another range is being read.
+type Read = { key: string; page: UsagePage; range: Range; name: string };
 
 export default function UsagePanel({
   client,
@@ -59,22 +89,42 @@ export default function UsagePanel({
   const [preset, setPreset] = useState(initial);
   const [customFrom, setCustomFrom] = useState(() => localInput(new Date(Date.now() - 24 * hour)));
   const [customTo, setCustomTo] = useState(() => localInput(new Date()));
+  // The custom range is read once its fields have been still for a moment, not at every digit typed.
+  const [custom, setCustom] = useState({ from: customFrom, to: customTo });
+  useEffect(() => {
+    const timer = setTimeout(() => setCustom({ from: customFrom, to: customTo }), 400);
+    return () => clearTimeout(timer);
+  }, [customFrom, customTo]);
   const [model, setModel] = useState('');
   const [measure, setMeasure] = useState<Measure>('costUsd');
-  const [page, setPage] = useState<UsagePage | null>(null);
-  // Which page of the records is shown, from the newest.
-  const [index, setIndex] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [hover, setHover] = useState<number | null>(null);
   const [loadedAt, setLoadedAt] = useState(() => Date.now());
-  const range = useMemo(() => {
+  // Counts the refresh button's presses: the activity is read again only then.
+  const [refreshes, setRefreshes] = useState(0);
+  const [base, setBase] = useState<Read | null>(null);
+  const [baseLoading, setBaseLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  // Each model's own figures for the range, read once per range: changing the model filter reads nothing.
+  const [perModel, setPerModel] = useState<{ key: string; pages: Record<string, UsagePage> }>({
+    key: '',
+    pages: {},
+  });
+  const [splitLoading, setSplitLoading] = useState(false);
+  const [splitFailed, setSplitFailed] = useState(false);
+  const [activity, setActivity] = useState<UsagePage | null>(null);
+  const [activityState, setActivityState] = useState<'loading' | 'done' | 'failed'>('loading');
+  const offsetMinutes = -new Date().getTimezoneOffset();
+  const offsetMs = offsetMinutes * 60_000;
+  // Local days counted since 1970-01-01, the way the service buckets a day.
+  const dayIndex = (time: number) => Math.floor((time + offsetMs) / dayMs);
+  const retention = summary?.retentionDays ?? 35;
+  // Only the chosen period's start, not the whole summary, which the account page reads again on its own.
+  const windowStart = summary?.windows.find((item) => item.name === preset)?.startedAt;
+  const range = useMemo((): Range => {
     const now = loadedAt;
-    const window = summary?.windows.find((item) => item.name === preset);
     const midnight = new Date(now);
     midnight.setHours(0, 0, 0, 0);
-    const from = window
-      ? Date.parse(window.startedAt)
+    const from = windowStart
+      ? Date.parse(windowStart)
       : preset === 'today'
         ? midnight.getTime()
         : preset === '24h'
@@ -83,85 +133,240 @@ export default function UsagePanel({
             ? now - 7 * 24 * hour
             : preset === '30d'
               ? now - 30 * 24 * hour
-              : new Date(customFrom).getTime() || now - 24 * hour;
-    const to = preset === 'custom' ? new Date(customTo).getTime() || now : now;
+              : new Date(custom.from).getTime() || now - 24 * hour;
+    const to = preset === 'custom' ? new Date(custom.to).getTime() || now : now;
     const span = Math.max(to - from, hour);
-    return {
-      from,
-      to,
-      bucketMinutes: span <= 6 * hour ? 30 : span <= 48 * hour ? 60 : 1440,
-      bounded: preset === 'custom',
-    };
-  }, [preset, customFrom, customTo, summary, loadedAt]);
-  // The range ends where it was last read, so records arriving meanwhile do not shift the pages; refreshing
-  // moves the end.
-  const load = useCallback(
-    async (index: number) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await client.fetch({
-          type: 'usage.query',
-          from: new Date(range.from).toISOString(),
-          to: new Date(range.to).toISOString(),
-          ...(model && { model }),
-          offset: index * pageSize,
-          limit: pageSize,
-          bucketMinutes: range.bucketMinutes,
-          offsetMinutes: -new Date().getTimezoneOffset(),
-        });
-        setPage(result);
-        setIndex(index);
-      } catch (error) {
-        setError(error instanceof Error ? error.message : '读取失败。');
-      } finally {
-        setLoading(false);
-      }
-    },
-    [client, range, model],
-  );
+    const bucketMinutes = span <= 6 * hour ? 30 : span <= 48 * hour ? 60 : 1440;
+    return { from, to, bucketMinutes, key: `${from}|${to}|${bucketMinutes}` };
+  }, [preset, custom, windowStart, loadedAt]);
+  const query = (extra: { model?: string } = {}) =>
+    client.fetch({
+      type: 'usage.query',
+      from: new Date(range.from).toISOString(),
+      to: new Date(range.to).toISOString(),
+      ...extra,
+      ...figuresOnly,
+      bucketMinutes: range.bucketMinutes,
+      offsetMinutes,
+    });
+
+  // The range's figures for every model together.
   useEffect(() => {
-    void load(0);
-  }, [load]);
-  // Empty buckets are drawn too, so the time axis stays even.
-  const bars = useMemo(() => {
-    const step = range.bucketMinutes * 60_000,
-      offset = -new Date().getTimezoneOffset() * 60_000;
-    const align = (time: number) => Math.floor((time + offset) / step) * step - offset;
-    const values = new Map((page?.series ?? []).map((item) => [Date.parse(item.at), item]));
-    const result = [];
-    for (let at = align(range.from); at <= range.to && result.length < 400; at += step)
-      result.push(
-        values.get(at) ?? {
-          at: new Date(at).toISOString(),
-          requests: 0,
-          tokens: 0,
-          inputTokens: 0,
-          outputTokens: 0,
-          cacheReadTokens: 0,
-          cacheCreationTokens: 0,
-          costUsd: 0,
+    let current = true;
+    setBaseLoading(true);
+    setError(null);
+    setSplitFailed(false);
+    const quota = quotaName(preset);
+    const name =
+      presetTitles[preset] ??
+      (quota
+        ? `本期${quota}`
+        : `${shortDate(new Date(range.from))} – ${shortDate(new Date(range.to))}`);
+    query().then(
+      (page) => {
+        if (!current) return;
+        setBase({ key: range.key, page, range, name });
+        setBaseLoading(false);
+      },
+      (reason: unknown) => {
+        if (!current) return;
+        setError(reason instanceof Error ? reason.message : '读取失败。');
+        setBaseLoading(false);
+      },
+    );
+    return () => {
+      current = false;
+    };
+  }, [client, range.key]);
+
+  // The days kept, for the activity calendar; read on opening and on refresh, whatever the range.
+  const firstDay = dayIndex(loadedAt) - retention + 1;
+  useEffect(() => {
+    let current = true;
+    setActivityState('loading');
+    void client
+      .fetch({
+        type: 'usage.query',
+        from: new Date(firstDay * dayMs - offsetMs).toISOString(),
+        to: new Date(Date.now()).toISOString(),
+        ...figuresOnly,
+        bucketMinutes: 1440,
+        offsetMinutes,
+      })
+      .then(
+        (page) => {
+          if (!current) return;
+          setActivity(page);
+          setActivityState('done');
+        },
+        () => {
+          if (current) setActivityState('failed');
         },
       );
+    return () => {
+      current = false;
+    };
+  }, [client, refreshes, retention]);
+
+  // Colours by the costliest models of the days kept, so a model keeps its colour from range to range.
+  const colors = useMemo(() => {
+    const order = [
+      ...(activity?.byModel ?? []).map((row) => row.model),
+      ...(base?.page.byModel ?? []).map((row) => row.model),
+    ];
+    return modelColors([...new Set(order)]);
+  }, [activity, base]);
+
+  // While another range is read, the last one stays in view.
+  const page = base?.page;
+  const view = base?.range ?? range;
+  const only = page && page.byModel.length === 1 ? page.byModel[0].model : null;
+  const pageOf = (name: string) =>
+    name === only ? page : base && perModel.key === base.key ? perModel.pages[name] : undefined;
+  // Each coloured model is read on its own, and the chosen model if it is not one of them; with one model in the
+  // range, the range's figures are its own.
+  const wanted = useMemo(() => {
+    if (!base || base.key !== range.key || activityState === 'loading') return [];
+    const models = base.page.byModel.map((row) => row.model);
+    if (models.length < 2) return model && !models.includes(model) ? [model] : [];
+    return [...new Set([...models.filter((name) => colors.has(name)), ...(model ? [model] : [])])];
+  }, [base, range.key, activityState, colors, model]);
+  useEffect(() => {
+    const missing = wanted.filter((name) => !(perModel.key === range.key && perModel.pages[name]));
+    if (!missing.length) {
+      setSplitLoading(false);
+      return;
+    }
+    let current = true;
+    const key = range.key;
+    setSplitLoading(true);
+    // What arrived is kept even when another model's read failed.
+    void Promise.allSettled(missing.map((name) => query({ model: name }))).then((results) => {
+      if (!current) return;
+      const pages = Object.fromEntries(
+        results.flatMap((result, index) =>
+          result.status === 'fulfilled' ? [[missing[index], result.value] as const] : [],
+        ),
+      );
+      setPerModel((previous) => ({
+        key,
+        pages: { ...(previous.key === key ? previous.pages : {}), ...pages },
+      }));
+      setSplitFailed(results.some((result) => result.status === 'rejected'));
+      setSplitLoading(false);
+    });
+    return () => {
+      current = false;
+      setSplitLoading(false);
+    };
+  }, [wanted]);
+
+  // Every bucket of the range, empty ones too, so the time axis stays even.
+  const slots = useMemo(() => {
+    const step = view.bucketMinutes * 60_000;
+    const align = (time: number) => Math.floor((time + offsetMs) / step) * step - offsetMs;
+    const result: number[] = [];
+    for (let at = align(view.from); at <= view.to && result.length < 400; at += step)
+      result.push(at);
     return result;
-  }, [page?.series, range]);
-  const peak = Math.max(...bars.map((bar) => bar[measure]), 0);
+  }, [view, offsetMs]);
+  const fill = (series: Bucket[] | undefined) => {
+    const values = new Map((series ?? []).map((item) => [Date.parse(item.at), item]));
+    return slots.map((at) => values.get(at) ?? emptyBucket(at));
+  };
+  const measured = (bucket: Bucket) => (measure === 'tokens' ? bucket.tokens : bucket[measure]);
+
+  const chosen = model ? pageOf(model) : page;
+  const totals = chosen?.totals;
+  const buckets = fill(chosen?.series);
+  const split =
+    !model && page && page.byModel.length > 1
+      ? page.byModel.filter((row) => colors.has(row.model))
+      : [];
+  const splitReady = split.length > 0 && split.every((row) => pageOf(row.model));
+  let series: Series[];
+  if (model)
+    series = [{ key: model, name: model, color: colors.of(model), values: buckets.map(measured) }];
+  else if (only)
+    series = [{ key: only, name: only, color: colors.of(only), values: buckets.map(measured) }];
+  else if (splitReady) {
+    series = split.map((row) => ({
+      key: row.model,
+      name: row.model,
+      color: colors.of(row.model),
+      values: fill(pageOf(row.model)!.series).map(measured),
+    }));
+    const rest = page!.byModel.length - split.length;
+    if (rest > 0) {
+      const values = buckets.map((bucket, index) => {
+        const left = measured(bucket) - series.reduce((sum, item) => sum + item.values[index], 0);
+        return left > 1e-9 ? left : 0;
+      });
+      series.push({
+        key: '其他',
+        name: `其他（${rest} 个模型）`,
+        color: 'var(--model-other)',
+        values,
+      });
+    }
+  } else
+    series = [
+      {
+        key: '全部模型',
+        name: '全部模型',
+        color: 'var(--model-other)',
+        values: buckets.map(measured),
+      },
+    ];
+  const sparks: Record<string, number[] | undefined> = {};
+  for (const row of page?.byModel ?? []) {
+    const own = pageOf(row.model);
+    if (own && colors.has(row.model)) sparks[row.model] = fill(own.series).map(measured);
+  }
+
   const format = (value: number) =>
     measure === 'costUsd'
       ? dollars(value)
       : measure === 'tokens'
         ? tokens(value)
         : value.toLocaleString('zh-CN');
+  const daily = view.bucketMinutes >= 1440;
   const bucketLabel = (at: string) =>
     new Date(at).toLocaleString(
       'zh-CN',
-      range.bucketMinutes >= 1440
+      daily
         ? { month: 'numeric', day: 'numeric' }
         : { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' },
     );
+  const axisLabel = (at: string, previous: string | undefined) => {
+    const date = new Date(at);
+    const day = `${two(date.getMonth() + 1)}-${two(date.getDate())}`;
+    if (daily) return day;
+    const time = `${two(date.getHours())}:${two(date.getMinutes())}`;
+    return !previous || new Date(previous).getDate() !== date.getDate() ? `${day} ${time}` : time;
+  };
+  const chartTitle = daily
+    ? '每日用量'
+    : view.bucketMinutes === 60
+      ? '每小时用量'
+      : '每 30 分钟用量';
+  const subtitle = (base?.name ?? '') + (model ? ` · ${model}` : '');
+
+  const days: Day[] = useMemo(() => {
+    const byDay = new Map(
+      (activity?.series ?? []).map((item) => [dayIndex(Date.parse(item.at)), item]),
+    );
+    return Array.from({ length: retention }, (_, offset) => ({
+      index: firstDay + offset,
+      bucket: byDay.get(firstDay + offset),
+    }));
+  }, [activity, firstDay, retention]);
+  const firstRecord = summary?.firstRecordAt ? dayIndex(Date.parse(summary.firstRecordAt)) : null;
+
+  const loading = baseLoading || splitLoading || activityState === 'loading';
   const quotaWindows = summary?.windows.filter((window) => quotaName(window.name)) ?? [];
-  const totals = page?.totals;
-  const pages = Math.max(Math.ceil((totals?.requests ?? 0) / pageSize), 1);
+  const perRequest = (value: number) =>
+    totals && totals.requests ? value / totals.requests : null;
   return (
     <section className="account-page usage-page" aria-label="调用日志">
       <header className="account-heading">
@@ -169,7 +374,14 @@ export default function UsagePanel({
           <ArrowLeft />
         </IconButton>
         <h1>调用日志</h1>
-        <IconButton title="刷新调用日志" disabled={loading} onClick={() => setLoadedAt(Date.now())}>
+        <IconButton
+          title="刷新调用日志"
+          disabled={loading}
+          onClick={() => {
+            setLoadedAt(Date.now());
+            setRefreshes((count) => count + 1);
+          }}
+        >
           <RefreshCw className={loading ? 'spinning' : ''} />
         </IconButton>
       </header>
@@ -245,8 +457,34 @@ export default function UsagePanel({
         )}
         <div className="usage-tiles">
           <div>
+            <span>
+              等价费用
+              <span
+                className="usage-info"
+                tabIndex={0}
+                role="img"
+                title="官方 CLI 按 API 价格估算，非订阅账单"
+                aria-label="官方 CLI 按 API 价格估算，非订阅账单"
+              >
+                <Info aria-hidden="true" />
+              </span>
+              <em className="usage-tag">不是扣费</em>
+            </span>
+            <strong>{totals ? dollars(totals.costUsd) : '—'}</strong>
+            <small>
+              {perRequest(totals?.costUsd ?? 0) != null
+                ? `平均每次请求 ${dollars(perRequest(totals!.costUsd)!)}`
+                : ''}
+            </small>
+          </div>
+          <div>
             <span>请求数</span>
             <strong>{totals ? totals.requests.toLocaleString('zh-CN') : '—'}</strong>
+            <small>
+              {perRequest(totals?.durationMs ?? 0) != null
+                ? `平均用时 ${seconds(perRequest(totals!.durationMs))}`
+                : ''}
+            </small>
           </div>
           <div
             title={
@@ -255,8 +493,8 @@ export default function UsagePanel({
                 : undefined
             }
           >
-            <span>总 Token</span>
-            <strong>{totals ? tokens(total(totals)) : '—'}</strong>
+            <span>Token</span>
+            <strong>{totals ? tokens(tokenSum(totals)) : '—'}</strong>
             <small>
               {totals
                 ? `输入 ${tokens(totals.inputTokens)} · 输出 ${tokens(totals.outputTokens)} · 缓存 ${tokens(totals.cacheReadTokens + totals.cacheCreationTokens)}`
@@ -269,30 +507,18 @@ export default function UsagePanel({
             <small>{totals ? `读取 ${tokens(totals.cacheReadTokens)}` : ''}</small>
           </div>
           <div>
-            <span>等价 API 费用</span>
-            <strong>{totals ? dollars(totals.costUsd) : '—'}</strong>
-            <small>官方 CLI 按 API 价格估算，非订阅账单</small>
-          </div>
-          <div>
-            <span>平均首字延迟</span>
-            <strong>{seconds(totals?.ttftMs ?? null)}</strong>
-          </div>
-          <div>
-            <span>平均输出速度</span>
+            <span>输出速度</span>
             <strong>
               {totals?.outputPerSecond != null ? `${totals.outputPerSecond.toFixed(1)} tok/s` : '—'}
             </strong>
+            <small>{totals ? `平均首字 ${seconds(totals.ttftMs)}` : ''}</small>
           </div>
         </div>
-        <figure className="usage-chart">
+        <figure className="usage-card usage-chart" aria-busy={baseLoading || splitLoading}>
           <figcaption>
-            <span>
-              {range.bucketMinutes >= 1440
-                ? '每日'
-                : range.bucketMinutes === 60
-                  ? '每小时'
-                  : '每 30 分钟'}
-              {measures[measure]}
+            <span className="usage-card-title">
+              <strong>{chartTitle}</strong>
+              <span>{subtitle}</span>
             </span>
             <SegmentedControl
               label="图表指标"
@@ -304,156 +530,62 @@ export default function UsagePanel({
               onChange={setMeasure}
             />
           </figcaption>
-          <div className="usage-plot" onMouseLeave={() => setHover(null)}>
-            <span className="usage-peak">{peak ? format(peak) : ''}</span>
-            <div className="usage-bars">
-              {bars.map((bar, index) => (
-                <div
-                  key={bar.at}
-                  className={hover === index ? 'hovered' : ''}
-                  onMouseEnter={() => setHover(index)}
-                >
-                  <i
-                    style={{
-                      height:
-                        peak && bar[measure] ? `max(2px, ${(bar[measure] / peak) * 100}%)` : 0,
-                    }}
-                  />
-                </div>
+          {series.length > 1 && (
+            <ul className="usage-legend" aria-label="图例">
+              {series.map((item) => (
+                <li key={item.key}>
+                  <i style={{ '--c': item.color } as CSSProperties} />
+                  {item.name}
+                </li>
               ))}
-            </div>
-            {hover !== null && bars[hover] && (
-              <div
-                className="usage-tip"
-                role="tooltip"
-                style={
-                  hover < bars.length / 2
-                    ? { left: `${(hover / bars.length) * 100}%` }
-                    : { right: `${(1 - (hover + 1) / bars.length) * 100}%` }
-                }
-              >
-                <strong>{bucketLabel(bars[hover].at)}</strong>
-                <span>{bars[hover].requests.toLocaleString('zh-CN')} 次请求</span>
-                <span>{tokens(bars[hover].tokens)} tokens</span>
-                <span>{dollars(bars[hover].costUsd)}</span>
-              </div>
-            )}
-          </div>
-          <div className="usage-axis">
-            <span>{bars[0] && bucketLabel(bars[0].at)}</span>
-            <span>{bars.length > 1 && bucketLabel(bars.at(-1)!.at)}</span>
-          </div>
-        </figure>
-        <TokenTrend buckets={bars} label={bucketLabel} format={tokens} />
-        {page && page.byModel.length > 0 && (
-          <ModelBreakdown models={page.byModel} tokens={tokens} dollars={dollars} />
-        )}
-        <div className="usage-table usage-log">
-          <h2 className="usage-section">调用记录</h2>
-          <table>
-            <thead>
-              <tr>
-                <th>时间</th>
-                <th>会话</th>
-                <th>模型</th>
-                <th>输入</th>
-                <th>输出</th>
-                <th>缓存读取</th>
-                <th>缓存写入</th>
-                <th>等价费用</th>
-                <th>首字</th>
-                <th>总用时</th>
-                <th>速度</th>
-              </tr>
-            </thead>
-            <tbody>
-              {page?.rows.map((row) => {
-                const streaming =
-                  row.ttftMs != null && row.durationMs > row.ttftMs
-                    ? row.durationMs - row.ttftMs
-                    : null;
-                return (
-                  <tr key={row.id}>
-                    <td>
-                      {new Date(row.at).toLocaleString('zh-CN', {
-                        month: 'numeric',
-                        day: 'numeric',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                      })}
-                    </td>
-                    <td title={row.sessionTitle ?? row.sessionId ?? undefined}>
-                      {row.sessionTitle ?? (row.source && row.source !== 'sdk' ? row.source : '—')}
-                    </td>
-                    <td>{row.model}</td>
-                    <td>{row.inputTokens.toLocaleString()}</td>
-                    <td>{row.outputTokens.toLocaleString()}</td>
-                    <td>{row.cacheReadTokens.toLocaleString()}</td>
-                    <td>{row.cacheCreationTokens.toLocaleString()}</td>
-                    <td>{dollars(row.costUsd)}</td>
-                    <td>{seconds(row.ttftMs)}</td>
-                    <td>{seconds(row.durationMs)}</td>
-                    <td>
-                      {streaming
-                        ? `${(row.outputTokens / (streaming / 1000)).toFixed(1)} tok/s`
-                        : '—'}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {page && !page.rows.length && <p className="muted">这个范围内没有调用记录。</p>}
-          {page && pages > 1 && (
-            <nav className="usage-pager" aria-label="调用记录翻页">
-              <IconButton
-                title="上一页"
-                disabled={loading || index === 0}
-                onClick={() => {
-                  void load(index - 1);
-                }}
-              >
-                <ChevronLeft />
-              </IconButton>
-              <label>
-                第
-                <input
-                  key={index}
-                  aria-label="页码"
-                  inputMode="numeric"
-                  defaultValue={index + 1}
-                  disabled={loading}
-                  onKeyDown={(event) => {
-                    if (event.key !== 'Enter') return;
-                    const wanted = Math.round(Number(event.currentTarget.value));
-                    if (wanted >= 1 && wanted <= pages) void load(wanted - 1);
-                    else event.currentTarget.value = String(index + 1);
-                  }}
-                  onBlur={(event) => {
-                    event.currentTarget.value = String(index + 1);
-                  }}
-                />
-                / {pages} 页
-              </label>
-              <IconButton
-                title="下一页"
-                disabled={loading || !page.hasMore}
-                onClick={() => {
-                  void load(index + 1);
-                }}
-              >
-                <ChevronRight />
-              </IconButton>
-              <span>
-                共 {totals!.requests.toLocaleString('zh-CN')} 条，每页 {pageSize} 条
-              </span>
-            </nav>
+            </ul>
           )}
-        </div>
+          {splitFailed && !model && (
+            <p className="muted usage-note">按模型拆分读取失败，已显示合计。</p>
+          )}
+          {splitFailed && model && !chosen ? (
+            <p className="error-text usage-empty" role="alert">
+              这个模型的用量读取失败，点右上角刷新重试。
+            </p>
+          ) : !page || (model && !chosen) ? (
+            <span className="skeleton usage-chart-skeleton" />
+          ) : !totals?.requests && chosen ? (
+            <p className="muted usage-empty">这个范围内没有调用。</p>
+          ) : (
+            <UsageBars
+              title={chartTitle}
+              buckets={buckets}
+              series={series}
+              format={format}
+              label={bucketLabel}
+              axisLabel={axisLabel}
+              tokens={tokens}
+              dollars={dollars}
+            />
+          )}
+          {page && page.byModel.length > 0 && (
+            <ModelBreakdown
+              models={page.byModel}
+              totals={page.totals}
+              colors={colors}
+              sparks={sparks}
+              selected={model}
+              tokens={tokens}
+              dollars={dollars}
+            />
+          )}
+        </figure>
+        <ActivityCard
+          days={days}
+          firstRecord={firstRecord}
+          loading={activityState === 'loading' && !activity}
+          failed={activityState === 'failed'}
+          tokens={tokens}
+          dollars={dollars}
+        />
         {summary && (
           <p className="account-updated">
-            调用记录保留 {summary.retentionDays} 天
+            用量数据保留 {summary.retentionDays} 天
             {summary.firstRecordAt
               ? `，最早一条：${new Date(summary.firstRecordAt).toLocaleString('zh-CN')}`
               : ''}
