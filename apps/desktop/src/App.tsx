@@ -1570,6 +1570,7 @@ export function App({
         await client.request({ type: 'session.archive', sessionId: session.id, archived: true });
       } catch (error) {
         // Both stay in the list and nothing moves. The copy's run holds its name now, so it is told apart here.
+        if (error instanceof RequestInterruptedError) throw error;
         throw new Error(
           `编辑后的消息已发出，但原对话没有归档（${error instanceof Error ? error.message : '未知原因'}）。列表里会有两个同名会话，较新的是编辑后的。`,
         );
