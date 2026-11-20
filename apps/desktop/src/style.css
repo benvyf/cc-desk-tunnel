@@ -5779,6 +5779,17 @@ details:is(.turn-process, .work, .tool):not(.thinking-block)[open]::details-cont
   font-size: calc(12.5rem / 14);
   color: var(--text);
 }
+/* A file's path opens in the preview: it reads as the path it is, and as a link under the pointer. */
+.tool-input-path > a {
+  text-decoration: none;
+}
+.tool-input-path > a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+.tool-input-path > a.link-elsewhere:hover {
+  color: var(--muted);
+}
 .tool-input-path > small,
 .tool-input-meta {
   color: var(--faint);

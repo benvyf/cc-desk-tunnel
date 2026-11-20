@@ -14,6 +14,24 @@ export function requestedLine(value: unknown): number | undefined {
   return Number.isSafeInteger(line) && line > 0 ? line : undefined;
 }
 
+// The line on which the first of these texts is found, as an edit's text is looked for in its file
+// (ToolInput.tsx); the file's lines may end in \r\n where the text's end in \n.
+export function foundLine(text: string, find: string[]): number | undefined {
+  const plain = text.replaceAll('\r\n', '\n');
+  for (const value of find) {
+    const at = value ? plain.indexOf(value.replaceAll('\r\n', '\n')) : -1;
+    if (at < 0) continue;
+    let line = 1;
+    for (
+      let index = plain.indexOf('\n');
+      index >= 0 && index < at;
+      index = plain.indexOf('\n', index + 1)
+    )
+      line++;
+    return line;
+  }
+}
+
 export function codePosition(
   text: string,
   line: number,

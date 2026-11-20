@@ -3017,7 +3017,9 @@ export function App({
               session={selected}
               here={!!selected && onThis(selected)}
               preview={
-                previewAvailable ? (link) => preview.follow(link, selected?.projectPath) : undefined
+                previewAvailable
+                  ? (link, find) => preview.follow(link, selected?.projectPath, undefined, find)
+                  : undefined
               }
               onQuote={
                 selected

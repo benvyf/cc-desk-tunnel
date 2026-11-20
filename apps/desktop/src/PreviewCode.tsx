@@ -3,7 +3,7 @@ import type { CSSProperties, RefObject } from 'react';
 import { FileCode } from './icons.tsx';
 import { Button } from './ui.tsx';
 import { CopyButton } from './copy.tsx';
-import { codeLineStarts, codePosition, requestedLine } from './previewCode.ts';
+import { codeLineStarts, codePosition, foundLine, requestedLine } from './previewCode.ts';
 import type { PreviewTab } from './preview.ts';
 import './PreviewCode.css';
 import { useSyntaxColors } from './useSyntaxColors.ts';
@@ -240,7 +240,9 @@ export default function PreviewCode({
     // A moved/closed view cancels this explicit intent instead of replaying it later.
     const frame = win.requestAnimationFrame(() => {
       consumed.current = navigation.id;
-      navigateCurrent.current(navigation.line, navigation.column);
+      const found = navigation.find && foundLine(text, navigation.find);
+      if (found) navigateCurrent.current(found);
+      else navigateCurrent.current(navigation.line, navigation.column);
       onNavigated(navigation.id);
     });
     return () => win.cancelAnimationFrame(frame);

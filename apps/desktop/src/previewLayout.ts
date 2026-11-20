@@ -9,7 +9,8 @@ export type PreviewTab = {
   restricted?: boolean;
   wrap?: boolean;
   // One explicit user navigation; filtered out when a layout is restored.
-  navigation?: { id: string; line: number; column?: number };
+  // `find`: text to look for in the file, whose line is gone to instead where it is found.
+  navigation?: { id: string; line: number; column?: number; find?: string[] };
 };
 export type FloatRect = { x: number; y: number; width: number; height: number };
 export type PreviewPane = { id: string; tabs: string[]; active: string; floating?: FloatRect };

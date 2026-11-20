@@ -559,8 +559,12 @@ export default function PreviewContent({
             // A document's links are no more to be trusted than a reply's.
             if (link)
               doubtful.guard(link, anchor.textContent ?? '', () => {
-                if (!workspace.follow(link, tab.root, tab.restricted))
-                  void followLink(link, setError);
+                void workspace
+                  .follow(link, tab.root, tab.restricted)
+                  .catch(() => false)
+                  .then((shown) => {
+                    if (!shown) void followLink(link, setError);
+                  });
               });
           }}
         >

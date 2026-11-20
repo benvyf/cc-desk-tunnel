@@ -39,7 +39,7 @@ import type { Category } from './activity.ts';
 import type { HistoryState, TaskProgress } from './client.ts';
 import { RunStatus, TaskLine, terminalState } from './RunStatus.tsx';
 import RunNotice from './RunNotice.tsx';
-import { approvalQuestion, toolInput } from './ToolInput.tsx';
+import { approvalQuestion, toolInput, ToolPaths } from './ToolInput.tsx';
 import type { Clock } from './RunStatus.tsx';
 import QuestionCard, { questionsOf } from './QuestionCard.tsx';
 import ApprovalDock from './ApprovalDock.tsx';
@@ -186,6 +186,18 @@ function Fold({
       {shown && children()}
     </details>
   );
+}
+
+// The text a tool card's path asks to be looked for in its file (ToolInput.tsx), if any.
+function findIn(element: HTMLElement): string[] | undefined {
+  try {
+    const found: unknown = JSON.parse(element.dataset.find ?? '');
+    return Array.isArray(found)
+      ? found.filter((value): value is string => typeof value === 'string')
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 // What a link leads to, beside it: shown while the pointer rests on the link, and after a click with what came of
@@ -1071,7 +1083,8 @@ export default function Conversation({
   session: Session | undefined;
   // This window can open the files of the session's project: a desktop on the computer they are on.
   here: boolean;
-  preview?: (link: Link) => boolean;
+  // Shows what a link leads to in the preview; whether it did. `find`: text to look for in the file (a tool card's).
+  preview?: (link: Link, find?: string[]) => Promise<boolean>;
   onQuote?: (messageId: string, text: string, destination: QuoteDestination) => void;
   sideQuoteAvailable?: boolean;
   adjustableWidth?: boolean;
@@ -1193,6 +1206,12 @@ export default function Conversation({
   // What came of following a link, told beside it; a link the page has redrawn meanwhile is told as a status.
   const tellAt = (element: Element, link: Link) => (note: string) =>
     element.isConnected ? showLink(element, link, note) : setCopyStatus(note);
+  // A link is shown in the preview where it can be; otherwise it is opened as it is without one: a folder by the
+  // file manager, a path on another computer not at all (followLink says why).
+  const show = async (link: Link, element: HTMLElement) => {
+    if (!(await preview?.(link, findIn(element)).catch(() => false)))
+      await followLink(link, tellAt(element, link));
+  };
   const transcriptRoot = useRef<HTMLDivElement>(null);
   const lastFindRequest = useRef(findRequest);
   const searching = findOpen && query.length > 0;
@@ -1674,7 +1693,7 @@ export default function Conversation({
                         ? [
                             {
                               label: '在侧栏预览',
-                              run: () => guarded(() => void preview(link)),
+                              run: () => guarded(() => void show(link, element)),
                             },
                           ]
                         : []),
@@ -1696,7 +1715,7 @@ export default function Conversation({
               if (!link) return;
               setLinkCard(null);
               doubtful.guard(link, anchor.textContent ?? '', () => {
-                if (!preview?.(link)) void followLink(link, tellAt(anchor, link));
+                void show(link, anchor);
               });
             }}
             onPointerOver={(event) => {
@@ -1810,20 +1829,22 @@ export default function Conversation({
                 )}
                 {showGreeting && <Greeting />}
                 <LinkPlace.Provider value={place}>
-                  <OpenEditor.Provider value={editor}>
-                    {turns.map((turn, index) => (
-                      <TurnView
-                        key={turn.id}
-                        turn={turn}
-                        native={native}
-                        live={ticking(turn, activeRunId) ? live : atRest}
-                        latest={index === turns.length - 1}
-                        held={heldOpen(turns, index)}
-                        resume={index === turns.length - 1 ? resume : undefined}
-                        models={manyModels}
-                      />
-                    ))}
-                  </OpenEditor.Provider>
+                  <ToolPaths.Provider value={!!preview}>
+                    <OpenEditor.Provider value={editor}>
+                      {turns.map((turn, index) => (
+                        <TurnView
+                          key={turn.id}
+                          turn={turn}
+                          native={native}
+                          live={ticking(turn, activeRunId) ? live : atRest}
+                          latest={index === turns.length - 1}
+                          held={heldOpen(turns, index)}
+                          resume={index === turns.length - 1 ? resume : undefined}
+                          models={manyModels}
+                        />
+                      ))}
+                    </OpenEditor.Provider>
+                  </ToolPaths.Provider>
                 </LinkPlace.Provider>
                 {session.activeRun && background && (
                   <div className="background-tasks">

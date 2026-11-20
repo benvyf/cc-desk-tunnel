@@ -178,11 +178,13 @@ export function usePreviewWorkspace(
     root?: string,
     restricted?: boolean,
     title?: string,
-    position?: { line?: number; column?: number },
+    position?: { line?: number; column?: number; find?: string[] },
   ) {
-    const line = requestedLine(position?.line);
+    const find = position?.find?.length ? position.find : undefined;
+    // Text to look for goes to its line, or to the top where it is not found.
+    const line = requestedLine(position?.line) ?? (find ? 1 : undefined);
     const navigation = line
-      ? { id: crypto.randomUUID(), line, column: requestedLine(position?.column) }
+      ? { id: crypto.randomUUID(), line, column: requestedLine(position?.column), find }
       : undefined;
     if (navigation && session) {
       const existing = current.current[session]?.tabs.find(
@@ -255,10 +257,19 @@ export function usePreviewWorkspace(
       const target = previewWebsite(url);
       if (target) open('web', target);
     },
-    follow(link: Link, root?: string, restricted?: boolean) {
+    // Whether the link is shown here; one that is not is opened as it would be without a preview (followLink).
+    // A folder, or a file the preview cannot show, is not: it is opened by the system, under its rules.
+    async follow(link: Link, root?: string, restricted?: boolean, find?: string[]) {
       if (!window.desktop?.preview || !session || !workspace) return false;
       if (link.kind === 'path') {
-        open('file', link.path, root, restricted, undefined, link);
+        const desktop = window.desktop;
+        // A path that cannot be looked at is shown as before: the preview says what is wrong with it.
+        const info = await Promise.resolve()
+          .then(() => desktop.inspectPath(link.path))
+          .catch(() => null);
+        if (info?.kind === 'directory' || (info?.kind === 'file' && !previewable(link.path)))
+          return false;
+        open('file', link.path, root, restricted, undefined, { ...link, find });
         return true;
       }
       if (link.kind === 'web') {
@@ -298,3 +309,18 @@ export function usePreviewWorkspace(
   };
 }
 export type PreviewWorkspace = ReturnType<typeof usePreviewWorkspace>;
+
+// Kinds of file the preview cannot show (preview-files.cjs reads text, pictures, PDF, office documents and
+// spreadsheets): programs, archives, media, fonts, databases. Any other file is tried, and one that turns out
+// not to be text says so in its tab.
+const unpreviewable = new Set(
+  (
+    'exe dll msi msix appx sys com scr lnk so dylib o lib pdb class jar war apk ipa wasm pyc pyo node ' +
+    'zip 7z rar tar gz tgz bz2 xz zst cab iso img dmg vhd vhdx bin ' +
+    'mp3 wav flac ogg oga m4a aac wma opus mp4 m4v mov avi mkv webm wmv flv ' +
+    'woff woff2 ttf otf eot sqlite sqlite3 db mdb accdb psd ai sketch fig tif tiff heic heif raw ' +
+    'blend fbx glb'
+  ).split(' '),
+);
+export const previewable = (path: string) =>
+  !unpreviewable.has(/\.([^.\\/]+)$/.exec(path)?.[1]?.toLowerCase() ?? '');
