@@ -11,8 +11,8 @@ const failure = (code, message = '') => Object.assign(new Error(message), { code
 
 test('a failed control connection says which step failed and what to check', () => {
   const target = 'cloud.example:8443';
-  assert.match(controlFailure(failure('ENOTFOUND'), target), /无法解析.*cloud\.example。/);
-  assert.match(controlFailure(failure('ECONNREFUSED'), target), /cloud\.example:8443 拒绝了连接/);
+  assert.match(controlFailure(failure('ENOTFOUND'), target), /无法解析服务地址里的域名。/);
+  assert.match(controlFailure(failure('ECONNREFUSED'), target), /服务地址拒绝了连接/);
   assert.match(controlFailure(failure('ETIMEDOUT'), target), /超时[\s\S]*云安全组/);
   assert.match(controlFailure(new Error('Connection timed out'), target), /超时/);
   assert.match(controlFailure(failure('DEPTH_ZERO_SELF_SIGNED_CERT'), target), /SHA256 指纹/);
@@ -32,10 +32,23 @@ test('a failed control connection says which step failed and what to check', () 
     controlFailure(new Error('Proxy refused the connection: HTTP/1.1 403'), target, proxy),
     /系统代理 127\.0\.0\.1:7890拒绝转发/,
   );
-  assert.match(
-    controlFailure(failure('ESOMETHING'), target),
-    /无法连接 cloud\.example:8443（ESOMETHING）/,
-  );
+  assert.match(controlFailure(failure('ESOMETHING'), target), /无法连接服务地址（ESOMETHING）/);
+  // The server's address is never shown: the user does not want it on the screen.
+  for (const code of [
+    'ENOTFOUND',
+    'ECONNREFUSED',
+    'ETIMEDOUT',
+    'ECONNRESET',
+    'EPROTO',
+    'ERR_TLS_CERT_ALTNAME_INVALID',
+    'ESOMETHING',
+  ])
+    assert.doesNotMatch(controlFailure(failure(code), target, proxy), /cloud\.example|8443/);
+  for (const status of ['502', '404'])
+    assert.doesNotMatch(
+      controlFailure(new Error(`Unexpected server response: ${status}`), target),
+      /cloud\.example|8443/,
+    );
 });
 
 test('a component that stopped is named, with the reason it gave', () => {

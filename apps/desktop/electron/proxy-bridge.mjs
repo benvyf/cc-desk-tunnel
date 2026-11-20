@@ -166,7 +166,7 @@ export async function openProxyBridge(
     // `connection_lost` is a fault on the way, which the window may try again; `client_failed` is something
     // that trying again does not change.
     function fail(message, code = 'client_failed') {
-      if (!closed) log(`Connection given up: ${message}`);
+      if (!closed) log(`Connection given up: ${message} [${target}]`);
       if (local.readyState === WebSocket.OPEN)
         local.send(JSON.stringify({ type: 'connection.error', code, message }));
       clearTimeout(timer);
