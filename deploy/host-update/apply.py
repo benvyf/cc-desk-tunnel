@@ -24,14 +24,14 @@ ROOT = Path('/var/lib/cc-runtime-upgrade')
 PROGRAM = Path(__file__).resolve().parents[2]
 IDENTITY = json.loads((PROGRAM / 'deploy/managed-server.json').read_bytes())
 # The target protocol. The protocol a baseline runs is in its BASELINES entry: Build 30 was the first
-# image upgrade across protocols on this path (24 to 25); Build 31 keeps 25.
+# image upgrade across protocols on this path (24 to 25); Builds 31 and 32 keep 25.
 BUILD, PROTOCOL = IDENTITY['build'], 25
 RUNTIME = IDENTITY['runtimeLevel']
 RUNTIME_LEVEL = (PROGRAM / 'deploy/docker/runtime-level').read_text().strip()
 BASE_LOCK = '09eb7a3b1b2814c72a6362ea2c150f0c3a3d5eb987651c88d3808410e8877de7'
 PREVIOUS_LOCK = 'ebf38fe28262d97e04e506b70fde86b89b20431262a5a50ca695c9c886830b92'
 # The dependencies of the runtime Builds 15-28 run; Build 29 brought Agent SDK 0.3.325 (LOCK), which
-# Build 30 keeps.
+# Builds 30 and 31 keep.
 RUNTIME_LOCK = '71e609c6c17673611360fe51dffc15dc3a205350e0acec6478f058a1ed7e630c'
 LOCK = 'a884b488d89edb4075a507ce49955ea009cc20378555f9d07bcad865469c3bde'
 NODE_VERSION = '24.22.2'
@@ -44,6 +44,7 @@ IMAGE_SIZE_LIMIT = 3 * 1024**3
 HELPER_SHA = '270c5899ebf247d09055fe2ec7bf0e038fa596845f6e9bfad73de48b5b797ae0'
 BASE_DESCRIPTOR = 'a366fbcf992cf5c76393e42a5f61231f079b13f3e67dffdd9bf673e5c8a3b94a'
 BASELINES = {
+    'f199a1e7858faa52ee8e965c084dd37454e6eb7c407badfad6632680f1815f68': (31, 25),
     'fa5779e29341d16cf71da34ef68810cf7436c94135e856f13b78a522863e1a47': (30, 25),
     '7480a9d35f41479dc25d7197a14757794f72e23514f22b2d4aacbaf0fce9d01a': (29, 24),
     '2f7fc483b313d4b196fffc060a7ff035ae7568902a4dba1530820c5c8a2ba353': (28, 24),
@@ -235,7 +236,7 @@ def check_baseline(baseline, release):
              (BUILD, PROTOCOL, NODE_VERSION, LOCK, CLI), 'Installed candidate runtime differs')
         return True
     need(BASELINES.get(baseline['descriptor']) == (baseline['build'], baseline['protocol']) and
-         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28, 29, 30) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (29, 30) else RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
+         baseline['cli'] == (CLI if baseline['build'] in (23, 24, 25, 26, 27, 28, 29, 30, 31) else BASE_CLI) and baseline['node'] == NODE_VERSION and baseline['lock'] == (LOCK if baseline['build'] in (29, 30, 31) else RUNTIME_LOCK if baseline['build'] in (15, 16, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28) else PREVIOUS_LOCK if baseline['build'] in (13, 14) else BASE_LOCK),
          'Unknown original application/runtime baseline; no change')
     return False
 
