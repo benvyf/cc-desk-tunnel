@@ -205,6 +205,8 @@ NoNewPrivileges=yes
 WantedBy=multi-user.target
 ```
 
+> 2026-11-20：中转已迁到 `189.105.70.247`，中转机 sshd 已对 `ccdesk-relay` 开启 `ClientAliveInterval 5`。建议把模板中的 `ServerAliveInterval=15`、`RestartSec=5` 改为 `5`、`1`（尚未在各台落地）。见[中转隧道断线排查与保活](RELAY-TUNNEL-KEEPALIVE-2026-11-20.zh-CN.md)。
+
 不同Ubuntu使用相同unit名没有冲突。原机历史隧道密钥为`/home/benben/.ssh/cc-hk-relay-test`，不要用新增机器的模板覆盖原机。
 
 ### 5.3 VPS服务模板
@@ -401,6 +403,7 @@ ufw status
 | 本机健康正常，VPS回环端口未监听 | 查Ubuntu隧道journal、公钥授权、私钥权限及网络 |
 | Permission denied (publickey) | 核对该机私钥与VPS的ccdesk-relay授权；不要只查看root授权文件 |
 | remote port forwarding failed | 查目标回环端口占用，以及permitlisten与-R是否一致 |
+| 客户端“45 秒没有收到数据”或“连接刚建立就被切断”，约一分钟后自愈 | 多为反向隧道卡住；按[中转隧道断线排查与保活](RELAY-TUNNEL-KEEPALIVE-2026-11-20.zh-CN.md)第 7 节对照隧道会话的关闭与重建时间 |
 | 回环监听正常，公网入口未监听 | 查对应socat unit及日志；不要重启全部入口 |
 | VPS端口都在，外部无法访问 | 查UFW、可能存在的云防火墙与客户端网络 |
 | SSL_ERROR_SYSCALL持续发生 | 查上述监听、CC本机健康及两端日志；保留失败时间 |

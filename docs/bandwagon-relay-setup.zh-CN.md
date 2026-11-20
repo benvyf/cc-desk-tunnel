@@ -317,6 +317,11 @@ sudo systemctl status cc-bwg-relay.service --no-pager
 - `-R 127.0.0.1:28787:127.0.0.1:8787`：搬瓦工回环 `28787` 收到的数据，通过 SSH 送到新 Ubuntu 自己的 `8787`。
 - `ExitOnForwardFailure=yes`：端口被占用等情况直接失败，让 systemd 重试，避免假运行。
 - `ServerAliveInterval=15`、`ServerAliveCountMax=3`：检测失效连接；systemd 退出后等 5 秒重连。不是降低网络延迟的参数。
+- 2026-11-20 更新：
+  - 上面的检测要 50～75 秒才能发现隧道卡死，建议改为 `ServerAliveInterval=5`、`RestartSec=1`；
+  - 中转机 sshd 也已对 `ccdesk-relay` 开启 `ClientAliveInterval 5`；
+  - 中转地址现为 `189.105.70.247`。
+  - 详见[中转隧道断线排查与保活](RELAY-TUNNEL-KEEPALIVE-2026-11-20.zh-CN.md)。
 - SSH 压缩保持默认关闭；此处承载的是加密 TLS 数据。
 
 ## 8. 验证完整公网链路，填写本地 CC

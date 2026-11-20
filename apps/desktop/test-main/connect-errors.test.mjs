@@ -67,7 +67,7 @@ test('an execution channel that never got ready says what stood in the way', () 
   assert.equal(limited.split('\n').length, 3);
   assert.match(
     channelFailure(45, failure('ECONNRESET'), target, { host: '10.0.0.1', port: 8080 }),
-    /连接被中断/,
+    /连接刚建立就被切断/,
   );
   // They were opened, or none was ever asked for: the probe command itself went unanswered.
   assert.match(

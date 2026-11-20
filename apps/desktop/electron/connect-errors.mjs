@@ -72,7 +72,7 @@ export function controlFailure(error, target, proxy) {
   if (status)
     return `${target} 应答了 HTTP ${status}，不是本服务的连接入口。\n请核对服务地址；经 nginx 反代时检查是否转发了 WebSocket（Upgrade 请求头）。`;
   if (code === 'ECONNRESET' || code === 'EPIPE' || /socket hang up/.test(text))
-    return `与 ${target} 的连接被中断。\n常见于该端口上不是本服务，或中间的网络设备切断了连接；请核对地址后重试。${via}`;
+    return `与 ${target} 的连接刚建立就被切断。\n之前能正常连接时，多半是中转或服务端暂时没有应答，客户端会自动重连，通常一分钟内恢复；第一次连接就出现时，请核对地址和端口是否指向本服务。${via}`;
   return `无法连接 ${target}${code ? `（${code}）` : ''}。\n请检查服务地址和网络。${via}`;
 }
 

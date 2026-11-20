@@ -237,6 +237,9 @@ export class ProxyClient {
   private stableTimer: ReturnType<typeof setTimeout> | undefined;
   retryTimer: ReturnType<typeof setTimeout> | undefined;
   retryAttempt = 0;
+  // When the run of attempts going on now began: the first minute after a connection is lost is tried every few
+  // seconds, since a relay whose tunnel to the service broke usually has it back within that minute.
+  private lostAt = 0;
   // Whether this sign-in has stood once. Until then a failure is the user's to look at; after it, a fault on
   // the way is tried again.
   private established = false;
@@ -611,13 +614,10 @@ export class ProxyClient {
             devices: [],
             error: '暂时无法连接服务，正在重试。',
           });
-          this.retryTimer = setTimeout(
-            () => {
-              this.retryTimer = undefined;
-              this.open();
-            },
-            Math.min(1000 * 2 ** this.retryAttempt++, 5000),
-          );
+          this.retryTimer = setTimeout(() => {
+            this.retryTimer = undefined;
+            this.open();
+          }, this.retryDelay(5000));
         },
       );
       return;
@@ -647,13 +647,10 @@ export class ProxyClient {
             devices: [],
             error: error.message,
           });
-          this.retryTimer = setTimeout(
-            () => {
-              this.retryTimer = undefined;
-              this.open();
-            },
-            Math.min(1000 * 2 ** this.retryAttempt++, 10000),
-          );
+          this.retryTimer = setTimeout(() => {
+            this.retryTimer = undefined;
+            this.open();
+          }, this.retryDelay(10000));
           return;
         }
         // Local setup failures and refused authorization need user action.
@@ -978,12 +975,20 @@ export class ProxyClient {
           this.retryTimer = undefined;
           this.open();
         },
-        Math.min(1000 * 2 ** this.retryAttempt++, credentials.bridge ? 10000 : 5000),
+        this.retryDelay(credentials.bridge ? 10000 : 5000),
       );
     };
     socket.onerror = () => {
       /* onclose owns reconnect and pending request cleanup. */
     };
+  }
+  // How long to wait before the next attempt: doubling from a second, at most 3 s in the first minute of
+  // attempts and `limit` after it.
+  private retryDelay(limit: number) {
+    const now = Date.now();
+    if (this.retryAttempt === 0) this.lostAt = now;
+    const delay = 1000 * 2 ** this.retryAttempt++;
+    return Math.min(delay, now - this.lostAt < 60_000 ? 3000 : limit);
   }
   // Counts one more authorization taken up again; false once there have been too many lately.
   private reauthorize() {

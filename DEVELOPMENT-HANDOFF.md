@@ -1,5 +1,17 @@
 # CC 管理中心开发交接（2026-10-24，香港时间）
 
+### 2026-11-20 中转隧道断线排查与保活
+
+客户端提示“45 秒没有收到数据”和“连接被中断”，原因已经查明：服务端 115.132.87.43 到中转机 189.105.70.247 的反向 SSH 隧道卡住，每次要 50～75 秒才被发现并重建。
+
+已完成：
+- 中转机 sshd 对 `ccdesk-relay` 用户开启 `ClientAliveInterval 5` / `ClientAliveCountMax 3`，有备份，可回退。
+- 客户端分支 `fix/relay-reconnect`：改写 ECONNRESET 的提示，断线后第一分钟内每次重试最多间隔 3 秒。尚未打包。
+
+待办：服务端隧道单元改为 `ServerAliveInterval=5`、`RestartSec=1`，需要登录服务端。
+
+详见[中转隧道断线排查与保活](docs/RELAY-TUNNEL-KEEPALIVE-2026-11-20.zh-CN.md)。
+
 ### 2026-11-08 Windows Build34 已发布，旧安装包已清理
 
 按用户授权已将成熟NSIS差分方案推送main并发布Windows pilot 0.3.10/Build34/协议24，客户端发行源码 `c5a2c637c047d1f2d1e428109def9bbb44d117b0`。首次激活被root/服务所有者权限拦住后，新增真实Unix回归并修复发布器，未跳过原发布校验；Nginx仅补差分sidecar路由。公开完整包、签名描述、块表、三段HTTPS字节、真实systemd续期全部通过，pilot现revision52。固定干净续期源码 `/root/.cc-update-admin/source-build-34`，制品引用当前公开Build34；Windows/Linux timer active，stable/Linux通道和管理中心runtime保持。
