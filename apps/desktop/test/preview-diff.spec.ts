@@ -213,11 +213,12 @@ test('Git is asked once for many changes on disk, and once for a run’s end acr
   await modes(page).getByRole('button', { name: '改动' }).click();
   await expect.poll(calls).toBe(before + 1);
 
-  // Two panes showing changes and the changes panel: a run's end is one read.
+  // A pane showing changes, one showing a file as itself (which reads at a run's end too, so that a file the run
+  // changed offers its changes) and the changes panel: a run's end is one read.
   await button(page, '打开文档').click();
-  await modes(page).last().getByRole('button', { name: '改动' }).click();
   await button(page, '分栏预览').click();
-  await expect(pane(page).locator('.preview-diff')).toHaveCount(2);
+  await expect(pane(page).locator('.preview-diff')).toHaveCount(1);
+  await expect(pane(page).locator('.preview-markdown')).toHaveCount(1);
   await button(page, 'Git 改动').click();
   await expect(page.getByRole('region', { name: 'Git 改动' }).locator('.git-change')).toHaveCount(
     7,

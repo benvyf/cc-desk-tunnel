@@ -84,6 +84,8 @@ function start(slot: Slot) {
         waiting.resolve(list);
       },
       (error: unknown) => {
+        // What was read before the failure is no answer to an ask made after it.
+        slot.last = undefined;
         if (gitError(error, '') === notRepository) slot.missing = Date.now();
         waiting.reject(error);
       },
@@ -263,8 +265,13 @@ export function useGitFile(
   }, [revision]);
   const wasBusy = useRef(busy);
   useEffect(() => {
-    // A little before now, so that every tab and the changes panel, told in the same moment, share one read.
-    if (wasBusy.current && !busy) readNow(Date.now() - 250);
+    // A little before now, so that every tab and the changes panel, told in the same moment, share one read. Read
+    // whatever the tab shows, so that a file the run changed offers its changes.
+    if (wasBusy.current && !busy) {
+      const since = Date.now() - 250;
+      dirty.current = Math.max(dirty.current ?? 0, since);
+      if (!document.hidden) read(dirty.current);
+    }
     wasBusy.current = busy;
   }, [busy]);
   // Back in the window: what changed meanwhile, or, while the changes are shown, anything after a few seconds.
