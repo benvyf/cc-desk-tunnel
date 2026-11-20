@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { CSSProperties } from 'react';
-import { ArrowLeft, Info, RefreshCw } from './icons.tsx';
+import { ArrowLeft, RefreshCw } from './icons.tsx';
 import type { UsagePage, UsageSummary } from '@cc-desk-tunnel/protocol';
 import type { ProxyClient } from './client.ts';
 import { IconButton } from './ui.tsx';
@@ -460,16 +460,9 @@ export default function UsagePanel({
           <div>
             <span>
               等价费用
-              <span
-                className="usage-info"
-                tabIndex={0}
-                role="img"
-                title="官方 CLI 按 API 价格估算，非订阅账单"
-                aria-label="官方 CLI 按 API 价格估算，非订阅账单"
-              >
-                <Info aria-hidden="true" />
-              </span>
-              <em className="usage-tag">不是扣费</em>
+              <em className="usage-tag" title="官方 CLI 按 API 价格估算，非订阅账单">
+                不是扣费
+              </em>
             </span>
             <strong>{totals ? dollars(totals.costUsd) : '—'}</strong>
             <small>
@@ -498,7 +491,7 @@ export default function UsagePanel({
             <strong>{totals ? tokens(tokenSum(totals)) : '—'}</strong>
             <small>
               {totals
-                ? `输入 ${tokens(totals.inputTokens)} · 输出 ${tokens(totals.outputTokens)} · 缓存 ${tokens(totals.cacheReadTokens + totals.cacheCreationTokens)}`
+                ? `输入 ${tokens(totals.inputTokens)} · 输出 ${tokens(totals.outputTokens)}`
                 : ''}
             </small>
           </div>

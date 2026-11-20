@@ -7607,15 +7607,6 @@ dialog:has(.pasted-view) {
   white-space: nowrap;
   text-overflow: ellipsis;
 }
-.usage-tiles .usage-info {
-  display: inline-flex;
-  color: var(--faint);
-  cursor: help;
-}
-.usage-info svg {
-  width: 13px;
-  height: 13px;
-}
 .usage-tag {
   padding: 0 6px;
   border: 1px solid var(--line);
@@ -7699,14 +7690,20 @@ dialog:has(.pasted-view) {
   flex: 1;
   align-items: stretch;
   min-width: 0;
-  border-top: 1px dashed var(--line-soft);
+  border-top: 1px solid var(--line-soft);
   border-bottom: 1px solid var(--line);
   background: linear-gradient(var(--line-soft), var(--line-soft)) 0 50% / 100% 1px no-repeat;
   border-radius: 2px;
 }
+/* Focused from the keyboard, the base line turns the focus colour and the column shown is lit; no ring round the
+   whole chart. */
 .usage-bars:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+  outline: none;
+  border-bottom-color: var(--focus);
+  box-shadow: 0 1px 0 var(--focus);
+}
+.usage-bars:focus-visible > div.hovered {
+  background: var(--focus-halo);
 }
 .usage-bars > div {
   display: flex;
@@ -7828,9 +7825,19 @@ dialog:has(.pasted-view) {
   text-align: right;
   white-space: nowrap;
 }
+/* The table runs to the card's edges, its first and last columns lined up with the card's title and controls. */
 .usage-models {
-  margin-top: 14px;
+  margin: 14px -16px -14px;
   border-top: 1px solid var(--line-soft);
+}
+.usage-models :is(th, td):first-child {
+  padding-left: 16px;
+}
+.usage-models :is(th, td):last-child {
+  padding-right: 16px;
+}
+.usage-models th:nth-child(2) {
+  width: 28%;
 }
 .usage-models th:nth-child(-n + 2),
 .usage-models td:nth-child(-n + 2) {
@@ -7845,17 +7852,20 @@ dialog:has(.pasted-view) {
   background: var(--selected);
 }
 .usage-models tfoot td {
+  padding-block: 10px;
   border-bottom: 0;
   font-weight: 600;
   color: var(--text);
 }
+/* A row's use over the range on a base line, so that a single busy bucket reads as a point in time. */
 .usage-spark {
-  display: inline-flex;
+  display: flex;
   align-items: flex-end;
   gap: 1px;
-  width: 120px;
+  width: 100%;
+  max-width: 280px;
   height: 20px;
-  vertical-align: middle;
+  border-bottom: 1px solid var(--line-soft);
 }
 .usage-spark i {
   flex: 1;
@@ -7884,8 +7894,65 @@ dialog:has(.pasted-view) {
     visibility: hidden;
   }
   .usage-models th:nth-child(2),
-  .usage-models td:nth-child(2) {
+  .usage-models td:nth-child(2),
+  .usage-models :is(th, td):nth-child(5),
+  .usage-share {
     display: none;
+  }
+  .usage-table :is(th, td) {
+    padding-inline: 6px;
+  }
+  .usage-models td:first-child {
+    max-width: 120px;
+  }
+  .usage-chart figcaption .segmented {
+    width: 100%;
+  }
+  .usage-activity-body.year .usage-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+/* The page as a whole: five totals in a row where they fit, else the cost alone above two by two. The filters
+   span the row, the model list at its right end. */
+.account-body.usage-body {
+  container: usage / inline-size;
+  padding-top: 4px;
+}
+.usage-filters select,
+.usage-custom input {
+  height: 36px;
+}
+.usage-filters select[aria-label='模型'] {
+  margin-left: auto;
+}
+.usage-chart figcaption .segmented {
+  width: calc(var(--segmented-count) * 80px + 4px);
+}
+.usage-page > .account-heading > .icon-button:first-child {
+  margin-left: -8px;
+}
+.usage-page > .account-heading > .icon-button:last-child {
+  margin-right: -8px;
+}
+@container usage (min-width: 760px) {
+  .usage-tiles {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+@container usage (max-width: 759px) {
+  .usage-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .usage-tiles > div:first-child {
+    grid-column: 1 / -1;
+  }
+  .usage-filters .segmented {
+    width: 100%;
+  }
+  .usage-filters select,
+  .usage-filters select[aria-label='模型'] {
+    flex: 1 1 140px;
+    margin-left: 0;
   }
 }
 .usage-activity > header {
@@ -7923,8 +7990,10 @@ dialog:has(.pasted-view) {
   border-radius: 4px;
 }
 .usage-heat:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 4px;
+  outline: none;
+}
+.usage-heat:focus-visible i.active {
+  outline-color: var(--focus);
 }
 .usage-heat-month,
 .usage-heat-day {
@@ -7936,19 +8005,55 @@ dialog:has(.pasted-view) {
 .usage-heat-day {
   line-height: 18px;
 }
-/* A year: 53 weeks of smaller squares. */
+/* A year: its 53 weeks share the card's width, squares as wide as a week; a narrow window scrolls it. The facts
+   then sit under it as a strip of cells, like the totals at the top. */
+.usage-activity-body.year {
+  display: block;
+}
 .usage-heat.year {
-  grid-template-rows: 16px repeat(7, 12px);
-  grid-auto-columns: 12px;
+  grid-template-columns: max-content;
+  grid-auto-columns: minmax(12px, 1fr);
+  grid-template-rows: 16px;
+  grid-auto-rows: auto;
   gap: 3px;
+  width: 100%;
+  min-width: 820px;
 }
 .usage-heat.year i {
-  width: 12px;
-  height: 12px;
+  width: auto;
+  height: auto;
+  aspect-ratio: 1;
   border-radius: 3px;
 }
 .usage-heat.year .usage-heat-day {
-  line-height: 12px;
+  align-self: center;
+  padding-right: 4px;
+  line-height: 1;
+}
+.usage-activity-body.year .usage-facts {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 0;
+  margin: 14px -16px -14px;
+  overflow: hidden;
+  border-top: 1px solid var(--line-soft);
+}
+.usage-activity-body.year .usage-facts > div {
+  padding: 12px 16px;
+  box-shadow:
+    -1px 0 0 var(--line-soft),
+    0 -1px 0 var(--line-soft);
+}
+.usage-heat-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+.usage-heat-foot .usage-heat-detail,
+.usage-heat-foot .usage-heat-legend {
+  margin: 0;
 }
 .usage-heat i,
 .usage-heat-legend i {
@@ -7976,12 +8081,13 @@ dialog:has(.pasted-view) {
   background: var(--heat-4);
 }
 /* An unused day, faint on a white card, keeps an edge. */
-.usage-heat i[data-level='0']:not(.none) {
+:is(.usage-heat i:not(.none), .usage-heat-legend i)[data-level='0'] {
   box-shadow: inset 0 0 0 1px var(--line-soft);
 }
+/* A day before any record: a quiet dot, apart from an unused day's pale square. */
 .usage-heat i.none {
-  border: 1px dashed var(--line);
-  background: transparent;
+  border: 0;
+  background: radial-gradient(circle, var(--line) 1.5px, transparent 2px);
 }
 .usage-heat i.active {
   outline: 2px solid var(--text);
@@ -7996,7 +8102,7 @@ dialog:has(.pasted-view) {
   color: var(--faint);
 }
 .usage-heat-legend small {
-  margin-left: 8px;
+  margin-right: 8px;
   font-size: inherit;
 }
 .usage-facts {
@@ -8368,17 +8474,19 @@ dialog::backdrop {
   scrollbar-width: thin;
   scrollbar-color: light-dark(rgb(31 30 29 / 22%), rgb(222 220 209 / 22%)) transparent;
 }
+/* The space under the title is the header's own, not the title's margin: the buttons beside the title centre on
+   its line, not on the title and the space below it. */
 .account-heading {
   min-height: 0;
-  padding: 36px max(36px, calc((100% - 748px) / 2)) 0;
+  padding: 36px max(36px, calc((100% - 748px) / 2)) 18px;
   border-bottom: 0;
 }
 .account-heading h1 {
+  margin: 0;
   font-size: calc(28rem / 14);
   font-family: var(--font-display);
   font-weight: 500;
   letter-spacing: -0.005em;
-  margin-bottom: 18px;
 }
 .account-heading h1 > svg.app-icon {
   display: none;
@@ -11437,4 +11545,13 @@ dialog.palette:not([open]) {
   color: var(--faint);
   font-size: calc(11rem / 14);
   white-space: nowrap;
+}
+/* A narrow window: the call log's header and sides closer in, leaving the chart and table more room. */
+@media (max-width: 700px) {
+  .usage-page > .account-heading {
+    padding: 20px 16px 12px;
+  }
+  .account-body.usage-body {
+    padding-inline: 16px;
+  }
 }

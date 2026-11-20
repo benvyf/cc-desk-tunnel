@@ -122,6 +122,11 @@ export function UsageBars({
           aria-label={`${title}，左右方向键逐个查看`}
           onKeyDown={key}
           onBlur={() => setHover(null)}
+          // Reached by the keyboard, the chart shows its latest column at once.
+          onFocus={(event) => {
+            if (hover === null && event.currentTarget.matches(':focus-visible'))
+              setHover(buckets.length - 1);
+          }}
         >
           {buckets.map((bucket, index) => (
             <div
@@ -427,7 +432,7 @@ export function ActivityCard({
       {failed ? (
         <p className="muted">活动读取失败，点右上角刷新重试。</p>
       ) : (
-        <div className="usage-activity-body">
+        <div className={`usage-activity-body${year ? ' year' : ''}`}>
           <div className="usage-heat-wrap">
             <div className="usage-heat-scroll" ref={scroller}>
               <div
@@ -437,6 +442,11 @@ export function ActivityCard({
                 aria-label="每天的用量，方向键逐日查看"
                 onKeyDown={key}
                 onBlur={() => setActive(null)}
+                // Reached by the keyboard, the calendar shows today at once.
+                onFocus={(event) => {
+                  if (active === null && event.currentTarget.matches(':focus-visible'))
+                    setActive(count - 1);
+                }}
                 onMouseLeave={() => setActive(null)}
               >
                 {[...months].map(([column, text]) => (
@@ -478,15 +488,17 @@ export function ActivityCard({
               </div>
             </div>
             {/* The day under the pointer or the keys, in a line of its own: a tip would be cut off by the scroll. */}
-            <p className="usage-heat-detail" aria-live="polite">
-              {shown ? describe(shown) : '悬停或用方向键查看每天的用量'}
-            </p>
-            <div className="usage-heat-legend" aria-hidden="true">
-              少
-              {[0, 1, 2, 3, 4].map((step) => (
-                <i key={step} data-level={step} />
-              ))}
-              多<small>{byCost ? '按等价费用' : '按 Token'}</small>
+            <div className="usage-heat-foot">
+              <p className="usage-heat-detail" aria-live="polite">
+                {shown ? describe(shown) : '悬停或用方向键查看每天的用量'}
+              </p>
+              <div className="usage-heat-legend" aria-hidden="true">
+                <small>{byCost ? '按等价费用' : '按 Token'}</small>少
+                {[0, 1, 2, 3, 4].map((step) => (
+                  <i key={step} data-level={step} />
+                ))}
+                多
+              </div>
             </div>
           </div>
           <div className="usage-facts">
