@@ -966,7 +966,7 @@ for (const scenario of ['success', 'lost-response', 'current', 'skip', 'mismatch
       await update.getByRole('button', { name: '检查服务端更新', exact: true }).click();
     }
     const server = page.getByRole('dialog', { name: '配套服务端更新' });
-    await expect(server).toContainText('当前版本 0.3.7 · Build 5');
+    await expect(server).toContainText('当前服务端 Build 5（运行环境 0.3.7）');
     const installing = ['success', 'lost-response', 'mismatch'].includes(scenario);
     if (installing) {
       await server.getByRole('button', { name: '确认升级到 Build 6', exact: true }).click();

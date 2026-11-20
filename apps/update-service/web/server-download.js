@@ -80,7 +80,8 @@ export function setupServerDownload({ request, element, notice }) {
     root.append(
       element(
         'h3',
-        `Linux x64 · v${release.appVersion} · Build ${release.build} · 协议 ${release.protocol}`,
+        // A server is told apart by its Build; appVersion names the runtime it is built on (scripts/package-server.mjs).
+        `Linux x64 · 服务端 Build ${release.build} · 运行环境 ${release.appVersion} · 协议 ${release.protocol}`,
       ),
     );
     root.append(element('p', `SHA256：${release.sha256}`, 'muted'));

@@ -96,7 +96,8 @@ export default function ManagedServerUpgrade({
       if (own !== generation.current) return;
       setCandidate(result.reason === 'available' ? result.candidate : null);
       setText(
-        `当前版本 ${result.current.appVersion} · Build ${result.current.build}。${explanations[result.reason]}`,
+        // A server is told apart by its Build; appVersion names the runtime it is built on (scripts/package-server.mjs).
+        `当前服务端 Build ${result.current.build}（运行环境 ${result.current.appVersion}）。${explanations[result.reason]}`,
       );
     } catch (error) {
       if (own !== generation.current) return;
@@ -183,7 +184,8 @@ export default function ManagedServerUpgrade({
       {candidate && (
         <>
           <p>
-            目标版本 {candidate.appVersion} · Build {candidate.build} · 协议 {candidate.protocol}
+            目标服务端 Build {candidate.build} · 运行环境 {candidate.appVersion} · 协议{' '}
+            {candidate.protocol}
           </p>
           <p>升级需要重启服务。确认后才会安装，完成后请手动连接。</p>
         </>
