@@ -205,6 +205,13 @@ test('a server release pins only the desktop version in the lock, to the runtime
   // The lock in the tree, at whatever version the desktop is released at, is the runtime's once pinned. When a
   // dependency changes this fails: the runtime level, LOCK and SERVER_APP_VERSION then move together.
   assert.equal(digest(pinnedLock(lock)), runtimeLock);
+  // The host update admits only this appVersion (deploy/host-update/apply.py), the one the packager writes.
+  assert.match(
+    readFileSync(new URL('../../../deploy/host-update/apply.py', import.meta.url), 'utf8'),
+    new RegExp(
+      `\\(BUILD, PROTOCOL, '${SERVER_APP_VERSION.replaceAll('.', '\\.')}', RUNTIME, LOCK, expected\\)`,
+    ),
+  );
   const parsed = JSON.parse(lock.toString());
   const pinned = JSON.parse(pinnedLock(lock).toString());
   assert.equal(pinned.packages['apps/desktop'].version, SERVER_APP_VERSION);

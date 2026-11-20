@@ -18,6 +18,14 @@ m = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(m)
 
 
+def pinned_lock(raw,version='0.3.10'):
+    """package-lock.json as scripts/package-server.mjs ships it: the desktop workspace's version set to version."""
+    text=raw.decode();current=json.loads(text)['packages']['apps/desktop']['version']
+    entry='"apps/desktop": {\n      "name": "@cc-desk-tunnel/desktop",\n      "version": '
+    if text.count(entry+json.dumps(current))!=1:raise AssertionError('desktop version not found exactly once')
+    return text.replace(entry+json.dumps(current),entry+json.dumps(version)).encode()
+
+
 class MigrationTests(unittest.TestCase):
     def test_preparation_always_cleans_before_final_space_check(self):
         calls=[]
@@ -188,6 +196,8 @@ class MigrationTests(unittest.TestCase):
             root=Path(directory);policy=root/'old-policy';policy.mkdir()
             (policy/'managed-settings.json').write_text('{}')
             contents={name:(ROOT/name).read_bytes() for name in ['package-lock.json','deploy/docker/runtime-level','deploy/managed-server.json']}
+            # A release carries the lock with the desktop version pinned to its own (scripts/package-server.mjs).
+            contents['package-lock.json']=pinned_lock(contents['package-lock.json'])
             descriptor=dict(schema=1,product='cc-desk-tunnel-managed-server',build=m.BUILD,appVersion='0.3.10',protocol=m.PROTOCOL,sourceCommit='f'*40,
                             files={p:dict(size=len(b),sha256=hashlib.sha256(b).hexdigest()) for p,b in contents.items()})
             db=json.dumps(descriptor).encode();buffer=io.BytesIO()
