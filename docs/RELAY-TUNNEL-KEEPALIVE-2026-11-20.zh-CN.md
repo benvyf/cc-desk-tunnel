@@ -93,7 +93,7 @@ sshd -t && systemctl reload ssh
 用户在 `ubuntu-cc` 上执行了脚本：先备份为 `<unit>.bak-20261120`，再修改所有连向 `ccdesk-relay@` 的单元，然后重启。第一台实际有两个隧道单元：
 
 - `cc-vmiss-relay.service`：连当前中转 `189.105.70.247`，known_hosts 是 `/etc/ccdesk-vmiss/known_hosts`。
-- `cc-bwg-relay.service`：连旧中转 `212.50.248.138`（`HostKeyAlias=74.82.201.214`），仍在运行。
+- `cc-bwg-relay.service`：连旧中转 `212.50.248.138`（`HostKeyAlias=74.82.201.214`）。用户确认旧 VPS 已不用，2026-11-20 已执行 `systemctl disable --now` 停用，状态为 inactive / disabled。单元文件保留，需要时用 `sudo systemctl enable --now cc-bwg-relay.service` 恢复。
 
 两个单元都已改为 `ConnectTimeout=5`、`TCPKeepAlive=yes`、`ServerAliveInterval=5`、`ServerAliveCountMax=3`、`RestartSec=1`，重启后都是 active。
 
