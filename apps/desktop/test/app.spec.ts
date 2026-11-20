@@ -436,11 +436,11 @@ test('an earlier question is edited where it stands, and the conversation goes o
   expect(order.indexOf('session.rename')).toBeLessThan(order.indexOf('message.send'));
   expect(order.indexOf('message.send')).toBeLessThan(order.indexOf('session.archive'));
   // The pin went along with the conversation.
-  expect(
-    await page.evaluate(
-      () => JSON.parse(localStorage.getItem('proxy-prefs') ?? '{}').pinnedSessions,
-    ),
-  ).toEqual([copy]);
+  await expect
+    .poll(() =>
+      page.evaluate(() => JSON.parse(localStorage.getItem('proxy-prefs') ?? '{}').pinnedSessions),
+    )
+    .toEqual([copy]);
   await expect(page.getByRole('textbox', { name: '消息', exact: true })).toBeFocused();
   // The same conversation, under its own name, from the edited question on; the words not yet sent came along.
   await expect(page.locator('.session-row.selected strong')).toHaveText(title);
@@ -453,7 +453,66 @@ test('an earlier question is edited where it stands, and the conversation goes o
   await banner.getByRole('button', { name: '查看原对话', exact: true }).click();
   await expect(questions).toHaveText(['第一问', '第二问']);
   await expect(page.locator('.archived-bar')).toBeVisible();
+  // Read only: no pencil on a session put away.
+  await questions.nth(0).hover();
+  await expect(page.getByRole('button', { name: '编辑消息', exact: true })).toHaveCount(0);
 });
+
+for (const service of ['without archiving', 'refusing to archive'] as const)
+  test(`an edit sent to a service ${service} leaves both sessions, told apart`, async ({
+    page,
+  }) => {
+    const sent: string[] = [];
+    await page.routeWebSocket(connection().serverUrl, (route) => {
+      const server = route.connectToServer();
+      route.onMessage((raw) => {
+        const message = JSON.parse(String(raw));
+        sent.push(message.type);
+        if (service === 'refusing to archive' && message.type === 'session.archive') {
+          route.send(
+            JSON.stringify({
+              type: 'response',
+              requestId: message.requestId,
+              ok: false,
+              code: 'test',
+              message: '模拟归档失败',
+            }),
+          );
+          return;
+        }
+        server.send(raw);
+      });
+      server.onMessage((raw) => {
+        const message = JSON.parse(String(raw));
+        if (service === 'without archiving' && 'sessionArchive' in message) {
+          delete message.sessionArchive;
+          route.send(JSON.stringify(message));
+        } else route.send(raw);
+      });
+    });
+    await page.goto('/');
+    await login(page);
+    const title = await createSession(page, '两个都留');
+    await send(page, '原来的问题');
+    await settled(page);
+    await page.locator('.message.user .message-content').hover();
+    await page.getByRole('button', { name: '编辑消息', exact: true }).click();
+    await page.getByRole('textbox', { name: '编辑内容', exact: true }).fill('改过的问题');
+    await page.getByRole('textbox', { name: '编辑内容', exact: true }).press('Enter');
+    await settled(page);
+    await expect(page.locator('.message.user .message-content')).toHaveText(['改过的问题']);
+    await expect(page.locator('.session-row').filter({ hasText: title })).toHaveCount(2);
+    if (service === 'without archiving') {
+      const after = sent.slice(sent.indexOf('session.fork'));
+      expect(after).not.toContain('session.rename');
+      expect(after).not.toContain('session.archive');
+      await expect(page.locator('.session-row.selected strong')).toHaveText(`${title}（分叉）`);
+      await expect(page.locator('.undo-banner')).toHaveCount(0);
+    } else {
+      await expect(page.getByText(/原对话没有归档（模拟归档失败）/)).toBeVisible();
+      await expect(page.locator('.undo-banner')).toHaveCount(0);
+    }
+  });
 
 test('an edit sent while the reader has gone elsewhere does not take them back', async ({
   page,

@@ -114,7 +114,7 @@ export default function MessageEditor({
         maxLength={messageLimit}
         readOnly={sending}
         aria-invalid={tooLong || undefined}
-        aria-describedby={tooLong ? errorId : blocked ? hintId : undefined}
+        aria-describedby={tooLong ? errorId : blocked && !sending ? hintId : undefined}
         onChange={(event) => {
           const value = event.target.value;
           setParts((current) => ({ ...current, body: value }));

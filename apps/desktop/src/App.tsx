@@ -1569,9 +1569,10 @@ export function App({
       try {
         await client.request({ type: 'session.archive', sessionId: session.id, archived: true });
       } catch (error) {
-        // Both stay in the list, and nothing moves: the copy takes back the name that tells it apart.
-        await rename(forkName);
-        throw error;
+        // Both stay in the list and nothing moves. The copy's run holds its name now, so it is told apart here.
+        throw new Error(
+          `编辑后的消息已发出，但原对话没有归档（${error instanceof Error ? error.message : '未知原因'}）。列表里会有两个同名会话，较新的是编辑后的。`,
+        );
       }
       setUndoArchive({ ids: [session.id], edited: true });
       // What belongs to the conversation rather than to one copy of it goes along: its pin, and words written

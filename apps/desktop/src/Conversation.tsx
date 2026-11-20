@@ -602,6 +602,7 @@ function Message({
   item,
   native,
   edit,
+  editor,
   footer,
   closing = false,
   latest = false,
@@ -614,6 +615,8 @@ function Message({
   // The model that wrote the reply, beside its time: shown where more than one answered in the session.
   model?: string;
   edit?: (item: Text) => void;
+  // Present while this question is open in the editor, which takes the place of its bubble and its line.
+  editor?: Editor;
   footer?: ReactNode;
   closing?: boolean;
   latest?: boolean;
@@ -623,9 +626,6 @@ function Message({
 }) {
   const time = messageTime(item.kind === 'assistant' ? (item.doneAt ?? item.at) : item.at);
   const user = item.kind === 'user';
-  // While this question is open in the editor, the editor takes the place of its bubble and its line.
-  const open = useContext(OpenEditor);
-  const editor = user && open?.id === item.id ? open : undefined;
   const [controlsShown, setControlsShown] = useState(false);
   const leaveTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   useEffect(() => () => clearTimeout(leaveTimer.current), []);
@@ -699,7 +699,7 @@ function Message({
       )}
     </>
   );
-  if (editor)
+  if (user && editor)
     return (
       <article className="message user editing" data-message-id={item.id}>
         <MessageEditor
@@ -780,6 +780,12 @@ function Message({
       )}
     </article>
   );
+}
+
+// A turn's question, the only message the editor opens on: only questions are drawn again when it opens or closes.
+function Question(props: Omit<Parameters<typeof Message>[0], 'editor'>) {
+  const open = useContext(OpenEditor);
+  return <Message {...props} editor={open?.id === props.item.id ? open : undefined} />;
 }
 
 // A compaction of the context, in its place among the steps: under way with its timer, then what it compacted.
@@ -951,7 +957,7 @@ const TurnView = memo(function TurnView({
     <TurnPictures.Provider value={turnPictures}>
       {/* "Continue" without the turn it takes up, which is on an earlier page, shows nothing for itself. */}
       {turn.question && !turn.question.continued && (
-        <Message
+        <Question
           item={turn.question}
           native={native}
           edit={turn.joined ? undefined : live.edit}
