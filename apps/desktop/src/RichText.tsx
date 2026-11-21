@@ -182,6 +182,26 @@ function FileCodeReference({
   );
 }
 
+// A short cell (a header, a size, a count) keeps to one line. The text around it may break between any two
+// characters, so a table short of room would squeeze such a column to one character and its words read downwards.
+type HastText = { type: string; value?: string; children?: HastText[] };
+function textOf(node: HastText | undefined): string {
+  if (!node) return '';
+  if (node.type === 'text') return node.value ?? '';
+  return (node.children ?? []).map(textOf).join('');
+}
+// Width in half-width characters: an ideograph or a full-width form counts two.
+const wide =
+  /[\u1100-\u115f\u2e80-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/;
+function cellClass(node: unknown, className: string | undefined, room: number) {
+  let width = 0;
+  for (const char of textOf(node as HastText).trim()) {
+    width += wide.test(char) ? 2 : 1;
+    if (width > room) return className;
+  }
+  return className ? `${className} cell-short` : 'cell-short';
+}
+
 const components: Components = {
   pre: CodeBlock,
   code: ({ node, children, className }) => {
@@ -211,6 +231,12 @@ const components: Components = {
   ),
   a: ({ href, children }) => <Anchor href={href}>{children}</Anchor>,
   img: ({ src, alt }) => <Figure src={typeof src === 'string' ? src : ''} alt={alt ?? ''} />,
+  th: ({ node, className, ...props }) => (
+    <th className={cellClass(node, className, 16)} {...props} />
+  ),
+  td: ({ node, className, ...props }) => (
+    <td className={cellClass(node, className, 12)} {...props} />
+  ),
 };
 // A question is the user's own words: Markdown, but no formulas (a dollar there is a price far more often) and a
 // block of code is code, never a drawing.

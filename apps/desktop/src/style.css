@@ -4804,6 +4804,9 @@ dialog:has(.picture-view) {
   font-weight: 600;
   border-bottom-color: var(--line-strong);
 }
+.message-content .cell-short {
+  white-space: nowrap;
+}
 .schedule-form {
   display: flex;
   flex-direction: column;
@@ -5129,12 +5132,18 @@ details[open] > summary > .fold-chevron {
   gap: 8px;
 }
 .message-editor-hint {
+  min-width: 0;
   margin-right: auto;
   color: var(--muted);
   font-size: calc(12rem / 14);
 }
 .message-editor-actions .button {
   --button-radius: 999px;
+}
+/* A long hint beside them takes the squeeze, not the buttons: Chinese may break between any two characters. */
+.message-editor-actions > .button {
+  flex: none;
+  white-space: nowrap;
 }
 .transcript .message.editing ~ * {
   opacity: 0.45;
@@ -5396,6 +5405,18 @@ details[open] > summary > .fold-chevron {
   align-items: center;
   gap: 6px;
   min-width: 0;
+}
+/* The group's label, like the tool's subject, ends in an ellipsis beside the pictures and the task buttons. */
+.work-heading > span:first-of-type {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* A turn's summary breaks only at the spaces around its dots, never inside "12 步". */
+.turn-process > summary > span:first-child {
+  min-width: 0;
+  word-break: keep-all;
 }
 .work-heading small,
 .tool-time {
@@ -8645,6 +8666,8 @@ dialog::backdrop {
   color: var(--faint);
 }
 .question-header {
+  display: inline-block;
+  white-space: nowrap;
   margin-right: 8px;
   padding: 2px 8px;
   border-radius: var(--radius-xs);
@@ -8751,15 +8774,25 @@ dialog::backdrop {
   color: var(--faint);
   font-weight: 400;
 }
+/* In a narrow dock the title and the count shorten to an ellipsis instead of breaking into a column of characters. */
+.approval-dock-head > span:not(.approval-dock-tail),
+.approval-dock-bar > .approval-dock-more {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .approval-dock-more::before {
   content: '·';
   margin-right: 8px;
 }
 .approval-dock-tail {
   display: flex;
+  flex: none;
   align-items: center;
   gap: 4px;
   margin-left: auto;
+  white-space: nowrap;
 }
 .approval-dock-pager {
   display: flex;
@@ -8934,6 +8967,8 @@ dialog::backdrop {
   overflow: auto;
 }
 .approval-tag {
+  display: inline-block;
+  white-space: nowrap;
   margin-left: 8px;
   padding: 1px 7px;
   border: 1px solid var(--warn-line);
